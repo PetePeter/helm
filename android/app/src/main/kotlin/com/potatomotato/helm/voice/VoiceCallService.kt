@@ -8,6 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -70,6 +74,7 @@ class VoiceCallService : Service() {
         private const val EXTRA_VALUE = "value"
         private const val EXTRA_OPENING = "opening"
         private const val EXTRA_FROM = "from"
+        private const val EXTRA_PTT = "ptt"
         private const val CUE_VOLUME = 80
         private const val CUE_MS = 150
         /** A backstop only: the lock is released when the call ends or leaves the earpiece. */
@@ -80,10 +85,16 @@ class VoiceCallService : Service() {
         /** The live call, or null. Process-scoped: there is at most one call. */
         val call: StateFlow<Call?> = _call.asStateFlow()
 
-        /** [opening]: spoken first, for an answered ring (see [CallController.start]). */
-        fun start(context: Context, targetId: String, opening: String? = null) {
+        /**
+         * [opening]: spoken first, for an answered ring (see [CallController.start]).
+         * [pushToTalk]: a walkie-talkie call from the talk key ([PttKey]).
+         */
+        fun start(context: Context, targetId: String, opening: String? = null, pushToTalk: Boolean = false) {
             context.startForegroundService(
-                command(context, ACTION_START).putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_OPENING, opening),
+                command(context, ACTION_START)
+                    .putExtra(EXTRA_TARGET, targetId)
+                    .putExtra(EXTRA_OPENING, opening)
+                    .putExtra(EXTRA_PTT, pushToTalk),
             )
         }
 
@@ -161,9 +172,40 @@ class VoiceCallService : Service() {
             ?.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "helm:call-ear")
     }
 
+    /** The proximity sensor's last word: at the face, or away from it. Null until it speaks. */
+    private var near: Boolean? = null
+
+    /** The user picked a route by hand: the sensor no longer moves this call. */
+    private var routeChosen = false
+
+    private val proximity = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            near = event.values[0] < event.sensor.maximumRange
+            followProximity()
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    }
+
+    /** Earpiece at the face, speaker away from it ([proximityRoute]), until the user picks one. */
+    private fun followProximity() {
+        val near = near ?: return
+        if (!active || routeChosen) return
+        proximityRoute(near, routes)?.takeIf { it != route }?.let(HelmTelecom::setAudioRoute)
+    }
+
     private fun syncEarSensor() {
-        val lock = earSensor ?: return
         val wanted = controller != null
+        val sensors = getSystemService(SensorManager::class.java)
+        if (wanted) {
+            sensors.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+                ?.let { sensors.registerListener(proximity, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        } else {
+            sensors.unregisterListener(proximity)
+            near = null
+            routeChosen = false
+        }
+        val lock = earSensor ?: return
         if (wanted && !lock.isHeld) lock.acquire(EAR_SENSOR_MAX_MS)
         // WAIT flag: a release while at the ear keeps the screen dark until moved away.
         if (!wanted && lock.isHeld) lock.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY)
@@ -191,10 +233,18 @@ class VoiceCallService : Service() {
             // startForegroundService that never calls startForeground crashes.
             // A live call keeps its own target; a second START only rejoins it.
             val target = (if (call != null) targetId else null) ?: intent.getStringExtra(EXTRA_TARGET)
-            startForegroundWith(target)
+            // Android refuses a microphone service to an app not on screen
+            // (a background talk key): a refused call, never a crash.
+            try {
+                startForegroundWith(target)
+            } catch (refused: SecurityException) {
+                HelmLog.w(HelmLog.UI, "call refused: Helm not in the foreground (${refused.message})")
+                if (call == null) stopSelf()
+                return START_NOT_STICKY
+            }
             when {
                 target == null -> if (call == null) stopSelf()
-                call == null -> begin(target, intent.getStringExtra(EXTRA_OPENING))
+                call == null -> begin(target, intent.getStringExtra(EXTRA_OPENING), intent.getBooleanExtra(EXTRA_PTT, false))
             }
             return START_NOT_STICKY
         }
@@ -214,6 +264,7 @@ class VoiceCallService : Service() {
             ACTION_ROUTE -> intent.getStringExtra(EXTRA_VALUE)
                 // Not while still connecting: Telecom owns the route once the call is active.
                 ?.takeIf { active }
+                ?.also { routeChosen = true }
                 ?.let { name -> AudioRoute.entries.firstOrNull { it.name == name } }
                 ?.let(HelmTelecom::setAudioRoute)
             ACTION_TRANSFER -> intent.getStringExtra(EXTRA_TARGET)
@@ -228,7 +279,7 @@ class VoiceCallService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun begin(target: String, opening: String?) {
+    private fun begin(target: String, opening: String?, pushToTalk: Boolean) {
         targetId = target
         HelmLog.i(HelmLog.UI, "voice call starting")
 
@@ -261,12 +312,17 @@ class VoiceCallService : Service() {
             route = current
             routes = available
             publish()
+            followProximity()
         }
         // An answered ring is a system call already and opens at once, so its
         // audio is taken here; a call the user starts takes it when the system
         // has taken the call (see [line]).
         if (opening != null) takeAudio()
-        call.start(opening)
+        call.start(opening, micMode = if (pushToTalk) MicMode.PushToTalk else null)
+        // The press that started the call is still down; its release follows as PTT_KEY.
+        if (pushToTalk) call.setPttKeyHeld(true)
+        // The talk key's cue: a call started by a broadcast is never silent (see [PttKey]).
+        if (pushToTalk) cue()
         // An answered ring that really became a call: tell Helm, so it does not
         // ring again in 10 minutes. Only here — a call that never started (no
         // mic grant) leaves the retry armed.

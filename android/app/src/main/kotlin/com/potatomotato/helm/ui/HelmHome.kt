@@ -99,6 +99,7 @@ import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.call.rememberDialer
 import com.potatomotato.helm.ui.chat.ChatScreen
+import com.potatomotato.helm.voice.PttKey
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.DialogAction
@@ -378,13 +379,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         val liveTarget = liveCall?.targetId
         if (operatorId == null && liveTarget == null) return@LaunchedEffect
         if (!OperatorKey.consume()) return@LaunchedEffect
-        when (val action = OperatorKeyAction.decide(operatorId, liveTarget)) {
+        when (val action = OperatorKeyAction.decide(operatorId, liveTarget, openSessionId)) {
             is OperatorKeyAction.Dial -> {
-                // The operator's chat is the Helm tab, so the call never retargets away from it.
-                openSessionId = null
-                where = Destination.Thread
-                if (homeTab != HomeTab.Helm) pickHomeTab(HomeTab.Helm)
-                dial(action.operatorId)
+                if (action.targetId != openSessionId) {
+                    // The operator's chat is the Helm tab, so the call never retargets away from it.
+                    openSessionId = null
+                    where = Destination.Thread
+                    if (homeTab != HomeTab.Helm) pickHomeTab(HomeTab.Helm)
+                }
+                dial(action.targetId)
             }
             OperatorKeyAction.HangUp -> VoiceCallService.hangUp(context)
             OperatorKeyAction.Unavailable -> Unit
@@ -399,6 +402,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val onScreenThread = openSessionId
         ?: (operator as? OperatorSummary.On)?.id?.takeIf { homeTab == HomeTab.Helm }
     val viewedChat = onScreenThread?.takeIf { where == Destination.Thread }
+    // The AI Key's walkie-talkie target: the open session, else the operator.
+    val talkTarget = openSessionId ?: (operator as? OperatorSummary.On)?.id
+    LaunchedEffect(talkTarget) { PttKey.target = talkTarget }
     ReportViewedChat(client, viewedChat)
     LaunchedEffect(onScreenThread, where) {
         val reading = where == Destination.Thread ||

@@ -50,6 +50,15 @@ class CallController(
     /** Asked the system for the call; its answer has not come yet. */
     private var placing = false
 
+    /** The mode asked for at [start]; PushToTalk opens on the key, not the switch. */
+    private var startMode: MicMode? = null
+
+    /** The talk key's state while the call is still being placed. */
+    private var heldWhilePlacing = false
+
+    /** Heard but not yet finalised: what a talk-key release sends rather than drops. */
+    private var unsent = ""
+
     /** The switch as the call found it, to hand back; null while the call is not up. */
     private var micWasMuted: Boolean? = null
 
@@ -63,9 +72,13 @@ class CallController(
      *
      * A call the user started asks the system first and opens, listening, only
      * when it is taken.
+     *
+     * [micMode] PushToTalk: a walkie-talkie call, its mic open only while the
+     * talk key is held — including a press that began before the call connected.
      */
-    fun start(opening: String? = null) {
+    fun start(opening: String? = null, micMode: MicMode? = null) {
         if (phase != CallPhase.Idle || placing) return
+        startMode = micMode
         if (opening != null) {
             open(opening)
             return
@@ -81,12 +94,16 @@ class CallController(
 
     private fun open(opening: String?) {
         placing = false
-        val muted = micSwitch.muted
-        micWasMuted = muted
+        micWasMuted = micSwitch.muted
+        val ptt = startMode == MicMode.PushToTalk
+        val held = ptt && heldWhilePlacing
+        val muted = if (ptt) !held else micSwitch.muted
+        micSwitch.muted = muted
         _state.value = _state.value.copy(
             phase = CallPhase.Listening,
             muted = muted,
-            micMode = if (muted) MicMode.Muted else MicMode.Open,
+            pttHeld = held,
+            micMode = if (ptt) MicMode.PushToTalk else if (muted) MicMode.Muted else MicMode.Open,
         )
         line.active()
         mic.start(this)
@@ -109,7 +126,10 @@ class CallController(
 
     /** The Red Key opens the mic only for the duration of a press in PTT mode. */
     fun setPttKeyHeld(held: Boolean) {
+        if (placing) heldWhilePlacing = held
         if (!live || _state.value.micMode != MicMode.PushToTalk || _state.value.pttHeld == held) return
+        // The recogniser finalises on a pause, which a release does not wait for.
+        if (!held && unsent.isNotBlank()) onFinal(unsent)
         val muted = !held
         _state.value = _state.value.copy(pttHeld = held, muted = muted, heard = "")
         micSwitch.muted = muted
@@ -164,10 +184,12 @@ class CallController(
             if (wordCount(text) < BARGE_IN_WORDS) return
             pendingInterruption = interrupt()
         }
+        unsent = text
         _state.value = _state.value.copy(heard = text)
     }
 
     override fun onFinal(text: String) {
+        unsent = ""
         if (!live) {
             pendingInterruption = null
             return

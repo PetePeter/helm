@@ -265,6 +265,71 @@ class CallControllerTest {
     }
 
     @Test
+    fun `a call started in push-to-talk opens the mic only while the key is held`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        line.connect()
+
+        assertEquals(MicMode.PushToTalk, controller.state.value.micMode)
+        assertFalse(micSwitch.muted)
+        mic.final("check the build")
+
+        controller.setPttKeyHeld(false)
+        assertTrue(micSwitch.muted)
+        mic.final("not this")
+
+        assertEquals(listOf("check the build"), sent)
+    }
+
+    @Test
+    fun `a key released before the call connects leaves the mic muted`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        controller.setPttKeyHeld(false)
+        line.connect()
+
+        assertTrue(micSwitch.muted)
+        assertFalse(controller.state.value.pttHeld)
+    }
+
+    @Test
+    fun `releasing the key sends what was heard before the recogniser finalised it`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        line.connect()
+
+        mic.partial("check the build")
+        controller.setPttKeyHeld(false)
+        mic.final("check the build")
+
+        assertEquals(listOf("check the build"), sent)
+    }
+
+    @Test
+    fun `words finalised while held are not sent again on release`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        line.connect()
+
+        mic.partial("check the")
+        mic.final("check the build")
+        controller.setPttKeyHeld(false)
+
+        assertEquals(listOf("check the build"), sent)
+    }
+
+    @Test
+    fun `a reply is read aloud while the push-to-talk mic is muted`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        line.connect()
+
+        controller.onReply("build is green")
+
+        assertTrue(micSwitch.muted)
+        assertEquals(listOf("build is green"), tts.spoken)
+    }
+
+    @Test
     fun `an unmute from the car cannot open a push-to-talk mic`() {
         dial()
         controller.setMicMode(MicMode.PushToTalk)

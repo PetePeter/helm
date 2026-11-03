@@ -41,6 +41,7 @@ import com.potatomotato.helm.notify.IncomingRing
 import com.potatomotato.helm.notify.RingGreeting
 import com.potatomotato.helm.telecom.HelmTelecom
 import com.potatomotato.helm.voice.MicMode
+import com.potatomotato.helm.voice.PttKey
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.components.GhostButton
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
         // and there is no composition yet to hand it to, so it is parked.
         takeNotificationTap(intent)
         takeOperatorKey()
+        takePttKey()
         setContent { HelmTheme { HelmRoot() } }
     }
 
@@ -79,6 +81,12 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         takeNotificationTap(intent)
         takeOperatorKey()
+        takePttKey()
+    }
+
+    /** The AI Key's walkie-talkie call, started now that Helm is on screen, on its chat. */
+    private fun takePttKey() {
+        PttKey.takePendingStart(this)?.let { PendingOpen.request(it) }
     }
 
     /**

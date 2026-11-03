@@ -32,4 +32,27 @@ class AudioRouteTest {
     fun `a tablet with no earpiece falls back to the speaker`() {
         assertEquals(AudioRoute.Speaker, pickAudioRoute(current = null, available = setOf(AudioRoute.Speaker)))
     }
+
+    private val phone = setOf(AudioRoute.Earpiece, AudioRoute.Speaker)
+
+    @Test
+    fun `at the face the call is on the earpiece`() {
+        assertEquals(AudioRoute.Earpiece, proximityRoute(near = true, available = phone))
+    }
+
+    @Test
+    fun `away from the face the call is on the speaker`() {
+        assertEquals(AudioRoute.Speaker, proximityRoute(near = false, available = phone))
+    }
+
+    @Test
+    fun `a headset or the car is never switched by the sensor`() {
+        assertEquals(null, proximityRoute(near = false, available = phone + AudioRoute.Bluetooth))
+        assertEquals(null, proximityRoute(near = true, available = phone + AudioRoute.WiredHeadset))
+    }
+
+    @Test
+    fun `a tablet with no earpiece stays on the speaker at the face`() {
+        assertEquals(null, proximityRoute(near = true, available = setOf(AudioRoute.Speaker)))
+    }
 }

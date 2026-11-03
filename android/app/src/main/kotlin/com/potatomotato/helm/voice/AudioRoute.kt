@@ -17,3 +17,14 @@ fun pickAudioRoute(current: AudioRoute?, available: Set<AudioRoute>): AudioRoute
     AudioRoute.Earpiece in available -> AudioRoute.Earpiece
     else -> AudioRoute.Speaker
 }
+
+/**
+ * The route the proximity sensor asks for: earpiece at the face, speaker away
+ * from it. Null leaves the route alone — Bluetooth or a wired headset is where
+ * the user's ears already are, and a phone with no earpiece has nowhere to go.
+ */
+fun proximityRoute(near: Boolean, available: Set<AudioRoute>): AudioRoute? = when {
+    AudioRoute.Bluetooth in available || AudioRoute.WiredHeadset in available -> null
+    near -> AudioRoute.Earpiece.takeIf { it in available }
+    else -> AudioRoute.Speaker.takeIf { it in available }
+}

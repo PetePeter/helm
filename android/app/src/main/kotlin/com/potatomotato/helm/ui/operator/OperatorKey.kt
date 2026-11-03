@@ -12,14 +12,18 @@ import kotlinx.coroutines.flow.asStateFlow
  * pointed at an arbitrary session.
  */
 sealed interface OperatorKeyAction {
-    data class Dial(val operatorId: String) : OperatorKeyAction
+    data class Dial(val targetId: String) : OperatorKeyAction
     data object HangUp : OperatorKeyAction
     data object Unavailable : OperatorKeyAction
 
     companion object {
-        /** In Helm, once it is up: the key toggles — any live call ends, else the operator is rung. */
-        fun decide(operatorId: String?, liveCallTarget: String?): OperatorKeyAction = when {
+        /**
+         * In Helm, once it is up: the key toggles — any live call ends, else the
+         * chat on screen is rung, else the operator.
+         */
+        fun decide(operatorId: String?, liveCallTarget: String?, openSession: String? = null): OperatorKeyAction = when {
             liveCallTarget != null -> HangUp
+            openSession != null -> Dial(openSession)
             operatorId != null -> Dial(operatorId)
             else -> Unavailable
         }

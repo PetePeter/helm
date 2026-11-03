@@ -499,6 +499,40 @@ adb shell "settings put system tap_app_quick_single 'intent:#Intent;action=com.m
 
 The id `call_operator` is a contract with that mapping — do not rename it.
 
+## Speaker or earpiece — the proximity sensor
+
+During a call the proximity sensor picks the route (`proximityRoute`): at the
+face the earpiece, away from it the speaker. Bluetooth or a wired headset is
+never switched away from, and picking a route by hand on the call screen stops
+the sensor for the rest of that call. Face down on a stand reads as "at the
+face", so that call stays on the earpiece.
+
+## The AI Key as a walkie-talkie — `PttKey`
+
+With the Motorola AI Key's push-to-talk option on (`ptt_enable=1`), Motorola's
+MyKey broadcasts `android.intent.action.PTT.down` / `PTT.up`. Helm listens for
+them while the link service runs, so it works from the background and the
+lock screen.
+
+```mermaid
+flowchart LR
+    D[PTT.down] -->|live call| H[mic open]
+    D -->|no call, screen on| S[push-to-talk call to open session, else operator + cue]
+    U[PTT.up] --> M[mic muted; replies read aloud]
+```
+
+- A release always goes through, even before the call connects: a press that
+  ends while the call is still being placed leaves the mic muted.
+- The broadcasts carry no sender permission, so any app could fake one. A fake
+  can only start a call while the screen is on, only to the session the user
+  has open (else the operator), and the call opens with an audible cue.
+- Only an app on screen may start the microphone, so a press parks the call
+  (`PttKey.pendingStart`) and brings Helm forward on the target's chat;
+  `MainActivity` starts it. If Android still refuses the microphone, the call
+  is refused, never a crash.
+- The target is what HelmHome last showed; with Helm never opened since the
+  process started, there is no target and a press does nothing.
+
 ## Ring me — a session calls the user
 
 "Hey operator, call me when P-0850 finishes or has blocking questions." Calls
