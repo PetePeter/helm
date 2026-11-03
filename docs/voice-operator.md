@@ -484,7 +484,9 @@ flowchart LR
 - **Cold start waits, bounded.** The operator is not listed until the link is up, so a press waits up to 10 s, then reports the operator off instead of dialling late.
 - The microphone grant goes through the same `rememberDialer()` as every call button.
 
-**Motorola AI / Red key** (edge 70, MyKey 2.x). The stock UI cannot pick a shortcut; set it over ADB (record the old value first):
+**"Helm - Operator" launcher entry.** Key-mapping UIs that can only pick an app (Motorola's "Choose app") get a second launcher entry: an `activity-alias` of `MainActivity` named `.CallOperator`. Same app, same pairing; `OperatorKey.isPress` treats a launch under that name as a press.
+
+**Motorola AI / Red key** (edge 70, MyKey 2.x). Pick "Helm - Operator" under Choose app. Or map the shortcut itself over ADB (record the old value first):
 
 ```
 adb shell settings get system tap_app_quick_single

@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun takeOperatorKey(intent: Intent?) {
-        if (intent?.action == OperatorKey.ACTION) OperatorKey.request()
+        if (OperatorKey.isPress(intent?.action, intent?.component?.className)) OperatorKey.request()
     }
 
     /**
