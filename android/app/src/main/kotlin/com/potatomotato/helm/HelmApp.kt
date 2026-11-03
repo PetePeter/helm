@@ -1,10 +1,16 @@
 package com.potatomotato.helm
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.SystemClock
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.log.AndroidLogSink
 import com.potatomotato.helm.log.FileLogSink
 import com.potatomotato.helm.log.HelmLog
+import com.potatomotato.helm.ui.operator.OperatorKey
 import java.io.File
 
 /**
@@ -16,6 +22,23 @@ class HelmApp : Application() {
         super.onCreate()
         installFileLogging()
         HelmPairing.init(this)
+        trackScreenOff()
+    }
+
+    /**
+     * The Call operator key may ring over the lock screen shortly after the
+     * phone was in use (KeyPress.gate). Screen-off is when it locked. Only a
+     * dynamic receiver can hear it, which the link service keeps alive.
+     */
+    private fun trackScreenOff() {
+        registerReceiver(
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    OperatorKey.screenOffAt = SystemClock.elapsedRealtime()
+                }
+            },
+            IntentFilter(Intent.ACTION_SCREEN_OFF),
+        )
     }
 
     /**

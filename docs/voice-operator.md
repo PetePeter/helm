@@ -469,22 +469,26 @@ The app publishes one static launcher shortcut, `call_operator` (`res/xml/shortc
 
 ```mermaid
 flowchart LR
-    K[Key / shortcut] -->|action CALL_OPERATOR| MA[MainActivity]
-    MA -->|OperatorKey.request| HH[HelmHome]
+    K[Key / shortcut] --> CO[CallOperatorActivity<br/>KeyPress.gate: lock screen]
+    CO -->|OperatorKey.request| HH[HelmHome]
     HH --> D{OperatorKeyAction.decide}
     D -->|no call| Dial[dial operator]
-    D -->|operator call live| Hang[hang up]
-    D -->|other session's call| Show[open that call]
+    D -->|any call live| Hang[hang up]
     D -->|no operator| Toast[operator off]
 ```
 
-- **No target in the intent.** `MainActivity` is exported, so the shortcut only says "operator"; the id is resolved from the live session list. It can never dial an arbitrary session.
-- **Toggle.** A second press during the operator call hangs up. A press during *another* session's call only brings it forward — a stray press never drops it.
-- **Once per press.** The press is parked in `OperatorKey` and consumed once; a rotation re-delivering the launch intent is ignored.
-- **Cold start waits, bounded.** The operator is not listed until the link is up, so a press waits up to 10 s, then reports the operator off instead of dialling late.
+- **No target in the intent.** The entry is exported, so it only says "operator"; the id is resolved from the live session list. It can never dial an arbitrary session.
+- **Toggle.** A press during any call — the operator's or another session's — hangs it up; otherwise it rings the operator.
+- **Locked phone** (`KeyPress.gate`, decided in `CallOperatorActivity` before Helm comes up):
+  - a live call is hung up;
+  - within 10 min of a call ending or the screen going off, it rings over the lock screen (the phone was just in use);
+  - otherwise the system unlock prompt comes first — a pocket press never dials.
+  Both moments are in memory (`OperatorKey`); a killed process forgets them and falls back to the unlock prompt. The over-lock pass is read in-process, never from an intent extra, since `MainActivity` is exported.
+- **Once per press.** The press is parked in `OperatorKey` and consumed once, so a rotation never redials.
+- **Cold start waits, bounded.** The operator is not listed until the link is up, so a press stays parked (consumed only when acted on — cold-start compositions are torn down) for up to 10 s, then reports the operator off instead of dialling late.
 - The microphone grant goes through the same `rememberDialer()` as every call button.
 
-**"Helm - Operator" launcher entry.** Key-mapping UIs that can only pick an app (Motorola's "Choose app") get a second launcher entry: an `activity-alias` of `MainActivity` named `.CallOperator`. Same app, same pairing; `OperatorKey.isPress` treats a launch under that name as a press.
+**"Helm - Operator" launcher entry.** Key-mapping UIs that can only pick an app (Motorola's "Choose app") get a second launcher entry: `CallOperatorActivity`, an invisible activity in its own task. A launcher launch into a running Helm only brings the task forward and delivers no intent, so this entry parks the press in `OperatorKey` itself and then brings Helm up. The shortcut targets it too.
 
 **Motorola AI / Red key** (edge 70, MyKey 2.x). Pick "Helm - Operator" under Choose app. Or map the shortcut itself over ADB (record the old value first):
 

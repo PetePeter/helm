@@ -69,8 +69,7 @@ class MainActivity : ComponentActivity() {
         // A cold start from a notification tap: the extra is on the launch intent
         // and there is no composition yet to hand it to, so it is parked.
         takeNotificationTap(intent)
-        // A rotation re-delivers the launch intent: only a fresh launch is a press.
-        if (savedInstanceState == null) takeOperatorKey(intent)
+        takeOperatorKey()
         setContent { HelmTheme { HelmRoot() } }
     }
 
@@ -79,11 +78,18 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         takeNotificationTap(intent)
-        takeOperatorKey(intent)
+        takeOperatorKey()
     }
 
-    private fun takeOperatorKey(intent: Intent?) {
-        if (OperatorKey.isPress(intent?.action, intent?.component?.className)) OperatorKey.request()
+    /**
+     * A key press allowed to call from a locked phone (KeyPress.gate: the phone
+     * was just in use). Read from the in-process press, not an intent extra —
+     * this activity is exported and an extra could be sent by anyone.
+     */
+    private fun takeOperatorKey() {
+        if (!OperatorKey.overLockScreen) return
+        OperatorKey.overLockScreen = false
+        showOverLockScreen(true)
     }
 
     /**
@@ -96,7 +102,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Only an answered ring earns the lock-screen pass, and only while visible:
+     * Only an answered ring, or a key press on a just-used phone, earns the lock-screen pass, and only while visible:
      * once the activity is left, Helm is back behind the keyguard like any app.
      */
     override fun onStop() {

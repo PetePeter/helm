@@ -107,19 +107,22 @@
 
         <!--
           "Helm - Operator": a second launcher entry for key-mapping UIs that can
-          only pick an app (Motorola AI key's "Choose app"). It is MainActivity
-          under another name; MainActivity reads the name and calls the operator.
+          only pick an app (Motorola AI key). Its own empty task (taskAffinity "")
+          so every launch creates it; it parks the press and brings Helm up.
         -->
-        <activity-alias
-            android:name=".CallOperator"
+        <activity
+            android:name=".ui.operator.CallOperatorActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:label="@string/launcher_call_operator"
-            android:targetActivity=".MainActivity">
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
+        </activity>
 
         <!--
           Share-to-Helm: any single file from any app's share sheet. The file is

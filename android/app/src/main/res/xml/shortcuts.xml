@@ -2,7 +2,7 @@
 <!--
   "Call operator": a launcher shortcut a hardware key (e.g. the Motorola AI key)
   can be mapped to. Its id is a contract with that mapping — do not rename it.
-  The intent carries no target; MainActivity resolves the operator itself.
+  The intent carries no target; HelmHome resolves the operator itself.
 -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
@@ -11,8 +11,8 @@
         android:icon="@mipmap/ic_launcher"
         android:shortcutShortLabel="@string/shortcut_call_operator">
         <intent
-            android:action="com.potatomotato.helm.action.CALL_OPERATOR"
+            android:action="android.intent.action.VIEW"
             android:targetPackage="com.potatomotato.helm"
-            android:targetClass="com.potatomotato.helm.MainActivity" />
+            android:targetClass="com.potatomotato.helm.ui.operator.CallOperatorActivity" />
     </shortcut>
 </shortcuts>

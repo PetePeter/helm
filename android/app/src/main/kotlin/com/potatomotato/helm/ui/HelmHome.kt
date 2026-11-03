@@ -100,11 +100,6 @@ import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.call.rememberDialer
 import com.potatomotato.helm.ui.chat.ChatScreen
 import com.potatomotato.helm.voice.VoiceCallService
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeoutOrNull
 import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -373,17 +368,16 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         if (call.targetId != target) VoiceCallService.retarget(context, target)
     }
     // The "Call operator" shortcut (a hardware key can launch it). On a cold start
-    // the operator is not listed until the link is up, so a press waits for it —
-    // bounded, so a stale press can never dial minutes later.
-    val currentOperator by rememberUpdatedState(operator)
+    // the operator is not listed until the link is up, so a press stays parked
+    // until it is — consumed only when acted on, because the first compositions
+    // of a cold start are torn down and would take a consumed press with them.
     val keyPress by OperatorKey.pending.collectAsState()
-    LaunchedEffect(keyPress) {
+    val operatorId = (operator as? OperatorSummary.On)?.id
+    LaunchedEffect(keyPress, operatorId, liveCall?.targetId) {
+        if (!keyPress) return@LaunchedEffect
+        val liveTarget = liveCall?.targetId
+        if (operatorId == null && liveTarget == null) return@LaunchedEffect
         if (!OperatorKey.consume()) return@LaunchedEffect
-        val liveTarget = VoiceCallService.call.value?.targetId
-        val operatorId = (currentOperator as? OperatorSummary.On)?.id
-            ?: if (liveTarget != null) null else withTimeoutOrNull(OPERATOR_KEY_WAIT_MS) {
-                snapshotFlow { (currentOperator as? OperatorSummary.On)?.id }.filterNotNull().first()
-            }
         when (val action = OperatorKeyAction.decide(operatorId, liveTarget)) {
             is OperatorKeyAction.Dial -> {
                 // The operator's chat is the Helm tab, so the call never retargets away from it.
@@ -393,14 +387,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 dial(action.operatorId)
             }
             OperatorKeyAction.HangUp -> VoiceCallService.hangUp(context)
-            is OperatorKeyAction.Show -> {
-                openSessionId = action.targetId
-                tab = SessionTab.Chat
-                where = Destination.Thread
-            }
-            OperatorKeyAction.Unavailable ->
-                Toast.makeText(context, R.string.operator_section_off, Toast.LENGTH_LONG).show()
+            OperatorKeyAction.Unavailable -> Unit
         }
+    }
+    // Bounded: a press the operator never turns up for is dropped, never dialled late.
+    LaunchedEffect(keyPress) {
+        if (!keyPress) return@LaunchedEffect
+        delay(OPERATOR_KEY_WAIT_MS)
+        if (OperatorKey.consume()) Toast.makeText(context, R.string.operator_section_off, Toast.LENGTH_LONG).show()
     }
     val onScreenThread = openSessionId
         ?: (operator as? OperatorSummary.On)?.id?.takeIf { homeTab == HomeTab.Helm }

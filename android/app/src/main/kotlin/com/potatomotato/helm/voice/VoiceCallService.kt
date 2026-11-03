@@ -13,7 +13,9 @@ import android.media.ToneGenerator
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.widget.Toast
+import com.potatomotato.helm.ui.operator.OperatorKey
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.link.HelmPairing
@@ -358,6 +360,8 @@ class VoiceCallService : Service() {
         syncEarSensor()
         if (live) HelmLog.i(HelmLog.UI, "mic released")
         _call.value = null
+        // The Call operator key may ring again over the lock screen for a while.
+        if (live) OperatorKey.callEndedAt = SystemClock.elapsedRealtime()
     }
 
     /**

@@ -6,6 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OperatorKeyTest {
+    private val min = 60_000L
+    private val now = 100 * min
+
     @Test
     fun `no operator is unavailable, never a dial`() {
         assertEquals(OperatorKeyAction.Unavailable, OperatorKeyAction.decide(operatorId = null, liveCallTarget = null))
@@ -17,15 +20,36 @@ class OperatorKeyTest {
     }
 
     @Test
-    fun `a second press during the operator call hangs up`() {
+    fun `a press during any call hangs it up`() {
         assertEquals(OperatorKeyAction.HangUp, OperatorKeyAction.decide(operatorId = "helm", liveCallTarget = "helm"))
+        assertEquals(OperatorKeyAction.HangUp, OperatorKeyAction.decide(operatorId = "helm", liveCallTarget = "a"))
     }
 
     @Test
-    fun `another session's call is shown, never dropped or retargeted`() {
-        assertEquals(OperatorKeyAction.Show("a"), OperatorKeyAction.decide(operatorId = "helm", liveCallTarget = "a"))
-        // Even with the operator gone, a stray press must not cost the user their call.
-        assertEquals(OperatorKeyAction.Show("a"), OperatorKeyAction.decide(operatorId = null, liveCallTarget = "a"))
+    fun `an unlocked press opens Helm`() {
+        assertEquals(KeyPress.Open(overLockScreen = false), KeyPress.gate(locked = false, inCall = false, now, null, null))
+    }
+
+    @Test
+    fun `any live call is hung up straight away, locked or not`() {
+        assertEquals(KeyPress.HangUp, KeyPress.gate(locked = true, inCall = true, now, null, null))
+        assertEquals(KeyPress.HangUp, KeyPress.gate(locked = false, inCall = true, now, null, null))
+    }
+
+    @Test
+    fun `locked within 10 minutes of a call ending calls over the lock screen`() {
+        assertEquals(KeyPress.Open(overLockScreen = true), KeyPress.gate(true, false, now, callEndedAt = now - 10 * min, screenOffAt = null))
+    }
+
+    @Test
+    fun `locked within 10 minutes of the screen going off calls over the lock screen`() {
+        assertEquals(KeyPress.Open(overLockScreen = true), KeyPress.gate(true, false, now, callEndedAt = null, screenOffAt = now - 3 * min))
+    }
+
+    @Test
+    fun `locked longer than 10 minutes asks for an unlock first`() {
+        assertEquals(KeyPress.Unlock, KeyPress.gate(true, false, now, callEndedAt = now - 10 * min - 1, screenOffAt = now - 11 * min))
+        assertEquals(KeyPress.Unlock, KeyPress.gate(true, false, now, callEndedAt = null, screenOffAt = null))
     }
 
     @Test
