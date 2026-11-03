@@ -517,15 +517,20 @@ lock screen.
 ```mermaid
 flowchart LR
     D[PTT.down] -->|live call| H[mic open]
-    D -->|no call, screen on| S[push-to-talk call to open session, else operator + cue]
+    D -->|no call, lock gate allows| S[push-to-talk call to open session, else operator + cue]
     U[PTT.up] --> M[mic muted; replies read aloud]
 ```
 
+- A press while Helm is reading a reply stops it, like talking over it does;
+  the next words carry the interruption.
 - A release always goes through, even before the call connects: a press that
   ends while the call is still being placed leaves the mic muted.
 - The broadcasts carry no sender permission, so any app could fake one. A fake
-  can only start a call while the screen is on, only to the session the user
-  has open (else the operator), and the call opens with an audible cue.
+  can only call the session the user has open (else the operator), and the
+  call opens with an audible cue.
+- Locked, the operator key's rule applies (`KeyPress.gate`): a phone used in
+  the last 10 minutes calls over the lock screen; otherwise Helm says
+  "Please unlock the phone before continuing" and the press does nothing.
 - Only an app on screen may start the microphone, so a press parks the call
   (`PttKey.pendingStart`) and brings Helm forward on the target's chat;
   `MainActivity` starts it. If Android still refuses the microphone, the call

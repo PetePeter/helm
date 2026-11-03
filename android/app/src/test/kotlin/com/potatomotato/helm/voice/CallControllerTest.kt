@@ -319,6 +319,21 @@ class CallControllerTest {
     }
 
     @Test
+    fun `pressing the talk key stops Helm reading and the next words carry the interruption`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        line.connect()
+        controller.onReply("the build is green and the tests pass")
+
+        controller.setPttKeyHeld(true)
+
+        assertFalse(tts.speaking)
+        assertEquals(CallPhase.Listening, controller.state.value.phase)
+        mic.final("stop, try again")
+        assertEquals(listOf("stop, try again"), sent)
+        assertTrue(sentInterruptions.single() != null)
+    }
+
+    @Test
     fun `a reply is read aloud while the push-to-talk mic is muted`() {
         controller.start(micMode = MicMode.PushToTalk)
         line.connect()

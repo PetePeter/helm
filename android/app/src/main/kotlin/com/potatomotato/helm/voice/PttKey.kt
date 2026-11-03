@@ -1,13 +1,19 @@
 package com.potatomotato.helm.voice
 
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.PowerManager
-import com.potatomotato.helm.MainActivity
+import android.os.SystemClock
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.core.content.ContextCompat
+import com.potatomotato.helm.MainActivity
+import com.potatomotato.helm.R
 import com.potatomotato.helm.log.HelmLog
+import com.potatomotato.helm.ui.operator.KeyPress
+import com.potatomotato.helm.ui.operator.OperatorKey
 
 /**
  * The Motorola AI Key as a walkie-talkie. With the key's PTT option on, Motorola's
@@ -15,8 +21,8 @@ import com.potatomotato.helm.log.HelmLog
  * into the session open on screen, let go to hear its replies.
  *
  * The broadcasts carry no sender permission, so any app can fake them. A fake
- * can only start a call while the screen is on, to the session the user has
- * open, and the call opens with an audible cue.
+ * can only call the session the user has open (else the operator), a locked
+ * phone only as [KeyPress.gate] allows, and the call opens with an audible cue.
  */
 sealed interface PttKey {
     data class Start(val targetId: String) : PttKey
@@ -53,12 +59,28 @@ sealed interface PttKey {
             return target
         }
 
-        fun decide(down: Boolean, liveCall: Boolean, target: String?, screenOn: Boolean): PttKey = when {
+        fun decide(down: Boolean, liveCall: Boolean, target: String?): PttKey = when {
             // A release always goes through: it may land while the call is still being placed.
             !down -> Hold(false)
             liveCall -> Hold(true)
-            !screenOn || target == null -> Ignore
+            target == null -> Ignore
             else -> Start(target)
+        }
+
+        /** One spoken line with no call to speak it in: on the media stream, then released. */
+        private fun say(context: Context, text: String) {
+            var tts: TextToSpeech? = null
+            tts = TextToSpeech(context.applicationContext) { status ->
+                val engine = tts ?: return@TextToSpeech
+                if (status != TextToSpeech.SUCCESS) return@TextToSpeech engine.shutdown()
+                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) = Unit
+                    override fun onDone(utteranceId: String?) = engine.shutdown()
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) = engine.shutdown()
+                })
+                engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ptt-unlock")
+            }
         }
 
         /** Listens for as long as its owner (the link service) lives; returns the unregister. */
@@ -74,12 +96,25 @@ sealed interface PttKey {
                         down = down,
                         liveCall = VoiceCallService.call.value != null,
                         target = target,
-                        screenOn = context.getSystemService(PowerManager::class.java).isInteractive,
                     )
                     HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: ${action::class.simpleName}")
                     held = down
                     when (action) {
                         is Start -> {
+                            // The operator key's lock rule: a phone just used may call over the lock screen.
+                            val press = KeyPress.gate(
+                                locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked,
+                                inCall = false,
+                                now = SystemClock.elapsedRealtime(),
+                                callEndedAt = OperatorKey.callEndedAt,
+                                screenOffAt = OperatorKey.screenOffAt,
+                            )
+                            if (press !is KeyPress.Open) {
+                                HelmLog.i(HelmLog.UI, "PTT key ignored: locked too long, unlock first")
+                                say(context, context.getString(R.string.ptt_unlock_first))
+                                return
+                            }
+                            OperatorKey.overLockScreen = press.overLockScreen
                             pendingStart = action.targetId
                             context.startActivity(
                                 Intent(context, MainActivity::class.java)

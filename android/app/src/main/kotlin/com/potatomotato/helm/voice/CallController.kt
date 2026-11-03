@@ -130,6 +130,8 @@ class CallController(
         if (!live || _state.value.micMode != MicMode.PushToTalk || _state.value.pttHeld == held) return
         // The recogniser finalises on a pause, which a release does not wait for.
         if (!held && unsent.isNotBlank()) onFinal(unsent)
+        // Pressing to talk is "stop, my turn": Helm stops reading, as a barge-in does.
+        if (held && phase == CallPhase.Speaking) pendingInterruption = interrupt()
         val muted = !held
         _state.value = _state.value.copy(pttHeld = held, muted = muted, heard = "")
         micSwitch.muted = muted
