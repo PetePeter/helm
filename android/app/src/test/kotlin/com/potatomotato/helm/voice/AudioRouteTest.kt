@@ -55,4 +55,20 @@ class AudioRouteTest {
     fun `a tablet with no earpiece stays on the speaker at the face`() {
         assertEquals(null, proximityRoute(near = true, available = setOf(AudioRoute.Speaker)))
     }
+
+    @Test
+    fun `a route picked by hand sticks at the face and when bluetooth connects`() {
+        assertEquals(AudioRoute.Speaker, wantedRoute(chosen = AudioRoute.Speaker, near = true, available = phone + AudioRoute.Bluetooth))
+    }
+
+    @Test
+    fun `a picked route that went away asks for nothing`() {
+        assertEquals(null, wantedRoute(chosen = AudioRoute.Bluetooth, near = true, available = phone))
+    }
+
+    @Test
+    fun `with nothing picked the sensor decides`() {
+        assertEquals(AudioRoute.Earpiece, wantedRoute(chosen = null, near = true, available = phone))
+        assertEquals(null, wantedRoute(chosen = null, near = null, available = phone))
+    }
 }

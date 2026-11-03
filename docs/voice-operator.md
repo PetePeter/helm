@@ -503,8 +503,14 @@ The id `call_operator` is a contract with that mapping — do not rename it.
 
 During a call the proximity sensor picks the route (`proximityRoute`): at the
 face the earpiece, away from it the speaker. Bluetooth or a wired headset is
-never switched away from, and picking a route by hand on the call screen stops
-the sensor for the rest of that call. Face down on a stand reads as "at the
+never switched away from. A route picked by hand on the call screen is a manual
+override: its chip turns from green (automatic) to blue, and it sticks at the
+face and when Bluetooth connects (`wantedRoute`). Tapping the blue chip again
+hands the route back to automatic. A mic mode picked on screen sticks too: the
+talk key only drives a push-to-talk call.
+
+A call the talk key started, left muted (or push-to-talk released) with nothing being read hangs up
+after 5 minutes with the cue (`CallState.idle`); an open mic never times out. Face down on a stand reads as "at the
 face", so that call stays on the earpiece.
 
 ## The AI Key as a walkie-talkie — `PttKey`

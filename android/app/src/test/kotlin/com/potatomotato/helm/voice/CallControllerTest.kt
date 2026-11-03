@@ -334,6 +334,25 @@ class CallControllerTest {
     }
 
     @Test
+    fun `a call is idle only while nobody can talk and nothing is read`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        line.connect()
+        assertTrue(controller.state.value.idle)
+
+        controller.setPttKeyHeld(true)
+        assertFalse(controller.state.value.idle)
+        controller.setPttKeyHeld(false)
+
+        controller.onReply("the build is green")
+        assertFalse(controller.state.value.idle)
+        tts.finish()
+        assertTrue(controller.state.value.idle)
+
+        controller.setMicMode(MicMode.Open)
+        assertFalse(controller.state.value.idle)
+    }
+
+    @Test
     fun `a reply is read aloud while the push-to-talk mic is muted`() {
         controller.start(micMode = MicMode.PushToTalk)
         line.connect()
@@ -358,7 +377,7 @@ class CallControllerTest {
     }
 
     @Test
-    fun `the talk key does nothing outside push-to-talk`() {
+    fun `a mic mode picked on screen sticks, the talk key does nothing outside push-to-talk`() {
         dial()
         controller.setMuted(true)
 

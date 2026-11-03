@@ -19,6 +19,14 @@ fun pickAudioRoute(current: AudioRoute?, available: Set<AudioRoute>): AudioRoute
 }
 
 /**
+ * The route the call should be moved to, or null to leave it. A route the user
+ * [chosen] by hand sticks — at the face, and when Bluetooth connects — for as
+ * long as it is there; with none chosen the sensor decides ([proximityRoute]).
+ */
+fun wantedRoute(chosen: AudioRoute?, near: Boolean?, available: Set<AudioRoute>): AudioRoute? =
+    if (chosen != null) chosen.takeIf { it in available } else near?.let { proximityRoute(it, available) }
+
+/**
  * The route the proximity sensor asks for: earpiece at the face, speaker away
  * from it. Null leaves the route alone — Bluetooth or a wired headset is where
  * the user's ears already are, and a phone with no earpiece has nowhere to go.

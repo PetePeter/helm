@@ -8,9 +8,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -78,6 +79,8 @@ fun CallPanel(call: VoiceCallService.Call, modifier: Modifier = Modifier) {
                 Chip(
                     text = stringResource(route.labelRes),
                     selected = route == call.route,
+                    // Green while automatic, blue once picked by hand; tap the blue one to go back.
+                    selectedColor = if (call.routeAuto) HelmColors.Accent else HelmColors.Manual,
                     onClick = { VoiceCallService.setRoute(context, route) },
                     modifier = Modifier.weight(1f),
                 )
@@ -188,7 +191,13 @@ private fun TalkButton(held: Boolean, onHeld: (Boolean) -> Unit, modifier: Modif
 }
 
 @Composable
-private fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun Chip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selectedColor: Color = HelmColors.Accent,
+) {
     Text(
         text = text,
         color = if (selected) HelmColors.OnAccent else HelmColors.Txt,
@@ -198,7 +207,7 @@ private fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier:
         modifier = modifier
             .heightIn(min = 64.dp)
             .clip(RoundedCornerShape(HelmRadius.Pill))
-            .background(if (selected) HelmColors.Accent else HelmColors.Surface2)
+            .background(if (selected) selectedColor else HelmColors.Surface2)
             .clickable(onClick = onClick)
             .padding(vertical = 20.dp, horizontal = HelmSpacing.Md),
     )

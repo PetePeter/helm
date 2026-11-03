@@ -851,7 +851,12 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 }
 .session-card:hover,
 .session-card.focused { background: var(--bg-tertiary); }
-.session-card.active { border-color: var(--accent); background: var(--bg-hover); }
+.session-card.active {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  /* 3px ring (1px border + 2px inset) plus an outer glow: selection must read at a glance. */
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 12px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
 .session-card.snapped-out {
   border-style: dashed;
   border-color: #555;

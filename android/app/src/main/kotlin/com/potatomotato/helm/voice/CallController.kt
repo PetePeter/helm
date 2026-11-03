@@ -278,6 +278,9 @@ data class CallState(
     val error: SpeechError? = null,
     /** Why the call never started, when the system would not take it. */
     val refused: CallRefusal? = null,
-)
+) {
+    /** Nobody can be talking and Helm is not: the state the idle hang-up times. An open mic never is. */
+    val idle: Boolean get() = phase == CallPhase.Listening && muted
+}
 
 enum class MicMode { Open, Muted, PushToTalk }

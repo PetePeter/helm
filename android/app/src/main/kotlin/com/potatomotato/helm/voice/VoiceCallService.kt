@@ -30,9 +30,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -57,6 +59,8 @@ class VoiceCallService : Service() {
         val state: CallState,
         val route: AudioRoute?,
         val routes: Set<AudioRoute>,
+        /** No route picked by hand: the sensor and Telecom decide. */
+        val routeAuto: Boolean = true,
     )
 
     companion object {
@@ -78,6 +82,8 @@ class VoiceCallService : Service() {
         private const val CUE_VOLUME = 80
         private const val CUE_MS = 150
         /** A backstop only: the lock is released when the call ends or leaves the earpiece. */
+        /** A muted call nobody has used for this long hangs up (see [CallState.idle]). */
+        private const val IDLE_HANG_UP_MS = 5 * 60_000L
         private const val EAR_SENSOR_MAX_MS = 4 * 60 * 60 * 1000L
 
         private val _call = MutableStateFlow<Call?>(null)
@@ -175,23 +181,29 @@ class VoiceCallService : Service() {
     /** The proximity sensor's last word: at the face, or away from it. Null until it speaks. */
     private var near: Boolean? = null
 
-    /** The user picked a route by hand: the sensor no longer moves this call. */
-    private var routeChosen = false
+    /** The route the user picked by hand; null while the route is automatic. */
+    private var chosenRoute: AudioRoute? = null
 
     private val proximity = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
             near = event.values[0] < event.sensor.maximumRange
-            followProximity()
+            followRoute()
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
     }
 
-    /** Earpiece at the face, speaker away from it ([proximityRoute]), until the user picks one. */
-    private fun followProximity() {
-        val near = near ?: return
-        if (!active || routeChosen) return
-        proximityRoute(near, routes)?.takeIf { it != route }?.let(HelmTelecom::setAudioRoute)
+    /** Keep the call on [wantedRoute]: the user's pick, else the sensor's. */
+    private fun followRoute() {
+        if (!active) return
+        wantedRoute(chosenRoute, near, routes)?.takeIf { it != route }?.let(HelmTelecom::setAudioRoute)
+    }
+
+    /** Tapping the picked route again hands it back to automatic. */
+    private fun pickRoute(picked: AudioRoute) {
+        chosenRoute = picked.takeIf { it != chosenRoute }
+        publish()
+        followRoute()
     }
 
     private fun syncEarSensor() {
@@ -203,7 +215,7 @@ class VoiceCallService : Service() {
         } else {
             sensors.unregisterListener(proximity)
             near = null
-            routeChosen = false
+            chosenRoute = null
         }
         val lock = earSensor ?: return
         if (wanted && !lock.isHeld) lock.acquire(EAR_SENSOR_MAX_MS)
@@ -264,9 +276,8 @@ class VoiceCallService : Service() {
             ACTION_ROUTE -> intent.getStringExtra(EXTRA_VALUE)
                 // Not while still connecting: Telecom owns the route once the call is active.
                 ?.takeIf { active }
-                ?.also { routeChosen = true }
                 ?.let { name -> AudioRoute.entries.firstOrNull { it.name == name } }
-                ?.let(HelmTelecom::setAudioRoute)
+                ?.let(::pickRoute)
             ACTION_TRANSFER -> intent.getStringExtra(EXTRA_TARGET)
                 ?.takeIf { intent.getStringExtra(EXTRA_FROM) == targetId }
                 ?.let { to ->
@@ -307,12 +318,23 @@ class VoiceCallService : Service() {
                 if (state.phase == CallPhase.Ended) ended(state.refused)
             }
         }
+        // Only a call the talk key started: one started on screen is the user's to end.
+        // Restarted by every change of idleness; a call left muted ends with the cue.
+        if (pushToTalk) scope.launch {
+            call.state.map { it.idle }.distinctUntilChanged().collectLatest { idle ->
+                if (!idle) return@collectLatest
+                delay(IDLE_HANG_UP_MS)
+                HelmLog.i(HelmLog.UI, "call idle for ${IDLE_HANG_UP_MS / 60_000} min: hanging up")
+                cue()
+                call.hangUp()
+            }
+        }
         HelmTelecom.onAudioState = call::syncMute
         HelmTelecom.onRouteState = { current, available ->
             route = current
             routes = available
             publish()
-            followProximity()
+            followRoute()
         }
         // An answered ring is a system call already and opens at once, so its
         // audio is taken here; a call the user starts takes it when the system
@@ -456,7 +478,7 @@ class VoiceCallService : Service() {
 
     private fun publish(state: CallState = controller?.state?.value ?: CallState()) {
         val target = targetId ?: return
-        _call.value = Call(target, state, route, routes)
+        _call.value = Call(target, state, route, routes, routeAuto = chosenRoute == null)
     }
 
     private val CallRefusal.messageRes: Int
