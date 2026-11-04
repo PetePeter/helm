@@ -34,3 +34,7 @@ The suggested-plan service writes the linked plan, then moves the idea to `sugge
 The Suggestions queue owns the terminal decision. Accepting a linked suggestion moves the idea to `accepted` and makes the plan eligible for normal planning. Rejecting it moves the idea to `rejected` and removes the suggestion. Both stages are terminal; rejected ideas are also protected against similar new ideas.
 
 Dreams do not accept or reject suggestions. They do not implement the plan or edit code.
+
+## Watching ideas
+
+The Memories window has a kind filter beside Regex: **Ideas** lists only idea memories, each row labelled with its stage (`idea · growing`); **Memories** lists the ordinary ones.

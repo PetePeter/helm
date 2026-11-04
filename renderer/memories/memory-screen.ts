@@ -6,6 +6,7 @@ import type {
   MemoryForest,
   MemoryRecord,
   MemorySearchResult,
+  MemoryKind,
   MemorySummary,
 } from '../../src/types/memory.js';
 
@@ -20,6 +21,8 @@ export const memoryScreenState = reactive({
   detail: null as MemoryRecord | null,
   searchQuery: '',
   regex: false,
+  /** '' = every kind; 'memory' = ordinary memories (no kind); else a MemoryKind. */
+  kindFilter: '' as '' | 'memory' | MemoryKind,
   graphDepth: 1,
   timelinePreset: '30d' as MemoryTimelinePreset,
   timelineStart: null as number | null,

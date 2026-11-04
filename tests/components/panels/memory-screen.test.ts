@@ -44,6 +44,7 @@ describe('MemoryScreen shared-primitives anatomy', () => {
     memoryScreenState.timelineStart = null;
     memoryScreenState.timelineEnd = null;
     memoryScreenState.loading = false;
+    memoryScreenState.kindFilter = '';
     window.helm = {
       memory: {
         memoryList: vi.fn().mockResolvedValue([]),
@@ -82,6 +83,28 @@ describe('MemoryScreen shared-primitives anatomy', () => {
 
     expect(wrapper.find('.memory-list .empty-state').exists()).toBe(true);
     expect(wrapper.find('.memory-list .empty-state').text()).toContain('No memories in this range.');
+    wrapper.unmount();
+  });
+
+  it('filters the list by kind, showing each idea with its stage', async () => {
+    const records = [
+      summary('plain', 'A plain memory', 1),
+      { ...summary('idea', 'An idea', 2), kind: 'idea', ideaStage: 'growing' },
+    ];
+    window.helm.memory.memoryList = vi.fn().mockResolvedValue(records);
+    window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges: [] });
+    const wrapper = mountScreen();
+    await flushPromises();
+    expect(wrapper.findAll('.memory-row')).toHaveLength(2);
+
+    await wrapper.find('select[aria-label="Memory kind"]').setValue('idea');
+    const rows = wrapper.findAll('.memory-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text()).toContain('An idea');
+    expect(rows[0].find('.memory-row-kind').text()).toBe('idea · growing');
+
+    await wrapper.find('select[aria-label="Memory kind"]').setValue('memory');
+    expect(wrapper.findAll('.memory-row').map(row => row.text())).toEqual([expect.stringContaining('A plain memory')]);
     wrapper.unmount();
   });
 

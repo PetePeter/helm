@@ -6,6 +6,7 @@ import EmptyState from '../common/EmptyState.vue';
 import PanelHeader from '../common/PanelHeader.vue';
 import SearchField from '../common/SearchField.vue';
 import { useAppStore } from '../../stores/app.js';
+import { MEMORY_KINDS, type MemorySummary } from '../../../src/types/memory.js';
 import {
   buildMemoryHistogram,
   memoriesInTimelineRange,
@@ -56,7 +57,19 @@ const inDateRange = computed(() => timelineRange.value
   ? memoriesInTimelineRange(newestFirst.value, timelineRange.value)
   : newestFirst.value);
 const visibleMemories = computed(() => inDateRange.value
-  .filter((memory) => !filtering.value || matchedIds.value.has(memory.id)));
+  .filter((memory) => !filtering.value || matchedIds.value.has(memory.id))
+  .filter((memory) => matchesKind(memory)));
+
+/** The kind filter: '' passes all, 'memory' passes ordinary (kindless) memories. */
+function matchesKind(memory: MemorySummary): boolean {
+  const filter = memoryScreenState.kindFilter;
+  return !filter || (filter === 'memory' ? !memory.kind : memory.kind === filter);
+}
+
+function rowKindLabel(memory: MemorySummary): string {
+  if (memory.kind) return memory.ideaStage ? `${memory.kind} · ${memory.ideaStage}` : memory.kind;
+  return memory.agentRun ? 'run' : memory.sessionBound ? 'session' : memory.summary ? 'summary' : 'project';
+}
 const histogram = computed(() => timelineRange.value
   ? buildMemoryHistogram(visibleMemories.value, timelineRange.value)
   : []);
@@ -161,6 +174,11 @@ onUnmounted(disposeMemoryChangedSubscription);
             @keyup.enter="void searchMemories()"
           />
           <label><input v-model="memoryScreenState.regex" type="checkbox"> Regex</label>
+          <select v-model="memoryScreenState.kindFilter" aria-label="Memory kind">
+            <option value="">All kinds</option>
+            <option value="memory">Memories</option>
+            <option v-for="kind in MEMORY_KINDS" :key="kind" :value="kind">{{ kind === 'idea' ? 'Ideas' : kind }}</option>
+          </select>
           <label title="Depth used when exporting connected memories">Export depth
             <input
               :value="memoryScreenState.graphDepth"
@@ -282,7 +300,7 @@ onUnmounted(disposeMemoryChangedSubscription);
             >
               <span class="memory-row-date">{{ formatMemoryDate(memory.createdAt) }}</span>
               <span class="memory-row-title">{{ memory.tldr }}</span>
-              <span class="memory-row-kind">{{ memory.agentRun ? 'run' : memory.sessionBound ? 'session' : memory.summary ? 'summary' : 'project' }}</span>
+              <span class="memory-row-kind">{{ rowKindLabel(memory) }}</span>
             </button>
           </div>
         </section>
