@@ -3,13 +3,10 @@
 package com.potatomotato.helm.ui.sessions
 
 import com.potatomotato.helm.data.ContextHistory
-import com.potatomotato.helm.ui.components.ContextRowGraph
-import android.provider.Settings
-import androidx.compose.foundation.basicMarquee
+import com.potatomotato.helm.data.ContextGraph
+import com.potatomotato.helm.ui.components.ContextRing
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -55,7 +54,6 @@ import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.PrimaryButton
 import com.potatomotato.helm.ui.components.SessionState
-import com.potatomotato.helm.ui.components.StateDot
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -264,101 +262,76 @@ fun SessionRow(
             if (selected && !selectedMarkerAtEnd) {
                 Text("➜", color = HelmColors.Accent, style = MaterialTheme.typography.headlineMedium)
             }
-            StateDot(state = session.activity)
+            ContextRing(state = session.activity, ring = context?.let { ContextGraph.ring(it) })
             Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                ) {
+                    Text(
+                        text = session.name,
+                        color = HelmColors.Txt,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        // Truncate, never wrap: a two-line row breaks the rhythm of the
+                        // list far more than a clipped name costs.
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // Fixed-width slots (empty ones still take their width) so the name
+                    // and age columns line up on every row, whatever it carries.
+                    Text(
+                        text = session.statusIcons(now),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(ICON_SLOT),
+                    )
+                    Text(
+                        text = age.orEmpty(),
+                        color = HelmColors.Faint,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.width(AGE_SLOT),
+                    )
+                }
                 Text(
-                    text = session.name,
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    // Truncate, never wrap: a two-line row breaks the rhythm of the
-                    // list far more than a clipped name costs.
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = SessionRowText.subLine(
-                        activity = session.activity,
-                        questionPending = session.questionPending,
-                        aiagentState = session.aiagentState,
-                        cliTypeName = session.cliTypeName,
-                        age = age,
-                        labels = labels,
+                    text = SessionRowText.detailLine(
+                        status = SessionRowText.subLine(
+                            activity = session.activity,
+                            questionPending = session.questionPending,
+                            aiagentState = session.aiagentState,
+                            cliTypeName = session.cliTypeName,
+                            // The age has its own column; repeating it here said it twice.
+                            age = null,
+                            labels = labels,
+                        ),
+                        branch = session.gitBranch?.let { stringResource(R.string.sessions_git_branch, it) },
+                        mission = session.mission,
                     ),
                     color = HelmColors.Faint,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                session.gitBranch?.let { branch ->
+            }
+            // Unread chat is a count badge, not a sub-line word: findable without
+            // reading anything. Its own fixed slot, so a row without one keeps the
+            // same column.
+            Box(modifier = Modifier.width(BADGE_SLOT), contentAlignment = Alignment.Center) {
+                SessionRows.unreadBadgeLabel(unreadCount)?.let { badge ->
                     Text(
-                        text = stringResource(R.string.sessions_git_branch, branch),
-                        color = HelmColors.Dim,
+                        text = badge,
+                        color = HelmColors.OnAccent,
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(HelmRadius.Pill))
+                            .background(HelmColors.Accent)
+                            .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
                     )
                 }
-                SessionRowText.missionLine(session.mission)?.let { MissionTicker(it) }
-            }
-            context?.let { ContextRowGraph(it, now) }
-            // Lock / frozen / keep-warm — the same icons the desktop row centres.
-            session.statusIcons(now).takeIf { it.isNotEmpty() }?.let { icons ->
-                Text(text = icons, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-            }
-            // Unread chat is a count chip, not a sub-line word — it must be
-            // findable without reading anything, the same way a plan-claimed
-            // pill is. Same geometry as that pill, filled with the accent
-            // because it is the one thing on the row asking to be tapped.
-            SessionRows.unreadBadgeLabel(unreadCount)?.let { badge ->
-                Text(
-                    text = badge,
-                    color = HelmColors.OnAccent,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(HelmRadius.Pill))
-                        .background(HelmColors.Accent)
-                        .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
-                )
-            }
-            // Subagents never get rows of their own; their parent carries the count.
-            SessionRows.subagentBadgeLabel(session.pendingSubagents)?.let { badge ->
-                Text(
-                    text = badge,
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(HelmRadius.Pill))
-                        .background(HelmColors.Surface2)
-                        .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Pill))
-                        .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
-                )
-            }
-            // A claimed plan is a pill, not a sub-line word: the desktop's plan
-            // title and human id never reach the phone, so the row says THAT a
-            // plan is claimed — never which one.
-            if (session.currentPlanId != null) {
-                Text(
-                    text = stringResource(R.string.sessions_plan_claimed),
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(HelmRadius.Pill))
-                        .background(HelmColors.Surface2)
-                        .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Pill))
-                        .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
-                )
-            }
-            // An idle session already carries its age in the sub-line — the
-            // mockup does not say the same thing twice on one row.
-            if (session.activity != SessionState.Idle && age != null) {
-                Text(
-                    text = age,
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.labelMedium,
-                )
             }
             if (selected && selectedMarkerAtEnd) {
                 Text(
@@ -410,34 +383,9 @@ fun SessionSwipePicker(
     }
 }
 
-/**
- * What the session is for, at a glance: one line that scrolls like a ticker
- * when it does not fit. Dim, so it never competes with the name. With system
- * animations off it holds still and ellipsizes — a moving line is the kind of
- * thing reduce-motion exists to stop.
- */
-@Composable
-private fun MissionTicker(mission: String) {
-    val context = LocalContext.current
-    val animate = remember {
-        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
-    }
-    Text(
-        text = mission,
-        color = HelmColors.Dim,
-        style = MaterialTheme.typography.bodySmall,
-        maxLines = 1,
-        overflow = if (animate) TextOverflow.Clip else TextOverflow.Ellipsis,
-        modifier = if (animate) {
-            Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = TICKER_PAUSE_MS)
-        } else {
-            Modifier
-        },
-    )
-}
-
-/** How long the ticker rests at the start of each pass, so the line can be read. */
-private const val TICKER_PAUSE_MS = 2_000
+private val ICON_SLOT = 34.dp
+private val AGE_SLOT = 32.dp
+private val BADGE_SLOT = 28.dp
 
 /**
  * Nothing to show is five different situations, and conflating them is how a

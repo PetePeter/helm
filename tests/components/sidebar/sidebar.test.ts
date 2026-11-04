@@ -49,19 +49,19 @@ describe('SessionCard', () => {
 
   it('shows activity dot with correct color', () => {
     const w = mount(SessionCard, { props: makeCardProps({ activityLevel: 'active' }) });
-    const dot = w.find('.session-activity-dot');
+    const dot = w.find('.context-ring__dot');
     expect(dot.attributes('style')).toContain('rgb(68, 204, 68)');
   });
 
   it('shows inactive color', () => {
     const w = mount(SessionCard, { props: makeCardProps({ activityLevel: 'inactive' }) });
-    const dot = w.find('.session-activity-dot');
+    const dot = w.find('.context-ring__dot');
     expect(dot.attributes('style')).toContain('rgb(68, 136, 255)');
   });
 
   it('shows idle (grey) color', () => {
     const w = mount(SessionCard, { props: makeCardProps({ activityLevel: 'idle' }) });
-    const dot = w.find('.session-activity-dot');
+    const dot = w.find('.context-ring__dot');
     expect(dot.attributes('style')).toContain('rgb(85, 85, 85)');
   });
 
@@ -433,12 +433,12 @@ describe('SessionGroup', () => {
       }),
     });
 
-    const dots = w.findAll('.group-activity-dot');
+    const dots = w.findAll('.context-ring__dot');
     expect(dots).toHaveLength(3);
     expect(dots[0].attributes('style')).toContain('rgb(68, 204, 68)');
     expect(dots[1].attributes('style')).toContain('rgb(68, 136, 255)');
     expect(dots[2].attributes('style')).toContain('rgb(85, 85, 85)');
-    expect(dots[0].attributes('title')).toBe('active: active');
+    expect(w.findAll('.context-ring')[0].attributes('title')).toBe('active: active');
     expect(w.find('.group-activity-dots').attributes('aria-label')).toContain('recent inactive');
     expect(w.find('.group-header-trailing').exists()).toBe(true);
   });
@@ -456,7 +456,7 @@ describe('SessionGroup', () => {
       }),
     });
 
-    expect(w.findAll('.group-activity-dot')).toHaveLength(1);
+    expect(w.findAll('.context-ring__dot')).toHaveLength(1);
   });
 
   it('does not render an activity dot cluster for an empty group', () => {
@@ -579,7 +579,7 @@ describe('SessionList', () => {
 
   it('passes each member activity level to its group header dot', () => {
     const w = mount(SessionList, { props: makeSessionListProps() });
-    const dot = w.find('.group-activity-dot');
+    const dot = w.find('.context-ring__dot');
 
     expect(dot.exists()).toBe(true);
     expect(dot.attributes('style')).toContain('rgb(68, 204, 68)');
@@ -602,8 +602,8 @@ describe('SessionList', () => {
     const expected = document.createElement('span');
     expected.style.backgroundColor = getActivityColor('inactive');
 
-    expect((w.find('.group-activity-dot').element as HTMLElement).style.backgroundColor).toBe(expected.style.backgroundColor);
-    expect((w.find('.session-activity-dot').element as HTMLElement).style.backgroundColor).toBe(expected.style.backgroundColor);
+    expect((w.find('.context-ring__dot').element as HTMLElement).style.backgroundColor).toBe(expected.style.backgroundColor);
+    expect((w.find('.context-ring__dot').element as HTMLElement).style.backgroundColor).toBe(expected.style.backgroundColor);
     expect(w.find('.session-state-btn--readonly').text()).toContain('Waiting');
   });
 
@@ -1213,5 +1213,51 @@ describe('VoiceTab', () => {
       props: { config: { botToken: '', chatId: '', allowedUsers: '', notificationsEnabled: false, autoStart: false }, botRunning: false },
     });
     expect(w.text()).not.toMatch(/OpenWhispr|Piper|ffmpeg/);
+  });
+});
+
+describe('ContextRing', () => {
+  const usage = (tokens: number) => ({ tokens, window: 200_000 });
+
+  it('draws the arc at the share of the circle and colours it by level', async () => {
+    const { default: ContextRing } = await import('../../../renderer/components/sidebar/ContextRing.vue');
+    const mk = (tokens: number) => mount(ContextRing, { props: { activityLevel: 'active', contextUsage: usage(tokens) } });
+    const ok = mk(100_000);
+    expect(ok.find('.context-ring__arc').exists()).toBe(true);
+    expect(ok.attributes('style')).toContain('--ring-fill: 0.5');
+    expect(ok.classes()).toContain('level-ok');
+    expect(mk(170_000).classes()).toContain('level-warn');
+    expect(mk(190_000).classes()).toContain('level-hot');
+  });
+
+  it('heartbeats only past the circle', async () => {
+    const { default: ContextRing } = await import('../../../renderer/components/sidebar/ContextRing.vue');
+    const mk = (tokens: number) => mount(ContextRing, { props: { activityLevel: 'active', contextUsage: usage(tokens) } });
+    expect(mk(200_000).classes()).not.toContain('overflow');
+    expect(mk(230_000).classes()).toContain('overflow');
+  });
+
+  it('is the plain dot without a reading', async () => {
+    const { default: ContextRing } = await import('../../../renderer/components/sidebar/ContextRing.vue');
+    const w = mount(ContextRing, { props: { activityLevel: 'idle' } });
+    expect(w.find('.context-ring__arc').exists()).toBe(false);
+    expect(w.find('.context-ring__dot').exists()).toBe(true);
+  });
+
+  it('shows the graph card on hover when history exists', async () => {
+    const { default: ContextRing } = await import('../../../renderer/components/sidebar/ContextRing.vue');
+    const w = mount(ContextRing, {
+      attachTo: document.body,
+      props: {
+        activityLevel: 'active',
+        contextUsage: usage(100_000),
+        contextHistory: [{ at: 1, tokens: 50_000 }, { at: 2, tokens: 100_000 }],
+      },
+    });
+    await w.trigger('mouseenter');
+    expect(document.body.querySelector('.context-card')).not.toBeNull();
+    await w.trigger('mouseleave');
+    expect(document.body.querySelector('.context-card')).toBeNull();
+    w.unmount();
   });
 });

@@ -27,7 +27,7 @@ export interface SessionGroupData {
 
 import { computed, ref } from 'vue';
 import { state } from '../../state.js';
-import { getActivityColor } from '../../state-colors.js';
+import ContextRing from './ContextRing.vue';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { useRuntimeGroups } from '../../composables/useRuntimeGroups.js';
 import { dropVerdict, type DropTarget } from '../../runtime-group-drop.js';
@@ -72,6 +72,9 @@ const dropTarget = computed<DropTarget>(() => ({
   kind: isRuntime.value ? 'runtime' : 'directory',
   id: isRuntime.value ? (props.group.groupId ?? props.group.dirPath) : props.group.dirPath,
 }));
+
+/** The full session behind a header dot, for its context ring (the group data carries only id/name/activity). */
+const stateSession = (sessionId: string) => state.sessions.find(s => s.id === sessionId);
 
 /** Resolve a verdict for the currently dragged session against this header. */
 function verdictFor(sessionId: string) {
@@ -154,11 +157,14 @@ function onDrop(e: DragEvent): void {
         :aria-label="activitySummary"
         title="Activity by session"
       >
-        <span
+        <ContextRing
           v-for="session in group.sessions"
           :key="session.id"
-          class="group-activity-dot"
-          :style="{ background: getActivityColor(session.activityLevel) }"
+          :size="14"
+          :activity-level="session.activityLevel"
+          :cli-type="stateSession(session.id)?.cliType"
+          :context-usage="stateSession(session.id)?.contextUsage"
+          :context-history="stateSession(session.id)?.contextHistory"
           :title="`${session.name}: ${session.activityLevel}`"
         />
       </div>

@@ -25,6 +25,36 @@ export function resolveContextLimits(
   return { amber: Math.round(window * AUTO_AMBER_FILL), red: Math.round(window * AUTO_RED_FILL) };
 }
 
+/** Where red sits on the context ring, as a share of the circle (the auto rule's red/window). */
+export const RING_RED_AT = AUTO_RED_FILL;
+
+export interface ContextRing {
+  /** 0..1 of the circle; capped, so a session past the circle is `overflow`, not a bigger fill. */
+  fill: number;
+  amberAt: number;
+  redAt: number;
+  level: ContextLevel;
+  overflow: boolean;
+}
+
+/**
+ * The ring draws red at a fixed point of the circle and scales everything else
+ * from the limits, so a user limit and the auto window share one picture: with
+ * auto limits the circle is exactly the window. Undefined without limits — the
+ * caller draws a plain dot.
+ */
+export function contextRing(tokens: number, limits: ContextLimits | undefined): ContextRing | undefined {
+  if (!limits || limits.red <= 0) return undefined;
+  const full = limits.red / RING_RED_AT;
+  return {
+    fill: Math.min(Math.max(tokens / full, 0), 1),
+    amberAt: limits.amber / full,
+    redAt: RING_RED_AT,
+    level: contextLevel(tokens, limits),
+    overflow: tokens > full,
+  };
+}
+
 export function contextLevel(tokens: number, limits: ContextLimits | undefined): ContextLevel {
   if (!limits) return 'ok';
   return tokens > limits.red ? 'hot' : tokens > limits.amber ? 'warn' : 'ok';

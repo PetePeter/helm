@@ -151,6 +151,21 @@ class SessionRowTextTest {
         assertEquals(null, SessionRowText.missionLine(null))
     }
 
+    @Test
+    fun `line two is status, branch, mission in that order so the mission is what the ellipsis eats`() {
+        assertEquals(
+            "Working · claude · git: feat/rows · Ship the row layout",
+            SessionRowText.detailLine("Working · claude", "git: feat/rows", "Ship the row layout"),
+        )
+    }
+
+    @Test
+    fun `line two drops a missing or blank branch and mission without leaving a separator`() {
+        assertEquals("Idle · codex", SessionRowText.detailLine("Idle · codex", null, null))
+        assertEquals("Idle · codex", SessionRowText.detailLine("Idle · codex", "  ", "  \n "))
+        assertEquals("Idle · codex · Fix backoff", SessionRowText.detailLine("Idle · codex", null, "Fix\nbackoff"))
+    }
+
     private companion object {
         const val NOW = 1_700_000_000_000L
     }

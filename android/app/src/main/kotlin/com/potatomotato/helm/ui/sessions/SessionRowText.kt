@@ -79,5 +79,16 @@ object SessionRowText {
     fun missionLine(mission: String?): String? =
         mission?.trim()?.replace(WHITESPACE, " ")?.takeIf { it.isNotEmpty() }
 
+    /**
+     * Line two of a row: status, then branch, then mission. The mission goes last
+     * because it is the longest and most disposable part — when the line does not
+     * fit, the ellipsis eats the mission, never the state.
+     */
+    fun detailLine(status: String, branch: String?, mission: String?): String =
+        listOfNotNull(status, branch?.trim()?.takeIf { it.isNotEmpty() }, missionLine(mission))
+            .joinToString(SEPARATOR)
+
+    private const val SEPARATOR = " · "
+
     private val WHITESPACE = Regex("\\s+")
 }

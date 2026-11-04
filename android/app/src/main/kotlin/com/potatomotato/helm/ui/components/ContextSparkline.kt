@@ -78,38 +78,3 @@ fun ContextSparkline(
         drawCircle(color, radius = (if (detailed) 3.dp else 2.dp).toPx(), center = Offset(x(last), y(last.tokens / ceiling)))
     }
 }
-
-/** The list row's graph: the last [ContextGraph.ROW_SPAN_MS], with the % under it. */
-@Composable
-fun ContextRowGraph(history: ContextHistory, now: Long) {
-    val last = history.samples.last()
-    Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-        ContextSparkline(
-            samples = ContextGraph.window(history.samples, now - ContextGraph.ROW_SPAN_MS, now),
-            window = history.window,
-            limits = history.limits,
-            modifier = Modifier.size(width = 40.dp, height = 12.dp),
-        )
-        history.window?.takeIf { it > 0 }?.let { window ->
-            Text(
-                text = "${Math.round(last.tokens * 100.0 / window)}%",
-                color = ContextGraph.level(last, history.limits).let { if (it == ContextLevel.Ok) HelmColors.Dim else it.color() },
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-            )
-        }
-    }
-}
-
-/**
- * The open-session header: a 3dp fill bar, coloured by level (accent, amber,
- * red). It was a 40dp graph card; on a phone that height belongs to the terminal.
- */
-@Composable
-fun ContextStrip(history: ContextHistory, modifier: Modifier = Modifier) {
-    val fill = ContextGraph.fill(history) ?: return
-    val color = ContextGraph.level(history.samples.last(), history.limits).color()
-    Box(modifier.fillMaxWidth().height(3.dp).background(HelmColors.Line)) {
-        Box(Modifier.fillMaxWidth(fill).fillMaxHeight().background(color))
-    }
-}

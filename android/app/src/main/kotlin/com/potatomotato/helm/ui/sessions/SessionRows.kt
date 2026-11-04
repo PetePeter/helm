@@ -115,8 +115,5 @@ object SessionRows {
         else -> count.toString()
     }
 
-    /** The 🔥 pill: subagents this session is waiting on. Null when none. */
-    fun subagentBadgeLabel(count: Int): String? = if (count > 0) "🔥$count" else null
-
     private const val UNREAD_BADGE_CAP = 9
 }

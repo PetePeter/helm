@@ -6,7 +6,6 @@
  * and events route session commands through sidebar services.
  */
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
-import { getActivityColor } from '../../state-colors.js';
 import NotificationCarousel from './NotificationCarousel.vue';
 import { useRuntimeGroups } from '../../composables/useRuntimeGroups.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
@@ -18,6 +17,7 @@ import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, Sessi
 import type { SessionTodoCount } from '../../../src/types/todo.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
+import ContextRing from './ContextRing.vue';
 import ContextSparkline from './ContextSparkline.vue';
 import TickerText from '../common/TickerText.vue';
 import { ROW_GRAPH_SPAN_MS, windowSamples } from '../../context-sparkline.js';
@@ -222,7 +222,6 @@ watch(() => props.isEditing, async (editing) => {
 // Read inside the card so only this row re-renders when its session's output changes.
 const previewLines = computed(() => props.previewSource?.(props.session.id) ?? null);
 
-const dotColor = computed(() => getActivityColor(props.activityLevel));
 
 // Flash-attention: pulse (beating) or solid (steady accent) until focused.
 const flashClass = computed(() => {
@@ -255,21 +254,12 @@ const metaText = computed(() => {
 const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
 const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
 const todoProgress = computed(() => props.todoCount ?? { done: 0, total: 0 });
-const hasContextGraph = computed(() => (props.session.contextHistory?.length ?? 0) >= 1);
 /** Last 2h for every row. A plain function, not a computed: it re-reads the
  *  clock on each render, and the parent's elapsed-timer tick re-renders the card. */
 function rowContextSamples(): ContextUsageSample[] {
   const now = Date.now();
   return windowSamples(props.session.contextHistory, now - ROW_GRAPH_SPAN_MS, now);
 }
-/** Fixed-position so the sidebar's scroll container cannot clip it. */
-const contextCardAt = ref<{ top: number; right: number } | null>(null);
-function showContextCard(event: MouseEvent): void {
-  if (!hasContextGraph.value) return;
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  contextCardAt.value = { top: rect.bottom + 4, right: Math.max(window.innerWidth - rect.right, 4) };
-}
-
 // --- Runtime group badge + drag ---
 
 const { groups: runtimeGroups } = useRuntimeGroups();
@@ -373,7 +363,12 @@ function onCardClick(e: MouseEvent): void {
     </span>
     <!-- Line 1: top row -->
     <div class="session-top-row">
-      <span class="session-activity-dot" :style="{ background: dotColor }" />
+      <ContextRing
+        :activity-level="activityLevel"
+        :cli-type="session.cliType"
+        :context-usage="session.contextUsage"
+        :context-history="session.contextHistory"
+      />
       <span v-if="isSnappedOut" class="snap-indicator" title="Snapped out">📤</span>
 
       <button
@@ -535,31 +530,12 @@ function onCardClick(e: MouseEvent): void {
         <span
           v-if="contextUsageText"
           class="session-context-usage"
-          :title="hasContextGraph ? undefined : contextUsageTooltip"
+          :title="contextUsageTooltip"
           :aria-label="contextUsageTooltip"
-          @mouseenter="showContextCard"
-          @mouseleave="contextCardAt = null"
         >
           <ContextSparkline :samples="rowContextSamples()" :window="session.contextUsage?.window" :limits="contextLimits" />
           {{ contextUsageText }}
         </span>
-        <Teleport to="body">
-          <div
-            v-if="contextCardAt"
-            class="session-context-card"
-            :style="{ top: `${contextCardAt.top}px`, right: `${contextCardAt.right}px` }"
-          >
-            <div class="session-context-card__head">{{ contextUsageTooltip }}</div>
-            <ContextSparkline
-              :samples="session.contextHistory"
-              :window="session.contextUsage?.window"
-              :limits="contextLimits"
-              :width="280"
-              :height="90"
-              detailed
-            />
-          </div>
-        </Teleport>
       </template>
     </div>
 
@@ -609,21 +585,6 @@ function onCardClick(e: MouseEvent): void {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   white-space: nowrap;
-}
-.session-context-card {
-  position: fixed;
-  z-index: 1000;
-  padding: var(--spacing-sm);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-}
-.session-context-card__head {
-  margin-bottom: var(--spacing-xs);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
 }
 .session-prompt-fade {
   position: absolute;

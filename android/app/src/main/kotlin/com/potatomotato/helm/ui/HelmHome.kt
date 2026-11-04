@@ -2,7 +2,7 @@ package com.potatomotato.helm.ui
 
 import com.potatomotato.helm.data.ContextGraph
 import com.potatomotato.helm.data.ContextHistory
-import com.potatomotato.helm.ui.components.ContextStrip
+import com.potatomotato.helm.ui.components.ContextRingButton
 import com.potatomotato.helm.data.TimeAsk
 import com.potatomotato.helm.data.TimePeriod
 import com.potatomotato.helm.ui.time.TimeScreen
@@ -113,6 +113,7 @@ import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.components.LoadViews
 import com.potatomotato.helm.ui.components.ProjectPicker
 import com.potatomotato.helm.ui.components.ScrimDialog
+import com.potatomotato.helm.ui.components.SessionState
 import com.potatomotato.helm.ui.components.SessionTab
 import com.potatomotato.helm.ui.components.SessionTabs
 import com.potatomotato.helm.ui.components.detailTitle
@@ -1569,6 +1570,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         mission = targetSession.mission,
                         details = sessionHeaderDetails(targetSession),
                         context = contextHistories[targetSession.id],
+                        activity = targetSession.activity,
                         linkState = linkState,
                         tab = tab,
                         onSelectTab = { tab = it },
@@ -1860,6 +1862,7 @@ private fun SessionTabScaffold(
     mission: String?,
     details: String,
     context: ContextHistory?,
+    activity: SessionState,
     linkState: LinkState,
     tab: SessionTab,
     onSelectTab: (SessionTab) -> Unit,
@@ -1874,9 +1877,9 @@ private fun SessionTabScaffold(
             detailLine = details,
             linkState = linkState,
             onBack = onBack,
+            leading = { ContextRingButton(state = activity, history = context) },
             onOverflow = onOverflow,
         )
-        context?.let { ContextStrip(it) }
         SessionTabs(selected = tab, onSelect = onSelectTab)
         Box(modifier = Modifier.weight(1f)) { body() }
     }
@@ -1906,8 +1909,6 @@ private fun sessionHeaderDetails(session: HelmSession): String {
     return listOfNotNull(
         status,
         session.gitBranch?.let { stringResource(R.string.sessions_git_branch, it) },
-        stringResource(R.string.sessions_plan_claimed).takeIf { session.currentPlanId != null },
-        SessionRows.subagentBadgeLabel(session.pendingSubagents),
     ).joinToString("  ·  ")
 }
 

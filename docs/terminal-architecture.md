@@ -65,6 +65,25 @@ Session cards use activity-based coloring (turn activity, not AIAGENT phase stat
 - 🔵 inactive (blue `#4488ff` — >10s silence)
 - ⚪ idle (grey `#555555` — >5min silence)
 
+### Context ring
+
+The dot sits inside a ring that shows how full the session's context is. The ring is a second, independent signal: the dot is activity (invariant 8), the ring is tokens against the same limits the alerts use (`src/session/context-limits.ts`, amber 75% / red 90% of the window by default, or the CLI type's manual counts).
+
+```mermaid
+flowchart LR
+    L[Limits: auto 75/90 or CLI type manual] --> R[contextRing]
+    T[Tokens] --> R
+    R --> F[fill 0..1 · amberAt · redAt=0.9 · level · overflow]
+    F --> D[Desktop ContextRing.vue]
+    F --> A[Android ContextRing]
+```
+
+- Red always sits at 90% of the circle; the circle is `red / 0.9`, so with auto limits the circle is exactly the window and with manual limits amber lands at its relative position.
+- Fill is capped at the circle. Past it (`overflow`) the ring heartbeats; with reduced motion it holds a static halo.
+- No limits (no window, no manual counts) draws the plain dot in the same footprint.
+- Desktop: hovering the ring (session card or a group-header dot) shows the context graph. Android: tapping the open-session ring shows the same graph.
+- `tests/session/context-limits.test.ts` and `ContextRingTest.kt` assert the same vectors, so the two never draw a different ring for one reading.
+
 User input reaches `StateDetector.markActive(sessionId)` through `PtyManager.write`, so the dot responds before the shell echoes it. System deliveries use the `system` write intent and do not make the dot green. Once a hook event is observed, hook work and `Stop` control agent activity; PTY output cannot override them. Without hooks, a user turn arms output-based activity, and fallback idle ends that turn. Output outside an armed turn, including overnight TUI repaints, does not promote the dot.
 
 ```mermaid

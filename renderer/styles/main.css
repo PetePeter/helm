@@ -738,14 +738,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   background: rgba(10, 11, 13, 0.3);
 }
 
-.group-activity-dot {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
 /* ── Runtime (custom) groups ──────────────────────────────── */
 
 /* Runtime group creation and actions. */
@@ -929,10 +921,10 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 }
 /* Keep the activity dot readable as a solid pip on the accent (it uses an inline
    background colour, so recolouring text does not affect it — give it a ring). */
-.session-card.flash-pulse .session-activity-dot,
-.session-card.flash-solid .session-activity-dot,
-.group-header.flash-pulse .group-activity-dot,
-.group-header.flash-solid .group-activity-dot {
+.session-card.flash-pulse .context-ring__dot,
+.session-card.flash-solid .context-ring__dot,
+.group-header.flash-pulse .context-ring__dot,
+.group-header.flash-solid .context-ring__dot {
   box-shadow: 0 0 0 1px var(--accent-contrast);
 }
 

@@ -176,6 +176,8 @@ fun HelmAppBar(
     contextMenuItems: List<ContextMenuItem> = emptyList(),
     onSelectContextItem: ((Int) -> Unit)? = null,
     onBack: (() -> Unit)? = null,
+    /** Drawn between the back affordance and the title — the open session's context ring. */
+    leading: (@Composable () -> Unit)? = null,
     /**
      * Makes the link badge itself the way in to the desktops list.
      *
@@ -241,6 +243,7 @@ fun HelmAppBar(
                 )
             }
         }
+        leading?.invoke()
         // Title + context share ONE weighted block so the context eyebrow hugs
         // the title while the badge and overflow stay pinned to the trailing
         // edge. A title that also carried a weight fought the block for the

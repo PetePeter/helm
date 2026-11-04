@@ -53,7 +53,7 @@ describe('SessionCard peer origin', () => {
     const wrapper = mount(SessionCard, { props: { ...baseProps({}), activityLevel: 'active', readOnly: true, stateReadOnly: true } });
     const expectedColor = document.createElement('span');
     expectedColor.style.backgroundColor = getActivityColor('active');
-    expect((wrapper.find('.session-activity-dot').element as HTMLElement).style.backgroundColor)
+    expect((wrapper.find('.context-ring__dot').element as HTMLElement).style.backgroundColor)
       .toBe(expectedColor.style.backgroundColor);
     expect(wrapper.find('.session-attach-btn').exists()).toBe(true);
     expect(wrapper.find('.session-state-dropdown').exists()).toBe(false);
