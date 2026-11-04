@@ -63,6 +63,20 @@ object ContextGraph {
     /** The ring for a session's latest reading; null until a reading and limits exist. */
     fun ring(history: ContextHistory): ContextRing? = history.samples.lastOrNull()?.let { ring(it.tokens, history.limits) }
 
+    /**
+     * What the graph's top edge stands for: the red limit (or the peak, if higher)
+     * plus a tenth of room, capped at the window. Scaling to the whole window left
+     * a normal session as a flat line along the bottom. Mirrors `sparklineCeiling`
+     * in renderer/context-sparkline.ts.
+     */
+    fun ceiling(samples: List<ContextSample>, limits: ContextLimits?, window: Long?): Long {
+        val peak = maxOf(1L, samples.maxOfOrNull { it.tokens } ?: 1L)
+        val hasWindow = window != null && window > 0
+        val reference = if (limits != null) maxOf(peak, limits.red) else peak
+        val ceiling = if (limits != null || hasWindow) reference + reference / 10 else reference
+        return if (hasWindow) minOf(ceiling, window!!) else ceiling
+    }
+
     /** "152k / 200k · 76%" for the latest reading; just "152k" when the window is unknown. */
     fun summary(history: ContextHistory): String? {
         val tokens = history.samples.lastOrNull()?.tokens ?: return null

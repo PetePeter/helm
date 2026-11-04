@@ -176,6 +176,11 @@ fun HelmAppBar(
     contextMenuItems: List<ContextMenuItem> = emptyList(),
     onSelectContextItem: ((Int) -> Unit)? = null,
     onBack: (() -> Unit)? = null,
+    /**
+     * Whether the link badge is drawn. The open session turns it off: the link
+     * is said once, on the list, and the header keeps the room for the session.
+     */
+    showLinkBadge: Boolean = true,
     /** Drawn between the back affordance and the title — the open session's context ring. */
     leading: (@Composable () -> Unit)? = null,
     /**
@@ -221,7 +226,14 @@ fun HelmAppBar(
         modifier = modifier
             .fillMaxWidth()
             .background(HelmColors.Surface)
-            .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
+            // The back target is 48dp wide with its glyph centred, so the gutter on
+            // top of it pushed the arrow well in from the edge; it hugs the edge instead.
+            .padding(
+                start = if (onBack != null) HelmSpacing.Xs else HelmSpacing.Gutter,
+                end = HelmSpacing.Gutter,
+                top = HelmSpacing.Md,
+                bottom = HelmSpacing.Md,
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
     ) {
@@ -303,7 +315,9 @@ fun HelmAppBar(
                 )
             }
         }
-        if (onLinkClick == null) {
+        if (!showLinkBadge) {
+            // Header keeps the room for the session.
+        } else if (onLinkClick == null) {
             LinkBadge(state = linkState, rank = linkRank)
         } else {
             TransportMenu(

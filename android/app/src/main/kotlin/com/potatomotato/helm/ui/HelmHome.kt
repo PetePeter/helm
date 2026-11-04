@@ -1877,6 +1877,7 @@ private fun SessionTabScaffold(
             detailLine = details,
             linkState = linkState,
             onBack = onBack,
+            showLinkBadge = false,
             leading = { ContextRingButton(state = activity, history = context) },
             onOverflow = onOverflow,
         )

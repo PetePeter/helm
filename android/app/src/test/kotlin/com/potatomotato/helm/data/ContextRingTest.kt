@@ -62,4 +62,22 @@ class ContextRingTest {
         assertEquals("152k", ContextGraph.summary(ContextHistory(listOf(ContextSample(1, 152_000)), null, null)))
         assertEquals("900", ContextGraph.summary(ContextHistory(listOf(ContextSample(1, 900)), null, null)))
     }
+
+    @Test
+    fun graphCeilingIsTheRedLimitPlusARoomMarginNotTheWholeWindow() {
+        val low = listOf(ContextSample(1, 50_000), ContextSample(2, 100_000))
+        assertEquals(198_000L, ContextGraph.ceiling(low, ContextLimits(150_000, 180_000), 200_000))
+    }
+
+    @Test
+    fun graphCeilingGrowsWithAPeakPastRedButNeverPastTheWindow() {
+        val high = listOf(ContextSample(1, 50_000), ContextSample(2, 190_000))
+        assertEquals(200_000L, ContextGraph.ceiling(high, ContextLimits(150_000, 180_000), 200_000))
+        assertEquals(209_000L, ContextGraph.ceiling(high, ContextLimits(150_000, 180_000), null))
+    }
+
+    @Test
+    fun graphCeilingFallsBackToThePeakWithNothingElseKnown() {
+        assertEquals(100_000L, ContextGraph.ceiling(listOf(ContextSample(1, 100_000)), null, null))
+    }
 }

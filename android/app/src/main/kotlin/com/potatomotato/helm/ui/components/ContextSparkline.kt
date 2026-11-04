@@ -48,15 +48,18 @@ fun ContextSparkline(
     Canvas(modifier) {
         val first = samples.first().at
         val span = (samples.last().at - first).coerceAtLeast(1L).toFloat()
-        val ceiling = (window?.takeIf { it > 0 } ?: samples.maxOf { it.tokens }).coerceAtLeast(1L).toFloat()
+        val ceiling = ContextGraph.ceiling(samples, limits, window).toFloat()
         fun x(s: ContextSample) = (s.at - first) / span * size.width
         fun y(fill: Float) = size.height - fill.coerceIn(0f, 1f) * size.height
-        if (detailed && window != null && window > 0) {
+        if (detailed) {
             val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
-            drawLine(HelmColors.Faint, Offset(0f, y(1f)), Offset(size.width, y(1f)), pathEffect = dash)
+            // The window line shows only when the graph reaches it.
+            window?.takeIf { it > 0 && it <= ceiling }?.let {
+                drawLine(HelmColors.Faint, Offset(0f, y(it / ceiling)), Offset(size.width, y(it / ceiling)), pathEffect = dash)
+            }
             limits?.let {
-                val amber = y(it.amber.toFloat() / window)
-                val red = y(it.red.toFloat() / window)
+                val amber = y(it.amber.toFloat() / ceiling)
+                val red = y(it.red.toFloat() / ceiling)
                 drawLine(HelmColors.CacheWarn.copy(alpha = 0.3f), Offset(0f, amber), Offset(size.width, amber))
                 drawLine(HelmColors.Danger.copy(alpha = 0.3f), Offset(0f, red), Offset(size.width, red))
             }
