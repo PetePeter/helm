@@ -150,7 +150,8 @@ defineExpose({ handleButton });
   width: 100%;
 }
 .group-color-picker {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(10, 28px);
   gap: var(--spacing-sm, 8px);
   margin-top: var(--spacing-md, 12px);
 }

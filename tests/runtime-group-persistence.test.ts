@@ -30,7 +30,7 @@ const groupA: RuntimeGroup = {
 };
 const groupB: RuntimeGroup = {
   id: 'g2', name: 'Beta', sessionIds: [],
-  collapsed: true, createdAt: 1700000002000, updatedAt: 1700000003000, color: '#2ec4b6',
+  collapsed: true, createdAt: 1700000002000, updatedAt: 1700000003000, color: '#00bfa5',
 };
 
 describe('runtime-group persistence', () => {
@@ -58,6 +58,15 @@ describe('runtime-group persistence', () => {
     );
 
     expect(loadRuntimeGroups()[0]).toEqual({ id: 'g1', name: 'A', sessionIds: [], collapsed: false, createdAt: 1, updatedAt: 1 });
+  });
+
+  it('maps a retired pastel colour to its saturated successor', () => {
+    (fs.existsSync as any).mockReturnValue(true);
+    (fs.readFileSync as any).mockReturnValue(
+      'groups:\n  - { id: g1, name: A, sessionIds: [], collapsed: false, createdAt: 1, updatedAt: 1, color: "#2ec4b6" }\n',
+    );
+
+    expect(loadRuntimeGroups()[0]!.color).toBe('#00bfa5');
   });
 
   it('P2 missing file → []', () => {

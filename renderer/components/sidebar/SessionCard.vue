@@ -631,7 +631,7 @@ function onCardClick(e: MouseEvent): void {
   z-index: -1;
   border-radius: inherit;
   pointer-events: none;
-  background: rgba(100, 150, 255, 0.22);
+  background: rgba(255, 255, 255, 0.05);
   animation-name: session-prompt-fade;
   animation-timing-function: linear;
   animation-fill-mode: both;
