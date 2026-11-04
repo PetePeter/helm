@@ -872,7 +872,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // detail screen for a plan or lane that no longer exists.
     LaunchedEffect(planWriteState) {
         val done = planWriteState as? PlanWrite.Done ?: return@LaunchedEffect
-        if (done.kind == PlanWriteKind.DeletePlan && where == Destination.PlanDetail) where = Destination.Thread
+        if ((done.kind == PlanWriteKind.DeletePlan || done.kind == PlanWriteKind.RejectSuggestion) && where == Destination.PlanDetail) {
+            where = Destination.Thread
+        }
         if (done.kind == PlanWriteKind.DeleteSequence && where == Destination.SequenceDetail) where = Destination.Thread
     }
     val refreshLanes: () -> Unit = {
@@ -1156,6 +1158,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 dirPath = planDirPath,
                                 planId = openPlanId,
                                 lanes = (LoadViews.sequences(sequenceListState, planDirPath) as? LoadView.Ready)?.data.orEmpty(),
+                                capabilities = capabilities,
                                 write = planWriteState,
                             ),
                             onRefresh = {
@@ -2025,6 +2028,7 @@ private fun planDetailActions(
     dirPath: String?,
     planId: String?,
     lanes: List<HelmPlanSequence>,
+    capabilities: Capabilities,
     write: PlanWrite,
 ): PlanDetailActions {
     fun withPlan(action: (String, String) -> Unit): () -> Unit = {
@@ -2032,10 +2036,13 @@ private fun planDetailActions(
     }
     return PlanDetailActions(
         lanes = lanes,
+        capabilities = capabilities,
         write = write,
         onDismissWrite = client.planWrites::dismiss,
         onEdit = { title, description -> withPlan { dir, id -> client.updatePlan(dir, id, title, description) }() },
         onSetState = { status -> withPlan { dir, id -> client.setPlanState(dir, id, status) }() },
+        onAcceptSuggestion = withPlan { dir, id -> client.acceptPlanSuggestion(dir, id) },
+        onRejectSuggestion = withPlan { dir, id -> client.rejectPlanSuggestion(dir, id) },
         onComplete = { documentation -> withPlan { dir, id -> client.completePlan(dir, id, documentation) }() },
         onReopen = withPlan { dir, id -> client.reopenPlan(dir, id) },
         onAssign = { laneId -> withPlan { dir, id -> client.assignSequence(dir, id, laneId) }() },

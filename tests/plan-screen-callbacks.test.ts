@@ -16,6 +16,8 @@ const mockPlanDelete = vi.fn();
 const mockPlanComplete = vi.fn();
 const mockPlanApply = vi.fn();
 const mockPlanSetState = vi.fn();
+const mockPlanAcceptSuggestion = vi.fn();
+const mockPlanRejectSuggestion = vi.fn();
 const mockPlanCreate = vi.fn();
 const mockPlanAddDep = vi.fn();
 const mockPlanRemoveDep = vi.fn();
@@ -108,8 +110,8 @@ function fakeLayout(ids: string[]) {
   };
 }
 
-function planItem(id: string, title = id) {
-  return { id, dirPath: '/test/dir', title, description: title, status: 'planning', createdAt: 1, updatedAt: 1 };
+function planItem(id: string, title = id, status = 'planning') {
+  return { id, dirPath: '/test/dir', title, description: title, status, createdAt: 1, updatedAt: 1 };
 }
 
 async function getModule() {
@@ -135,6 +137,8 @@ describe('plan screen window-keyed callbacks', () => {
     mockPlanComplete.mockReset();
     mockPlanApply.mockReset();
     mockPlanSetState.mockReset();
+    mockPlanAcceptSuggestion.mockReset();
+    mockPlanRejectSuggestion.mockReset();
     mockPlanCreate.mockReset();
     mockPlanAddDep.mockReset();
     mockPlanRemoveDep.mockReset();
@@ -171,6 +175,8 @@ describe('plan screen window-keyed callbacks', () => {
       planComplete: mockPlanComplete,
       planApply: mockPlanApply,
       planSetState: mockPlanSetState,
+      planAcceptSuggestion: mockPlanAcceptSuggestion,
+      planRejectSuggestion: mockPlanRejectSuggestion,
       planCreate: mockPlanCreate,
       planAddDep: mockPlanAddDep,
       planRemoveDep: mockPlanRemoveDep,
@@ -265,6 +271,33 @@ describe('plan screen window-keyed callbacks', () => {
 
     expect(mainCloser).toHaveBeenCalled();
     expect(popoutCloser).not.toHaveBeenCalled();
+  });
+
+  it('offers suggestion decisions and confirms Reject before calling the write', async () => {
+    const mod = await getModule();
+    const opener = vi.fn();
+    mod.setPlanEditorOpener(opener);
+    mockPlanList.mockResolvedValue([planItem('s1', 'Review idea', 'suggested')]);
+    mockPlanDeps.mockResolvedValue([]);
+    mockComputeLayout.mockReturnValue(fakeLayout(['s1']));
+
+    await mod.showPlanScreen('/test/dir');
+    mod.handlePlanScreenAction('A');
+
+    const callbacks = opener.mock.calls[0]?.[2] as { onAccept?: () => void; onReject?: () => void };
+    expect(callbacks.onAccept).toBeTypeOf('function');
+    expect(callbacks.onReject).toBeTypeOf('function');
+    callbacks.onReject?.();
+    expect(mockShowPlanDeleteConfirm).toHaveBeenCalledWith('Review idea', expect.any(Function), expect.objectContaining({
+      title: 'Reject Suggested Plan',
+      confirmLabel: 'Reject',
+    }));
+    expect(mockPlanRejectSuggestion).not.toHaveBeenCalled();
+
+    mockPlanAcceptSuggestion.mockResolvedValue({ ok: true });
+    callbacks.onAccept?.();
+    await Promise.resolve();
+    expect(mockPlanAcceptSuggestion).toHaveBeenCalledWith('s1');
   });
 
   // The registry keys on the full window identity, so two planner pop-outs on

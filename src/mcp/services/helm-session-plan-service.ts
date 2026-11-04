@@ -30,7 +30,7 @@ export class HelmSessionPlanService {
     if (session.workingDir && normalizeProjectPath(plan.dirPath) !== normalizeProjectPath(session.workingDir)) {
       throw new Error(`Plan ${planId} does not belong to session directory ${session.workingDir}`);
     }
-    if (plan.status === 'done' || plan.status === 'planning') {
+    if (plan.status === 'done' || plan.status === 'planning' || plan.status === 'suggested') {
       throw new Error(`Plan ${planId} is not active or ready`);
     }
 
@@ -39,7 +39,9 @@ export class HelmSessionPlanService {
       if (!result) throw new Error(`Plan ${planId} could not be set to coding`);
     }
 
-    this.planManager.claimPlan(plan.id, session.id);
+    if (!this.planManager.claimPlan(plan.id, session.id)) {
+      throw new Error(`Plan ${planId} is not claimable`);
+    }
     this.sessionManager.updateSession(session.id, { currentPlanId: plan.id });
     return { ok: true };
   }

@@ -51,7 +51,7 @@ const props = withDefaults(defineProps<{
   relatedTransientIds?: Set<string>;
   filters?: {
     types: { bug: TriState; feature: TriState; research: TriState; untyped: TriState };
-    statuses: { planning: TriState; ready: TriState; coding: TriState; review: TriState; blocked: TriState; done: TriState };
+    statuses: { planning: TriState; ready: TriState; coding: TriState; review: TriState; blocked: TriState; done: TriState; suggested: TriState };
     hasAttachment?: { yes: TriState; no: TriState };
     auto: TriState;
   };
@@ -76,7 +76,7 @@ const props = withDefaults(defineProps<{
   relatedTransientIds: () => new Set<string>(),
   filters: () => ({
     types: { bug: 'either', feature: 'either', research: 'either', untyped: 'either' },
-    statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either' },
+    statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either', suggested: 'either' },
     hasAttachment: { yes: 'either', no: 'either' },
     auto: 'either',
   }),
@@ -119,7 +119,7 @@ const emit = defineEmits<{
   removeDep: [fromId: string, toId: string];
   toggleRelatedFocus: [];
   toggleTypeFilter: [type: 'bug' | 'feature' | 'research' | 'untyped'];
-  toggleStatusFilter: [status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done'];
+  toggleStatusFilter: [status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done' | 'suggested'];
   toggleHasAttachmentFilter: [value: 'yes' | 'no'];
   toggleAutoFilter: [];
   resetFilters: [];
@@ -752,6 +752,7 @@ function taskCardOf(item: PlanItem) {
           <FilterChip class="plan-header__chip" :class="filterState(filters.statuses.review)" :state="filterState(filters.statuses.review)" label="Review" @update:state="emit('toggleStatusFilter', 'review')" />
           <FilterChip class="plan-header__chip" :class="filterState(filters.statuses.blocked)" :state="filterState(filters.statuses.blocked)" label="Blocked" @update:state="emit('toggleStatusFilter', 'blocked')" />
           <FilterChip class="plan-header__chip" :class="filterState(filters.statuses.done)" :state="filterState(filters.statuses.done)" label="Done" @update:state="emit('toggleStatusFilter', 'done')" />
+          <FilterChip class="plan-header__chip" :class="filterState(filters.statuses.suggested)" :state="filterState(filters.statuses.suggested)" label="Suggested" @update:state="emit('toggleStatusFilter', 'suggested')" />
           <span class="plan-header__filter-sep">|</span>
           <FilterChip class="plan-header__chip" :class="filterState(filters.hasAttachment?.yes)" :state="filterState(filters.hasAttachment?.yes)" label="Has" @update:state="emit('toggleHasAttachmentFilter', 'yes')" />
           <FilterChip class="plan-header__chip" :class="filterState(filters.hasAttachment?.no)" :state="filterState(filters.hasAttachment?.no)" label="None" @update:state="emit('toggleHasAttachmentFilter', 'no')" />
@@ -912,7 +913,7 @@ function taskCardOf(item: PlanItem) {
           </foreignObject>
           <foreignObject x="8" y="26" width="184" height="14">
             <div xmlns="http://www.w3.org/1999/xhtml" class="plan-node__meta">
-              {{ item.humanId || 'Plan' }} · C {{ formatDate(item.createdAt) }} · S {{ formatDate(item.stateUpdatedAt || item.updatedAt) }}
+              {{ item.humanId || 'Plan' }} · {{ item.status }} · C {{ formatDate(item.createdAt) }} · S {{ formatDate(item.stateUpdatedAt || item.updatedAt) }}
             </div>
           </foreignObject>
           <foreignObject x="8" y="42" width="184" :height="item.stateInfo || item.autoImplement || contextCountByPlanId.get(item.id) ? 24 : 34">

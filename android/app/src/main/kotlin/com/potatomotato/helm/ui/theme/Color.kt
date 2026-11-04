@@ -93,6 +93,7 @@ object HelmColors {
      * RATIFIED: [Active] sits close to [Accent]. Known, accepted, do not "fix".
      */
     object State {
+        val Suggested = Color(0xFFC58AF0)
         val Active = Color(0xFF4ADE80)
         val Waiting = Color(0xFF60A5FA)
         val Idle = Color(0xFF52525B)

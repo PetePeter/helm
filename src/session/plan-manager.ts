@@ -17,12 +17,12 @@ import {
   loadPlanSequences,
   savePlanSequences,
 } from './persistence.js';
-import type { PlanItem, PlanDependency, DirectoryPlan, PlanStatus, PlanType, PlanSequence, PlanTask } from '../types/plan.js';
-import { isStartable } from '../types/plan.js';
+import type { PlanItem, PlanDependency, DirectoryPlan, PlanStatus, SettablePlanStatus, PlanType, PlanSequence, PlanTask } from '../types/plan.js';
+import { isStartable, PLAN_STATUSES, SETTABLE_PLAN_STATUSES } from '../types/plan.js';
 import { mergePlanTask } from './operator-tasks.js';
 import type { ProjectStore } from './project-store.js';
 
-const CURRENT_PLAN_STATUSES = new Set<PlanStatus>(['planning', 'ready', 'coding', 'review', 'blocked', 'done']);
+const CURRENT_PLAN_STATUSES = new Set<PlanStatus>(PLAN_STATUSES);
 const ACTIVE_PLAN_STATUSES = new Set<PlanStatus>(['coding', 'review', 'blocked']);
 const PAUSED_PLAN_STATUSES = new Set<PlanStatus>(['review', 'blocked']);
 const HUMAN_ID_RE = /^P-(\d+)$/;
@@ -129,6 +129,27 @@ export class PlanManager extends EventEmitter {
 
   /** Create a new plan item with optional type. New items start as 'planning', transition to 'ready' when deps satisfied. */
   createWithType(dirPath: string, title: string, description: string, type?: PlanType, autoImplement?: boolean, completionRecap?: boolean): PlanItem {
+    return this.createItem(dirPath, title, description, { type, autoImplement, completionRecap });
+  }
+
+  /** Create a suggestion that remains outside the normal planning frontier until accepted. */
+  createSuggested(
+    dirPath: string,
+    title: string,
+    description: string,
+    sourceIdeaId?: string,
+    type?: PlanType,
+    autoImplement?: boolean,
+  ): PlanItem {
+    return this.createItem(dirPath, title, description, { status: 'suggested', sourceIdeaId, type, autoImplement });
+  }
+
+  private createItem(
+    dirPath: string,
+    title: string,
+    description: string,
+    options: { status?: 'planning' | 'suggested'; sourceIdeaId?: string; type?: PlanType; autoImplement?: boolean; completionRecap?: boolean },
+  ): PlanItem {
     const now = Date.now();
     const item: PlanItem = {
       id: randomUUID(),
@@ -137,10 +158,11 @@ export class PlanManager extends EventEmitter {
       dirPath,
       title,
       description,
-      status: 'planning',
-      type,
-      autoImplement: autoImplement ? true : undefined,
-      completionRecap: completionRecap ? true : undefined,
+      status: options.status ?? 'planning',
+      ...(options.sourceIdeaId ? { sourceIdeaId: options.sourceIdeaId } : {}),
+      type: options.type,
+      autoImplement: options.autoImplement ? true : undefined,
+      completionRecap: options.completionRecap ? true : undefined,
       createdAt: now,
       stateUpdatedAt: now,
       updatedAt: now,
@@ -155,7 +177,7 @@ export class PlanManager extends EventEmitter {
 
     this.emit('plan:changed', dirPath);
     this.emit('plan:created', dirPath);
-    logger.info(`[PlanManager] Created plan "${title}" in ${dirPath}`);
+    logger.info(`[PlanManager] Created ${item.status} plan "${title}" in ${dirPath}`);
     return item;
   }
 
@@ -424,6 +446,13 @@ export class PlanManager extends EventEmitter {
     return this.items.get(id) ?? null;
   }
 
+  /** Find a live suggested plan already linked to an idea, if one exists. */
+  getLiveSuggestedPlanForSourceIdea(sourceIdeaId: string): PlanItem | null {
+    return [...this.items.values()].find(item =>
+      item.status === 'suggested' && item.sourceIdeaId === sourceIdeaId,
+    ) ?? null;
+  }
+
   /** Resolve either a canonical UUID plan ID or a human-readable P-00xx plan ID. */
   resolveItemRef(ref: string): PlanRefResolution {
     const direct = this.items.get(ref);
@@ -494,18 +523,36 @@ export class PlanManager extends EventEmitter {
    */
   claimedItemFor(sessionId: string): PlanItem | null {
     return [...this.items.values()]
-      .filter(i => i.sessionId === sessionId && i.status !== 'done' && i.status !== 'blocked')
+      .filter(i => i.sessionId === sessionId && i.status !== 'done' && i.status !== 'blocked' && i.status !== 'suggested')
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null;
   }
 
-  /** Record a session claim on a plan. Unconditional — overrides any prior claim. */
-  claimPlan(id: string, sessionId: string): void {
+  /** Record a session claim on a plan. Suggestions cannot be claimed before acceptance. */
+  claimPlan(id: string, sessionId: string): boolean {
     const item = this.items.get(id);
-    if (!item) return;
+    if (!item || item.status === 'suggested') return false;
     item.sessionId = sessionId;
     item.updatedAt = Date.now();
     savePlanFile(item);
     this.emit('plan:changed', item.dirPath);
+    return true;
+  }
+
+  /** Accept a suggestion. Repeating the call after a completed transition is safe. */
+  acceptSuggested(id: string): PlanItem | null {
+    const item = this.items.get(id);
+    if (!item) return null;
+    if (item.status === 'planning' || item.status === 'ready') return item;
+    if (item.status !== 'suggested') return null;
+
+    item.status = 'planning';
+    item.stateInfo = undefined;
+    item.updatedAt = Date.now();
+    item.stateUpdatedAt = item.updatedAt;
+    this.recomputeStartable(item.dirPath);
+    this.saveDir(item.dirPath, { skipSequences: true });
+    this.emit('plan:changed', item.dirPath);
+    return item;
   }
 
   /** Add a dependency edge. Returns false if rejected (cycle, self-loop, cross-dir). */
@@ -610,15 +657,14 @@ export class PlanManager extends EventEmitter {
    * Cannot transition to 'done' — only completeItem can do that.
    * 'blocked' state requires non-empty stateInfo (reason why blocked).
    */
-  setState(id: string, status: Exclude<PlanStatus, 'done'>, stateInfo = ''): PlanItem | null {
+  setState(id: string, status: SettablePlanStatus, stateInfo = ''): PlanItem | null {
     // Validate status is a valid PlanStatus (not 'done')
-    const validStatuses: Exclude<PlanStatus, 'done'>[] = ['planning', 'ready', 'coding', 'review', 'blocked'];
-    if (!validStatuses.includes(status)) {
+    if (!SETTABLE_PLAN_STATUSES.includes(status)) {
       logger.warn(`[PlanManager] setState rejected invalid status '${status}' for ${id} — must be one of: planning, ready, coding, review, blocked`);
       return null;
     }
     const item = this.items.get(id);
-    if (!item || !this.canSetState(item, status as Exclude<PlanStatus, 'done'>)) return null;
+    if (!item || item.status === 'suggested' || !this.canSetState(item, status)) return null;
 
     // Validate blocked state requires stateInfo
     if (status === 'blocked' && !stateInfo.trim()) {
@@ -914,7 +960,7 @@ export class PlanManager extends EventEmitter {
     const items = this.getForDirectory(dirPath);
 
     for (const item of items) {
-      if (ACTIVE_PLAN_STATUSES.has(item.status) || item.status === 'done' || item.status === 'blocked') continue;
+      if (ACTIVE_PLAN_STATUSES.has(item.status) || item.status === 'done' || item.status === 'blocked' || item.status === 'suggested') continue;
 
       const blockers = this.dependencies
         .filter(d => d.toId === item.id)
@@ -926,7 +972,7 @@ export class PlanManager extends EventEmitter {
     }
   }
 
-  private canSetState(item: PlanItem, next: Exclude<PlanStatus, 'done'>): boolean {
+  private canSetState(item: PlanItem, next: SettablePlanStatus): boolean {
     if (item.status === 'done') return false;
     // 'coding' requires existing or provided sessionId
     if (next === 'coding') {

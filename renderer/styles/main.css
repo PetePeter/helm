@@ -38,6 +38,7 @@
   --status-review: #44ccff;
   --status-blocked: #ff9f1a;
   --status-done: #555555;
+  --status-suggested: #a06cff;
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -2837,6 +2838,10 @@ kbd {
 
 .plan-chip--done {
   border-color: var(--status-done);
+}
+
+.plan-chip--suggested {
+  border-color: var(--status-suggested);
 }
 
 .settings-help {

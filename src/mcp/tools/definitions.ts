@@ -196,7 +196,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'plan_create',
     title: 'Create Plan',
-    description: `Create a plan item in a directory when follow-up work, later cleanup, or a blocking question should survive the current session. Optionally set type to "bug", "feature", or "research", and set autoImplement=true when this ready follow-up may be picked up automatically after its prerequisite is completed. The description should include these sections: ${REQUIRED_PLAN_DESCRIPTION_SECTIONS.join(', ')}. For blocking questions, create a separate plan titled "QUESTION: ..." and link it to the original blocked plan with plan_nextplan_link so the question must be resolved first. The new plan starts in "planning" status with no session owner. When you begin working on this plan, call session_plan_claim with your sessionId and the planId to claim it.`,
+    description: `Create a plan item in a directory when follow-up work, later cleanup, or a blocking question should survive the current session. Optionally set type to "bug", "feature", or "research", and set autoImplement=true when this ready follow-up may be picked up automatically after its prerequisite is completed. To place work in the Suggestions queue, set status="suggested" and optionally sourceIdeaId to a suggested idea memory id. The description should include these sections: ${REQUIRED_PLAN_DESCRIPTION_SECTIONS.join(', ')}. For blocking questions, create a separate plan titled "QUESTION: ..." and link it to the original blocked plan with plan_nextplan_link so the question must be resolved first. Ordinary plans start in "planning" status and are recomputed to ready when unblocked. When you begin working on a ready plan, call session_plan_claim with your sessionId and the planId to claim it.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -205,6 +205,8 @@ export const MCP_TOOLS: McpTool[] = [
         description: { type: 'string' },
         type: { type: 'string', enum: ['bug', 'feature', 'research'] },
         autoImplement: { type: 'boolean' },
+        status: { type: 'string', enum: ['suggested'] },
+        sourceIdeaId: { type: 'string' },
       },
       required: ['dirPath', 'title', 'description'],
       additionalProperties: false,
@@ -266,6 +268,28 @@ export const MCP_TOOLS: McpTool[] = [
         sessionId: { type: 'string' },
       },
       required: ['uuid', 'status'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'plan_accept_suggestion',
+    title: 'Accept Suggested Plan',
+    description: 'Accept a suggested plan. Its linked idea is marked accepted; dependency recomputation may make the plan ready immediately.',
+    inputSchema: {
+      type: 'object',
+      properties: { uuid: { type: 'string' } },
+      required: ['uuid'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'plan_reject_suggestion',
+    title: 'Reject Suggested Plan',
+    description: 'Reject a suggested plan. Its linked idea is marked rejected and the plan is deleted. Confirm with the user before calling this tool.',
+    inputSchema: {
+      type: 'object',
+      properties: { uuid: { type: 'string' } },
+      required: ['uuid'],
       additionalProperties: false,
     },
   },

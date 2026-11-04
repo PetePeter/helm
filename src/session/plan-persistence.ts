@@ -20,6 +20,7 @@ function isPlanItem(value: unknown): value is PlanItem {
     && isString(value.title)
     && isAnyString(value.description)
     && isString(value.status)
+    && (value.sourceIdeaId === undefined || isString(value.sourceIdeaId))
     && isNumber(value.createdAt)
     && isNumber(value.updatedAt);
 }

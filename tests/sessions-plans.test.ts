@@ -61,6 +61,7 @@ const mockState = {
   planDirBlockedCounts: new Map<string, number>(),
   planDirReviewCounts: new Map<string, number>(),
   planDirPlanningCounts: new Map<string, number>(),
+  planDirSuggestedCounts: new Map<string, number>(),
 };
 
 vi.mock('../renderer/state.js', () => ({
@@ -398,9 +399,10 @@ describe('Sessions Plans Grid', () => {
       mockState.planDirBlockedCounts.clear();
       mockState.planDirReviewCounts.clear();
       mockState.planDirPlanningCounts.clear();
+      mockState.planDirSuggestedCounts.clear();
     });
 
-    it('populates all 4 counts from planList and planStartableForDir', async () => {
+    it('populates all counts from planList and planStartableForDir', async () => {
       sessionsState.directories = [{ name: 'proj', path: '/proj' }];
       mockPlanStartableForDir.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
       mockPlanList.mockResolvedValue([
@@ -411,6 +413,9 @@ describe('Sessions Plans Grid', () => {
         { status: 'planning' },
         { status: 'planning' },
         { status: 'review' },
+        { status: 'suggested' },
+        { status: 'suggested' },
+        { status: 'suggested' },
       ]);
 
       await plans.refreshPlanBadges();
@@ -420,6 +425,7 @@ describe('Sessions Plans Grid', () => {
       expect(mockState.planDirBlockedCounts.get('/proj')).toBe(2);
       expect(mockState.planDirReviewCounts.get('/proj')).toBe(1);
       expect(mockState.planDirPlanningCounts.get('/proj')).toBe(2);
+      expect(mockState.planDirSuggestedCounts.get('/proj')).toBe(3);
     });
 
     it('sets all counts to 0 when planList returns empty', async () => {
@@ -434,6 +440,7 @@ describe('Sessions Plans Grid', () => {
       expect(mockState.planDirBlockedCounts.get('/proj')).toBe(0);
       expect(mockState.planDirReviewCounts.get('/proj')).toBe(0);
       expect(mockState.planDirPlanningCounts.get('/proj')).toBe(0);
+      expect(mockState.planDirSuggestedCounts.get('/proj')).toBe(0);
     });
 
     it('populates counts for each directory independently', async () => {

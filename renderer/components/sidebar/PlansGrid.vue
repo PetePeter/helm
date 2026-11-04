@@ -2,7 +2,7 @@
 /**
  * PlansGrid.vue — 2-column grid of per-directory plan buttons with status dot counts.
  *
- * Shows status dots (ready, coding, review, blocked, planning), skipping any
+ * Shows status dots (ready, coding, review, blocked, planning, suggested), skipping any
  * with a zero count.
  */
 import { getPlanStatusColor } from '../../state-colors.js';
@@ -15,6 +15,7 @@ export interface PlansDirItem {
   blockedCount: number;
   reviewCount: number;
   planningCount: number;
+  suggestedCount: number;
 }
 
 const props = defineProps<{
@@ -44,7 +45,7 @@ const emit = defineEmits<{
         <span class="spawn-label">{{ dir.name }}</span>
       </div>
       <div
-        v-if="dir.planningCount > 0 || dir.startableCount > 0 || dir.codingCount > 0 || dir.reviewCount > 0 || dir.blockedCount > 0"
+        v-if="dir.planningCount > 0 || dir.startableCount > 0 || dir.codingCount > 0 || dir.reviewCount > 0 || dir.blockedCount > 0 || dir.suggestedCount > 0"
         class="plans-btn-dots"
       >
         <span v-if="dir.planningCount > 0" class="plan-dot plan-dot--planning" :style="{ color: getPlanStatusColor('planning') }">⚪{{ dir.planningCount }}</span>
@@ -52,6 +53,7 @@ const emit = defineEmits<{
         <span v-if="dir.codingCount > 0" class="plan-dot plan-dot--coding" :style="{ color: getPlanStatusColor('coding') }">🟢{{ dir.codingCount }}</span>
         <span v-if="dir.reviewCount > 0" class="plan-dot plan-dot--review" :style="{ color: getPlanStatusColor('review') }">⏳{{ dir.reviewCount }}</span>
         <span v-if="dir.blockedCount > 0" class="plan-dot plan-dot--blocked" :style="{ color: getPlanStatusColor('blocked') }">⛔{{ dir.blockedCount }}</span>
+        <span v-if="dir.suggestedCount > 0" class="plan-dot plan-dot--suggested" :style="{ color: getPlanStatusColor('suggested') }">💡{{ dir.suggestedCount }}</span>
       </div>
     </button>
   </div>

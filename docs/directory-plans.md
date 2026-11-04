@@ -1,6 +1,6 @@
 # Directory Plans
 
-Per-directory acyclic directed graph of work items with dependency arrows and a 6-state lifecycle. Plans are folder-level (not session-level like drafts) and persist to individual JSON files under `config/plans/` with dependencies in `config/plan-dependencies.json` (not per-profile).
+Per-directory acyclic directed graph of work items with dependency arrows and a 7-state lifecycle. Plans are folder-level (not session-level like drafts) and persist to individual JSON files under `config/plans/` with dependencies in `config/plan-dependencies.json` (not per-profile).
 
 ## Overview
 
@@ -8,6 +8,7 @@ Per-directory acyclic directed graph of work items with dependency arrows and a 
 graph LR
     subgraph "Plan Lifecycle"
         P[⚪ Planning<br/>grey #555]
+        SG[💡 Suggested<br/>purple #a06cff]
         S[🔵 Ready<br/>blue #4488ff]
         D[🟢 Coding<br/>green #44cc44]
         R[🟣 Review<br/>purple #9b59ff]
@@ -16,6 +17,8 @@ graph LR
     end
 
     P -->|"deps completed<br/>(auto)"| S
+    SG -->|"Accept<br/>(idea accepted)"| P
+    SG -->|"Reject<br/>(idea rejected; plan deleted)"| X[Rejected]
     S -->|"plan_set_state coding<br/>(claim)"| D
     D -->|"plan_set_state review"| R
     D -->|"plan_set_state blocked"| B
@@ -34,6 +37,19 @@ graph LR
 | `review` | Purple | `#9b59ff` | Awaiting review before completion |
 | `blocked` | Orange | `#ff9f1a` | Cannot proceed; `stateInfo` should explain why |
 | `done` | Grey + strikethrough | `#555555` | Completed (dashed border on node) |
+| `suggested` | Purple | `#a06cff` | Awaiting one-tap Accept or confirmed Reject; never startable |
+
+`plan_create` may set `status="suggested"` and optionally `sourceIdeaId` to a
+suggested idea memory. `plan_accept_suggestion` marks the linked idea accepted,
+then transitions the plan through `planning`; normal dependency recomputation
+makes it `ready` when unblocked. `plan_reject_suggestion` marks the idea rejected
+and deletes the plan. Both desktop and Android use the same main-process service.
+
+The plan and memory stores persist independently. The decision service validates
+both records before writing the idea first and the plan second; retries finish a
+partially applied decision from the stored states. A process crash between those
+writes can still leave a partial cross-store result until the decision is retried.
+There is no cross-store transaction in the current storage architecture.
 
 ## Architecture
 
@@ -76,7 +92,8 @@ interface PlanItem {
   dirPath: string;      // Directory this plan belongs to
   title: string;        // Short title displayed on the node
   description: string;  // Longer description / prompt content
-  status: PlanStatus;   // 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done'
+  status: PlanStatus;   // 'suggested' | 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done'
+  sourceIdeaId?: string;
   sessionId?: string;   // Set when status is 'coding' or 'review'
   stateInfo?: string;   // Required context for blocked/question states
   completionNotes?: string;
@@ -137,7 +154,7 @@ Cycle prevention uses DFS: before adding edge `fromId → toId`, checks whether 
 ### Ready Computation
 
 `recomputeStartable(dirPath)` is the legacy-named ready recomputation pass. It runs after every dependency or completion change:
-1. For each item in the directory that is not `coding`, `review`, `blocked`, or `done`:
+1. For each item in the directory that is not `suggested`, `coding`, `review`, `blocked`, or `done`:
 2. Find all incoming dependency edges (blockers)
 3. If all blockers are `done` (or no blockers exist) -> status = `ready`
 4. Otherwise -> status = `planning`

@@ -13,7 +13,7 @@ import type { PlanItem, PlanDependency } from '../src/types/plan.js';
 function createItem(
   id: string,
   type?: 'bug' | 'feature' | 'research',
-  status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done' = 'ready',
+  status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done' | 'suggested' = 'ready',
 ): PlanItem {
   return {
     id,
@@ -29,7 +29,7 @@ function createItem(
 
 const defaultFilters = {
   types: { bug: 'either', feature: 'either', research: 'either', untyped: 'either' },
-  statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either' },
+  statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either', suggested: 'either' },
   hasAttachment: { yes: 'either', no: 'either' },
   auto: 'either',
 };
@@ -140,6 +140,23 @@ describe('PlanScreen filter integration', () => {
   });
 
   describe('toggle status filters', () => {
+    it('shows and emits the Suggestions filter', async () => {
+      const wrapper = mount(PlanScreen, {
+        props: {
+          visible: true,
+          dirPath: '/test',
+          items: [createItem('suggested-1', undefined, 'suggested')],
+          deps: [],
+          layout: { nodes: [], edges: [], width: 800, height: 600 },
+          filters: defaultFilters,
+        },
+      });
+      const suggested = wrapper.findAll('.plan-header__chip').find((chip) => chip.find('.filter-chip__label').text() === 'Suggested');
+      expect(suggested).toBeDefined();
+      await suggested!.trigger('click');
+      expect(wrapper.emitted('toggleStatusFilter')).toContainEqual(['suggested']);
+    });
+
     it('all statuses selected shows all items', () => {
       const items = [
         createItem('item-1', 'bug', 'planning'),

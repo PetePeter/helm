@@ -41,6 +41,7 @@ object PlanGrouping {
 
     /** Within a lane, the lifecycle order a reader scans top-down. */
     private val STATUS_ORDER = listOf(
+        PlanStatus.Suggested,
         PlanStatus.Planning,
         PlanStatus.Ready,
         PlanStatus.Coding,

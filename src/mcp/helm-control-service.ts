@@ -10,7 +10,8 @@ import type { SessionEta } from '../types/session.js';
 import { SessionChangeFeed, type SessionFeedCursor } from '../session/session-change-feed.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { TerminalReadMode } from '../session/terminal-output-buffer.js';
-import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, PlanTask, PlanType } from '../types/plan.js';
+import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, SettablePlanStatus, PlanTask, PlanType } from '../types/plan.js';
+import { SuggestedPlanService } from '../session/suggested-plan-service.js';
 import { nextCheckAt } from '../session/operator-tasks.js';
 import type { PlanAttachment, PlanAttachmentTempFile } from '../types/plan-attachment.js';
 import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
@@ -334,6 +335,7 @@ export class HelmControlService extends EventEmitter {
   private artifactUploadService?: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService;
   private memoryService?: HelmMemoryService;
   private memoryManager: MemoryManager | null = null;
+  private suggestedPlanService: SuggestedPlanService | null = null;
   private messService?: HelmMessService;
   private messManager: MessManager | null = null;
   private readonly schedulerService: HelmSchedulerService | null;
@@ -574,6 +576,8 @@ export class HelmControlService extends EventEmitter {
     tempRegistry?: import('../session/artifact-temp-registry.js').ArtifactTempRegistry,
   ): void {
     this.memoryManager = manager;
+    this.suggestedPlanService = new SuggestedPlanService(this.planManager, manager);
+    this.planService.setSuggestedPlanService(this.suggestedPlanService);
     this.memoryService = new HelmMemoryService(
       manager,
       attachmentManager,
@@ -585,6 +589,10 @@ export class HelmControlService extends EventEmitter {
           : null;
       },
     );
+  }
+
+  getSuggestedPlanService(): SuggestedPlanService | null {
+    return this.suggestedPlanService;
   }
 
   /** Wire the durable, authenticated-session-scoped Mess facade. */
@@ -1212,8 +1220,16 @@ export class HelmControlService extends EventEmitter {
     return this.planService.getPlanIdMapping(humanId);
   }
 
-  createPlan(dirPath: string, title: string, description: string, type?: PlanType, autoImplement?: boolean): { id: string; humanId: string } {
-    return this.planService.createPlan(dirPath, title, description, type, autoImplement);
+  createPlan(dirPath: string, title: string, description: string, type?: PlanType, autoImplement?: boolean, status?: 'suggested', sourceIdeaId?: string): { id: string; humanId: string } {
+    return this.planService.createPlan(dirPath, title, description, type, autoImplement, status, sourceIdeaId);
+  }
+
+  acceptSuggestedPlan(id: string): { ok: true } {
+    return this.planService.acceptSuggestedPlan(id);
+  }
+
+  rejectSuggestedPlan(id: string): { ok: true; deleted: boolean } {
+    return this.planService.rejectSuggestedPlan(id);
   }
 
   updatePlan(id: string, updates: { title?: string; description?: string; type?: PlanType | null; autoImplement?: boolean; completionRecap?: boolean; task?: PlanTask | null }): { ok: true; updatedAt: number } {
@@ -1234,7 +1250,7 @@ export class HelmControlService extends EventEmitter {
 
   setPlanState(
     id: string,
-    status: Exclude<PlanStatus, 'done'>,
+    status: SettablePlanStatus,
     stateInfo?: string,
   ): { ok: true } {
     return this.planService.setPlanState(id, status, stateInfo);

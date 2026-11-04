@@ -22,7 +22,7 @@ export function usePlanWorkspaceController() {
     toggleTypeFilter(type);
   }
 
-  function onToggleStatusFilter(status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done'): void {
+  function onToggleStatusFilter(status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done' | 'suggested'): void {
     toggleStatusFilter(status);
   }
 

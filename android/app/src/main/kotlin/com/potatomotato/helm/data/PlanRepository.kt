@@ -18,6 +18,7 @@ import org.json.JSONObject
  * list rather than the top of it.
  */
 enum class PlanStatus(val wire: String) {
+    Suggested("suggested"),
     Planning("planning"),
     Ready("ready"),
     Coding("coding"),

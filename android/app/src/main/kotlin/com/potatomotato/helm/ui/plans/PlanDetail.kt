@@ -27,6 +27,7 @@ import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmPlan
 import com.potatomotato.helm.data.HelmPlanContextRef
 import com.potatomotato.helm.data.HelmPlanSequence
+import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.PlanStatus
 import com.potatomotato.helm.data.PlanWrite
 import com.potatomotato.helm.ui.components.ConfirmDelete
@@ -85,10 +86,13 @@ fun PlanDetail(
  */
 class PlanDetailActions(
     val lanes: List<HelmPlanSequence>,
+    val capabilities: Capabilities,
     val write: PlanWrite,
     val onDismissWrite: () -> Unit,
     val onEdit: (title: String, description: String) -> Unit,
     val onSetState: (PlanStatus) -> Unit,
+    val onAcceptSuggestion: () -> Unit,
+    val onRejectSuggestion: () -> Unit,
     val onComplete: (documentation: String) -> Unit,
     val onReopen: () -> Unit,
     val onAssign: (sequenceId: String?) -> Unit,
@@ -96,7 +100,7 @@ class PlanDetailActions(
 )
 
 /** Which form is open over the plan. Saveable so rotation keeps the user mid-question. */
-enum class PlanDialog { Edit, Complete, Assign, Delete }
+enum class PlanDialog { Edit, Complete, Assign, Delete, RejectSuggestion }
 
 @Composable
 private fun PlanDialogs(dialog: PlanDialog?, plan: HelmPlan, actions: PlanDetailActions, close: () -> Unit) {
@@ -124,6 +128,12 @@ private fun PlanDialogs(dialog: PlanDialog?, plan: HelmPlan, actions: PlanDetail
             message = stringResource(R.string.plan_confirm_delete, plan.title),
             onConfirm = { close(); actions.onDelete() },
             onCancel = close,
+        )
+        PlanDialog.RejectSuggestion -> ConfirmDelete(
+            message = stringResource(R.string.plan_reject_confirmation, plan.title),
+            onConfirm = { close(); actions.onRejectSuggestion() },
+            onCancel = close,
+            confirmText = stringResource(R.string.plan_reject_confirm_yes),
         )
     }
 }
@@ -175,9 +185,11 @@ private fun PlanActionRow(status: PlanStatus, actions: PlanDetailActions, onDial
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         verticalArrangement = Arrangement.Center,
     ) {
-        for (move in PlanStateActions.of(status)) {
+        for (move in PlanStateActions.available(status, actions.capabilities)) {
             StateMoveChip(move) {
                 when (move) {
+                    PlanStateAction.Accept -> actions.onAcceptSuggestion()
+                    PlanStateAction.Reject -> onDialog(PlanDialog.RejectSuggestion)
                     PlanStateAction.Planning -> actions.onSetState(PlanStatus.Planning)
                     PlanStateAction.Ready -> actions.onSetState(PlanStatus.Ready)
                     PlanStateAction.Done -> onDialog(PlanDialog.Complete)
@@ -195,11 +207,13 @@ private fun PlanActionRow(status: PlanStatus, actions: PlanDetailActions, onDial
             description = stringResource(R.string.plan_assign_title),
             onClick = { onDialog(PlanDialog.Assign) },
         )
-        GlyphButton(
-            glyph = stringResource(R.string.artifacts_glyph_delete),
-            description = stringResource(R.string.plan_action_delete),
-            onClick = { onDialog(PlanDialog.Delete) },
-        )
+        if (status != PlanStatus.Suggested) {
+            GlyphButton(
+                glyph = stringResource(R.string.artifacts_glyph_delete),
+                description = stringResource(R.string.plan_action_delete),
+                onClick = { onDialog(PlanDialog.Delete) },
+            )
+        }
     }
 }
 
@@ -207,6 +221,8 @@ private fun PlanActionRow(status: PlanStatus, actions: PlanDetailActions, onDial
 @Composable
 private fun StateMoveChip(move: PlanStateAction, onClick: () -> Unit) {
     val (label, color) = when (move) {
+        PlanStateAction.Accept -> stringResource(R.string.plan_accept_suggestion) to HelmColors.Accent
+        PlanStateAction.Reject -> stringResource(R.string.plan_reject_suggestion) to HelmColors.Danger
         PlanStateAction.Planning -> stringResource(R.string.plan_move_to, stringResource(PlanStatus.Planning.labelRes)) to PlanStatus.Planning.pillColor
         PlanStateAction.Ready -> stringResource(R.string.plan_move_to, stringResource(PlanStatus.Ready.labelRes)) to PlanStatus.Ready.pillColor
         PlanStateAction.Done -> stringResource(R.string.plan_move_to, stringResource(PlanStatus.Done.labelRes)) to HelmColors.Accent

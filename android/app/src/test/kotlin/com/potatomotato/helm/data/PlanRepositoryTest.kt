@@ -75,6 +75,13 @@ class PlanRepositoryTest {
     }
 
     @Test
+    fun `suggested status is parsed from the board wire`() {
+        repo.listArrived("/work", parse("""[{"id":"p1","title":"Idea follow-up","status":"suggested"}]"""))
+        val plan = (repo.list.value as PlanList.Ready).plans.single()
+        assertEquals(PlanStatus.Suggested, plan.status)
+    }
+
+    @Test
     fun `an optional field the desktop omitted stays absent rather than invented`() {
         repo.listArrived("/work", parse("""[{"id":"p1","title":"X","status":"ready"}]"""))
 

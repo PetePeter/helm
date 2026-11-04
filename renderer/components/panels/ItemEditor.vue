@@ -24,6 +24,8 @@ export interface PlanCallbacks {
   onDelete: () => void;
   onDone?: () => void;
   onApply?: () => void;
+  onAccept?: () => void;
+  onReject?: () => void;
   onClose?: () => void;
 }
 
@@ -151,7 +153,7 @@ const activePlanStatus = computed<PlanStatus>(() => (
 const titleText = computed(() => {
   if (isContext.value) return 'Edit Context';
   const statusLabels: Record<string, string> = {
-    planning: '⏸ Planning', ready: '▶ Ready', coding: '🔄 Coding', review: '⏳ Review', blocked: '⛔ Blocked', done: '✓ Done',
+    planning: '⏸ Planning', ready: '▶ Ready', coding: '🔄 Coding', review: '⏳ Review', blocked: '⛔ Blocked', done: '✓ Done', suggested: '💡 Suggested',
   };
   return `🗺️ Edit Plan · ${statusLabels[activePlanStatus.value] ?? activePlanStatus.value}`;
 });
@@ -166,6 +168,7 @@ const canSavePlan = computed(() => {
 });
 
 const showDoneButton = computed(() => isPlan.value && !!props.planCallbacks?.onDone && (activePlanStatus.value === 'coding' || activePlanStatus.value === 'review'));
+const showSuggestionActions = computed(() => isPlan.value && props.planStatus === 'suggested');
 const showApplyButton = computed(() => (!!props.planCallbacks?.onApply && (activePlanStatus.value === 'ready' || activePlanStatus.value === 'coding' || activePlanStatus.value === 'review')));
 const applyButtonText = computed(() => (activePlanStatus.value === 'coding' || activePlanStatus.value === 'review') ? '↻ Apply Again' : '▶ Apply');
 
@@ -176,6 +179,7 @@ const STATUS_ICONS: Record<PlanStatus, string> = {
   review: '⏳',
   blocked: '⛔',
   done: '✅',
+  suggested: '💡',
 };
 
 const hasUnsavedChanges = computed(() => {
@@ -335,6 +339,14 @@ function onDone(): void {
   emit('close');
 }
 
+function onAcceptSuggestion(): void {
+  props.planCallbacks?.onAccept?.();
+}
+
+function onRejectSuggestion(): void {
+  props.planCallbacks?.onReject?.();
+}
+
 function onDelete(): void {
   if (isContext.value) emit('context-delete');
   else emit('plan-delete');
@@ -479,7 +491,9 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
         <button class="btn btn--primary btn--sm" @click="onSave">Save</button>
         <button v-if="showApplyButton" class="btn btn--primary btn--sm" @click="onApply">{{ applyButtonText }}</button>
         <button v-if="showDoneButton" class="btn btn--success btn--sm" @click="onDone">✓ Done</button>
-        <button class="btn btn--danger btn--sm" @click="onDelete">Delete</button>
+        <button v-if="showSuggestionActions" class="btn btn--success btn--sm" @click="onAcceptSuggestion">✓ Accept</button>
+        <button v-if="showSuggestionActions" class="btn btn--danger btn--sm" @click="onRejectSuggestion">✕ Reject</button>
+        <button v-if="!showSuggestionActions" class="btn btn--danger btn--sm" @click="onDelete">Delete</button>
         <button class="btn btn--secondary btn--sm" @click="onCancel">Cancel</button>
       </div>
     </div>
@@ -496,9 +510,10 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
         <select v-if="isPlan" ref="typeSelectRef" v-model="type" class="item-editor-plan-select item-editor-type-select">
           <option :value="undefined">None</option><option value="bug">Bug</option><option value="feature">Feature</option><option value="research">Research</option>
         </select>
-        <select v-if="showPlanStateSelect" ref="stateSelectRef" v-model="status" class="item-editor-plan-select item-editor-status-select" @change="onStateSelectChange">
+        <select v-if="showPlanStateSelect && props.planStatus !== 'suggested'" ref="stateSelectRef" v-model="status" class="item-editor-plan-select item-editor-status-select" @change="onStateSelectChange">
           <option value="planning">⏸ Planning</option><option value="ready">▶ Ready</option><option value="coding">🔄 Coding</option><option value="review">⏳ Review</option><option value="blocked">⛔ Blocked</option><option value="done">✓ Done</option>
         </select>
+        <span v-else-if="isPlan && props.planStatus === 'suggested'" class="item-editor-suggested-status">💡 Suggested</span>
         <input v-if="showPlanStateInfo" ref="stateInfoRef" v-model="stateInfo" type="text" class="item-editor-plan-info" :placeholder="status === 'done' ? 'Required completion notes...' : requiresStateInfo ? 'Required blocker reason...' : 'Add state context...'" maxlength="200" />
         <label v-if="isPlan" class="item-editor-plan-checkbox">
           <input ref="autoImplementRef" v-model="autoImplement" type="checkbox">
@@ -649,6 +664,12 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
   outline: none;
 }
 
+.item-editor-suggested-status {
+  color: var(--status-suggested);
+  font-weight: 600;
+  padding: 4px 8px;
+}
+
 .item-editor-plan-select:focus,
 .item-editor-plan-info:focus {
   border-color: var(--accent);
@@ -711,6 +732,7 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
 .context-bound-chip--plan.plan-chip--blocked { border-color: var(--status-blocked); }
 .context-bound-chip--plan.plan-chip--planning { border-color: var(--status-planning); }
 .context-bound-chip--plan.plan-chip--done { border-color: var(--status-done); }
+.context-bound-chip--plan.plan-chip--suggested { border-color: var(--status-suggested); }
 .context-bound-chip-label { border: 0; background: transparent; color: inherit; font: inherit; cursor: default; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-bound-chip-remove { border: 0; background: transparent; color: inherit; font-size: 16px; cursor: pointer; line-height: 1; padding: 0 0 0 4px; opacity: 0.6; }
 .context-bound-chip-remove:hover { opacity: 1; }

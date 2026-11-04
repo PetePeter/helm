@@ -121,6 +121,8 @@ export interface AppState {
   planDirReviewCounts: Map<string, number>;
   /** Per-directory plan planning count */
   planDirPlanningCounts: Map<string, number>;
+  /** Per-directory suggested plan count */
+  planDirSuggestedCounts: Map<string, number>;
   /** Per-session working plan label (e.g. "🗺️ Auth refactor") */
   workingPlanLabels: Map<string, string>;
   /** Per-session working plan tooltip */

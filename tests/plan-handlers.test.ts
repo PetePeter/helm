@@ -66,6 +66,7 @@ import { ContextManager } from '../src/session/context-manager.js';
 
 describe('plan IPC handlers', () => {
   let planManager: PlanManager;
+  let suggestionService: { accept: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     handlers.clear();
@@ -73,7 +74,11 @@ describe('plan IPC handlers', () => {
     electronMockState.BrowserWindowMock.mockClear();
     electronMockState.getAllWindows.mockClear();
     planManager = new PlanManager();
-    setupPlanHandlers(planManager);
+    suggestionService = {
+      accept: vi.fn(() => ({ ok: true })),
+      reject: vi.fn(() => ({ ok: true, deleted: false })),
+    };
+    setupPlanHandlers(planManager, undefined, undefined, undefined, undefined, suggestionService as never);
   });
 
   // ─── Registration ─────────────────────────────────────
@@ -83,6 +88,7 @@ describe('plan IPC handlers', () => {
       'plan:list', 'plan:create', 'plan:update', 'plan:delete',
       'plan:addDep', 'plan:removeDep', 'plan:apply', 'plan:complete',
       'plan:setState', 'plan:startableForDir', 'plan:doingForSession', 'plan:popOut',
+      'plan:acceptSuggestion', 'plan:rejectSuggestion',
       'plan:getAllDoingForDir', 'plan:deps', 'plan:getItem',
     ];
     for (const channel of expected) {
@@ -127,6 +133,20 @@ describe('plan IPC handlers', () => {
 
     const items = await handlers.get('plan:list')!({}, '/proj');
     expect(items).toHaveLength(0);
+  });
+
+  it('routes generic deletion of a suggested plan through the reject service', async () => {
+    suggestionService.reject.mockImplementationOnce((id: string) => {
+      const deleted = planManager.delete(id);
+      return { ok: true, deleted };
+    });
+    const suggested = planManager.createSuggested('/proj', 'Suggested', 'Awaiting triage');
+
+    const result = await handlers.get('plan:delete')!({}, suggested.id);
+
+    expect(result).toBe(true);
+    expect(suggestionService.reject).toHaveBeenCalledWith(suggested.id);
+    expect(planManager.getItem(suggested.id)).toBeNull();
   });
 
   it('plan:delete returns false for unknown id', async () => {
@@ -236,6 +256,13 @@ describe('plan IPC handlers', () => {
     const updated = await handlers.get('plan:setState')!({}, item.id, 'blocked', 'Waiting on API');
     expect(updated.status).toBe('blocked');
     expect(updated.stateInfo).toBe('Waiting on API');
+  });
+
+  it('routes accept and reject commands to the shared suggestion service', async () => {
+    expect(await handlers.get('plan:acceptSuggestion')!({}, 'suggestion-1')).toEqual({ ok: true });
+    expect(await handlers.get('plan:rejectSuggestion')!({}, 'suggestion-2')).toEqual({ ok: true, deleted: false });
+    expect(suggestionService.accept).toHaveBeenCalledWith('suggestion-1');
+    expect(suggestionService.reject).toHaveBeenCalledWith('suggestion-2');
   });
 
   it('plan:popOut opens a detached planner window', async () => {

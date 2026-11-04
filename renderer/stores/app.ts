@@ -31,6 +31,7 @@ export const appState: AppState = reactive({
   planDirBlockedCounts: new Map(),
   planDirReviewCounts: new Map(),
   planDirPlanningCounts: new Map(),
+  planDirSuggestedCounts: new Map(),
   workingPlanLabels: new Map(),
   workingPlanTooltips: new Map(),
   pendingSchedules: new Map(),

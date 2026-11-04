@@ -38,6 +38,7 @@ const directories = computed(() => {
     blockedCount: state.planDirBlockedCounts.get(directory.path) ?? 0,
     reviewCount: state.planDirReviewCounts.get(directory.path) ?? 0,
     planningCount: state.planDirPlanningCounts.get(directory.path) ?? 0,
+    suggestedCount: state.planDirSuggestedCounts.get(directory.path) ?? 0,
   }));
 });
 </script>

@@ -133,12 +133,17 @@
     <string name="plan_context_ref_sub">from %1$s · %2$s</string>
 
     <string name="plan_status_planning">Planning</string>
+    <string name="plan_status_suggested">Suggested</string>
     <string name="plan_status_ready">Ready</string>
     <string name="plan_status_coding">Coding</string>
     <string name="plan_status_review">Review</string>
     <string name="plan_status_blocked">Blocked</string>
     <string name="plan_status_done">Done</string>
     <string name="plan_status_unknown">Unknown</string>
+    <string name="plan_accept_suggestion">Accept suggestion</string>
+    <string name="plan_reject_suggestion">Reject suggestion</string>
+    <string name="plan_reject_confirmation">Reject “%1$s” and mark its linked idea as rejected?</string>
+    <string name="plan_reject_confirm_yes">Reject</string>
 
     <string name="sequences_loading">Reading sequences…</string>
     <string name="sequences_empty">No sequences in this project yet.</string>
@@ -577,6 +582,8 @@
     <string name="plan_write_create_plan">Create plan</string>
     <string name="plan_write_update_plan">Edit plan</string>
     <string name="plan_write_set_state">State change</string>
+    <string name="plan_write_accept_suggestion">Accept suggestion</string>
+    <string name="plan_write_reject_suggestion">Reject suggestion</string>
     <string name="plan_write_complete">Mark done</string>
     <string name="plan_write_reopen">Reopen</string>
     <string name="plan_write_delete_plan">Delete plan</string>

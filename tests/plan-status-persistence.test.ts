@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -44,6 +45,18 @@ describe('PlanManager status persistence round trip', () => {
     const loaded = reloaded.getItem(item.id);
     expect(loaded?.status).toBe('blocked');
     expect(loaded?.stateInfo).toBe('Waiting on API key');
+  });
+
+  it('preserves suggested status and source idea across a reload', () => {
+    const dir = `/tmp/plan-status-suggested-${randomUUID()}`;
+    const pm = new PlanManager();
+    const suggested = pm.createSuggested(dir, 'Suggested item', 'Awaiting triage', 'idea-1');
+
+    const reloaded = new PlanManager();
+
+    expect(reloaded.getItem(suggested.id)).toMatchObject({ status: 'suggested', sourceIdeaId: 'idea-1' });
+    expect(reloaded.getStartableForDirectory(dir)).toEqual([]);
+    pm.delete(suggested.id);
   });
 
   it('still migrates legacy statuses on load', () => {

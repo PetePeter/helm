@@ -108,6 +108,7 @@ import { setDeliveryObserver } from '../../session/sequence-delivery.js';
 import { setupProjectHandlers } from './project-handlers.js';
 import { setupSkillHandlers } from './skill-handlers.js';
 import { IncomingPlansWatcher } from '../../session/incoming-plans-watcher.js';
+import { SuggestedPlanService } from '../../session/suggested-plan-service.js';
 import { WindowManager } from '../window-manager.js';
 import { HelmControlService } from '../../mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
@@ -421,7 +422,10 @@ export function registerIPCHandlers(
 
   // PlanManager loads from disk in its constructor — no explicit importAll needed
 
-  const incomingWatcher = new IncomingPlansWatcher(planManager);
+  const incomingWatcher = new IncomingPlansWatcher(
+    planManager,
+    new SuggestedPlanService(planManager, memoryManager),
+  );
   // The shim is seeded into the user config dir alongside the other shipped
   // defaults; the installer writes CLI configs that point HERE at it. Shared by
   // the settings handlers (below) and the G4 rules-via-hooks capability check.
@@ -675,7 +679,7 @@ export function registerIPCHandlers(
   }
   setupProjectHandlers(projectStore, planManager, contextManager, windowManager);
   setupSkillHandlers(skillManager, skillAnalyticsManager);
-  setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname);
+  setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname, helmControlService.getSuggestedPlanService() ?? undefined);
   setupScheduledTaskHandlers(scheduledTaskManager, scheduledTaskHistoryManager, windowManager);
   // Time tracking: the session's Helm project, else its directory, gets the credit.
   const whereIsDir = (dir: string, projectId?: string) => {

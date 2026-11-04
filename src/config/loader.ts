@@ -328,7 +328,7 @@ const DEFAULT_SORTING: SortingConfig = {
 
 const DEFAULT_PLAN_FILTERS: PlanFilterConfig = {
   types: { bug: 'either', feature: 'either', research: 'either', untyped: 'either' },
-  statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either' },
+  statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either', suggested: 'either' },
   hasAttachment: { yes: 'either', no: 'either' },
   auto: 'either',
 };

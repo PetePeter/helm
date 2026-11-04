@@ -187,6 +187,8 @@ export const PRELOAD_API_DOMAINS = {
     'planComplete',
     'planReopen',
     'planSetState',
+    'planAcceptSuggestion',
+    'planRejectSuggestion',
     'planStartableForDir',
     'planDoingForSession',
     'planGetAllDoingForDir',

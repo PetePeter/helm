@@ -20,6 +20,7 @@ const directory = {
   blockedCount: 0,
   reviewCount: 0,
   planningCount: 0,
+  suggestedCount: 0,
 };
 
 describe('tool grid focus contract', () => {

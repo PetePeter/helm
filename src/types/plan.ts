@@ -11,7 +11,16 @@
  * - blocked: unable to proceed (requires mandatory stateInfo reason)
  * - done: completed (only reachable via plan_complete endpoint)
  */
-export type PlanStatus = 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done';
+export const PLAN_STATUSES = ['planning', 'ready', 'coding', 'review', 'blocked', 'done', 'suggested'] as const;
+export type PlanStatus = (typeof PLAN_STATUSES)[number];
+
+/** States exposed by generic state-setting APIs. Suggestions use dedicated triage operations. */
+export const SETTABLE_PLAN_STATUSES = ['planning', 'ready', 'coding', 'review', 'blocked'] as const;
+export type SettablePlanStatus = (typeof SETTABLE_PLAN_STATUSES)[number];
+
+export function isPlanStatus(value: unknown): value is PlanStatus {
+  return typeof value === 'string' && PLAN_STATUSES.includes(value as PlanStatus);
+}
 
 /** Type classification for a plan item. */
 export type PlanType = 'bug' | 'feature' | 'research';
@@ -41,6 +50,8 @@ export interface PlanItem {
   description: string;
   /** Current lifecycle status */
   status: PlanStatus;
+  /** Idea memory that produced this suggestion, when it came from an idea. */
+  sourceIdeaId?: string;
   /** Extra context for blocked/question states */
   stateInfo?: string;
   /** Documentation of what was accomplished when completing this plan (required by plan_complete) */
@@ -133,6 +144,8 @@ export function getDisplayTitle(title: string, type?: PlanType): string {
  * The actual status should be 'ready' when isStartable returns true for non-active items.
  */
 export function isStartable(item: PlanItem, allDeps: PlanDependency[], allItems: PlanItem[]): boolean {
+  if (item.status === 'suggested') return false;
+
   const blockers = allDeps
     .filter(d => d.toId === item.id)
     .map(d => allItems.find(x => x.id === d.fromId))
@@ -145,7 +158,7 @@ export function isStartable(item: PlanItem, allDeps: PlanDependency[], allItems:
 /**
  * Filter preset for plan listing endpoints.
  * - all:       every item, including done
- * - active:    every non-done item (planning/ready/coding/review/blocked)
+ * - active:    every non-done item, including suggested plans
  * - startable: non-done items whose precursors are all done (or have none) — the
  *              dependency frontier, in any non-done state
  */

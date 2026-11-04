@@ -325,12 +325,20 @@ export async function callMcpTool(
       case 'plan_get_id':
         return service.getPlanIdMapping(asString(args.humanId, 'humanId is required'));
       case 'plan_create':
+        if (args.status !== undefined && args.status !== 'suggested') {
+          throw new Error('status must be suggested when supplied');
+        }
+        const sourceIdeaId = args.sourceIdeaId === undefined
+          ? undefined
+          : asString(args.sourceIdeaId, 'sourceIdeaId must be a non-empty string');
         return service.createPlan(
           asString(args.dirPath, 'dirPath is required'),
           asString(args.title, 'title is required'),
           asString(args.description, 'description is required'),
           typeof args.type === 'string' ? (args.type as 'bug' | 'feature' | 'research') : undefined,
           typeof args.autoImplement === 'boolean' ? args.autoImplement : undefined,
+          args.status === 'suggested' ? 'suggested' : undefined,
+          sourceIdeaId,
         );
       case 'plan_update':
         return requireResult(
@@ -357,6 +365,10 @@ export async function callMcpTool(
           asPlanStatus(args.status),
           typeof args.stateInfo === 'string' ? args.stateInfo : undefined,
         );
+      case 'plan_accept_suggestion':
+        return service.acceptSuggestedPlan(asString(args.uuid, 'uuid is required'));
+      case 'plan_reject_suggestion':
+        return service.rejectSuggestedPlan(asString(args.uuid, 'uuid is required'));
       case 'plan_complete':
         return completePlanWithValidation(
           asString(args.uuid, 'uuid is required'),

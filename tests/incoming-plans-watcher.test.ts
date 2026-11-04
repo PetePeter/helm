@@ -68,6 +68,8 @@ vi.mock('../src/session/persistence.js', () => ({
 
 import { IncomingPlansWatcher } from '../src/session/incoming-plans-watcher.js';
 import { PlanManager } from '../src/session/plan-manager.js';
+import { MemoryManager } from '../src/session/memory-manager.js';
+import { SuggestedPlanService } from '../src/session/suggested-plan-service.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -110,6 +112,9 @@ function getUnlinkCallback(): (filePath: string) => void {
 
 describe('IncomingPlansWatcher', () => {
   let planManager: PlanManager;
+  let memories: MemoryManager;
+  let suggestedPlanService: SuggestedPlanService;
+  let sessionProjectId: string;
   let watcher: IncomingPlansWatcher;
 
   beforeEach(() => {
@@ -117,8 +122,24 @@ describe('IncomingPlansWatcher', () => {
     mockExistsSync.mockReturnValue(true);
     mockReaddirSync.mockReturnValue([]);
     planManager = new PlanManager();
-    watcher = new IncomingPlansWatcher(planManager, '/config');
+    vi.spyOn(planManager, 'getProjectIdForDirectory').mockReturnValue('project-backend');
+    sessionProjectId = 'project-backend';
+    memories = new MemoryManager({ resolveSessionProject: () => sessionProjectId });
+    suggestedPlanService = new SuggestedPlanService(planManager, memories);
+    watcher = new IncomingPlansWatcher(planManager, suggestedPlanService, '/config');
   });
+
+  function createIdea(stage: 'suggested' | 'growing' = 'suggested', projectId = 'project-backend'): string {
+    sessionProjectId = projectId;
+    const idea = memories.createForSession('session-a', {
+      kind: 'idea',
+      tldr: 'A useful idea',
+      content: 'A sufficiently detailed idea description.',
+    });
+    sessionProjectId = 'project-backend';
+    memories.update(idea.id, { ideaStage: stage });
+    return idea.id;
+  }
 
   // ─── start / close ─────────────────────────────────────────────────────────
 
@@ -253,6 +274,75 @@ describe('IncomingPlansWatcher', () => {
       // (PlanManager.importItem always sets status='ready'; watcher passes item as-is)
       expect(passedItem.status).toBe('coding'); // watcher passes raw status; manager normalises
       expect(onImported).toHaveBeenCalled();
+    });
+
+    it('validates a linked idea and forces the imported plan to suggested', () => {
+      const sourceIdeaId = createIdea();
+      mockReadFileSync.mockReturnValue(makeValidJson({ status: 'ready', sourceIdeaId }));
+      watcher.start();
+      const importSpy = vi.spyOn(planManager, 'importItem');
+
+      getAddCallback()('/config/plans/incoming/suggested.json');
+
+      expect(importSpy.mock.calls[0]?.[0]).toMatchObject({ status: 'suggested', sourceIdeaId });
+      expect(planManager.getItem('plan-abc-123')?.status).toBe('suggested');
+    });
+
+    it('refuses a second incoming plan for an idea with a live suggestion and reports that plan id', () => {
+      const sourceIdeaId = createIdea();
+      const existing = suggestedPlanService.createSuggested({
+        dirPath: '/projects/backend',
+        title: 'Existing suggestion',
+        description: 'Already linked to this idea.',
+        sourceIdeaId,
+      });
+      mockReadFileSync.mockReturnValue(makeValidJson({ status: 'ready', sourceIdeaId }));
+      watcher.start();
+      const importSpy = vi.spyOn(planManager, 'importItem');
+      const onError = vi.fn();
+      watcher.on('incoming-error', onError);
+
+      getAddCallback()('/config/plans/incoming/duplicate-suggestion.json');
+
+      expect(importSpy).not.toHaveBeenCalled();
+      expect(onError.mock.calls[0]?.[0].error).toContain(existing.id);
+      expect(watcher.getFailedFiles().has('duplicate-suggestion.json')).toBe(true);
+      expect(mockUnlinkSync).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { label: 'missing idea', projectId: 'project-backend', stage: 'suggested', missing: true },
+      { label: 'idea from another project', projectId: 'other-project', stage: 'suggested', missing: false },
+      { label: 'idea at the wrong stage', projectId: 'project-backend', stage: 'growing', missing: false },
+    ] as const)('keeps a linked import unimported when its $label is invalid', ({ projectId, stage, missing }) => {
+      const sourceIdeaId = missing ? 'missing-idea' : createIdea(stage, projectId);
+      mockReadFileSync.mockReturnValue(makeValidJson({ status: 'ready', sourceIdeaId }));
+      watcher.start();
+      const importSpy = vi.spyOn(planManager, 'importItem');
+      const onError = vi.fn();
+      watcher.on('incoming-error', onError);
+
+      getAddCallback()('/config/plans/incoming/invalid-link.json');
+
+      expect(importSpy).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledOnce();
+      expect(watcher.getFailedFiles().has('invalid-link.json')).toBe(true);
+      expect(mockUnlinkSync).not.toHaveBeenCalled();
+    });
+
+    it('rejects a suggested status that has no source idea', () => {
+      mockReadFileSync.mockReturnValue(makeValidJson({ status: 'suggested' }));
+      watcher.start();
+      const importSpy = vi.spyOn(planManager, 'importItem');
+      const onError = vi.fn();
+      watcher.on('incoming-error', onError);
+
+      getAddCallback()('/config/plans/incoming/unlinked-suggestion.json');
+
+      expect(importSpy).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledOnce();
+      expect(watcher.getFailedFiles().has('unlinked-suggestion.json')).toBe(true);
+      expect(mockUnlinkSync).not.toHaveBeenCalled();
     });
 
     it('ignores non-.json files', () => {

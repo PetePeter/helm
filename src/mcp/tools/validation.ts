@@ -1,4 +1,5 @@
 import type { ContextBindingTargetType } from '../../types/context.js';
+import { SETTABLE_PLAN_STATUSES, type SettablePlanStatus } from '../../types/plan.js';
 import type { ArtifactIntent, ArtifactKind } from '../../types/artifact.js';
 import { validateGraphDepth } from '../../session/memory-graph.js';
 import {
@@ -78,11 +79,11 @@ export function asRecord(value: unknown): Record<string, unknown> {
 }
 
 
-export function asPlanStatus(value: unknown): 'planning' | 'ready' | 'coding' | 'review' | 'blocked' {
-  if (value === 'planning' || value === 'ready' || value === 'coding' || value === 'review' || value === 'blocked') {
-    return value;
+export function asPlanStatus(value: unknown): SettablePlanStatus {
+  if (typeof value === 'string' && SETTABLE_PLAN_STATUSES.includes(value as SettablePlanStatus)) {
+    return value as SettablePlanStatus;
   }
-  throw new Error('status must be one of planning, ready, coding, review, or blocked');
+  throw new Error(`status must be one of: ${SETTABLE_PLAN_STATUSES.join(', ')}`);
 }
 
 

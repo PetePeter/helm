@@ -251,6 +251,7 @@ async function refreshPlanCounts(): Promise<void> {
   state.planDirBlockedCounts.clear();
   state.planDirReviewCounts.clear();
   state.planDirPlanningCounts.clear();
+  state.planDirSuggestedCounts.clear();
 
   const countedDirs = new Map<string, number>();
 

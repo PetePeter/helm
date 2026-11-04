@@ -7,8 +7,9 @@ import type { PlanManager, PlanRefResolution } from '../../session/plan-manager.
 import type { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
 import type { ContextManager } from '../../session/context-manager.js';
 import type { SequenceContextMetadata } from '../../types/context.js';
-import { filterPlanItems, type PlanFilter, type PlanItem, type PlanStatus, type PlanTask, type PlanType } from '../../types/plan.js';
+import { filterPlanItems, type PlanFilter, type PlanItem, type SettablePlanStatus, type PlanTask, type PlanType } from '../../types/plan.js';
 import { taskCardOf } from '../../session/operator-tasks.js';
+import type { SuggestedPlanService } from '../../session/suggested-plan-service.js';
 
 function claimOf(
   sessionId: string,
@@ -23,6 +24,8 @@ function claimOf(
  * dependency linking/unlinking, and directory/item export.
  */
 export class HelmPlanService {
+  private suggestedPlanService?: SuggestedPlanService;
+
   constructor(
     private readonly planManager: PlanManager,
     private readonly configLoader: ConfigLoader,
@@ -30,6 +33,10 @@ export class HelmPlanService {
     private readonly contextManager?: ContextManager,
     private readonly projectStore?: ProjectStore,
   ) {}
+
+  setSuggestedPlanService(service: SuggestedPlanService): void {
+    this.suggestedPlanService = service;
+  }
 
   listPlans(dirPath: string, filter: PlanFilter = 'active'): PlanItem[] {
     const exported = this.planManager.exportDirectory(normalizeProjectPath(dirPath));
@@ -124,10 +131,50 @@ export class HelmPlanService {
     };
   }
 
-  createPlan(dirPath: string, title: string, description: string, type?: PlanType, autoImplement?: boolean): { id: string; humanId: string } {
+  createPlan(
+    dirPath: string,
+    title: string,
+    description: string,
+    type?: PlanType,
+    autoImplement?: boolean,
+    status?: 'suggested',
+    sourceIdeaId?: string,
+  ): { id: string; humanId: string } {
     const normalizedDir = this.requireWorkingDirectory(dirPath).path;
+    if (status === 'suggested' || sourceIdeaId) {
+      if (!this.suggestedPlanService) throw new Error('Suggested plan support is unavailable');
+      const item = this.suggestedPlanService.createSuggested({
+        dirPath: normalizedDir,
+        title,
+        description,
+        ...(sourceIdeaId ? { sourceIdeaId } : {}),
+        type,
+        autoImplement,
+      });
+      return { id: item.id, humanId: item.humanId ?? item.id };
+    }
     const item = this.planManager.createWithType(normalizedDir, title, description, type, autoImplement);
     return { id: item.id, humanId: item.humanId ?? item.id };
+  }
+
+  acceptSuggestedPlan(id: string): { ok: true } {
+    if (!this.suggestedPlanService) throw new Error('Suggested plan support is unavailable');
+    const plan = this.resolvePlanRef(id, 'Suggested plan');
+    if (!plan) throw new Error(`Suggested plan not found: ${id}`);
+    return this.suggestedPlanService.accept(plan.item.id);
+  }
+
+  rejectSuggestedPlan(id: string): { ok: true; deleted: boolean } {
+    if (!this.suggestedPlanService) throw new Error('Suggested plan support is unavailable');
+    const plan = this.resolvePlanRef(id, 'Suggested plan');
+    // Preserve reject's state-aware, idempotent delete when a retry arrives
+    // after the first request removed the plan from the store.
+    const result = this.suggestedPlanService.reject(plan?.item.id ?? id);
+    if (plan && result.deleted) {
+      this.attachmentManager.deletePlanAttachments(plan.item.id);
+      this.contextManager?.removeBindingsForTarget('plan', plan.item.id);
+    }
+    return result;
   }
 
   updatePlan(id: string, updates: { title?: string; description?: string; type?: PlanType | null; autoImplement?: boolean; completionRecap?: boolean; task?: PlanTask | null }): { ok: true; updatedAt: number } {
@@ -155,6 +202,9 @@ export class HelmPlanService {
   deletePlan(id: string): boolean {
     const plan = this.resolvePlanRef(id, 'Plan');
     if (!plan) return false;
+    if (plan.item.status === 'suggested') {
+      return this.rejectSuggestedPlan(plan.item.id).deleted;
+    }
     const deleted = this.planManager.delete(plan.item.id);
     if (deleted) {
       this.attachmentManager.deletePlanAttachments(plan.item.id);
@@ -182,7 +232,7 @@ export class HelmPlanService {
 
   setPlanState(
     id: string,
-    status: Exclude<PlanStatus, 'done'>,
+    status: SettablePlanStatus,
     stateInfo?: string,
   ): { ok: true } {
     logger.info(`[MCP:Service] setPlanState id=${id} status=${status}`);

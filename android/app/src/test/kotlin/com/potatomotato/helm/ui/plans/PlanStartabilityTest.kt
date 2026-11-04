@@ -68,6 +68,11 @@ class PlanStartabilityTest {
     }
 
     @Test
+    fun `a suggested plan is never startable`() {
+        assertEquals(emptySet<String>(), PlanStartability.of(listOf(plan("p1", status = PlanStatus.Suggested))))
+    }
+
+    @Test
     fun `an edge naming a uuid resolves too, for a plan with no P-id yet`() {
         // The desktop mints humanId for every summary row, but an edge that
         // could not be resolved falls back to the UUID — which must still match.

@@ -28,13 +28,13 @@ import type { FilterPreferenceState, PlanFilterPreferences } from '../../src/typ
 
 export type TriState = FilterPreferenceState;
 type TypeFilterKey = 'bug' | 'feature' | 'research' | 'untyped';
-type StatusFilterKey = 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done';
+type StatusFilterKey = 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done' | 'suggested';
 type AttachmentFilterKey = 'yes' | 'no';
 
 function makeDefaultFilters() {
   return {
     types: { bug: 'either', feature: 'either', research: 'either', untyped: 'either' } as Record<TypeFilterKey, TriState>,
-    statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either' } as Record<StatusFilterKey, TriState>,
+    statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either', suggested: 'either' } as Record<StatusFilterKey, TriState>,
     hasAttachment: { yes: 'either', no: 'either' } as Record<AttachmentFilterKey, TriState>,
     auto: 'either' as TriState,
   };
@@ -69,6 +69,8 @@ export interface PlanEditorCallbacks {
   onDelete: () => void | Promise<void>;
   onDone?: () => void | Promise<void>;
   onApply?: () => void | Promise<void>;
+  onAccept?: () => void | Promise<void>;
+  onReject?: () => void | Promise<void>;
   onClose?: () => void;
 }
 
@@ -431,6 +433,8 @@ function openNodeEditor(item: PlanItem): void {
     onApply: targetSessionId && (item.status === 'ready' || item.status === 'coding' || item.status === 'review')
       ? () => handleApplyFromCanvas(item)
       : undefined,
+    onAccept: item.status === 'suggested' ? () => void handleAcceptSuggestion(item.id) : undefined,
+    onReject: item.status === 'suggested' ? () => requestRejectSuggestion(item) : undefined,
     onClose: () => { planScreenState.editingId = null; },
   });
 }
@@ -768,7 +772,7 @@ async function handleSave(planId: string, updates: { title: string; description:
         return;
       }
       await plansClient.planComplete(planId, updates.stateInfo);
-    } else if (current && updates.status !== 'done') {
+    } else if (current && updates.status !== 'done' && !(current.status === 'suggested' && updates.status === 'suggested')) {
       const targetSessionId = resolvePlanTargetSessionId(current);
       if (updates.status === 'coding' && !targetSessionId) {
         showBriefNotice('Select or open a session in this directory before marking a plan as coding');
@@ -780,6 +784,38 @@ async function handleSave(planId: string, updates: { title: string; description:
   } catch (err) {
     console.error('[PlanScreen] Save failed:', err);
   }
+}
+
+async function handleAcceptSuggestion(id: string): Promise<void> {
+  try {
+    await plansClient.planAcceptSuggestion(id);
+    planScreenState.editingId = null;
+    await refreshCanvas();
+  } catch (err) {
+    console.error('[PlanScreen] Accept suggestion failed:', err);
+  }
+}
+
+async function handleRejectSuggestion(id: string): Promise<void> {
+  try {
+    await plansClient.planRejectSuggestion(id);
+    planScreenState.selectedId = null;
+    planScreenState.editingId = null;
+    await refreshCanvas();
+  } catch (err) {
+    console.error('[PlanScreen] Reject suggestion failed:', err);
+  }
+}
+
+function requestRejectSuggestion(item: PlanItem): void {
+  showPlanDeleteConfirm(item.title, () => {
+    void handleRejectSuggestion(item.id);
+  }, {
+    itemKind: 'suggested plan',
+    title: 'Reject Suggested Plan',
+    message: `Reject "${item.title}"? The linked idea will be marked rejected.`,
+    confirmLabel: 'Reject',
+  });
 }
 
 async function handleDelete(id: string): Promise<void> {
@@ -1166,7 +1202,7 @@ export function toggleTypeFilter(type: 'bug' | 'feature' | 'research' | 'untyped
   void persistedPlanFilters.persist();
 }
 
-export function toggleStatusFilter(status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done'): void {
+export function toggleStatusFilter(status: StatusFilterKey): void {
   planScreenState.filters.statuses[status] = cycleTriState(planScreenState.filters.statuses[status]);
   refreshLayout();
   void persistedPlanFilters.persist();

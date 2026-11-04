@@ -7,7 +7,7 @@ import com.potatomotato.helm.data.PlanStatus
  * PlanStartability — which of the board's plans can be started right now.
  *
  * READ OFF THE ROWS the board already has, not asked for. A plan is startable
- * when it is not done and every plan it waits on is finished; the summary rows
+ * when it is neither done nor a suggestion and every plan it waits on is finished; the summary rows
  * carry both halves of that — their own status and their `blockedBy` edges — so
  * the answer is already in the reply and a second `filter=startable` round trip
  * would only be asking the desktop to say it again.
@@ -35,7 +35,10 @@ object PlanStartability {
             plan.humanId?.let { statusOf[it] = plan.status }
         }
         return plans
-            .filter { it.status != PlanStatus.Done && it.blockedBy.all { blocker -> isSettled(statusOf, blocker) } }
+            .filter {
+                it.status != PlanStatus.Done && it.status != PlanStatus.Suggested &&
+                    it.blockedBy.all { blocker -> isSettled(statusOf, blocker) }
+            }
             .map { it.id }
             .toSet()
     }

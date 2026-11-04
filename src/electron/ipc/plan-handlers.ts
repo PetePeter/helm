@@ -9,6 +9,7 @@ import { PlanAttachmentManager } from '../../session/plan-attachment-manager.js'
 import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts } from '../../session/plan-cleanup.js';
 import { logger } from '../../utils/logger.js';
 import type { PlanItem, PlanDependency } from '../../types/plan.js';
+import type { SuggestedPlanService } from '../../session/suggested-plan-service.js';
 import type { WindowManager } from '../window-manager.js';
 import { getRendererHtmlPath, getTempDir } from '../../utils/app-paths.js';
 import { applyNavigationPolicy } from '../navigation-policy.js';
@@ -22,6 +23,7 @@ export function setupPlanHandlers(
   windowManagerOrWatcher?: WindowManager | IncomingPlansWatcher,
   incomingWatcherArg?: IncomingPlansWatcher,
   moduleDirname?: string,
+  suggestedPlanService?: SuggestedPlanService,
 ): void {
   const windowManager = isWindowManagerLike(windowManagerOrWatcher) ? windowManagerOrWatcher : undefined;
   const incomingWatcher = isIncomingWatcherLike(windowManagerOrWatcher)
@@ -98,7 +100,14 @@ export function setupPlanHandlers(
   });
 
   ipcMain.handle('plan:delete', (_event, id: string) => {
-    const result = planManager.delete(id);
+    const item = planManager.getItem(id);
+    let result: boolean;
+    if (item?.status === 'suggested') {
+      if (!suggestedPlanService) throw new Error('Suggested plan support is unavailable');
+      result = suggestedPlanService.reject(item.id).deleted;
+    } else {
+      result = planManager.delete(id);
+    }
     if (result) {
       attachmentManager.deletePlanAttachments(id);
       contextManager?.removeBindingsForTarget('plan', id);
@@ -152,6 +161,18 @@ export function setupPlanHandlers(
       return planManager.setState(id, status, stateInfo);
     },
   );
+
+  if (suggestedPlanService) {
+    ipcMain.handle('plan:acceptSuggestion', (_event, id: string) => suggestedPlanService.accept(id));
+    ipcMain.handle('plan:rejectSuggestion', (_event, id: string) => {
+      const result = suggestedPlanService.reject(id);
+      if (result.deleted) {
+        attachmentManager.deletePlanAttachments(id);
+        contextManager?.removeBindingsForTarget('plan', id);
+      }
+      return result;
+    });
+  }
 
   ipcMain.handle('plan:startableForDir', (_event, dirPath: string) => {
     return planManager.getStartableForDirectory(dirPath);

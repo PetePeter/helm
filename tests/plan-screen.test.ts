@@ -960,7 +960,7 @@ describe('plan screen bridge', () => {
   it('eagerly loads persisted filter preferences on module import', async () => {
     const customFilters = {
       types: { bug: 'no', feature: 'yes', research: 'no', untyped: 'either' },
-      statuses: { planning: 'no', ready: 'yes', coding: 'no', review: 'yes', blocked: 'no', done: 'no' },
+      statuses: { planning: 'no', ready: 'yes', coding: 'no', review: 'yes', blocked: 'no', done: 'no', suggested: 'either' },
       hasAttachment: { yes: 'yes', no: 'no' },
       auto: 'yes',
     };
@@ -1000,7 +1000,7 @@ describe('plan screen bridge', () => {
     await flushAsyncHandlers();
 
     expect(mod.planScreenState.filters.types).toEqual({ bug: 'either', feature: 'either', research: 'either', untyped: 'either' });
-    expect(mod.planScreenState.filters.statuses).toEqual({ planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either' });
+    expect(mod.planScreenState.filters.statuses).toEqual({ planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'either', suggested: 'either' });
     expect(mod.planScreenState.filters.hasAttachment).toEqual({ yes: 'either', no: 'either' });
     expect(mod.planScreenState.filters.auto).toBe('either');
   });
@@ -1008,7 +1008,7 @@ describe('plan screen bridge', () => {
   it('keeps the registered preference live across planner remounts', async () => {
     const secondLoadFilters = {
       types: { bug: 'no', feature: 'no', research: 'no', untyped: 'no' },
-      statuses: { planning: 'yes', ready: 'no', coding: 'no', review: 'no', blocked: 'no', done: 'no' },
+      statuses: { planning: 'yes', ready: 'no', coding: 'no', review: 'no', blocked: 'no', done: 'no', suggested: 'either' },
       hasAttachment: { yes: 'no', no: 'yes' },
       auto: 'no',
     };

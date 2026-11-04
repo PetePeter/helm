@@ -164,6 +164,11 @@ actions" rule in the app: the phone learns exactly what it may call and nothing
 about what it may not. It is rate-limited like any other call, so it
 cannot be probed for free, and a disabled device gets the uniform denial.
 
+Suggested-plan triage uses the normal allow-list dispatch path. A phone must be
+granted `plan_accept_suggestion` and `plan_reject_suggestion` (or a matching
+wildcard) before either action appears as an available tool. The phone confirms
+Reject before dispatch; the gate still enforces the device's grant.
+
 ## Rate limit
 
 One `TokenBucket` per device (the fleet's `PeerRateLimiter`, which is keyed on an

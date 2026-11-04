@@ -51,7 +51,7 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
       return item ? { status: 'found' as const, item } : { status: 'missing' as const };
     }),
     setState: vi.fn(),
-    claimPlan: vi.fn(),
+    claimPlan: vi.fn(() => true),
   };
   const configLoader = {
     getWorkingDirectories: vi.fn(() => [{ name: 'Helm', path: '/work' }]),

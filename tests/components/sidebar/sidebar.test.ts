@@ -824,11 +824,12 @@ describe('SortBar', () => {
 // ============================================================================
 
 import PlansGrid from '../../../renderer/components/sidebar/PlansGrid.vue';
+import { getPlanStatusColor } from '../../../renderer/state-colors.js';
 
 describe('PlansGrid', () => {
   const dirs = [
-    { name: 'project-a', path: '/a', startableCount: 2, codingCount: 1, blockedCount: 0, reviewCount: 0, planningCount: 0 },
-    { name: 'project-b', path: '/b', startableCount: 0, codingCount: 0, blockedCount: 0, reviewCount: 0, planningCount: 0 },
+    { name: 'project-a', path: '/a', startableCount: 2, codingCount: 1, blockedCount: 0, reviewCount: 0, planningCount: 0, suggestedCount: 0 },
+    { name: 'project-b', path: '/b', startableCount: 0, codingCount: 0, blockedCount: 0, reviewCount: 0, planningCount: 0, suggestedCount: 0 },
   ];
 
   it('renders buttons for each directory', () => {
@@ -855,19 +856,24 @@ describe('PlansGrid', () => {
 
   it('hides dots when all counts are 0', () => {
     const w = mount(PlansGrid, {
-      props: { directories: [{ name: 'x', path: '/x', startableCount: 0, codingCount: 0, blockedCount: 0, reviewCount: 0, planningCount: 0 }], focusIndex: 0, isActive: false },
+      props: { directories: [{ name: 'x', path: '/x', startableCount: 0, codingCount: 0, blockedCount: 0, reviewCount: 0, planningCount: 0, suggestedCount: 0 }], focusIndex: 0, isActive: false },
     });
     expect(w.find('.plans-btn-dots').exists()).toBe(false);
   });
 
   it('shows status dots for all states', () => {
-    const dir = { name: 'p', path: '/p', planningCount: 1, startableCount: 2, codingCount: 3, reviewCount: 4, blockedCount: 5 };
+    const dir = { name: 'p', path: '/p', planningCount: 1, startableCount: 2, codingCount: 3, reviewCount: 4, blockedCount: 5, suggestedCount: 6 };
     const w = mount(PlansGrid, { props: { directories: [dir], focusIndex: 0, isActive: false } });
     expect(w.find('.plan-dot--planning').text()).toContain('1');
     expect(w.find('.plan-dot--ready').text()).toContain('2');
     expect(w.find('.plan-dot--coding').text()).toContain('3');
     expect(w.find('.plan-dot--review').text()).toContain('4');
     expect(w.find('.plan-dot--blocked').text()).toContain('5');
+    const suggested = w.find('.plan-dot--suggested');
+    expect(suggested.text()).toContain('6');
+    const expectedColor = document.createElement('span');
+    expectedColor.style.color = getPlanStatusColor('suggested');
+    expect(suggested.element.style.color).toBe(expectedColor.style.color);
   });
 
   it('emits showPlans on button click', async () => {

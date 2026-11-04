@@ -2,7 +2,7 @@ export type FilterPreferenceState = 'either' | 'yes' | 'no';
 
 export interface PlanFilterPreferences {
   types: { bug: FilterPreferenceState; feature: FilterPreferenceState; research: FilterPreferenceState; untyped: FilterPreferenceState };
-  statuses: { planning: FilterPreferenceState; ready: FilterPreferenceState; coding: FilterPreferenceState; review: FilterPreferenceState; blocked: FilterPreferenceState; done: FilterPreferenceState };
+  statuses: { planning: FilterPreferenceState; ready: FilterPreferenceState; coding: FilterPreferenceState; review: FilterPreferenceState; blocked: FilterPreferenceState; done: FilterPreferenceState; suggested: FilterPreferenceState };
   hasAttachment: { yes: FilterPreferenceState; no: FilterPreferenceState };
   auto: FilterPreferenceState;
 }

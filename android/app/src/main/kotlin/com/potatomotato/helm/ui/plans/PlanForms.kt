@@ -202,6 +202,8 @@ private fun writeLabel(kind: PlanWriteKind): String = stringResource(
         PlanWriteKind.CreatePlan -> R.string.plan_write_create_plan
         PlanWriteKind.UpdatePlan -> R.string.plan_write_update_plan
         PlanWriteKind.SetState -> R.string.plan_write_set_state
+        PlanWriteKind.AcceptSuggestion -> R.string.plan_write_accept_suggestion
+        PlanWriteKind.RejectSuggestion -> R.string.plan_write_reject_suggestion
         PlanWriteKind.Complete -> R.string.plan_write_complete
         PlanWriteKind.Reopen -> R.string.plan_write_reopen
         PlanWriteKind.DeletePlan -> R.string.plan_write_delete_plan

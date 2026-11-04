@@ -50,6 +50,7 @@ export const PLAN_STATUS_COLORS: Record<string, string> = {
   review: '#44ccff',
   blocked: '#ff9f1a',
   done: '#555555',
+  suggested: '#a06cff',
 };
 
 /** Get the color for a plan status, defaulting to planning grey. */

@@ -10,6 +10,8 @@ enum class PlanWriteKind {
     CreatePlan,
     UpdatePlan,
     SetState,
+    AcceptSuggestion,
+    RejectSuggestion,
     Complete,
     Reopen,
     DeletePlan,

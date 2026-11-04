@@ -303,7 +303,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
    */
   configSetPlanFilters: (filters: {
     types?: { bug?: 'either' | 'yes' | 'no'; feature?: 'either' | 'yes' | 'no'; research?: 'either' | 'yes' | 'no'; untyped?: 'either' | 'yes' | 'no' };
-    statuses?: { planning?: 'either' | 'yes' | 'no'; ready?: 'either' | 'yes' | 'no'; coding?: 'either' | 'yes' | 'no'; review?: 'either' | 'yes' | 'no'; blocked?: 'either' | 'yes' | 'no'; done?: 'either' | 'yes' | 'no' };
+    statuses?: { planning?: 'either' | 'yes' | 'no'; ready?: 'either' | 'yes' | 'no'; coding?: 'either' | 'yes' | 'no'; review?: 'either' | 'yes' | 'no'; blocked?: 'either' | 'yes' | 'no'; done?: 'either' | 'yes' | 'no'; suggested?: 'either' | 'yes' | 'no' };
     hasAttachment?: { yes?: 'either' | 'yes' | 'no'; no?: 'either' | 'yes' | 'no' };
     auto?: 'either' | 'yes' | 'no';
   }) =>
@@ -973,9 +973,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Manually set a plan state and optional context */
   planSetState: (
     id: string,
-    status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done',
+    status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked',
     stateInfo?: string,
   ) => ipcRenderer.invoke('plan:setState', id, status, stateInfo),
+
+  /** Accept or reject a suggested plan through the main-process decision service. */
+  planAcceptSuggestion: (id: string) => ipcRenderer.invoke('plan:acceptSuggestion', id),
+  planRejectSuggestion: (id: string) => ipcRenderer.invoke('plan:rejectSuggestion', id),
 
   /** Get ready plans for a directory */
   planStartableForDir: (dirPath: string) =>

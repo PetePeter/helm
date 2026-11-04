@@ -169,9 +169,9 @@ private fun PlanBuckets(
                 item(key = plan.id) {
                     PlanRow(
                         plan = plan,
-                        // Off the frontier and not finished: a prerequisite is
-                        // still open, which is what "blocked" means.
-                        blocked = plan.status != PlanStatus.Done && plan.id !in startableIds,
+                        // Suggestions are outside the frontier while awaiting triage,
+                        // so only ordinary unfinished plans get the blocked indicator.
+                        blocked = shouldShowBlockedIndicator(plan.status, plan.id, startableIds),
                         onClick = { onOpen(plan) },
                         onSpawn = { onSpawn(plan) },
                         taskLinks = taskLinks,
@@ -304,6 +304,15 @@ private fun PlanRow(
         },
     )
 }
+
+/** Suggested plans wait for triage; being off the startable frontier does not mean they are blocked. */
+internal fun shouldShowBlockedIndicator(
+    status: PlanStatus,
+    planId: String,
+    startableIds: Set<String>,
+): Boolean = status != PlanStatus.Done &&
+    status != PlanStatus.Suggested &&
+    planId !in startableIds
 
 /** The fold's own marker: pointing right is shut, pointing down is open. */
 private const val CARET_CLOSED = "›"

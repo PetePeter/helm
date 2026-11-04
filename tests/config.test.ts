@@ -1465,7 +1465,7 @@ describe('ConfigLoader filter preferences', () => {
   it('stores values by stable ID and preserves legacy Plan filter settings', () => {
     const planFilters = {
       types: { bug: 'yes' as const, feature: 'either' as const, research: 'either' as const, untyped: 'either' as const },
-      statuses: { planning: 'either' as const, ready: 'either' as const, coding: 'either' as const, review: 'either' as const, blocked: 'either' as const, done: 'no' as const },
+      statuses: { planning: 'either' as const, ready: 'either' as const, coding: 'either' as const, review: 'either' as const, blocked: 'either' as const, done: 'no' as const, suggested: 'either' as const },
       hasAttachment: { yes: 'either' as const, no: 'either' as const },
       auto: 'either' as const,
     };

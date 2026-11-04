@@ -946,7 +946,9 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const createJson = await createResponse.json();
-    expect((service.createPlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('/proj', 'Task', 'Desc', 'bug', undefined);
+    expect((service.createPlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+      '/proj', 'Task', 'Desc', 'bug', undefined, undefined, undefined,
+    );
     expect(createJson.result.structuredContent.type).toBe('bug');
 
     const updateResponse = await rpc(port, 'secret-token', {

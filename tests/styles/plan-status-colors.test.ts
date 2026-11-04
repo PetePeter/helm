@@ -14,7 +14,7 @@ const CSS = readFileSync(join(__dirname, '../../renderer/styles/main.css'), 'utf
 describe('plan status colors', () => {
   it('matches every --status-* token in main.css', () => {
     expect(Object.keys(PLAN_STATUS_COLORS).sort()).toEqual([
-      'blocked', 'coding', 'done', 'planning', 'ready', 'review',
+      'blocked', 'coding', 'done', 'planning', 'ready', 'review', 'suggested',
     ]);
     for (const [status, color] of Object.entries(PLAN_STATUS_COLORS)) {
       const token = `--status-${status}`;

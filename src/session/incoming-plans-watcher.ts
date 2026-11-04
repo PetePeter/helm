@@ -15,6 +15,7 @@ import chokidar from 'chokidar';
 import type { FSWatcher } from 'chokidar';
 import type { PlanManager } from './plan-manager.js';
 import type { PlanItem, PlanDependency } from '../types/plan.js';
+import type { SuggestedPlanService } from './suggested-plan-service.js';
 import { logger } from '../utils/logger.js';
 import { getConfigDir } from '../utils/app-paths.js';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +23,7 @@ import { dirname } from 'node:path';
 
 const __watcher_dirname = dirname(fileURLToPath(import.meta.url));
 
-const VALID_STATUSES = new Set(['planning', 'ready', 'coding', 'review', 'blocked', 'done']);
+const VALID_STATUSES = new Set(['planning', 'ready', 'coding', 'review', 'blocked', 'done', 'suggested']);
 
 export interface IncomingImportedEvent {
   filename: string;
@@ -47,6 +48,7 @@ export class IncomingPlansWatcher extends EventEmitter {
 
   constructor(
     private readonly planManager: PlanManager,
+    private readonly suggestedPlanService: SuggestedPlanService,
     configDir?: string,
   ) {
     super();
@@ -213,8 +215,24 @@ export class IncomingPlansWatcher extends EventEmitter {
     if (typeof raw.title !== 'string' || !raw.title) return { ok: false, error: 'Missing or invalid title' };
     if (typeof raw.description !== 'string') return { ok: false, error: 'Missing description' };
 
-    const status = (raw.status as string) ?? 'planning';
-    if (!VALID_STATUSES.has(status)) return { ok: false, error: `Invalid status: ${status}` };
+    const rawStatus = (raw.status as string) ?? 'planning';
+    if (!VALID_STATUSES.has(rawStatus)) return { ok: false, error: `Invalid status: ${rawStatus}` };
+
+    const hasSourceIdeaId = raw.sourceIdeaId !== undefined && raw.sourceIdeaId !== null;
+    if (hasSourceIdeaId && (typeof raw.sourceIdeaId !== 'string' || !raw.sourceIdeaId.trim())) {
+      return { ok: false, error: 'Invalid sourceIdeaId' };
+    }
+    const sourceIdeaId = typeof raw.sourceIdeaId === 'string' ? raw.sourceIdeaId : undefined;
+    if (sourceIdeaId) {
+      try {
+        this.suggestedPlanService.validateSuggestedSource(sourceIdeaId, raw.dirPath);
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    } else if (rawStatus === 'suggested') {
+      return { ok: false, error: 'Suggested imports must include a valid sourceIdeaId' };
+    }
+    const status = sourceIdeaId ? 'suggested' : rawStatus;
 
     const now = Date.now();
     const item: PlanItem = {
@@ -224,6 +242,7 @@ export class IncomingPlansWatcher extends EventEmitter {
       title: raw.title as string,
       description: raw.description as string,
       status: status as PlanItem['status'],
+      ...(sourceIdeaId ? { sourceIdeaId } : {}),
       createdAt: (raw.createdAt as number) ?? now,
       stateUpdatedAt: (raw.stateUpdatedAt as number) ?? (raw.updatedAt as number) ?? now,
       updatedAt: now,

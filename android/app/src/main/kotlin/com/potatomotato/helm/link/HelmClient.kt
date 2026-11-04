@@ -1714,6 +1714,17 @@ class HelmClient(
             linkedMapOf("uuid" to planId, "status" to status.wire),
         ) { refreshPlanAndBoard(dirPath, planId) }
 
+    fun acceptPlanSuggestion(dirPath: String, planId: String): Boolean =
+        write(PlanWriteKind.AcceptSuggestion, METHOD_PLAN_ACCEPT_SUGGESTION, linkedMapOf("uuid" to planId)) {
+            refreshPlanAndBoard(dirPath, planId)
+        }
+
+    fun rejectPlanSuggestion(dirPath: String, planId: String): Boolean =
+        write(PlanWriteKind.RejectSuggestion, METHOD_PLAN_REJECT_SUGGESTION, linkedMapOf("uuid" to planId)) {
+            plans.planDeleted(planId)
+            refreshBoard(dirPath)
+        }
+
     /**
      * Mark done. The desktop demands [documentation] (10+ chars) and only
      * completes a coding/review plan; its refusal text is shown as-is rather
@@ -2330,6 +2341,8 @@ class HelmClient(
         private const val METHOD_PLAN_CREATE = "plan_create"
         private const val METHOD_PLAN_UPDATE = "plan_update"
         private const val METHOD_PLAN_SET_STATE = "plan_set_state"
+        private const val METHOD_PLAN_ACCEPT_SUGGESTION = "plan_accept_suggestion"
+        private const val METHOD_PLAN_REJECT_SUGGESTION = "plan_reject_suggestion"
         private const val METHOD_PLAN_COMPLETE = "plan_complete"
         private const val METHOD_PLAN_REOPEN = "plan_reopen"
         private const val METHOD_PLAN_DELETE = "plan_delete"

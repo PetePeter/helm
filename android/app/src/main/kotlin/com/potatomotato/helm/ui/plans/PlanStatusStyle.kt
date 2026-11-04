@@ -8,6 +8,7 @@ import com.potatomotato.helm.ui.theme.HelmColors
 /** The word a reader uses for a lifecycle state, kept out of the composables. */
 internal val PlanStatus.labelRes: Int
     get() = when (this) {
+        PlanStatus.Suggested -> R.string.plan_status_suggested
         PlanStatus.Planning -> R.string.plan_status_planning
         PlanStatus.Ready -> R.string.plan_status_ready
         PlanStatus.Coding -> R.string.plan_status_coding
@@ -30,6 +31,7 @@ internal val PlanStatus.labelRes: Int
  */
 internal val PlanStatus.pillColor: Color
     get() = when (this) {
+        PlanStatus.Suggested -> HelmColors.State.Suggested
         PlanStatus.Planning -> HelmColors.Dim
         PlanStatus.Ready -> HelmColors.State.Waiting
         PlanStatus.Coding -> HelmColors.State.Active

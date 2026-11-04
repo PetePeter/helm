@@ -7,7 +7,7 @@ const props = defineProps<{
   humanId?: string;
   title: string;
   type?: 'bug' | 'feature' | 'research';
-  status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done';
+  status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done' | 'suggested';
 }>();
 
 const emit = defineEmits<{
