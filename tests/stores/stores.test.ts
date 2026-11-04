@@ -256,3 +256,12 @@ describe('useLlmNotificationsStore', () => {
     expect(raw).toContain('"sessionId":"s1"');
   });
 });
+
+describe('useLlmNotificationsStore — user notes', () => {
+  it('keeps a user note (and its kind) across a reload', () => {
+    useLlmNotificationsStore().add({ sessionId: 's1', title: 'Note', content: 'check copilot', kind: 'note' });
+    setActivePinia(createPinia());
+    const [note] = useLlmNotificationsStore().bySession.get('s1') ?? [];
+    expect(note).toMatchObject({ content: 'check copilot', kind: 'note' });
+  });
+});

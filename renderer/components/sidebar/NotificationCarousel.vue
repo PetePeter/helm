@@ -8,7 +8,7 @@
 import { ref, computed, nextTick, watch } from 'vue';
 
 const props = defineProps<{
-  notifications: Array<{ id: string; title: string; content: string; createdAt?: number }>;
+  notifications: Array<{ id: string; title: string; content: string; createdAt?: number; kind?: 'note' }>;
   sessionId: string;
 }>();
 
@@ -42,7 +42,14 @@ function dismissCurrent(): void {
   });
 }
 
-/** Keep index in bounds when notifications are added or removed externally. */
+/** A user note turns the whole carousel solid blue until the last one is dismissed. */
+const hasNote = computed(() => props.notifications.some(n => n.kind === 'note'));
+
+/** Keep index in bounds when notifications are added or removed externally;
+ *  a freshly written note (prepended) is shown at once. */
+watch(() => props.notifications[0]?.id, (newest, previous) => {
+  if (newest !== previous && props.notifications[0]?.kind === 'note') currentIndex.value = 0;
+});
 watch(() => props.notifications.length, (n) => {
   if (currentIndex.value >= n) {
     currentIndex.value = Math.max(0, n - 1);
@@ -56,7 +63,7 @@ function formatTime(ts?: number): string {
 </script>
 
 <template>
-  <div class="notification-carousel" v-if="notifications.length > 0">
+  <div class="notification-carousel" :class="{ 'notification-carousel--note': hasNote }" v-if="notifications.length > 0">
     <div class="carousel-header">
       <span class="carousel-label">Notification{{ notifications.length > 1 ? 's' : '' }}</span>
       <span class="carousel-counter" v-if="notifications.length > 1">{{ currentIndex + 1 }} / {{ notifications.length }}</span>
@@ -115,6 +122,16 @@ function formatTime(ts?: number): string {
   color: var(--text-primary);
   box-shadow: 0 5px 18px rgba(0, 0, 0, 0.38);
   overflow: hidden;
+}
+
+/* User note: solid, steady blue (no pulse) — the app's one blue. */
+.notification-carousel--note {
+  border-color: var(--info);
+  background: color-mix(in srgb, var(--info) 35%, var(--bg-primary));
+}
+.notification-carousel--note .carousel-header {
+  border-bottom-color: var(--info);
+  background: color-mix(in srgb, var(--info) 30%, transparent);
 }
 
 .carousel-header {

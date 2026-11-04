@@ -110,3 +110,19 @@ graph LR
 - **Manual:** Settings → CLI tools → *Manual context warnings* stores `contextLimits: { amber, red }` in tokens. Absolute counts suit long-window models where 75% is far past where quality drops. The same screen edits `contextWindow`, the fallback window for CLIs that report none.
 - **Why the row resolves limits itself:** `SessionCard` already looks up its CLI type for the cache fade, so a settings change recolours rows at once, with no new field on the persisted snapshot.
 - **Hover card:** it is fixed-position and teleported to `body`, so the sidebar's scroll container cannot clip it.
+
+## User notes (📝)
+
+The 📝 button beside 🔗 on a desktop row asks for a short note. On OK the note joins that row's notification carousel as its newest entry, so a note and any `notify_user` messages share one stack. It is stored with them (`llmNotifications` in localStorage) and survives a restart. Desktop only.
+
+While the carousel holds a note, the carousel and the row are a solid, steady `--info` blue. They do not pulse: a note is a reminder you left yourself, not a request for attention like [flash_attention](flash-attention.md). Dismissing the note deletes it, and the blue clears once no notes remain.
+
+```mermaid
+graph LR
+  B[📝 → form modal] -->|OK| S[llmNotifications store<br/>kind: note, prepended]
+  S --> C[NotificationCarousel<br/>jumps to the note, blue]
+  S --> R[SessionCard .user-noted]
+  C -->|Dismiss| X[note deleted]
+```
+
+The session ETA sits on the name line, in the slot the inline context graph used to fill.

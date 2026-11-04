@@ -3,9 +3,10 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import SessionCard from '../../../renderer/components/sidebar/SessionCard.vue';
-import { contextMenu } from '../../../renderer/stores/modal-bridge.js';
+import { contextMenu, getFormModalResolve } from '../../../renderer/stores/modal-bridge.js';
+import { useLlmNotificationsStore } from '../../../renderer/stores/llmNotifications.js';
 
 function mountCard(session: Record<string, unknown> = {}, isFocused = false, focusColumn = 0) {
   return mount(SessionCard, {
@@ -112,5 +113,30 @@ describe('SessionCard menu and status icons', () => {
   it('gamepad columns: 2 is the kebab, 3 is close', () => {
     expect(mountCard({}, true, 2).find('.session-kebab').classes()).toContain('card-col-focused');
     expect(mountCard({}, true, 3).find('.session-close').classes()).toContain('card-col-focused');
+  });
+});
+
+describe('SessionCard — ETA placement and user note', () => {
+  it('renders the ETA on the name line, not the top row', () => {
+    const w = mountCard({ eta: { at: Date.now() + 600_000, setAt: Date.now() } });
+    expect(w.find('.session-name-line .session-eta-timer').exists()).toBe(true);
+    expect(w.find('.session-top-row .session-eta-timer').exists()).toBe(false);
+  });
+
+  it('📝 → OK adds a note as the newest notification; Cancel adds nothing', async () => {
+    const store = useLlmNotificationsStore();
+    store.clear();
+    const w = mountCard();
+
+    await w.find('.session-note').trigger('click');
+    getFormModalResolve()!(null);
+    await flushPromises();
+    expect(store.notifications).toHaveLength(0);
+
+    store.add({ sessionId: 's1', title: 'Build done', content: 'green' });
+    await w.find('.session-note').trigger('click');
+    getFormModalResolve()!({ note: '  check copilot  ' });
+    await flushPromises();
+    expect(store.bySession.get('s1')?.[0]).toMatchObject({ kind: 'note', content: 'check copilot' });
   });
 });

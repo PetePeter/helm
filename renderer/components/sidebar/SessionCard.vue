@@ -10,7 +10,8 @@ import NotificationCarousel from './NotificationCarousel.vue';
 import { useRuntimeGroups } from '../../composables/useRuntimeGroups.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
-import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
+import { getCliDisplayName, resolveCliTypeRecord, showFormModal } from '../../utils.js';
+import { useLlmNotificationsStore } from '../../stores/llmNotifications.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, SessionMission, UserPromptSource } from '../../../src/types/session.js';
 import type { SessionTodoCount } from '../../../src/types/todo.js';
@@ -87,7 +88,7 @@ export interface SessionCardProps {
   scheduledAt?: string | null;
   scheduledTaskIndicatorEnabled?: boolean;
   isSnappedOut?: boolean;
-  llmNotifications?: Array<{ id: string; title: string; content: string; createdAt?: number }>;
+  llmNotifications?: Array<{ id: string; title: string; content: string; createdAt?: number; kind?: 'note' }>;
   flashEntry?: { phase: 'pulse' | 'solid' } | null;
   shortcutKey?: number | null;
   /** Reads this row's passive PTY tail; null/absent = no preview. */
@@ -295,6 +296,14 @@ async function copyId(): Promise<void> {
   }
 }
 
+/** 📝: the note joins the row's notification carousel as its newest entry. */
+async function addNote(): Promise<void> {
+  const values = await showFormModal(`Note for ${props.displayName}`, [{ key: 'note', label: 'Note', type: 'textarea' }]);
+  const content = values?.note?.trim();
+  if (content) useLlmNotificationsStore().add({ sessionId: props.session.id, title: '📝 Note', content, kind: 'note' });
+}
+const hasUserNote = computed(() => props.llmNotifications?.some(n => n.kind === 'note') ?? false);
+
 // --- Handlers ---
 
 function onRenameKeydown(e: KeyboardEvent): void {
@@ -328,7 +337,7 @@ function onCardClick(e: MouseEvent): void {
   <div
     ref="cardEl"
     class="session-card"
-    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, frozen: session.frozen, 'peer-stale': stale, 'interaction-disabled': interactionDisabled }, flashClass]"
+    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, 'user-noted': hasUserNote, frozen: session.frozen, 'peer-stale': stale, 'interaction-disabled': interactionDisabled }, flashClass]"
     :title="peerTitle"
     :data-session-id="session.id"
     :data-nav-index="navIndex"
@@ -437,13 +446,6 @@ function onCardClick(e: MouseEvent): void {
         </svg>
         <span>{{ userPromptElapsedText }}</span>
       </span>
-      <span
-        v-if="etaTimer"
-        class="session-timer session-eta-timer"
-        :class="{ 'session-eta-timer--late': etaTimer.isLate }"
-        :title="etaTimer.title"
-      >{{ etaTimer.text }}</span>
-
       <!-- Copy session id button -->
       <button
         class="session-copy-id"
@@ -452,6 +454,7 @@ function onCardClick(e: MouseEvent): void {
       >
         {{ copied ? '✓' : '🔗' }}
       </button>
+      <button class="session-note" title="Add a note to this session" aria-label="Add a note" @click.stop="addNote">📝</button>
 
       <!-- Kebab: the session's own actions (rename, lock, freeze, keep warm, compact, clone, switch). -->
       <button
@@ -510,6 +513,12 @@ function onCardClick(e: MouseEvent): void {
           :title="`${todoProgress.done} of ${todoProgress.total} todos done`"
           :aria-label="`${todoProgress.done} of ${todoProgress.total} todos done`"
         >{{ todoProgress.done }}/{{ todoProgress.total }}</span>
+        <span
+          v-if="etaTimer"
+          class="session-timer session-eta-timer"
+          :class="{ 'session-eta-timer--late': etaTimer.isLate }"
+          :title="etaTimer.title"
+        >{{ etaTimer.text }}</span>
       </template>
     </div>
 
@@ -551,6 +560,11 @@ function onCardClick(e: MouseEvent): void {
    window (cacheWarnMinutes). Behind the content, never catching clicks. */
 .session-card { position: relative; isolation: isolate; }
 .session-card.interaction-disabled { cursor: default; }
+/* A user note holds the row in a solid, steady blue until it is dismissed. */
+.session-card.user-noted {
+  background: color-mix(in srgb, var(--info) 22%, var(--bg-secondary));
+  border-color: var(--info);
+}
 .session-prompt-fade {
   position: absolute;
   inset: 0;

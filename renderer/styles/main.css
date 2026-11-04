@@ -1006,7 +1006,8 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-kebab,
 .session-state-btn,
 .session-close,
-.session-copy-id {
+.session-copy-id,
+.session-note {
   background: none;
   border: none;
   color: var(--text-primary);
@@ -1020,7 +1021,8 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 }
 .session-kebab { font-weight: 700; }
 .session-kebab:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
-.session-copy-id:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
+.session-copy-id:hover,
+.session-note:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
 .session-kebab.card-col-focused {
   background: var(--accent);
   color: #fff;
@@ -1098,7 +1100,8 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-top-row .session-state-btn,
 .session-top-row .session-kebab,
 .session-top-row .session-close,
-.session-top-row .session-copy-id {
+.session-top-row .session-copy-id,
+.session-top-row .session-note {
   font-size: var(--font-size-sm);
   padding: 1px 4px;
 }

@@ -142,3 +142,23 @@ describe('NotificationCarousel', () => {
     expect(multi.find('.carousel-counter').text()).toBe('1 / 3');
   });
 });
+
+describe('NotificationCarousel — user notes', () => {
+  const llm = { id: 'n1', title: 'Build done', content: 'green' };
+  const note = { id: 'u1', title: 'Note', content: 'check copilot', kind: 'note' as const };
+
+  it('turns blue while it holds a note, normal once the note is dismissed', async () => {
+    const w = mount(NotificationCarousel, { props: { notifications: [note, llm], sessionId: 's1' } });
+    expect(w.find('.notification-carousel').classes()).toContain('notification-carousel--note');
+    await w.setProps({ notifications: [llm] });
+    expect(w.find('.notification-carousel').classes()).not.toContain('notification-carousel--note');
+  });
+
+  it('jumps to a note added while another notification is showing', async () => {
+    const w = mount(NotificationCarousel, { props: { notifications: [llm, { id: 'n0', title: 'Older', content: 'x' }], sessionId: 's1' } });
+    await w.findAll('.nav-arrow')[1].trigger('click');
+    expect(w.find('.carousel-title').text()).toBe('Older');
+    await w.setProps({ notifications: [note, llm, { id: 'n0', title: 'Older', content: 'x' }] });
+    expect(w.find('.carousel-text').text()).toBe('check copilot');
+  });
+});

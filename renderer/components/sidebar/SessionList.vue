@@ -93,7 +93,7 @@ const props = defineProps<{
   workingPlanTooltips: Map<string, string>;
   pendingSchedules: Map<string, string>;
   snappedOutSessions: Set<string>;
-  llmNotifications: Map<string, Array<{ id: string; title: string; content: string; createdAt?: number }>>;
+  llmNotifications: Map<string, Array<{ id: string; title: string; content: string; createdAt?: number; kind?: 'note' }>>;
   flashEntries?: Map<string, FlashEntry>;
   getCliDisplayName: (cliType: string) => string;
   resolveGroupDisplayName: (dirPath: string, directories: SessionListDirectory[], projects?: SessionListProject[]) => string;

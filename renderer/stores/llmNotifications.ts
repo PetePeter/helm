@@ -7,6 +7,8 @@ export interface LlmNotification {
   title: string;
   content: string;
   createdAt: number;
+  /** A note the user wrote on the row (📝); absent for LLM notifications. */
+  kind?: 'note';
 }
 
 const STORAGE_KEY = 'helm.llmNotifications.v1';
@@ -26,6 +28,7 @@ function loadPersisted(): LlmNotification[] {
         title: entry.title,
         content: entry.content,
         createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : Date.now(),
+        ...(entry.kind === 'note' ? { kind: 'note' as const } : {}),
       }));
   } catch {
     return [];
@@ -54,13 +57,14 @@ export const useLlmNotificationsStore = defineStore('llmNotifications', () => {
     return grouped;
   });
 
-  function add(input: { sessionId: string; title: string; content: string }): void {
+  function add(input: { sessionId: string; title: string; content: string; kind?: 'note' }): void {
     notifications.value = [{
       id: `${input.sessionId}-${Date.now()}`,
       sessionId: input.sessionId,
       title: input.title,
       content: input.content,
       createdAt: Date.now(),
+      ...(input.kind ? { kind: input.kind } : {}),
     }, ...notifications.value];
     persist(notifications.value);
   }
