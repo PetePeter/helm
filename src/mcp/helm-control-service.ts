@@ -1176,6 +1176,10 @@ export class HelmControlService extends EventEmitter {
   }
 
   /** Wire the handover sink used by session_compact's `handover` argument. */
+  setCompactSnapshot(snapshot: (sessionId: string) => void): void {
+    this.sessionDelivery.setCompactSnapshot(snapshot);
+  }
+
   setHandoverDelivery(handover: HandoverArming): void {
     this.sessionDelivery.setHandoverDelivery(handover);
   }
@@ -1898,7 +1902,7 @@ export class HelmControlService extends EventEmitter {
 
   async quickCompactSession(
     sessionRef: string,
-    options: { senderSessionId?: string; senderSessionName?: string; handover?: string; force?: boolean },
+    options: { senderSessionId?: string; senderSessionName?: string; handover?: string },
   ) {
     return this.sessionDelivery.quickCompactSession(sessionRef, options);
   }

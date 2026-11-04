@@ -5,6 +5,7 @@ import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
 import type { SessionInfo, UserPromptSource } from '../../types/session.js';
+import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
 import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
 import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
@@ -129,8 +130,11 @@ type SendInputResult = { ok: true; verified: boolean; deliveryStatus: string; re
 type SendTextOptions = { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[]; source?: 'desktop' };
 type SendTextResult = { ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean } & TargetBusyReport;
 
-/** A quick compact this soon after the CLI's own compaction has nothing left to save. */
+/** A compaction this soon after the last one, with the context still green, has nothing left to save. */
 export const RECENT_CLI_COMPACT_MS = 5 * 60_000;
+
+/** What a caller is told when its compaction is answered as already done. */
+const ALREADY_COMPACTED_NOTE = 'Compacted: the context is fresh. Continue the work.';
 
 /** What a sender learns about the recipient's turn at the moment it sent. */
 interface TargetBusyReport {
@@ -180,6 +184,14 @@ export class HelmSessionDeliveryService {
   setHandoverDelivery(handover: HandoverArming): void {
     this.handover = handover;
   }
+
+  /** Late-bind the compaction snapshot (HookTracker): a Quick Compact's /clear fires no PreCompact. */
+  setCompactSnapshot(snapshot: (sessionId: string) => void): void {
+    this.compactSnapshot = snapshot;
+  }
+  private compactSnapshot?: (sessionId: string) => void;
+  /** Sessions with a compaction queued behind their idle wait. */
+  private readonly compactsPending = new Set<string>();
 
   /**
    * Late-bind the G9 reminder-delivery resolver (same fn the Telegram relay
@@ -663,24 +675,16 @@ export class HelmSessionDeliveryService {
    */
   async quickCompactSession(
     sessionRef: string,
-    options: { senderSessionId?: string; senderSessionName?: string; handover?: string; force?: boolean },
+    options: { senderSessionId?: string; senderSessionName?: string; handover?: string },
   ): Promise<
-    | { ok: true; action: 'quick_compact'; sessionId: string; skipped: true; note: string }
+    | { ok: true; action: 'quick_compact'; sessionId: string; note: string }
     | { ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; archiveFile: string; note: string }
     | { ok: true; action: 'quick_compact'; sessionId: string; queued: true; note: string }
     | { ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; note: string }
   > {
     const session = this.requireRunningSession(sessionRef);
-    // An agent that decides to quick compact can be overtaken by its CLI's own
-    // compaction; by the time the call lands, its context is already small.
-    const compactedAgoMs = Date.now() - (session.lastCliCompactAt ?? Number.NEGATIVE_INFINITY);
-    if (!options.force && compactedAgoMs < RECENT_CLI_COMPACT_MS) {
-      const at = new Date(session.lastCliCompactAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      logger.info(`[HelmSessionDelivery] session_quick_compact skipped for "${session.name}" (${session.id}): CLI compacted ${Math.round(compactedAgoMs / 1000)}s ago`);
-      return {
-        ok: true, action: 'quick_compact', sessionId: session.id, skipped: true,
-        note: `Skipped: the CLI already compacted this session at ${at}. Continue from its compacted context; pass force: true to quick compact anyway.`,
-      };
+    if (this.alreadyCompacted(session, 'session_quick_compact')) {
+      return { ok: true, action: 'quick_compact', sessionId: session.id, note: ALREADY_COMPACTED_NOTE };
     }
     if (this.configLoader.getCliTypeEntry(session.cliType)?.api) {
       // The API process owns the canonical ChatMessage history; there is no CLI transcript or /clear to deliver.
@@ -701,16 +705,19 @@ export class HelmSessionDeliveryService {
     }
 
     const transcriptFile = writeStrippedTranscript(session);
+    this.compactSnapshot?.(session.id);
     const withdrawCompactRequest = this.noteCompactRequested(session);
     // Compacting a frozen session is an explicit ask to bring it back: the
     // /clear and the resume prompt both have to reach it.
     if (session.frozen) this.sessionManager.setSessionFrozen(session.id, false);
     logger.info(`[HelmSessionDelivery] session_quick_compact for "${session.name}" (${session.id}) → ${transcriptFile}`);
+    this.compactsPending.add(session.id);
     const clear = () => this.clearSession(session.id, {
       ...(options.senderSessionId ? { senderSessionId: options.senderSessionId } : {}),
       ...(options.senderSessionName ? { senderSessionName: options.senderSessionName } : {}),
       context: buildTranscriptResumePrompt(transcriptFile, options.handover),
-    }).then(() => {}, withdrawCompactRequest);
+    }).then(() => this.stampCompacted(session.id), withdrawCompactRequest)
+      .finally(() => this.compactsPending.delete(session.id));
     // Never clear mid-turn: a session quick-compacting itself finishes its turn first.
     if (this.handover) {
       this.handover.runWhenIdle(session.id, clear);
@@ -718,6 +725,36 @@ export class HelmSessionDeliveryService {
     }
     await clear();
     return { ok: true, action: 'quick_compact', sessionId: session.id, transcriptFile, note: ACTION_WAIT_NOTE };
+  }
+
+  /**
+   * Any compaction request — agent, user, phone, scheduler, forced or not — is
+   * answered as done when the context is green and something compacted it in
+   * the last 5 minutes: the CLI (PreCompact hook) or Helm itself. A resumed
+   * agent re-reading its own "compact me" turn would otherwise compact twice.
+   * A context reading older than that compaction is stale, so it counts as green.
+   */
+  private alreadyCompacted(session: SessionInfo, tool: string): boolean {
+    // One already waiting for the session to go idle will do the job.
+    if (this.compactsPending.has(session.id)) {
+      logger.info(`[HelmSessionDelivery] ${tool} for "${session.name}" (${session.id}) answered as done: a compaction is already pending`);
+      return true;
+    }
+    const at = session.lastCliCompactAt;
+    if (at === undefined || Date.now() - at >= RECENT_CLI_COMPACT_MS) return false;
+    const usage = session.contextUsage;
+    const measuredAt = usage?.measuredAtIso ? Date.parse(usage.measuredAtIso) : Number.NaN;
+    if (usage && measuredAt > at) {
+      const limits = resolveContextLimits(this.configLoader.getCliTypeEntry(session.cliType), usage.window);
+      if (contextLevel(usage.tokens, limits) !== 'ok') return false;
+    }
+    logger.info(`[HelmSessionDelivery] ${tool} for "${session.name}" (${session.id}) answered as done: compacted ${Math.round((Date.now() - at) / 1000)}s ago, context green`);
+    return true;
+  }
+
+  /** Helm's own compaction counts too — a CLI fires no PreCompact for /clear. */
+  private stampCompacted(sessionId: string): void {
+    this.sessionManager.updateSession(sessionId, { lastCliCompactAt: Date.now() });
   }
 
   /**
@@ -749,6 +786,9 @@ export class HelmSessionDeliveryService {
     options?: { instruction?: string; handover?: string },
   ): Promise<{ ok: true; action: 'compact'; sessionId: string; handoverPending: boolean; note: string }> {
     const session = this.requireRunningSession(sessionRef);
+    if (this.alreadyCompacted(session, 'session_compact')) {
+      return { ok: true, action: 'compact', sessionId: session.id, handoverPending: false, note: ALREADY_COMPACTED_NOTE };
+    }
     const template = this.requireActionTemplate(session.cliType, 'compact');
     const sequence = substituteActionParams(template, { $instruction: options?.instruction?.trim() ?? '' });
 
@@ -760,12 +800,15 @@ export class HelmSessionDeliveryService {
       : undefined;
 
     const withdrawCompactRequest = this.noteCompactRequested(session);
+    this.compactsPending.add(session.id);
     const compact = async (): Promise<void> => {
       // Armed before the write, never after: the compact command's own output
       // is the edge the delivery's silence clock waits behind.
       if (deliveryText) handover?.arm(session.id, deliveryText);
       logger.info(`[HelmSessionDelivery] session_compact for "${session.name}" (${session.id})`);
-      await this.deliverActionSequence(session.id, sequence).catch(withdrawCompactRequest);
+      await this.deliverActionSequence(session.id, sequence)
+        .then(() => this.stampCompacted(session.id), withdrawCompactRequest)
+        .finally(() => this.compactsPending.delete(session.id));
     };
     // Never compact mid-turn: a session compacting itself finishes its turn first.
     if (handover) handover.runWhenIdle(session.id, compact);

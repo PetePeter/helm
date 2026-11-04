@@ -281,7 +281,7 @@ export function registerIPCHandlers(
   const scheduledTaskManager = new ScheduledTaskManager(sessionManager, ptyManager, planManager, configLoader, scheduledTaskHistoryManager, projectStore, {
     // A timer's own choice, not a model's second thought: never skipped as redundant.
     quickCompact: async (sessionId, prompt) => {
-      await helmControlService.quickCompactSession(sessionId, { force: true, ...(prompt ? { handover: prompt } : {}) });
+      await helmControlService.quickCompactSession(sessionId, prompt ? { handover: prompt } : {});
     },
   });
   const notificationManager = new NotificationManager(windowManager, sessionManager);
@@ -612,7 +612,7 @@ export function registerIPCHandlers(
 
   const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, {
     // The user asked for it outright: never second-guessed as redundant.
-    quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, { force: true }),
+    quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, {}),
     switchCli: (sessionId, cliType) => helmControlService.switchSessionCli(sessionId, cliType),
     clone: (sessionId, cliType) => helmControlService.cloneSession(sessionId, cliType === undefined ? {} : { cliType }),
   });
@@ -909,6 +909,7 @@ export function registerIPCHandlers(
     },
   });
   hookTracker.watch(hookReceiver);
+  helmControlService.setCompactSnapshot(sessionId => hookTracker.snapshot(sessionId, 'quick compact'));
 
   // G8 loop driving: the Stop-hook continuation brain. Fed by the same hook
   // stream (progress ticks, user turns, StopFailure) and by plan_complete's

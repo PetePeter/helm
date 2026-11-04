@@ -105,7 +105,9 @@ describe('session_compact', () => {
     await service.compactSession('s1', {});
     await afterIdle();
     expect(deliveredText()).toBe('/compact {Enter}');
-    await service.compactSession('s1', { instruction: 'focus' });
+    // A fresh session: a second compact straight after the first is answered as done.
+    const { service: other } = makeService({ helmActions: { compact: '/compact $instructions{Enter}' } });
+    await other.compactSession('s1', { instruction: 'focus' });
     await afterIdle();
     expect(deliveredText(1)).toBe('/compact focus{Enter}');
   });
@@ -300,36 +302,92 @@ describe('session_quick_compact', () => {
     if ('transcriptFile' in result) rmSync(result.transcriptFile, { force: true });
   });
 
-  it('skips a quick compact the CLI overtook with its own compaction, unless forced', async () => {
+  /** A context reading taken after the last compaction, at the given fill. */
+  const readingAfter = (at: number, tokens: number) =>
+    ({ tokens, window: 200_000, measuredAtIso: new Date(at + 1_000).toISOString() });
+
+  it('pretends a quick compact happened when the context is green and was compacted <5 min ago', async () => {
     const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
     const log = join(dir, 'log.jsonl');
     writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
     Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: Date.now() - 60_000 });
 
-    const skipped = await service.quickCompactSession('s1', { handover: 'next' });
-    await afterIdle();
-    expect(skipped).toMatchObject({ skipped: true });
+    for (const handover of ['next', undefined]) {
+      const result = await service.quickCompactSession('s1', handover ? { handover } : {});
+      await afterIdle();
+      expect(result).toMatchObject({ ok: true, action: 'quick_compact' });
+      expect(result).not.toHaveProperty('skipped');
+    }
     expect(deliverSpy).not.toHaveBeenCalled();
     expect(armed).toHaveLength(0);
-
-    const forced = await service.quickCompactSession('s1', { force: true });
-    await afterIdle();
-    expect(deliveredText(0)).toBe('/clear{Enter}');
-    expect(armed).toHaveLength(1);
-    rmSync((forced as { transcriptFile: string }).transcriptFile, { force: true });
+    expect(session.compactRequestedAt).toBeUndefined();
   });
 
-  it('flags a CLI quick compact as requested, but not one it skipped', async () => {
+  it('still compacts a recently compacted session whose context is back in amber/red', async () => {
+    const { service, session } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+    const at = Date.now() - 60_000;
+    Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: at, contextUsage: readingAfter(at, 190_000) });
+
+    const result = await service.quickCompactSession('s1', {});
+    await afterIdle();
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
+  });
+
+  it("a second quick compact right after Helm's own one is a no-op (the Codex double compaction)", async () => {
+    const { service, session } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+    Object.assign(session, { cliTranscriptPath: log });
+
+    const first = await service.quickCompactSession('s1', {});
+    await afterIdle();
+    const deliveriesAfterFirst = deliverSpy.mock.calls.length;
+    expect(deliveriesAfterFirst).toBeGreaterThan(0);
+    await service.quickCompactSession('s1', {});
+    await afterIdle();
+    expect(deliverSpy).toHaveBeenCalledTimes(deliveriesAfterFirst);
+    rmSync((first as { transcriptFile: string }).transcriptFile, { force: true });
+  });
+
+  it('a second compaction asked while the first still waits for idle is answered as done', async () => {
+    const { service, session, release } = makeService({ helmActions: { clear: '/clear{Enter}', compact: '/compact{Enter}' } }, true, { holdIdle: true });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+    Object.assign(session, { cliTranscriptPath: log });
+
+    const first = await service.quickCompactSession('s1', {});
+    const second = await service.quickCompactSession('s1', {});
+    const third = await service.compactSession('s1');
+    expect(second).not.toHaveProperty('transcriptFile');
+    expect(third).toMatchObject({ ok: true, action: 'compact', handoverPending: false });
+    await release();
+    expect(deliverSpy).toHaveBeenCalledTimes(1);
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    rmSync((first as { transcriptFile: string }).transcriptFile, { force: true });
+  });
+
+  it('session_compact follows the same rule', async () => {
+    const { service, session } = makeService({ helmActions: { compact: '/compact{Enter}' } });
+    Object.assign(session, { lastCliCompactAt: Date.now() - 60_000 });
+    const result = await service.compactSession('s1');
+    await afterIdle();
+    expect(result).toMatchObject({ ok: true, action: 'compact' });
+    expect(deliverSpy).not.toHaveBeenCalled();
+  });
+
+  it('snapshots the session before the quick compact clears it', async () => {
     const { service, session } = makeService({ helmActions: { clear: '/clear{Enter}' } }, true, { holdIdle: true });
     const log = join(dir, 'log.jsonl');
     writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
-    Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: Date.now() - 60_000 });
+    Object.assign(session, { cliTranscriptPath: log });
+    const snapshots: string[] = [];
+    service.setCompactSnapshot(id => { snapshots.push(id); });
 
-    await service.quickCompactSession('s1', {});
-    expect(session.compactRequestedAt).toBeUndefined();
-
-    const result = await service.quickCompactSession('s1', { force: true });
-    expect(session.compactRequestedAt).toEqual(expect.any(Number));
+    const result = await service.quickCompactSession('s1', {});
+    expect(snapshots).toEqual(['s1']);
     rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
   });
 

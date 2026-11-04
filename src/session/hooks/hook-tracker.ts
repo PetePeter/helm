@@ -205,7 +205,7 @@ export class HookTracker {
 
       case 'PreCompact':
         // Snapshot BEFORE delivery: peek() must still see the pending note.
-        this.composePreCompactSnapshot(event);
+        this.snapshot(sessionId, event.trigger, event.transcriptPath);
         this.deps.handoverDelivery.deliverFromPreCompact(sessionId);
         this.deps.sessionManager.updateSession(sessionId, { lastCliCompactAt: this.now() });
         this.restartCacheTimer(sessionId);
@@ -325,8 +325,12 @@ export class HookTracker {
 
   // ---------- PreCompact snapshot ------------------------------------------
 
-  private composePreCompactSnapshot(event: HookEvent): void {
-    const sessionId = event.helmSessionId!;
+  /**
+   * Compose the "Compaction snapshot" artifact. PreCompact calls it for a CLI
+   * compaction; Quick Compact calls it before its /clear, which fires no
+   * PreCompact. The transcript defaults to the one hooks last reported.
+   */
+  snapshot(sessionId: string, trigger?: string, transcriptPath?: string): void {
     const session = this.deps.sessionManager.getSession(sessionId);
     if (!session) return;
 
@@ -339,12 +343,13 @@ export class HookTracker {
     // The attachment must exist BEFORE the artifact: the manager documents that
     // a pre-minted id lets version 1 be born holding real content.
     const artifactId = randomUUID();
-    const raw = event.transcriptPath ? readTranscript(event.transcriptPath, sessionId) : undefined;
+    const path = transcriptPath ?? session.cliTranscriptPath;
+    const raw = path ? readTranscript(path, sessionId) : undefined;
     const transcriptAttached = raw ? this.attachTranscript(artifactId, raw, sessionId) : false;
 
     const content = composePreCompactSnapshot({
       sessionName: session.name,
-      trigger: event.trigger,
+      trigger,
       turns: facts.turns,
       ageMs: session.createdAt !== undefined ? Math.max(0, this.now() - session.createdAt) : undefined,
       plan: claimed ? { title: claimed.title, status: claimed.status } : null,
@@ -358,7 +363,7 @@ export class HookTracker {
     this.deps.artifactManager.create(sessionId, SNAPSHOT_TITLE, 'compact', content, undefined, artifactId);
     logger.info(
       `[HookTracker] PreCompact snapshot composed for ${session.name}` +
-        ` (trigger: ${event.trigger ?? 'unknown'}, transcript ${transcriptAttached ? 'attached' : 'absent'})`,
+        ` (trigger: ${trigger ?? 'unknown'}, transcript ${transcriptAttached ? 'attached' : 'absent'})`,
     );
   }
 

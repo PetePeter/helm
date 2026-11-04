@@ -625,6 +625,26 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
     }
   });
 
+  it('snapshots a Quick Compact from the current transcript — no PreCompact needed', () => {
+    const s = setup();
+    try {
+      workingSession(s);
+      const transcript = join(tmpdir(), `helm-tracker-quick-${Date.now()}.jsonl`);
+      writeFileSync(transcript, JSON.stringify({ type: 'user', message: { content: 'please fix the parser' } }));
+      s.sessionManager.updateSession('s1', { cliTranscriptPath: transcript });
+
+      s.tracker.snapshot('s1', 'quick compact');
+
+      const [snapshot] = s.artifactManager.getForSession('s1');
+      expect(snapshot.title).toBe('Compaction snapshot');
+      expect(snapshot.versions[0].content).toContain('quick compact');
+      expect(snapshot.versions[0].content).toContain('please fix the parser');
+      rmSync(transcript, { force: true });
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('SessionStart resets the accumulated facts — the next snapshot starts at zero', () => {
     const s = setup();
     try {

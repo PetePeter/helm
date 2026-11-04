@@ -117,8 +117,9 @@ export interface SessionInfo {
    *  timer counts from it. Set by the UserPromptSubmit hook and by Enter typed
    *  on the desktop. Persists. */
   lastPromptAt?: number;
-  /** When the CLI last compacted its own context (PreCompact hook, epoch ms).
-   *  Lets a quick compact asked for just after it be skipped as redundant. */
+  /** When the context was last compacted, epoch ms: by the CLI (PreCompact
+   *  hook) or by Helm (session_compact / Quick Compact). A compaction asked for
+   *  within 5 minutes of it, with the context still green, is answered as done. */
   lastCliCompactAt?: number;
   /** When Helm was last asked to compact this session (epoch ms).
    *  Runtime only: todo/ETA bookkeeping stands down until the compact lands. */
