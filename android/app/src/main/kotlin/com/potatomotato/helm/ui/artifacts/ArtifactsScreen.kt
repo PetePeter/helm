@@ -513,7 +513,7 @@ private fun GatedRow(
 private fun ArtifactBody(read: HelmArtifactRead) {
     when (read.artifact.kind) {
         KIND_HTML -> HtmlViewer(read.content)
-        KIND_MARKDOWN -> MarkdownBody(read.content)
+        KIND_MARKDOWN, KIND_COMPACT -> MarkdownBody(read.content)
         // A kind this build has never met is still text a reader can read;
         // refusing the whole artifact over its label would protect nobody.
         else -> PlainBody(read.content)
@@ -648,6 +648,7 @@ private fun Placeholder(text: String, color: Color = HelmColors.Faint) {
 private fun kindLabel(kind: String): String = when (kind) {
     KIND_MARKDOWN -> stringResource(R.string.artifacts_kind_markdown)
     KIND_HTML -> stringResource(R.string.artifacts_kind_html)
+    KIND_COMPACT -> stringResource(R.string.artifacts_kind_compact)
     else -> kind
 }
 
@@ -657,6 +658,9 @@ private fun versionLabel(count: Int): String =
 
 private const val KIND_MARKDOWN = "markdown"
 private const val KIND_HTML = "html"
+
+/** Helm's compaction snapshot: markdown underneath, badged as its own kind. */
+private const val KIND_COMPACT = "compact"
 private const val SEPARATOR = " · "
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */

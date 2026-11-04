@@ -160,6 +160,10 @@ describe('renderArtifact — anchor href scheme lockdown', () => {
 // ---------------------------------------------------------------------------
 
 describe('renderArtifact', () => {
+  it('renders a compact artifact as markdown', () => {
+    expect(renderArtifact('compact', '# Snap')).toContain('<h1');
+  });
+
   it('preserves single newlines in pasted plain text', () => {
     const out = renderArtifact('markdown', 'first line\nsecond line', true);
     expect(out).toContain('first line<br>second line');

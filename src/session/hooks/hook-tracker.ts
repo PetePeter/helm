@@ -34,7 +34,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { EventEmitter } from 'node:events';
 import type { HookEvent } from './hook-normaliser.js';
 import type { StateDetector } from '../state-detector.js';
@@ -44,6 +44,7 @@ import type { HandoverDelivery } from '../handover-delivery.js';
 import type { ArtifactManager } from '../artifact-manager.js';
 import type { ArtifactAttachmentManager } from '../artifact-attachment-manager.js';
 import { MAX_ATTACHMENT_BYTES } from '../artifact-attachment-manager.js';
+import { stripTranscript } from '../transcript-strip.js';
 import { promptSubmitSignal, type PromptSubmitSignal } from '../prompt-submit-signal.js';
 import { logger } from '../../utils/logger.js';
 
@@ -107,6 +108,8 @@ export interface PreCompactSnapshotInput {
   filesTouched: string[];
   pendingHandover?: string;
   transcriptAttached: boolean;
+  /** The transcript stripped to markdown (as Quick Compact does), when readable. */
+  transcript?: string;
 }
 
 /** The one line of the stall record a cleared stall leaves behind. */
@@ -336,9 +339,8 @@ export class HookTracker {
     // The attachment must exist BEFORE the artifact: the manager documents that
     // a pre-minted id lets version 1 be born holding real content.
     const artifactId = randomUUID();
-    const transcriptAttached = event.transcriptPath
-      ? this.attachTranscript(artifactId, event.transcriptPath, sessionId)
-      : false;
+    const raw = event.transcriptPath ? readTranscript(event.transcriptPath, sessionId) : undefined;
+    const transcriptAttached = raw ? this.attachTranscript(artifactId, raw, sessionId) : false;
 
     const content = composePreCompactSnapshot({
       sessionName: session.name,
@@ -350,9 +352,10 @@ export class HookTracker {
       filesTouched: [...facts.filesTouched],
       pendingHandover,
       transcriptAttached,
+      transcript: raw ? stripTranscript(raw.toString('utf8')) : undefined,
     });
 
-    this.deps.artifactManager.create(sessionId, SNAPSHOT_TITLE, 'markdown', content, undefined, artifactId);
+    this.deps.artifactManager.create(sessionId, SNAPSHOT_TITLE, 'compact', content, undefined, artifactId);
     logger.info(
       `[HookTracker] PreCompact snapshot composed for ${session.name}` +
         ` (trigger: ${event.trigger ?? 'unknown'}, transcript ${transcriptAttached ? 'attached' : 'absent'})`,
@@ -360,28 +363,22 @@ export class HookTracker {
   }
 
   /**
-   * Attach the CLI's raw transcript — ATTACHED, never inlined: transcripts are
-   * megabytes of mostly tool noise, and inlining would make the one artifact
-   * meant to be readable unreadable. Over the cap or unreadable, the summary
-   * stands alone and the drop is said out loud (no silent truncation).
+   * Attach the CLI's raw transcript alongside the stripped copy in the body:
+   * the body is the readable version, the attachment the lossless one. Over
+   * the cap the attachment is dropped and the body says so (no silent loss).
    */
-  private attachTranscript(artifactId: string, transcriptPath: string, sessionId: string): boolean {
+  private attachTranscript(artifactId: string, raw: Buffer, sessionId: string): boolean {
     try {
-      if (!existsSync(transcriptPath)) {
-        logger.warn(`[HookTracker] Transcript for ${sessionId} not found at ${transcriptPath} — snapshot keeps the summary alone`);
-        return false;
-      }
-      const size = statSync(transcriptPath).size;
-      if (size > MAX_ATTACHMENT_BYTES) {
+      if (raw.length > MAX_ATTACHMENT_BYTES) {
         logger.warn(
-          `[HookTracker] Transcript for ${sessionId} is ${size} bytes — over the ${MAX_ATTACHMENT_BYTES}` +
-            ` attachment cap; snapshot keeps the summary alone`,
+          `[HookTracker] Transcript for ${sessionId} is ${raw.length} bytes — over the ${MAX_ATTACHMENT_BYTES}` +
+            ` attachment cap; snapshot inlines it without the attachment`,
         );
         return false;
       }
       this.deps.artifactAttachments.add(artifactId, {
         filename: 'transcript.jsonl',
-        content: readFileSync(transcriptPath),
+        content: raw,
         contentType: 'text/plain',
       });
       return true;
@@ -390,6 +387,17 @@ export class HookTracker {
       return false;
     }
   }
+}
+
+/** The CLI's transcript bytes, or undefined (logged) when missing or unreadable. */
+function readTranscript(transcriptPath: string, sessionId: string): Buffer | undefined {
+  try {
+    if (existsSync(transcriptPath)) return readFileSync(transcriptPath);
+    logger.warn(`[HookTracker] Transcript for ${sessionId} not found at ${transcriptPath} — snapshot keeps the summary alone`);
+  } catch (error) {
+    logger.warn(`[HookTracker] Could not read transcript for ${sessionId}: ${String(error)}`);
+  }
+  return undefined;
 }
 
 /** Read the failure reason defensively — see STALL_REASON_KEYS. */
@@ -445,5 +453,8 @@ export function composePreCompactSnapshot(input: PreCompactSnapshotInput): strin
   ];
 
   lines.push('', '## Pending handover note', input.pendingHandover ?? '- No pending handover note');
+  // Demote the stripped transcript's role headings so they nest under this section.
+  const transcript = input.transcript?.trim();
+  lines.push('', '## Transcript', '', transcript ? transcript.replace(/^## /gm, '### ') : '- No transcript to show');
   return lines.join('\n');
 }

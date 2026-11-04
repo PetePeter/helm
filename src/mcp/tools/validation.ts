@@ -120,7 +120,7 @@ export function asTerminalReadMode(value: unknown): 'raw' | 'stripped' | 'both' 
 }
 
 
-export function asArtifactKind(value: unknown): ArtifactKind {
+export function asArtifactKind(value: unknown): Exclude<ArtifactKind, 'compact'> {
   if (value === 'markdown' || value === 'html') {
     return value;
   }

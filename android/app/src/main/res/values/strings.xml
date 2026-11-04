@@ -373,6 +373,7 @@
     </plurals>
     <string name="artifacts_kind_markdown">Markdown</string>
     <string name="artifacts_kind_html">HTML</string>
+    <string name="artifacts_kind_compact">Compact</string>
     <string name="artifacts_version_glyph">v%1$d</string>
 
     <!--

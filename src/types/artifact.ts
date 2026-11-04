@@ -4,8 +4,12 @@
  * live content, prior versions are retained for history.
  */
 
-/** Renderable content kind for an artifact. */
-export type ArtifactKind = 'markdown' | 'html';
+/**
+ * Renderable content kind for an artifact. 'compact' is the compaction
+ * snapshot Helm composes itself: markdown underneath, its own kind so every
+ * surface can badge it. Only Helm mints it — callers create markdown or html.
+ */
+export type ArtifactKind = 'markdown' | 'html' | 'compact';
 
 /** How the artifact was created. Defaults to 'ai' for backward compat. */
 export type ArtifactSource = 'ai' | 'manual';

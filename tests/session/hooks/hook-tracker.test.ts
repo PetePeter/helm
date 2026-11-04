@@ -533,7 +533,10 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
     try {
       workingSession(s);
       const transcript = join(tmpdir(), `helm-tracker-transcript-${Date.now()}.jsonl`);
-      writeFileSync(transcript, '{"role":"user"}\n{"role":"assistant"}\n');
+      writeFileSync(transcript, [
+        JSON.stringify({ type: 'user', message: { content: 'please fix the parser' } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'parser fixed' }] } }),
+      ].join('\n'));
 
       s.hookReceiver.emit('hook', hookEvent('claude', 'PreCompact', { trigger: 'auto', transcript_path: transcript }));
 
@@ -541,6 +544,7 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
       expect(artifacts).toHaveLength(1);
       const snapshot = artifacts[0];
       expect(snapshot.title).toBe('Compaction snapshot');
+      expect(snapshot.kind).toBe('compact');
       const body = snapshot.versions[0].content;
       expect(body).toContain('trigger: **auto**');
       expect(body).toContain('Ship the thing');
@@ -552,6 +556,10 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
       expect(body).toContain('src/x.ts');
       expect(body).toContain('remember the handover note');
       expect(body).toContain('transcript.jsonl');
+      // Parsed like Quick Compact, inline — headings demoted under the section.
+      expect(body).toContain('## Transcript');
+      expect(body).toContain('### User\n\nplease fix the parser');
+      expect(body).toContain('### Assistant\n\nparser fixed');
 
       const attached = s.attachments.list(snapshot.id);
       expect(attached).toHaveLength(1);
@@ -591,23 +599,26 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
       expect(snapshot).toBeDefined();
       expect(s.attachments.list(snapshot.id)).toHaveLength(0);
       expect(snapshot.versions[0].content).toContain('No transcript was available to attach');
+      expect(snapshot.versions[0].content).toContain('No transcript to show');
     } finally {
       s.dispose();
     }
   });
 
-  it('keeps the summary alone when the transcript is over the attachment cap — no silent truncation', () => {
+  it('inlines the transcript but skips the attachment when it is over the attachment cap', () => {
     const s = setup();
     try {
       workingSession(s);
       const huge = join(tmpdir(), `helm-tracker-huge-${Date.now()}.jsonl`);
-      writeFileSync(huge, Buffer.alloc(MAX_ATTACHMENT_BYTES + 1));
+      const line = JSON.stringify({ type: 'user', message: { content: 'big log tail marker' } });
+      writeFileSync(huge, line + '\n' + ' '.repeat(MAX_ATTACHMENT_BYTES));
 
       s.hookReceiver.emit('hook', hookEvent('claude', 'PreCompact', { trigger: 'auto', transcript_path: huge }));
 
       const snapshot = s.artifactManager.getForSession('s1')[0];
       expect(s.attachments.list(snapshot.id)).toHaveLength(0);
       expect(snapshot.versions[0].content).toContain('No transcript was available to attach');
+      expect(snapshot.versions[0].content).toContain('big log tail marker');
       rmSync(huge, { force: true });
     } finally {
       s.dispose();
@@ -641,6 +652,7 @@ describe('composePreCompactSnapshot — pure renderer of Helm-held state', () =>
     filesTouched: ['src/b.ts', 'src/a.ts'],
     pendingHandover: 'the pre-written note',
     transcriptAttached: true,
+    transcript: '## User\nhello\n\n## Assistant\nhi\n',
   };
 
   it('renders every section from the facts', () => {
@@ -654,6 +666,8 @@ describe('composePreCompactSnapshot — pure renderer of Helm-held state', () =>
     expect(md).toContain('`src/a.ts`, `src/b.ts`');
     expect(md).toContain('the pre-written note');
     expect(md).toContain('transcript.jsonl');
+    expect(md).toContain('## Transcript\n\n### User\nhello');
+    expect(md).toContain('### Assistant\nhi');
   });
 
   it('states its empties honestly instead of omitting them', () => {
@@ -672,5 +686,6 @@ describe('composePreCompactSnapshot — pure renderer of Helm-held state', () =>
     expect(md).toContain('none recorded');
     expect(md).toContain('No pending handover note');
     expect(md).toContain('No transcript was available to attach');
+    expect(md).toContain('No transcript to show');
   });
 });

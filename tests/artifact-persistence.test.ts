@@ -51,6 +51,7 @@ describe('artifact-persistence', () => {
     const data: Record<string, Artifact[]> = {
       s1: [makeArtifact()],
       s2: [makeArtifact({ id: 'a2', sessionId: 's2', title: 'Other', kind: 'html' })],
+      s3: [makeArtifact({ id: 'a3', sessionId: 's3', title: 'Compaction snapshot', kind: 'compact' })],
     };
     saveArtifacts(data);
     const loaded = loadArtifacts();

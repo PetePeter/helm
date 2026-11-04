@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
+import type { ArtifactKind } from '../src/types/artifact.js';
 import {
   ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES,
   ARTIFACT_DOWNLOAD_MAX_ENCODED_BYTES,
@@ -25,7 +26,7 @@ import {
 } from '../src/session/artifact-download.js';
 import { MAX_FRAME_BYTES } from '../src/mobile/secure-channel.js';
 
-function managerWith(kind: 'markdown' | 'html', content: string, title = 'Q3 report') {
+function managerWith(kind: ArtifactKind, content: string, title = 'Q3 report') {
   const manager = new ArtifactManager(undefined, () => 1700000000000);
   const artifact = manager.create('s1', title, kind, content);
   return { manager, artifact };
@@ -75,6 +76,13 @@ describe('buildArtifactDownload', () => {
     const download = buildArtifactDownload(artifact);
     expect(download.filename).toBe('Q3-report.html');
     expect(download.mimeType).toBe('text/html');
+  });
+
+  it('downloads a compact artifact as the markdown it is underneath', () => {
+    const { artifact } = managerWith('compact', '# snap', 'Compaction snapshot');
+    const download = buildArtifactDownload(artifact);
+    expect(download.filename).toBe('Compaction-snapshot.md');
+    expect(download.mimeType).toBe('text/markdown');
   });
 
   it('falls back to a usable filename when the title has no safe characters', () => {

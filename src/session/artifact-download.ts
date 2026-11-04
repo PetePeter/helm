@@ -69,11 +69,13 @@ export const ARTIFACT_INLINE_MAX_ESCAPED_BYTES = 1024 * 1024 - DOWNLOAD_WRAPPER_
 const MIME_BY_KIND: Record<ArtifactKind, string> = {
   markdown: 'text/markdown',
   html: 'text/html',
+  compact: 'text/markdown',
 };
 
 const EXTENSION_BY_KIND: Record<ArtifactKind, string> = {
   markdown: 'md',
   html: 'html',
+  compact: 'md',
 };
 
 /** Longest basename we will emit; titles are display strings, not filenames. */

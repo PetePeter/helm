@@ -178,7 +178,7 @@ const SANITIZE_OPTIONS = {
  */
 export function renderArtifact(kind: ArtifactKind, content: string, preserveLineBreaks = false): string {
   let raw: string;
-  if (kind === 'markdown') {
+  if (kind !== 'html') {
     const parsed = md.parse(content ?? '', { breaks: preserveLineBreaks });
     if (typeof parsed !== 'string') {
       throw new Error('[render-artifact] marked returned a Promise; expected synchronous output');

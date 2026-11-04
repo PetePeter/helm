@@ -252,12 +252,16 @@ tools run and files touched (accumulated from PostToolUse), turn count and
 session age, any pending handover note, and the PreCompact
 `trigger` (`auto` = context filled, `manual` = `/compact`).
 
-- The **transcript is ATTACHED, never inlined** (`transcript.jsonl`).
-  Transcripts are megabytes of mostly tool noise; inlining would make the
-  one artifact meant to be readable unreadable. Missing (`Copilot` sends
-  none) or over the 10MB attachment cap → the summary stands alone and the
-  drop is logged — never a truncated attachment, never a silently missing
-  one.
+- The **transcript is inlined stripped and attached raw.** The body ends
+  with a `## Transcript` section: the JSONL parsed by the same
+  `stripTranscript` Quick Compact uses (tool noise reduced to one-liners, role
+  headings demoted to `###`), uncapped. The raw `transcript.jsonl` stays
+  attached as the lossless copy. Missing (`Copilot` sends none) → both say
+  so; over the 10MB attachment cap → inlined without the attachment, and the
+  drop is logged — never a truncated attachment, never a silently missing one.
+- The artifact's kind is **`compact`** — markdown underneath (renders,
+  downloads as `.md`), its own kind so desktop and phone badge it COMPACT.
+  Only Helm mints it; `artifact_create` still accepts markdown/html only.
 - **Artifacts are ephemeral** — they die with the session. That is the
   accepted trade: surviving a compaction happens within the same session, so
   the artifact is alive exactly when it is needed. A durable copy was

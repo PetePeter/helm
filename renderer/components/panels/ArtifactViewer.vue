@@ -289,13 +289,14 @@ function relativeTime(ms: number): string {
   return `${days}d`;
 }
 
-/** Kind badge label: IMG for image-based markdown, BIN for binary, otherwise MD/HTML. */
+/** Kind badge label: IMG for image-based markdown, BIN for binary, COMPACT for a compaction snapshot, otherwise MD/HTML. */
 function kindLabel(a: Artifact): string {
   if (a.source === 'manual') {
     const content = a.versions[a.versions.length - 1]?.content ?? '';
     if (content.startsWith('![')) return 'IMG';
     if (content.includes('Open in system viewer')) return 'BIN';
   }
+  if (a.kind === 'compact') return 'COMPACT';
   return a.kind === 'markdown' ? 'MD' : 'HTML';
 }
 
