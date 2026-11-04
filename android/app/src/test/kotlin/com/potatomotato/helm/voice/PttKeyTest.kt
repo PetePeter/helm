@@ -21,8 +21,9 @@ class PttKeyTest {
     }
 
     @Test
-    fun `a press with no session and no operator does nothing`() {
-        assertEquals(PttKey.Ignore, PttKey.decide(down = true, liveCall = false, target = null))
+    fun `a press with nothing to call yet still brings Helm forward`() {
+        // A cold process (killed in the background) knows no target until Helm is open and linked.
+        assertEquals(PttKey.Open, PttKey.decide(down = true, liveCall = false, target = null))
     }
 
 

@@ -44,6 +44,12 @@ object ContextGraph {
     fun autoLimits(window: Long?): ContextLimits? =
         window?.takeIf { it > 0 }?.let { ContextLimits(Math.round(it * 0.75), Math.round(it * 0.9)) }
 
+    /** How full the latest reading is, 0..1, against the window (else the red limit); null when neither is known. */
+    fun fill(history: ContextHistory): Float? {
+        val ceiling = history.window?.takeIf { it > 0 } ?: history.limits?.red?.takeIf { it > 0 } ?: return null
+        return (history.samples.last().tokens.toFloat() / ceiling).coerceIn(0f, 1f)
+    }
+
     /** Clip to [from, to]; the prior level enters at the left edge and the latest runs out to [to]. */
     fun window(samples: List<ContextSample>, from: Long, to: Long): List<ContextSample> {
         val known = samples.filter { it.at <= to }

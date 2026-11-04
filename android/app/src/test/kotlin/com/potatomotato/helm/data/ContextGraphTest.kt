@@ -86,4 +86,13 @@ class ContextGraphTest {
         assertEquals(ContextLevel.Hot, ContextGraph.level(91, limits))
         assertEquals(ContextLevel.Ok, ContextGraph.level(1_000_000, null))
     }
+
+    @Test
+    fun `the header bar fills against the window, else the red limit, else not at all`() {
+        val now = listOf(ContextSample(0, 250_000))
+        assertEquals(0.25f, ContextGraph.fill(ContextHistory(now, 1_000_000, ContextLimits(1, 2)))!!, 0.0001f)
+        assertEquals(0.5f, ContextGraph.fill(ContextHistory(now, null, ContextLimits(400_000, 500_000)))!!, 0.0001f)
+        assertNull(ContextGraph.fill(ContextHistory(now, null, null)))
+        assertEquals(1f, ContextGraph.fill(ContextHistory(listOf(ContextSample(0, 9_000)), 1_000, null))!!, 0.0001f)
+    }
 }

@@ -56,7 +56,10 @@ control, and Hang up. Leaving the chat does not hang up — like a phone app; th
 notification can.
 
 The mic control cycles through **Open → Muted → PTT**. In PTT mode the mic is
-muted until a talk key is held; releasing it mutes the mic again. There are two
+muted until a talk key is held; releasing it mutes the mic again. The release
+is the send: a pause while the key is held sends nothing, and on release
+everything heard (finalised chunks plus words not yet finalised) goes as one
+message. There are two
 talk keys: the panel's **Hold to talk** button, and the ThinkPhone Red Key, which
 Android delivers as `KEY_SEARCH` and `MainActivity` consumes only during a live
 PTT call.
@@ -516,9 +519,11 @@ face", so that call stays on the earpiece.
 ## The AI Key as a walkie-talkie — `PttKey`
 
 With the Motorola AI Key's push-to-talk option on (`ptt_enable=1`), Motorola's
-MyKey broadcasts `android.intent.action.PTT.down` / `PTT.up`. Helm listens for
-them while the link service runs, so it works from the background and the
-lock screen.
+MyKey broadcasts `android.intent.action.PTT.down` / `PTT.up`. The broadcasts
+are implicit, which Android never delivers to a manifest receiver, so
+`PttKeyReceiver` is registered for the process's lifetime (`HelmApp`), not the
+link service's: Android can restart the process without the service. A press in a cold process knows no target yet (no session list), so
+it only brings Helm forward to link; the next press calls.
 
 ```mermaid
 flowchart LR

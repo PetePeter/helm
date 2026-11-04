@@ -293,6 +293,46 @@ class CallControllerTest {
     }
 
     @Test
+    fun `a pause while the key is held sends nothing, the release sends it all as one`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        line.connect()
+
+        mic.final("check the build")
+        mic.final("and run the tests")
+        assertTrue(sent.isEmpty())
+
+        controller.setPttKeyHeld(false)
+        assertEquals(listOf("check the build and run the tests"), sent)
+    }
+
+    @Test
+    fun `the release joins held finals with the words not yet finalised`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        line.connect()
+
+        mic.final("check the build")
+        mic.partial("then deploy")
+        controller.setPttKeyHeld(false)
+        mic.final("then deploy")
+
+        assertEquals(listOf("check the build then deploy"), sent)
+    }
+
+    @Test
+    fun `hanging up with the key held sends nothing`() {
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        line.connect()
+
+        mic.final("check the build")
+        controller.hangUp()
+
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
     fun `releasing the key sends what was heard before the recogniser finalised it`() {
         controller.start(micMode = MicMode.PushToTalk)
         controller.setPttKeyHeld(true)
@@ -329,6 +369,7 @@ class CallControllerTest {
         assertFalse(tts.speaking)
         assertEquals(CallPhase.Listening, controller.state.value.phase)
         mic.final("stop, try again")
+        controller.setPttKeyHeld(false)
         assertEquals(listOf("stop, try again"), sent)
         assertTrue(sentInterruptions.single() != null)
     }

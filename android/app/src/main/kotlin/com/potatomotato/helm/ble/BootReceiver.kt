@@ -6,7 +6,7 @@ import android.content.Intent
 import com.potatomotato.helm.log.HelmLog
 
 /**
- * BootReceiver — brings the peripheral back after a reboot.
+ * BootReceiver — brings the peripheral back after a reboot or an app update.
  *
  * WHY: being reachable without touching the phone is the whole point of the
  * app, and a reboot is the one event that silently kills the foreground
@@ -20,8 +20,9 @@ import com.potatomotato.helm.log.HelmLog
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        HelmLog.i(HelmLog.BLE, "boot completed; starting the link service")
+        // An app update kills the service exactly as a reboot does, and is the same exemption.
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        HelmLog.i(HelmLog.BLE, "${intent.action}; starting the link service")
         HelmLinkService.start(context)
     }
 }

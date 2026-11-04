@@ -11,6 +11,7 @@ import com.potatomotato.helm.log.AndroidLogSink
 import com.potatomotato.helm.log.FileLogSink
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.ui.operator.OperatorKey
+import com.potatomotato.helm.voice.PttKeyReceiver
 import java.io.File
 
 /**
@@ -23,6 +24,7 @@ class HelmApp : Application() {
         installFileLogging()
         HelmPairing.init(this)
         trackScreenOff()
+        PttKeyReceiver.listen(this)
     }
 
     /**

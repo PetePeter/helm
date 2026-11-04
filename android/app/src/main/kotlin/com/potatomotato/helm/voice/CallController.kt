@@ -59,6 +59,9 @@ class CallController(
     /** Heard but not yet finalised: what a talk-key release sends rather than drops. */
     private var unsent = ""
 
+    /** Finals heard while the talk key is down: a pause is not "send", the release is. */
+    private val held = mutableListOf<String>()
+
     /** The switch as the call found it, to hand back; null while the call is not up. */
     private var micWasMuted: Boolean? = null
 
@@ -120,6 +123,7 @@ class CallController(
     fun setMicMode(mode: MicMode) {
         if (!live) return
         val muted = mode != MicMode.Open
+        held.clear()
         _state.value = _state.value.copy(micMode = mode, pttHeld = false, muted = muted, heard = "")
         micSwitch.muted = muted
     }
@@ -128,8 +132,13 @@ class CallController(
     fun setPttKeyHeld(held: Boolean) {
         if (placing) heldWhilePlacing = held
         if (!live || _state.value.micMode != MicMode.PushToTalk || _state.value.pttHeld == held) return
-        // The recogniser finalises on a pause, which a release does not wait for.
-        if (!held && unsent.isNotBlank()) onFinal(unsent)
+        // The release is the send: what was held, plus what the recogniser has not finalised yet.
+        if (!held) {
+            val words = (this.held + unsent).joinToString(" ") { it.trim() }.trim()
+            this.held.clear()
+            unsent = ""
+            if (words.isNotEmpty()) deliver(words)
+        }
         // Pressing to talk is "stop, my turn": Helm stops reading, as a barge-in does.
         if (held && phase == CallPhase.Speaking) pendingInterruption = interrupt()
         val muted = !held
@@ -163,6 +172,8 @@ class CallController(
         if (phase == CallPhase.Ended) return
         placing = false
         queue.clear()
+        held.clear()
+        unsent = ""
         pendingInterruption = null
         utterance++
         tts.release()
@@ -201,10 +212,18 @@ class CallController(
             pendingInterruption = null
             return
         }
+        if (_state.value.micMode == MicMode.PushToTalk) {
+            held += words
+            return
+        }
         if (phase == CallPhase.Speaking) {
             if (wordCount(words) < BARGE_IN_WORDS) return
             pendingInterruption = interrupt()
         }
+        deliver(words)
+    }
+
+    private fun deliver(words: String) {
         _state.value = _state.value.copy(phase = CallPhase.Sending, heard = words)
         val interruption = pendingInterruption
         pendingInterruption = null

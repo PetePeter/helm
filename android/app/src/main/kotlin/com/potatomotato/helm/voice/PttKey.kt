@@ -20,6 +20,10 @@ import com.potatomotato.helm.ui.operator.OperatorKey
  * MyKey broadcasts [ACTION_DOWN] / [ACTION_UP] to anyone listening: hold to talk
  * into the session open on screen, let go to hear its replies.
  *
+ * MyKey's broadcasts are implicit, which Android never delivers to a manifest
+ * receiver, so [PttKeyReceiver] is registered for the PROCESS's lifetime (HelmApp),
+ * not the link service's: Android can restart the process without the service.
+ *
  * The broadcasts carry no sender permission, so any app can fake them. A fake
  * can only call the session the user has open (else the operator), a locked
  * phone only as [KeyPress.gate] allows, and the call opens with an audible cue.
@@ -27,7 +31,8 @@ import com.potatomotato.helm.ui.operator.OperatorKey
 sealed interface PttKey {
     data class Start(val targetId: String) : PttKey
     data class Hold(val held: Boolean) : PttKey
-    data object Ignore : PttKey
+    /** Nothing to call yet (a cold process, or not linked): bring Helm forward so it can link. */
+    data object Open : PttKey
 
     companion object {
         const val ACTION_DOWN = "android.intent.action.PTT.down"
@@ -63,12 +68,12 @@ sealed interface PttKey {
             // A release always goes through: it may land while the call is still being placed.
             !down -> Hold(false)
             liveCall -> Hold(true)
-            target == null -> Ignore
+            target == null -> Open
             else -> Start(target)
         }
 
         /** One spoken line with no call to speak it in: on the media stream, then released. */
-        private fun say(context: Context, text: String) {
+        fun say(context: Context, text: String) {
             var tts: TextToSpeech? = null
             tts = TextToSpeech(context.applicationContext) { status ->
                 val engine = tts ?: return@TextToSpeech
@@ -82,56 +87,65 @@ sealed interface PttKey {
                 engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ptt-unlock")
             }
         }
+    }
+}
 
-        /** Listens for as long as its owner (the link service) lives; returns the unregister. */
-        fun listen(context: Context): () -> Unit {
-            val receiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context, intent: Intent) {
-                    val down = when (intent.action) {
-                        ACTION_DOWN -> true
-                        ACTION_UP -> false
-                        else -> return
-                    }
-                    val action = decide(
-                        down = down,
-                        liveCall = VoiceCallService.call.value != null,
-                        target = target,
-                    )
-                    HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: ${action::class.simpleName}")
-                    held = down
-                    when (action) {
-                        is Start -> {
-                            // The operator key's lock rule: a phone just used may call over the lock screen.
-                            val press = KeyPress.gate(
-                                locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked,
-                                inCall = false,
-                                now = SystemClock.elapsedRealtime(),
-                                callEndedAt = OperatorKey.callEndedAt,
-                                screenOffAt = OperatorKey.screenOffAt,
-                            )
-                            if (press !is KeyPress.Open) {
-                                HelmLog.i(HelmLog.UI, "PTT key ignored: locked too long, unlock first")
-                                say(context, context.getString(R.string.ptt_unlock_first))
-                                return
-                            }
-                            OperatorKey.overLockScreen = press.overLockScreen
-                            pendingStart = action.targetId
-                            context.startActivity(
-                                Intent(context, MainActivity::class.java)
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-                            )
-                        }
-                        is Hold -> VoiceCallService.setPttKeyHeld(context, action.held)
-                        Ignore -> Unit
-                    }
-                }
-            }
+/** The key's broadcasts, heard for as long as the process lives. */
+class PttKeyReceiver : BroadcastReceiver() {
+    companion object {
+        fun listen(context: Context) {
             val filter = IntentFilter().apply {
-                addAction(ACTION_DOWN)
-                addAction(ACTION_UP)
+                addAction(PttKey.ACTION_DOWN)
+                addAction(PttKey.ACTION_UP)
             }
-            ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
-            return { runCatching { context.unregisterReceiver(receiver) } }
+            ContextCompat.registerReceiver(context, PttKeyReceiver(), filter, ContextCompat.RECEIVER_EXPORTED)
         }
     }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        val down = when (intent.action) {
+            PttKey.ACTION_DOWN -> true
+            PttKey.ACTION_UP -> false
+            else -> return
+        }
+        val action = PttKey.decide(
+            down = down,
+            liveCall = VoiceCallService.call.value != null,
+            target = PttKey.target,
+        )
+        HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: ${action::class.simpleName}")
+        PttKey.held = down
+        when (action) {
+            is PttKey.Start -> {
+                if (!unlocked(context)) return
+                PttKey.pendingStart = action.targetId
+                bringForward(context)
+            }
+            PttKey.Open -> if (unlocked(context)) bringForward(context)
+            is PttKey.Hold -> VoiceCallService.setPttKeyHeld(context, action.held)
+        }
+    }
+
+    /** The operator key's lock rule: a phone just used may call over the lock screen. */
+    private fun unlocked(context: Context): Boolean {
+        val press = KeyPress.gate(
+            locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked,
+            inCall = false,
+            now = SystemClock.elapsedRealtime(),
+            callEndedAt = OperatorKey.callEndedAt,
+            screenOffAt = OperatorKey.screenOffAt,
+        )
+        if (press !is KeyPress.Open) {
+            HelmLog.i(HelmLog.UI, "PTT key ignored: locked too long, unlock first")
+            PttKey.say(context, context.getString(R.string.ptt_unlock_first))
+            return false
+        }
+        OperatorKey.overLockScreen = press.overLockScreen
+        return true
+    }
+
+    private fun bringForward(context: Context) = context.startActivity(
+        Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+    )
 }

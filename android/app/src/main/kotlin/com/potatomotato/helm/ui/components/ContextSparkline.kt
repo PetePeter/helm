@@ -1,14 +1,12 @@
 package com.potatomotato.helm.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,17 +21,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.ui.res.stringResource
-import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ContextGraph
 import com.potatomotato.helm.data.ContextHistory
 import com.potatomotato.helm.data.ContextLevel
 import com.potatomotato.helm.data.ContextLimits
 import com.potatomotato.helm.data.ContextSample
-import com.potatomotato.helm.data.replyStats
 import com.potatomotato.helm.ui.theme.HelmColors
-import com.potatomotato.helm.ui.theme.HelmSpacing
 
 fun ContextLevel.color(): Color = when (this) {
     ContextLevel.Ok -> HelmColors.Accent
@@ -108,33 +101,15 @@ fun ContextRowGraph(history: ContextHistory, now: Long) {
     }
 }
 
-/** The open-session header strip: the whole history, limit and amber/red guides. */
+/**
+ * The open-session header: a 3dp fill bar, coloured by level (accent, amber,
+ * red). It was a 40dp graph card; on a phone that height belongs to the terminal.
+ */
 @Composable
 fun ContextStrip(history: ContextHistory, modifier: Modifier = Modifier) {
-    val last = history.samples.last()
-    Column(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm)
-            .background(HelmColors.Surface2, RoundedCornerShape(10.dp))
-            .border(1.dp, HelmColors.Line, RoundedCornerShape(10.dp))
-            .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(stringResource(R.string.session_context_label), color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall)
-            Text(
-                text = replyStats(last.tokens, null, history.window).orEmpty(),
-                color = ContextGraph.level(last, history.limits).color(),
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-            )
-        }
-        ContextSparkline(
-            samples = history.samples,
-            window = history.window,
-            limits = history.limits,
-            modifier = Modifier.fillMaxWidth().height(40.dp).padding(top = 4.dp),
-            detailed = true,
-        )
+    val fill = ContextGraph.fill(history) ?: return
+    val color = ContextGraph.level(history.samples.last(), history.limits).color()
+    Box(modifier.fillMaxWidth().height(3.dp).background(HelmColors.Line)) {
+        Box(Modifier.fillMaxWidth(fill).fillMaxHeight().background(color))
     }
 }

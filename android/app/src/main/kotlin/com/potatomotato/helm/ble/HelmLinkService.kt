@@ -24,7 +24,6 @@ import com.potatomotato.helm.data.TransportPreferences
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.link.LinkEnergyPolicy
 import com.potatomotato.helm.log.HelmLog
-import com.potatomotato.helm.voice.PttKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -96,7 +95,6 @@ class HelmLinkService : Service() {
     }
 
     /** The AI Key's walkie-talkie broadcasts, heard while the link lives. */
-    private var stopPttKey: () -> Unit = {}
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -150,7 +148,6 @@ class HelmLinkService : Service() {
         }
 
         registerReceiver(radioReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
-        stopPttKey = PttKey.listen(this)
         recovery.onBluetoothState(isBluetoothOn())
         // TWO more gates on the peripheral, alongside the radio's own state: the
         // user's choice (LAN-only means never advertise) and the energy policy
@@ -205,7 +202,6 @@ class HelmLinkService : Service() {
         handler.removeCallbacksAndMessages(null)
         serviceScope.cancel()
         runCatching { unregisterReceiver(radioReceiver) }
-        stopPttKey()
         session = null
         gattServer = null
         super.onDestroy()
