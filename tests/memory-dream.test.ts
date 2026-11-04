@@ -142,4 +142,20 @@ describe('memory dreaming', () => {
     const withoutPlan = manager.dreamForSession(AUTHOR, { percentile: 100 }, () => null);
     expect([...withoutPlan.faded, ...withoutPlan.salient][0].plan).toBeNull();
   });
+
+  it('counts ideas in project totals but excludes them from faded and salient candidates', () => {
+    const { manager } = makeManager();
+    const ordinary = manager.createForSession(AUTHOR, { tldr: 'ordinary finding', content: 'body' });
+    const idea = manager.createForSession(AUTHOR, { kind: 'idea', tldr: 'unexplained observation', content: 'evidence' });
+    manager.getRecordForSession('reader1', ordinary.id);
+    manager.getRecordForSession('reader2', ordinary.id);
+    manager.getRecordForSession('reader3', ordinary.id);
+
+    const dream = manager.dreamForSession(AUTHOR, { percentile: 100 });
+
+    expect(dream.totals.memories).toBe(2);
+    expect(dream.totals.eligible).toBe(1);
+    expect(candidateIds([...dream.faded, ...dream.salient])).toEqual([ordinary.id]);
+    expect(candidateIds([...dream.faded, ...dream.salient])).not.toContain(idea.id);
+  });
 });

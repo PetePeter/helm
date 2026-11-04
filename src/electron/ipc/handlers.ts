@@ -170,6 +170,7 @@ import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { ensureOperatorHome } from '../../session/operator-home.js';
 import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-injector.js';
+import { getRingMemoryRequests } from '../../session/memory-idea-policy.js';
 import { resolveContextLimits } from '../../session/context-limits.js';
 import { openTaskLines } from '../../session/operator-tasks.js';
 import { RingRetry } from '../../session/ring-retry.js';
@@ -950,9 +951,10 @@ export function registerIPCHandlers(
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
     getTodos: (sessionId) => todoManager.list(sessionId),
     clearReportsTo: (sessionId) => sessionManager.updateSession(sessionId, { reportsTo: undefined }),
-    getRingRequests: (sessionId) => memoryManager.forestForSession(sessionId).records
-      .map((record) => record.tldr)
-      .filter((tldr) => tldr.startsWith(RING_ME_PREFIX)),
+    getRingRequests: (sessionId) => getRingMemoryRequests(
+      memoryManager.listRecordsForSession(sessionId),
+      RING_ME_PREFIX,
+    ),
     getOpenTasks: (sessionId) => {
       const dir = sessionManager.getSession(sessionId)?.workingDir;
       return dir ? openTaskLines(planManager.getForDirectory(dir)) : [];

@@ -158,4 +158,18 @@ describe('suggester candidates: session-bound memories', () => {
     expect(samples).toHaveLength(100);
     expect(Number.isFinite(percentile(0.95))).toBe(true);
   });
+
+  it('keeps project ideas out of prompt and PostToolUse memory hints', async () => {
+    const { memory, suggest, suggestTool } = setup();
+    const idea = memory.createForSession('s1', {
+      kind: 'idea',
+      tldr: 'RS485 on the EG004 charger needs 9600 baud',
+      content: 'The EG004 charger only answers on its RS485 link at 9600 baud, 8N1.',
+    });
+
+    expect(await suggest('s1', BAUD_PROMPT)).toBeNull();
+    expect(await suggest('s2', BAUD_PROMPT)).toBeNull();
+    expect(await suggestTool('s1', `tool Read\nresult ${BAUD_PROMPT}`)).toBeNull();
+    expect(idea.kind).toBe('idea');
+  });
 });

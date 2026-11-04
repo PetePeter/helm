@@ -10,6 +10,20 @@ export interface MemoryAttachment {
 
 export type MemoryAttachmentMetadata = MemoryAttachment;
 
+export const MEMORY_KINDS = ['idea'] as const;
+export type MemoryKind = (typeof MEMORY_KINDS)[number];
+
+export const IDEA_STAGES = ['seed', 'growing', 'suggested', 'accepted', 'rejected'] as const;
+export type IdeaStage = (typeof IDEA_STAGES)[number];
+
+export function isMemoryKind(value: unknown): value is MemoryKind {
+  return typeof value === 'string' && MEMORY_KINDS.includes(value as MemoryKind);
+}
+
+export function isIdeaStage(value: unknown): value is IdeaStage {
+  return typeof value === 'string' && IDEA_STAGES.includes(value as IdeaStage);
+}
+
 export interface MemoryRecord {
   id: string;
   /** Owning Helm session. Legacy records may omit this until migrated. */
@@ -71,6 +85,12 @@ export interface MemoryRecord {
    * turns in front of it. Dropped when the binding is released.
    */
   sourceTurn?: string;
+  /** An observation that may be developed into project knowledge. */
+  kind?: MemoryKind;
+  /** Lifecycle for idea memories; absent for ordinary memories. */
+  ideaStage?: IdeaStage;
+  /** Last edit to the idea's tldr or evidence. */
+  lastExpandedAt?: number;
   attachments: MemoryAttachment[];
 }
 
@@ -87,6 +107,8 @@ export interface MemorySummary {
   agentRun?: boolean;
   summary?: boolean;
   sessionBound?: boolean;
+  kind?: MemoryKind;
+  ideaStage?: IdeaStage;
   attachmentCount: number;
 }
 
@@ -107,6 +129,7 @@ export interface MemoryListOptions {
   order?: 'asc' | 'desc';
   /** Re-admit dormant memories — for the dream pass and the canvas toggle. */
   includeDormant?: boolean;
+  kind?: MemoryKind;
 }
 
 export interface MemoryDreamPlan {
@@ -242,6 +265,7 @@ export const MEMORY_SEARCH_LIMIT = 5;
 export interface MemorySearchOptions {
   regex?: boolean;
   includeDormant?: boolean;
+  kind?: MemoryKind;
   /** Keep only the best N hits. Absent = every match. */
   limit?: number;
 }
@@ -307,6 +331,8 @@ export function toMemorySummary(record: MemoryRecord): MemorySummary {
     ...(record.agentRun ? { agentRun: true } : {}),
     ...(record.summary ? { summary: true } : {}),
     ...(record.sessionBound ? { sessionBound: true } : {}),
+    ...(record.kind ? { kind: record.kind } : {}),
+    ...(record.ideaStage ? { ideaStage: record.ideaStage } : {}),
     attachmentCount: record.attachments.length,
   };
 }
@@ -341,6 +367,22 @@ export function validateMemoryState(state: MemoryState): void {
     }
     if (record.lastAccessedAt !== undefined && !isFiniteNumber(record.lastAccessedAt)) {
       throw new Error(`Memory ${record.id} has an invalid lastAccessedAt`);
+    }
+    if (record.kind !== undefined && !isMemoryKind(record.kind)) {
+      throw new Error(`Memory ${record.id} has an invalid kind`);
+    }
+    if (record.ideaStage !== undefined && (!isIdeaStage(record.ideaStage) || record.kind !== 'idea')) {
+      throw new Error(`Memory ${record.id} has an invalid ideaStage`);
+    }
+    if (record.lastExpandedAt !== undefined
+      && (!isFiniteNumber(record.lastExpandedAt) || record.kind !== 'idea')) {
+      throw new Error(`Memory ${record.id} has an invalid lastExpandedAt`);
+    }
+    if (record.kind === 'idea' && (!record.projectId || record.sessionBound)) {
+      throw new Error(`Idea memory ${record.id} must be project-scoped and not session-bound`);
+    }
+    if (record.kind === undefined && (record.ideaStage !== undefined || record.lastExpandedAt !== undefined)) {
+      throw new Error(`Memory ${record.id} has idea metadata without kind=idea`);
     }
     for (const field of ['projectId', 'planId', 'lastRecallSessionId', 'sourceTurn'] as const) {
       const value = record[field];

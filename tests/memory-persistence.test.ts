@@ -47,6 +47,28 @@ describe('MemoryPersistence', () => {
     expect(persistence.load().state?.edges[0]).toEqual({ fromId: 'm1', toId: 'm2' });
   });
 
+  it('round-trips idea metadata and rejects invalid idea enum values from disk', () => {
+    root = mkdtempSync(join(tmpdir(), 'helm-memory-ideas-'));
+    const file = join(root, 'memories.json');
+    const persistence = new MemoryPersistence(file);
+    const ideaState: MemoryState = {
+      records: [{ ...sample.records[0]!, projectId: 'project-a', kind: 'idea', ideaStage: 'growing', lastExpandedAt: 42 }],
+      edges: [],
+    };
+    persistence.save(ideaState);
+    expect(persistence.load().state).toEqual(ideaState);
+
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as { records: Array<Record<string, unknown>> };
+    raw.records[0]!.ideaStage = 'forgotten';
+    writeFileSync(file, JSON.stringify(raw), 'utf8');
+    expect(persistence.load().diagnostic?.kind).toBe('invalid');
+
+    raw.records[0]!.ideaStage = 'growing';
+    raw.records[0]!.kind = 'fact';
+    writeFileSync(file, JSON.stringify(raw), 'utf8');
+    expect(persistence.load().diagnostic?.kind).toBe('invalid');
+  });
+
   it('preserves corrupt bytes on load and repairs only when explicitly requested', () => {
     root = mkdtempSync(join(tmpdir(), 'helm-memory-persistence-'));
     const file = join(root, 'memories.json');

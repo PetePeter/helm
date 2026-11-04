@@ -2,10 +2,14 @@ import type { ContextBindingTargetType } from '../../types/context.js';
 import type { ArtifactIntent, ArtifactKind } from '../../types/artifact.js';
 import { validateGraphDepth } from '../../session/memory-graph.js';
 import {
+  IDEA_STAGES,
   MEMORY_DREAM_MAX_CANDIDATES,
   MEMORY_DREAM_MIN_CANDIDATES,
+  MEMORY_KINDS,
   type MemoryExportFormat,
 } from '../../types/memory.js';
+
+export { IDEA_STAGES, MEMORY_KINDS };
 
 export const MEMORY_SORT_FIELDS = ['created', 'updated', 'accessed'] as const;
 export const MEMORY_SORT_ORDERS = ['asc', 'desc'] as const;

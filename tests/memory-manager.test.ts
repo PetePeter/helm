@@ -424,3 +424,137 @@ describe('MemoryManager session-bound memories', () => {
     expect(() => manager.createForSession('s1', { tldr: 'x', content: '', sourceTurn: 'turn-1' })).toThrow(/session-bound/i);
   });
 });
+
+describe('MemoryManager idea memories', () => {
+  function ideaManager() {
+    let nextId = 0;
+    let now = 100;
+    const projects: Record<string, string | null> = {
+      writer: 'project-a', reader: 'project-a', other: 'project-b', projectless: null,
+    };
+    const manager = new MemoryManager({
+      persist: () => {},
+      now: () => now,
+      idFactory: () => `idea-${++nextId}`,
+      resolveSessionProject: (sessionId) => projects[sessionId] ?? null,
+    });
+    return { manager, setNow: (value: number) => { now = value; } };
+  }
+
+  it('creates project-scoped ideas as seeds and refuses projectless or session-bound ideas', () => {
+    const { manager } = ideaManager();
+    const idea = manager.createForSession('writer', {
+      kind: 'idea', ideaStage: 'seed', tldr: 'Investigate the charger warning', content: 'The warning is unexplained in field logs.',
+    });
+
+    expect(idea).toMatchObject({ kind: 'idea', ideaStage: 'seed', projectId: 'project-a' });
+    expect(idea.sessionBound).toBeUndefined();
+    expect(() => manager.create({ kind: 'idea', tldr: 'No project', content: '' })).toThrow(/project-scoped session/i);
+    expect(() => manager.createForSession('projectless', { kind: 'idea', tldr: 'No project', content: '' }))
+      .toThrow(/project-scoped session/i);
+    expect(() => manager.createForSession('writer', {
+      kind: 'idea', tldr: 'Private idea', content: '', sessionBound: true,
+    })).toThrow(/cannot be session-bound/i);
+  });
+
+  it('enforces the UTF-8 byte limit for ideas while leaving ordinary memories unchanged', () => {
+    const { manager } = ideaManager();
+    const exactLimit = 'é'.repeat(4096);
+    const idea = manager.createForSession('writer', { kind: 'idea', tldr: 'Exact boundary', content: exactLimit });
+
+    expect(new TextEncoder().encode(idea.content)).toHaveLength(8192);
+    expect(() => manager.createForSession('writer', {
+      kind: 'idea', tldr: 'Over boundary', content: `${exactLimit}x`,
+    })).toThrow(/8192 UTF-8 bytes/i);
+    expect(() => manager.updateForSession('writer', idea.id, { content: `${exactLimit}x` }))
+      .toThrow(/8192 UTF-8 bytes/i);
+    expect(manager.getRecord(idea.id)?.content).toBe(exactLimit);
+    expect(manager.createForSession('writer', { tldr: 'Ordinary long memory', content: `${exactLimit}x` }).content)
+      .toHaveLength(4097);
+  });
+
+  it('requires new ideas and memory-to-idea conversions to start at seed', () => {
+    const { manager } = ideaManager();
+
+    expect(() => manager.createForSession('writer', {
+      kind: 'idea', ideaStage: 'growing', tldr: 'Prematurely growing', content: 'Evidence',
+    })).toThrow(/new ideas must start at stage seed/i);
+    expect(() => manager.createForSession('writer', {
+      kind: 'idea', ideaStage: 'rejected', tldr: 'Prematurely rejected', content: 'Evidence',
+    })).toThrow(/new ideas must start at stage seed/i);
+
+    const ordinary = manager.createForSession('writer', { tldr: 'Ordinary observation', content: 'Evidence' });
+    expect(() => manager.updateForSession('writer', ordinary.id, {
+      kind: 'idea', ideaStage: 'growing',
+    })).toThrow(/new ideas must start at stage seed/i);
+    expect(manager.getRecord(ordinary.id)?.kind).toBeUndefined();
+
+    const seeded = manager.updateForSession('writer', ordinary.id, { kind: 'idea', ideaStage: 'seed' });
+    expect(seeded).toMatchObject({ kind: 'idea', ideaStage: 'seed' });
+    expect(manager.updateForSession('writer', seeded!.id, { ideaStage: 'growing' }))
+      .toMatchObject({ kind: 'idea', ideaStage: 'growing' });
+  });
+
+  it('tracks text expansion timestamps, validates stages, and keeps rejected ideas terminal', () => {
+    const { manager, setNow } = ideaManager();
+    const idea = manager.createForSession('writer', { kind: 'idea', tldr: 'An observation', content: 'Evidence' });
+    const stageOnly = manager.updateForSession('writer', idea.id, { ideaStage: 'growing' })!;
+
+    expect(stageOnly.lastExpandedAt).toBeUndefined();
+    setNow(200);
+    const expanded = manager.updateForSession('writer', idea.id, { content: 'More evidence' })!;
+    expect(expanded.lastExpandedAt).toBe(200);
+    setNow(300);
+    const renamed = manager.updateForSession('writer', idea.id, { tldr: 'A clearer observation' })!;
+    expect(renamed.lastExpandedAt).toBe(300);
+    expect(() => manager.updateForSession('writer', idea.id, { ideaStage: 'unknown' as any })).toThrow(/ideaStage/i);
+
+    manager.updateForSession('writer', idea.id, { ideaStage: 'rejected' });
+    expect(() => manager.updateForSession('writer', idea.id, { ideaStage: 'seed' })).toThrow(/terminal/i);
+    expect(manager.getRecord(idea.id)?.ideaStage).toBe('rejected');
+  });
+
+  it('refuses close matches to rejected ideas within the same project only', () => {
+    const { manager } = ideaManager();
+    const rejected = manager.createForSession('writer', {
+      kind: 'idea',
+      tldr: 'Charger RS485 requires 9600 baud setting', content: 'Rejected after review.',
+    });
+    manager.updateForSession('writer', rejected.id, { ideaStage: 'rejected' });
+
+    expect(() => manager.createForSession('writer', {
+      kind: 'idea',
+      tldr: 'RS485 charger requires 9600 baud setting resistor baseline threshold thermal',
+      content: 'A close restatement at the 0.6 Jaccard boundary.',
+    })).toThrow(rejected.id);
+
+    const unrelated = manager.createForSession('writer', {
+      kind: 'idea', tldr: 'Garden irrigation uses moisture sensors', content: 'Independent observation.',
+    });
+    const otherProject = manager.createForSession('other', {
+      kind: 'idea', tldr: 'Charger RS485 requires 9600 baud setting', content: 'Different project.',
+    });
+    const ordinary = manager.createForSession('writer', {
+      tldr: 'Charger RS485 requires 9600 baud setting', content: 'Body',
+    });
+
+    expect(unrelated.kind).toBe('idea');
+    expect(otherProject.kind).toBe('idea');
+    expect(() => manager.updateForSession('writer', ordinary.id, { kind: 'idea' })).toThrow(rejected.id);
+    expect(manager.getRecord(ordinary.id)?.kind).toBeUndefined();
+  });
+
+  it('filters explicit list and search by kind while retaining ID-based get and ordinary similar results', () => {
+    const { manager } = ideaManager();
+    const ordinary = manager.createForSession('writer', { tldr: 'Violet kite finding', content: 'Shared topic.' });
+    const idea = manager.createForSession('writer', { kind: 'idea', tldr: 'Violet kite observation', content: 'Shared topic.' });
+
+    expect(manager.listRecordsForSession('writer')).toHaveLength(2);
+    expect(manager.listRecordsForSession('writer', { kind: 'idea' }).map((record) => record.id)).toEqual([idea.id]);
+    expect(manager.searchForSession('writer', 'kite').hits.map((hit) => hit.id)).toContain(idea.id);
+    expect(manager.searchForSession('writer', 'kite', { kind: 'idea' }).hits.map((hit) => hit.id)).toEqual([idea.id]);
+    expect(manager.getRecordForSession('writer', idea.id)?.kind).toBe('idea');
+    expect(manager.similarForSession('writer', ordinary.id, 5)).toEqual([]);
+    expect(manager.similarForSession('writer', idea.id, 5)).toEqual([]);
+  });
+});

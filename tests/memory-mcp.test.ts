@@ -47,6 +47,7 @@ describe('MCP memory surface', () => {
     const manager = new MemoryManager({
       attachmentManager: attachments,
       idFactory: () => ids.shift()!,
+      resolveSessionProject: (sessionId) => ({ ideaProject: 'p-idea', ideaReader: 'p-idea', otherProject: 'p-other' }[sessionId] ?? null),
     });
     const service = makeService(manager, attachments, tempRegistry);
     return { manager, attachments, service, tempRegistry, deps: makeDispatcher(service) };
@@ -243,6 +244,56 @@ describe('MCP memory surface', () => {
       { sessionId: 's1' },
     )).toBe(true);
   });
+
+  it('creates, filters, updates, searches, and gets idea memories by ID through MCP', async () => {
+    const { deps } = setup();
+    const fact = await callMcpTool(deps, 'memory_create', {
+      tldr: 'An odd charger signal', content: 'Confirmed observation.',
+    }, { sessionId: 'ideaProject' }) as { id: string };
+    const idea = await callMcpTool(deps, 'memory_create', {
+      kind: 'idea', tldr: 'An odd charger hypothesis', content: 'Evidence is incomplete.',
+    }, { sessionId: 'ideaProject' }) as { id: string; kind: string; ideaStage: string };
+
+    expect(idea).toMatchObject({ kind: 'idea', ideaStage: 'seed' });
+    const ideaList = await callMcpTool(deps, 'memory_list', { kind: 'idea' }, { sessionId: 'ideaProject' }) as Array<{ id: string }>;
+    const allList = await callMcpTool(deps, 'memory_list', {}, { sessionId: 'ideaProject' }) as Array<{ id: string }>;
+    expect(ideaList.map((item) => item.id)).toEqual([idea.id]);
+    expect(allList.map((item) => item.id)).toEqual([fact.id, idea.id]);
+
+    const search = await callMcpTool(deps, 'memory_search', { query: 'charger', kind: 'idea' }, { sessionId: 'ideaProject' }) as {
+      hits: Array<{ id: string }>;
+    };
+    expect(search.hits.map((hit) => hit.id)).toEqual([idea.id]);
+    const traversal = await callMcpTool(deps, 'memory_get', { id: idea.id }, { sessionId: 'ideaProject' }) as {
+      entries: Array<{ id: string }>;
+    };
+    expect(traversal.entries.map((entry) => entry.id)).toContain(idea.id);
+
+    const updated = await callMcpTool(deps, 'memory_update', {
+      id: idea.id, ideaStage: 'growing',
+    }, { sessionId: 'ideaProject' }) as { ideaStage: string };
+    expect(updated.ideaStage).toBe('growing');
+  });
+
+  it('validates idea enums on create, update, list, and search', async () => {
+    const { deps } = setup();
+    await expect(callMcpTool(deps, 'memory_create', {
+      kind: 'fact', tldr: 'invalid kind', content: '',
+    }, { sessionId: 'ideaProject' })).rejects.toThrow(/kind must be one of/i);
+    await expect(callMcpTool(deps, 'memory_create', {
+      kind: 'idea', ideaStage: 'forgotten', tldr: 'invalid stage', content: '',
+    }, { sessionId: 'ideaProject' })).rejects.toThrow(/ideaStage must be one of/i);
+    const idea = await callMcpTool(deps, 'memory_create', {
+      kind: 'idea', tldr: 'An editable seed', content: 'Evidence.',
+    }, { sessionId: 'ideaProject' }) as { id: string };
+    await expect(callMcpTool(deps, 'memory_update', {
+      id: idea.id, ideaStage: 'forgotten',
+    }, { sessionId: 'ideaProject' })).rejects.toThrow(/ideaStage must be one of/i);
+    await expect(callMcpTool(deps, 'memory_list', { kind: 'fact' }, { sessionId: 'ideaProject' }))
+      .rejects.toThrow(/kind must be one of/i);
+    await expect(callMcpTool(deps, 'memory_search', { query: 'idea', kind: 'fact' }, { sessionId: 'ideaProject' }))
+      .rejects.toThrow(/kind must be one of/i);
+  });
 });
 
 describe('MCP memory tool discoverability', () => {
@@ -260,5 +311,16 @@ describe('MCP memory tool discoverability', () => {
       expect(tool, name).toBeDefined();
       expect(tool!.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });
     }
+  });
+
+  it('exposes idea enums only on create, update, list, and search', () => {
+    const tools = new Map(MCP_TOOLS.map((tool) => [tool.name, tool]));
+    const ideaStages = ['seed', 'growing', 'suggested', 'accepted', 'rejected'];
+    for (const name of ['memory_create', 'memory_update', 'memory_list', 'memory_search']) {
+      expect((tools.get(name)!.inputSchema.properties as any).kind.enum).toEqual(['idea']);
+    }
+    expect((tools.get('memory_create')!.inputSchema.properties as any).ideaStage.enum).toEqual(['seed']);
+    expect((tools.get('memory_update')!.inputSchema.properties as any).ideaStage.enum).toEqual(ideaStages);
+    expect((tools.get('memory_get')!.inputSchema.properties as any).kind).toBeUndefined();
   });
 });

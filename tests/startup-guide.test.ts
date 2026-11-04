@@ -8,9 +8,9 @@ describe('buildStartupGuide', () => {
     expect(buildStartupGuide().length).toBeGreaterThan(0);
   });
 
-  it('returns exactly 10 newline-separated rules', () => {
+  it('returns exactly 9 newline-separated rules', () => {
     const lines = buildStartupGuide().trim().split('\n').filter(l => l.trim().length > 0);
-    expect(lines).toHaveLength(10);
+    expect(lines).toHaveLength(9);
   });
 
   it('contains no JSON structural syntax', () => {
@@ -25,6 +25,11 @@ describe('buildStartupGuide', () => {
 
   it('contains plan_get', () => {
     expect(buildStartupGuide()).toContain('plan_get');
+  });
+
+  it('keeps seed guidance on the kind=idea rule', () => {
+    const ideaRule = buildStartupGuide().split('\n').find((line) => line.includes('kind=idea'));
+    expect(ideaRule).toContain('stage seed');
   });
 
   it('contains notify_user', () => {

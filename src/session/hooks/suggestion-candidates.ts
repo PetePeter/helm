@@ -9,6 +9,7 @@
  */
 
 import type { MemoryRecord } from '../../types/memory.js';
+import { isGeneralMemoryCandidate } from '../memory-idea-policy.js';
 import type { SuggestionCandidate } from './suggestion-scorer.js';
 
 export interface SuggestionCandidateDeps {
@@ -45,6 +46,6 @@ export function createSuggestionCandidateSource(
     const shared = projectId ? deps.listProjectMemories(projectId) : [];
     // A project-less session still has its own bound memories.
     const bound = deps.listBoundMemories(sessionId);
-    return [...skills, ...[...shared, ...bound].map(memoryCandidate)];
+    return [...skills, ...[...shared, ...bound].filter(isGeneralMemoryCandidate).map(memoryCandidate)];
   };
 }

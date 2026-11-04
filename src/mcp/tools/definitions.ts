@@ -1,5 +1,5 @@
 import type { McpTool } from './types.js';
-import { MEMORY_DREAM_MAX_CANDIDATES, MEMORY_DREAM_MIN_CANDIDATES } from '../../types/memory.js';
+import { IDEA_STAGES, MEMORY_DREAM_MAX_CANDIDATES, MEMORY_DREAM_MIN_CANDIDATES, MEMORY_KINDS } from '../../types/memory.js';
 
 export const REQUIRED_PLAN_DESCRIPTION_SECTIONS = [
   'Problem Statement',
@@ -1984,6 +1984,7 @@ export const MCP_TOOLS: McpTool[] = [
           enum: ['asc', 'desc'],
           description: 'Defaults to desc (most recent first).',
         },
+        kind: { type: 'string', enum: MEMORY_KINDS, description: 'Filter to a memory kind, such as idea.' },
       },
       additionalProperties: false,
     },
@@ -2005,12 +2006,14 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_create',
     title: 'Create Memory',
-    description: 'Create a durable memory in your session\'s project (ownership is derived, never caller input). Write ONE idea per memory, with the tldr stating it; several small linked memories beat one essay. The response lists `similar` memories (possibly from other projects): link each one that relates with memory_link and a type, or leave it. An `atomHint` means the content is probably several ideas; split it.',
+    description: 'Create a durable memory in your session\'s project (ownership is derived, never caller input). Write ONE idea per memory, with the tldr stating it; several small linked memories beat one essay. Set kind=idea for an observation to investigate; it starts at stage seed and is limited to 8192 UTF-8 bytes. The response lists `similar` memories (possibly from other projects): link each one that relates with memory_link and a type, or leave it. An `atomHint` means the content is probably several ideas; split it.',
     inputSchema: {
       type: 'object',
       properties: {
         tldr: { type: 'string', minLength: 1 },
         content: { type: 'string' },
+        kind: { type: 'string', enum: MEMORY_KINDS },
+        ideaStage: { type: 'string', enum: ['seed'] },
       },
       required: ['tldr', 'content'],
       additionalProperties: false,
@@ -2027,6 +2030,8 @@ export const MCP_TOOLS: McpTool[] = [
         tldr: { type: 'string', minLength: 1 },
         content: { type: 'string' },
         expectedUpdatedAt: { type: 'number' },
+        kind: { type: 'string', enum: MEMORY_KINDS },
+        ideaStage: { type: 'string', enum: IDEA_STAGES },
         promote: { type: 'boolean', description: 'Dream sessions only: clear the session binding so every session of the project sees this memory. Refused for any other caller.' },
       },
       required: ['id'],
@@ -2053,6 +2058,7 @@ export const MCP_TOOLS: McpTool[] = [
       properties: {
         query: { type: 'string' },
         regex: { type: 'boolean' },
+        kind: { type: 'string', enum: MEMORY_KINDS, description: 'Filter to a memory kind, such as idea.' },
       },
       required: ['query'],
       additionalProperties: false,

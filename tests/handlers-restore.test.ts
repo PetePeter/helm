@@ -105,6 +105,7 @@ const mockConfigLoader = {
       usagePerCooccurrence: 1.0,
       usageMax: 2.0,
     }),
+    getHookInjectionOverrides: vi.fn().mockReturnValue({}),
 };
 
 vi.mock('../src/config/loader.js', () => ({
@@ -204,6 +205,7 @@ vi.mock('../src/session/draft-manager.js', () => ({
 vi.mock('../src/session/plan-manager.js', () => ({
   PlanManager: vi.fn(function (this: any) {
     this.on = vi.fn();
+    this.claimedPlanFor = vi.fn().mockReturnValue(null);
   }),
 }));
 
@@ -279,6 +281,8 @@ vi.mock('../src/electron/window-manager.js', () => ({
     this.on = vi.fn();
     this.getMainWindow = vi.fn().mockReturnValue(null);
     this.getWindow = vi.fn().mockReturnValue(null);
+    this.getWindowForSession = vi.fn().mockReturnValue(null);
+    this.getAllWindows = vi.fn().mockReturnValue([]);
     this.getWindowIdForSession = vi.fn().mockReturnValue(undefined);
   }),
 }));
@@ -300,6 +304,8 @@ import { logger } from '../src/utils/logger.js';
 import { TelegramBotCore } from '../src/telegram/bot.js';
 import { TopicManager } from '../src/telegram/topic-manager.js';
 import { SessionManager } from '../src/session/manager.js';
+import { HelmControlService } from '../src/mcp/helm-control-service.js';
+import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
 
 describe('registerIPCHandlers restore wiring', () => {
   beforeEach(() => {
@@ -311,6 +317,45 @@ describe('registerIPCHandlers restore wiring', () => {
     expect(mockRestoreSessions).toHaveBeenCalledOnce();
   });
 
+});
+
+describe('registerIPCHandlers ring reminder injection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends ordinary ring memories through the registered ContextInjector and omits ideas', async () => {
+    registerIPCHandlers(() => null);
+
+    const sessionManager = (SessionManager as any).mock.instances.at(-1);
+    sessionManager.getSession.mockReturnValue({
+      id: 'ring-session',
+      role: 'operator',
+      projectId: 'ring-project',
+      cliType: 'claude',
+    });
+    const helmControl = (HelmControlService as any).mock.instances.at(-1);
+    const memoryManager = helmControl.setMemoryManager.mock.calls.at(-1)[0];
+    const ordinary = memoryManager.createForSession('ring-session', {
+      tldr: '[RING-ME] Tell the operator the release is ready',
+      content: 'Ordinary reminder.',
+    });
+    const idea = memoryManager.createForSession('ring-session', {
+      kind: 'idea',
+      tldr: '[RING-ME] Investigate an unexplained release signal',
+      content: 'Observation that still needs evidence.',
+    });
+    const hookReceiver = (LocalhostMcpServer as any).mock.calls.at(-1)[3];
+
+    const response = await hookReceiver.receive(
+      { cli: 'claude', event: 'SessionStart', payload: { source: 'startup' } },
+      'ring-session',
+    );
+    const body = JSON.stringify(response.body);
+
+    expect(body).toContain(ordinary.tldr);
+    expect(body).not.toContain(idea.tldr);
+  });
 });
 
 // ---------------------------------------------------------------------------

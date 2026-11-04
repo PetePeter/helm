@@ -3,6 +3,8 @@ import { MEMORIES_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync } from './persistence-utils.js';
 import {
   isMemoryEdgeType,
+  isIdeaStage,
+  isMemoryKind,
   cloneMemoryState,
   type MemoryAttachment,
   type MemoryEdge,
@@ -41,7 +43,7 @@ const EMPTY_STATE: MemoryState = { records: [], edges: [] };
 const STORE_VERSION = 2;
 
 /** Every field that is absent on a fresh record and must survive a round trip. */
-const OPTIONAL_NUMBERS = ['lastAccessedAt', 'recallSessionCount', 'dormantSince', 'createdAtEpoch'] as const;
+const OPTIONAL_NUMBERS = ['lastAccessedAt', 'recallSessionCount', 'dormantSince', 'createdAtEpoch', 'lastExpandedAt'] as const;
 const OPTIONAL_STRINGS = ['projectId', 'planId', 'lastRecallSessionId', 'sourceTurn'] as const;
 /** First-party flags; only `true` is stored, absent means false. */
 const OPTIONAL_FLAGS = ['agentRun', 'summary', 'sessionBound'] as const;
@@ -51,6 +53,8 @@ function optionalFields(record: MemoryRecord): Partial<MemoryRecord> {
   for (const field of OPTIONAL_NUMBERS) if (record[field] !== undefined) out[field] = record[field];
   for (const field of OPTIONAL_STRINGS) if (record[field] !== undefined) out[field] = record[field];
   for (const field of OPTIONAL_FLAGS) if (record[field] === true) out[field] = true;
+  if (record.kind !== undefined) out.kind = record.kind;
+  if (record.ideaStage !== undefined) out.ideaStage = record.ideaStage;
   return out as Partial<MemoryRecord>;
 }
 
@@ -197,6 +201,14 @@ function normalizeRecord(value: unknown): MemoryRecord | null {
     if (value[field] === undefined) continue;
     if (typeof value[field] !== 'boolean') return null;
     if (value[field]) optional[field] = true;
+  }
+  if (value.kind !== undefined) {
+    if (!isMemoryKind(value.kind)) return null;
+    optional.kind = value.kind;
+  }
+  if (value.ideaStage !== undefined) {
+    if (!isIdeaStage(value.ideaStage)) return null;
+    optional.ideaStage = value.ideaStage;
   }
   return {
     id: value.id,

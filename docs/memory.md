@@ -29,6 +29,28 @@ the caller can find (any shared project), minus ones already linked. The AI is
 told to link each related one with a type. Without this prompt nobody links,
 and the graph stays a pile.
 
+## Ideas
+
+Use `memory_create { kind: "idea", tldr, content }` to capture an odd,
+unexplained, or improvable observation for later investigation. Include what was
+noticed, why it matters, and the evidence; save one observation per idea and do
+not act on it while it is only a seed. Ideas start at `ideaStage: "seed"` and
+their content is limited to 8,192 UTF-8 bytes. Stages are `seed`, `growing`,
+`suggested`, `accepted`, and `rejected`; rejected ideas stay rejected.
+
+Ideas require a project-scoped session and cannot be session-bound. They remain
+available through explicit `memory_list` and `memory_search` calls with
+`kind: "idea"`, then `memory_get` by the returned ID. Unfiltered list/search
+still include every kind. Ideas do not enter automatic prompt or tool hints,
+ring reminders, similar-on-write suggestions, or the dream's faded/salient
+review set. A later dream can list `kind: "idea"` explicitly.
+
+Before creating an idea or converting a normal memory into one, the manager
+compares its lowercased `tldr` tokens with rejected ideas in the same project.
+Tokens are split on non-alphanumeric characters and tokens of two characters
+or fewer are ignored. A Jaccard similarity of 0.6 or higher refuses the write
+and names the rejected idea ID.
+
 ## Typed links
 
 `memory_link { fromId, toId, type? }` — `supports`, `contradicts`, `part-of`,

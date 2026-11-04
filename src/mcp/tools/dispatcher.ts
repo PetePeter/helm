@@ -24,6 +24,8 @@ import {
   asGraphDepth,
   MEMORY_SORT_FIELDS,
   MEMORY_SORT_ORDERS,
+  IDEA_STAGES,
+  MEMORY_KINDS,
   asMemoryExportFormat,
   asPlanFilter,
   asPlanStatus,
@@ -36,7 +38,7 @@ import {
   requireBooleanResult,
   requireResult,
 } from './validation.js';
-import { MEMORY_EDGE_TYPES, MEMORY_SEARCH_LIMIT } from '../../types/memory.js';
+import { MEMORY_EDGE_TYPES, MEMORY_SEARCH_LIMIT, type IdeaStage, type MemoryKind } from '../../types/memory.js';
 import { compactNeighbours } from '../../session/memory-graph.js';
 
 /**
@@ -1173,6 +1175,7 @@ export async function callMcpTool(
           ...(args.order !== undefined
             ? { order: asEnum(args.order, MEMORY_SORT_ORDERS, 'order') }
             : {}),
+          ...(args.kind !== undefined ? { kind: asEnum(args.kind, MEMORY_KINDS, 'kind') } : {}),
         });
       }
       case 'memory_dream': {
@@ -1209,13 +1212,17 @@ export async function callMcpTool(
         return service.createLinkableMemory(sessionId, {
           tldr: asString(args.tldr, 'tldr is required'),
           content: asStringValue(args.content, 'content is required'),
+          ...(args.kind !== undefined ? { kind: asEnum(args.kind, MEMORY_KINDS, 'kind') } : {}),
+          ...(args.ideaStage !== undefined ? { ideaStage: asEnum(args.ideaStage, IDEA_STAGES, 'ideaStage') } : {}),
         });
       }
       case 'memory_update': {
         const sessionId = requireCallerSession(authContext, 'memory_update');
-        const updates: { tldr?: string; content?: string; promote?: boolean } = {};
+        const updates: { tldr?: string; content?: string; kind?: MemoryKind; ideaStage?: IdeaStage; promote?: boolean } = {};
         if (args.tldr !== undefined) updates.tldr = asString(args.tldr, 'tldr must be a non-empty string');
         if (args.content !== undefined) updates.content = asStringValue(args.content, 'content must be a string');
+        if (args.kind !== undefined) updates.kind = asEnum(args.kind, MEMORY_KINDS, 'kind');
+        if (args.ideaStage !== undefined) updates.ideaStage = asEnum(args.ideaStage, IDEA_STAGES, 'ideaStage');
         if (args.promote !== undefined && asBoolean(args.promote, 'promote must be a boolean')) updates.promote = true;
         if (Object.keys(updates).length === 0) throw new Error('Provide tldr and/or content to update');
         const expectedUpdatedAt = args.expectedUpdatedAt === undefined
@@ -1239,6 +1246,7 @@ export async function callMcpTool(
         return service.searchMemories(sessionId, asStringValue(args.query, 'query is required'), {
           regex,
           limit: MEMORY_SEARCH_LIMIT,
+          ...(args.kind !== undefined ? { kind: asEnum(args.kind, MEMORY_KINDS, 'kind') } : {}),
         });
       }
       case 'memory_graph': {

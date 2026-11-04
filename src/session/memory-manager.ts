@@ -5,6 +5,7 @@ import { MemoryPersistence } from './memory-persistence.js';
 import type { MemoryDiagnostic } from './memory-persistence.js';
 import { MemoryAttachmentManager } from './memory-attachment-manager.js';
 import { rankMemories, type RankedMemory } from './memory-search.js';
+import { assertIdeaCreate, assertIdeaUpdate, isGeneralMemoryCandidate } from './memory-idea-policy.js';
 import {
   cloneMemoryRecord,
   cloneMemoryState,
@@ -17,6 +18,8 @@ import {
   type MemoryDreamPlan,
   type MemoryDreamResult,
   type MemoryEdgeType,
+  type MemoryKind,
+  type IdeaStage,
   type MemorySearchHit,
   type DreamBoundGroup,
   type DreamCandidate,
@@ -81,6 +84,8 @@ const OWN_PROJECT_BOOST = 2;
 export interface CreateMemoryInput {
   tldr: string;
   content: string;
+  kind?: MemoryKind;
+  ideaStage?: IdeaStage;
   /** First-party flags (see MemoryRecord). */
   agentRun?: boolean;
   summary?: boolean;
@@ -92,6 +97,8 @@ export interface CreateMemoryInput {
 export interface UpdateMemoryInput {
   tldr?: string;
   content?: string;
+  kind?: MemoryKind;
+  ideaStage?: IdeaStage;
   /** Move an auto-saved memory to the turn that completed it. Ignored once the binding is released. */
   sourceTurn?: string;
   /**
@@ -307,7 +314,8 @@ export class MemoryManager extends EventEmitter {
     // Bound memories are not project knowledge yet; pruning or merging them
     // here would judge them by recall counts nobody else could have added to.
     const projectRecords = this.state.records.filter((record) => record.projectId === projectId && !record.sessionBound);
-    const eligible = projectRecords.filter((record) =>
+    const generalRecords = projectRecords.filter(isGeneralMemoryCandidate);
+    const eligible = generalRecords.filter((record) =>
       record.dormantSince === undefined && this.isDiscardEligible(record.id));
     const epoch = this.projectEpoch(projectId);
     const totals = {
@@ -340,7 +348,7 @@ export class MemoryManager extends EventEmitter {
       ),
     );
     const connectedCounts = new Map<string, number>();
-    const projectIds = new Set(projectRecords.map((record) => record.id));
+    const projectIds = new Set(generalRecords.map((record) => record.id));
     for (const edge of this.state.edges) {
       if (projectIds.has(edge.fromId) && projectIds.has(edge.toId)) {
         connectedCounts.set(edge.toId, (connectedCounts.get(edge.toId) ?? 0) + 1);
@@ -453,11 +461,12 @@ export class MemoryManager extends EventEmitter {
   private createRecord(sessionId: string | undefined, input: CreateMemoryInput): MemoryRecord {
     if (input.sessionBound && !sessionId) throw new Error('A session-bound memory needs a session to bind to');
     if (input.sourceTurn && !input.sessionBound) throw new Error('Only a session-bound memory records its source turn');
-    const timestamp = this.now();
     // Provenance is resolved here and nowhere else. It cannot be reconstructed
     // later — a plan's sessionId is overwritten by whoever claims it next.
     const projectId = sessionId ? this.resolveSessionProject?.(sessionId) ?? null : null;
     const planId = sessionId ? this.resolveSessionPlan?.(sessionId) ?? null : null;
+    assertIdeaCreate(input, projectId, this.state.records);
+    const timestamp = this.now();
     const record: MemoryRecord = {
       id: this.idFactory(),
       ...(sessionId ? { sessionId } : {}),
@@ -473,6 +482,8 @@ export class MemoryManager extends EventEmitter {
       ...(input.summary ? { summary: true } : {}),
       ...(input.sessionBound ? { sessionBound: true } : {}),
       ...(input.sourceTurn ? { sourceTurn: input.sourceTurn } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
+      ...(input.kind === 'idea' ? { ideaStage: input.ideaStage ?? 'seed' } : {}),
       attachments: [],
     };
     this.mutate((candidate) => {
@@ -489,13 +500,25 @@ export class MemoryManager extends EventEmitter {
     if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) {
       throw new Error(`Memory ${id} was updated concurrently. Expected updatedAt=${expectedUpdatedAt}, current updatedAt=${current.updatedAt}. Re-read it before updating.`);
     }
+    assertIdeaUpdate(current, updates, this.state.records);
+    const timestamp = this.now();
+    const kind = updates.kind ?? current.kind;
+    const ideaStage = updates.ideaStage
+      ?? (current.kind === undefined && kind === 'idea' ? 'seed' : current.ideaStage);
+    const textChanged = (updates.tldr !== undefined && updates.tldr !== current.tldr)
+      || (updates.content !== undefined && updates.content !== current.content);
     const next: MemoryRecord = {
       ...current,
       ...(updates.tldr !== undefined ? { tldr: updates.tldr } : {}),
       ...(updates.content !== undefined ? { content: updates.content } : {}),
+      ...(kind ? { kind } : {}),
+      ...(ideaStage ? { ideaStage } : {}),
+      ...(kind === 'idea' && textChanged
+        ? { lastExpandedAt: timestamp }
+        : {}),
       ...(updates.sourceTurn && current.sessionBound ? { sourceTurn: updates.sourceTurn } : {}),
       // Promotion is not authoring: on its own it leaves `updatedAt` alone.
-      updatedAt: updates.promote && updates.tldr === undefined && updates.content === undefined ? current.updatedAt : this.now(),
+      updatedAt: updates.promote && updates.tldr === undefined && updates.content === undefined ? current.updatedAt : timestamp,
       attachments: current.attachments.map((attachment) => ({ ...attachment })),
     };
     if (updates.promote) {
@@ -540,7 +563,9 @@ export class MemoryManager extends EventEmitter {
 
   listRecordsForSession(sessionId: string, options: MemoryListOptions = {}): MemoryRecord[] {
     assertSessionId(sessionId);
-    const records = this.readableRecords(sessionId, options.includeDormant).map(cloneMemoryRecord);
+    const records = this.readableRecords(sessionId, options.includeDormant)
+      .filter((record) => options.kind === undefined || record.kind === options.kind)
+      .map(cloneMemoryRecord);
     return options.sortBy ? sortRecords(records, options.sortBy, options.order ?? 'desc') : records;
   }
 
@@ -567,7 +592,8 @@ export class MemoryManager extends EventEmitter {
    */
   forestForSession(sessionId: string, options: MemoryListOptions = {}): MemoryForest {
     assertSessionId(sessionId);
-    const scoped = this.readableRecords(sessionId, options.includeDormant);
+    const scoped = this.readableRecords(sessionId, options.includeDormant)
+      .filter((record) => options.kind === undefined || record.kind === options.kind);
     const ownedIds = new Set(scoped.map((record) => record.id));
     return {
       records: scoped.map(toMemorySummary),
@@ -579,7 +605,8 @@ export class MemoryManager extends EventEmitter {
 
   searchForSession(sessionId: string, query: string, options: MemorySearchOptions = {}): MemorySearchResult {
     assertSessionId(sessionId);
-    const scopedRecords = this.findableRecords(sessionId, options.includeDormant);
+    const scopedRecords = this.findableRecords(sessionId, options.includeDormant)
+      .filter((record) => options.kind === undefined || record.kind === options.kind);
     const regexMode = options.regex === true;
     const isForeign = this.foreignTo(sessionId);
     const ranked = regexMode
@@ -596,11 +623,12 @@ export class MemoryManager extends EventEmitter {
   similarForSession(sessionId: string, id: string, limit: number): MemorySearchHit[] {
     assertSessionId(sessionId);
     const record = this.findableRecords(sessionId, true).find((item) => item.id === id);
-    if (!record) return [];
+    if (!record || !isGeneralMemoryCandidate(record)) return [];
     const linked = new Set(this.state.edges
       .filter((edge) => edge.fromId === id || edge.toId === id)
       .flatMap((edge) => [edge.fromId, edge.toId]));
-    const candidates = this.findableRecords(sessionId).filter((item) => item.id !== id && !linked.has(item.id));
+    const candidates = this.findableRecords(sessionId)
+      .filter((item) => isGeneralMemoryCandidate(item) && item.id !== id && !linked.has(item.id));
     const byId = new Map(candidates.map((item) => [item.id, item]));
     const isForeign = this.foreignTo(sessionId);
     return rankMemories(candidates, `${record.tldr} ${record.content}`, { loose: false })

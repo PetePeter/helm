@@ -10,6 +10,8 @@ vi.mock('electron', () => ({
 }));
 
 import { setupMemoryHandlers } from '../src/electron/ipc/memory-handlers.js';
+import { RING_ME_PREFIX } from '../src/session/hooks/context-injector.js';
+import { getRingMemoryRequests } from '../src/session/memory-idea-policy.js';
 import { MemoryManager } from '../src/session/memory-manager.js';
 
 describe('memory renderer IPC handlers', () => {
@@ -99,5 +101,24 @@ describe('memory renderer IPC handlers', () => {
     vi.mocked(BrowserWindow.fromWebContents).mockReturnValue({ id: 2, isDestroyed: () => false } as any);
 
     expect(() => handlers.get('memory:list')!({ sender: {} })).toThrow(/owning session window/i);
+  });
+
+  it('does not turn an idea with a ring prefix into an operator reminder', () => {
+    let nextId = 0;
+    const manager = new MemoryManager({
+      persist: () => {},
+      resolveSessionProject: () => 'project-a',
+      idFactory: () => `ring-${++nextId}`,
+    });
+    const ring = manager.createForSession('s1', {
+      tldr: '[RING-ME] Tell the user the release is ready', content: 'Ordinary reminder.',
+    });
+    manager.createForSession('s1', {
+      kind: 'idea',
+      tldr: '[RING-ME] Investigate an unexplained release signal',
+      content: 'Observation that still needs evidence.',
+    });
+
+    expect(getRingMemoryRequests(manager.listRecordsForSession('s1'), RING_ME_PREFIX)).toEqual([ring.tldr]);
   });
 });
