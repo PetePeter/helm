@@ -237,8 +237,8 @@ export interface CliTypeConfig {
    * Example: "claude --session-id {cliSessionName}" or "copilot --resume={cliSessionName}" */
   spawnCommand?: string;
   /** CLI parameter template to resume a specific session. Templates replaced at runtime:
-   * {cliSessionName} (Helm's UUID) and {cliThreadId} (the CLI's own id from its hooks; left literal if never captured).
-   * Example: "claude --resume={cliSessionName}" or "codex resume {cliThreadId}" */
+   * {cliSessionName} (Helm's UUID) and {cliThreadId} (the CLI's own id from its hooks; falls back to {cliSessionName} if never captured).
+   * Example: "claude --resume={cliThreadId}" (falls back to {cliSessionName} until a hook reports an id) */
   resumeCommand?: string;
   /** CLI command to resume most recent session (fallback when resumeCommand is not configured). */
   continueCommand?: string;

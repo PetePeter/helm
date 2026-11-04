@@ -316,10 +316,11 @@ function resolveSpawnCommand(options: {
 }): { rawCommand?: string; command?: string; args?: string[] } {
   if (options.isResume) {
     if (options.cfg?.resumeCommand) {
-      let rawCommand = options.cfg.resumeCommand.replaceAll('{cliSessionName}', options.cliSessionName);
-      // No fallback when the id was never captured: the literal placeholder
-      // reaches the CLI and the resume fails visibly.
-      if (options.cliThreadId) rawCommand = rawCommand.replaceAll('{cliThreadId}', options.cliThreadId);
+      // {cliThreadId} follows the CLI when /clear or /compact moves it to a new
+      // id; before any hook reports one, the spawn-time name is still current.
+      const rawCommand = options.cfg.resumeCommand
+        .replaceAll('{cliSessionName}', options.cliSessionName)
+        .replaceAll('{cliThreadId}', options.cliThreadId ?? options.cliSessionName);
       warnIfMissingPlaceholder('resumeCommand', options.cfg.resumeCommand, rawCommand);
       return { rawCommand };
     }

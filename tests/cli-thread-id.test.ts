@@ -34,6 +34,8 @@ const { SessionManager } = await import('../src/session/manager.js');
 const { saveSessions, loadSessions } = await import('../src/session/session-persistence.js');
 const { RecycleBinManager, recordRemovedSession } = await import('../src/session/recycle-bin-manager.js');
 const { spawnConfiguredSession } = await import('../src/session/configured-session-spawn.js');
+const { HookTracker } = await import('../src/session/hooks/hook-tracker.js');
+const { normaliseHookEvent } = await import('../src/session/hooks/hook-normaliser.js');
 
 const THREAD = '01a0c9ba-7bef-7f91-b5e7-1b7c54e5bbb9';
 const NAME = '04afa362-9f1d-45c8-963d-1b93de377ab4';
@@ -131,8 +133,17 @@ describe('{cliThreadId} resume resolution', () => {
     expect(sessionManager.getSession('sess-1')?.cliThreadId).toBe(THREAD);
   });
 
-  it('leaves the placeholder literal when no id was ever captured — no fallback', () => {
+  it('falls back to cliSessionName when no id was ever captured (hookless Claude/Copilot)', () => {
     sessionManager.addSession(makeSession());
-    expect(resume()).toBe(`codex resume {cliThreadId} --name helm-${NAME}`);
+    expect(resume()).toBe(`codex resume ${NAME} --name helm-${NAME}`);
+  });
+
+  it('resumes the id a /clear or /compact moved to, not the spawn-time name', async () => {
+    sessionManager.addSession(makeSession());
+    const tracker = new HookTracker({ sessionManager, stateDetector: { markHooksObserved: () => {} } } as never);
+    const event = normaliseHookEvent({ cli: 'claude', event: 'SessionStart', payload: { session_id: THREAD, source: 'clear' } } as never)!;
+    tracker.handle({ ...event, helmSessionId: 'sess-1' });
+    tracker.dispose();
+    expect(resume()).toBe(`codex resume ${THREAD} --name helm-${NAME}`);
   });
 });

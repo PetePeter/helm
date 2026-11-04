@@ -169,7 +169,7 @@ claude-code:
   name: Claude Code
   renameCommand: "/rename {cliSessionName}"   # Optional: rename CLI-internal session (sent to PTY stdin)
   spawnCommand: "claude --session-id {cliSessionName}"  # Fresh spawn: set session UUID (written as-is to shell stdin)
-  resumeCommand: "claude --resume={cliSessionName}"  # Resume: reload specific session by UUID
+  resumeCommand: "claude --resume={cliThreadId}"  # Resume: the CLI's current id (follows /clear, /compact); falls back to {cliSessionName}
   continueCommand: "claude --continue"           # Fallback when resumeCommand is not configured
   headlessCommand: 'claude -p --model haiku < "{promptFile}" > "{outputFile}"'  # Optional: one silent run as the recording model
   initialPrompt:              # Array of sequence items sent to PTY sequentially after spawn

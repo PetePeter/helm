@@ -8,7 +8,7 @@
   name: Claude Code
   displayName: Claude Code
   spawnCommand: claude --session-id {cliSessionName}
-  resumeCommand: claude --resume={cliSessionName}
+  resumeCommand: claude --resume={cliThreadId}
   continueCommand: claude --continue
   # Runs the CLI once, no terminal UI, when this type is the Auto memory
   # recording model. It must read {promptFile} and write {outputFile}; a type
@@ -99,7 +99,7 @@
   name: GitHub Copilot CLI
   displayName: GitHub Copilot CLI
   spawnCommand: copilot --name={cliSessionName}
-  resumeCommand: copilot --resume={cliSessionName}
+  resumeCommand: copilot --resume={cliThreadId}
   continueCommand: copilot --continue
   initialPrompt:
     - label: Helm session init
