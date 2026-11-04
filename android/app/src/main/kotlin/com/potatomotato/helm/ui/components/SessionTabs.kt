@@ -13,7 +13,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import com.potatomotato.helm.R
@@ -139,7 +138,7 @@ private fun Tab(
     Box(
         modifier = modifier
             .clickable(onClick = onSelect)
-            .background(if (isSelected) HelmColors.Accent.copy(alpha = 0.12f) else Color.Transparent)
+            .then(if (isSelected) Modifier.background(HelmColors.AccentTint) else Modifier)
             .heightIn(min = HelmSize.TouchTarget)
             .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Md),
         contentAlignment = Alignment.Center,

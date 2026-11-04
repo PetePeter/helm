@@ -63,6 +63,9 @@ object HelmColors {
     /** A control the user set by hand, overriding the automatic choice (the call's route). */
     val Manual = Color(0xFF60A5FA)
 
+    /** A selected tab's fill: [Accent] at 12%, the tinted-fill selection the desktop uses. */
+    val AccentTint = Accent.copy(alpha = 0.12f)
+
     /** Text and icons drawn on top of [Accent]. Near-black, never pure white. */
     val OnAccent = Color(0xFF0D1200)
 
