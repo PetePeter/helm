@@ -1102,6 +1102,36 @@ describe('FormModal.vue', () => {
     w.unmount();
   });
 
+  describe('multiline field', () => {
+    const noteFields = [{ key: 'note', label: 'Note', type: 'multiline' as const }];
+
+    it('opens with the first field focused', async () => {
+      const w = factory({ fields: noteFields });
+      await flushPromises();
+      expect(document.activeElement?.id).toBe('form-note');
+      w.unmount();
+    });
+
+    it('is a plain textarea, not the sequence editor', () => {
+      const w = factory({ fields: noteFields });
+      expect(w.find('#form-note').element.tagName).toBe('TEXTAREA');
+      expect(w.find('.prompt-textarea').exists()).toBe(false);
+      w.unmount();
+    });
+
+    it('Ctrl+Enter saves and closes; plain Enter does not', async () => {
+      const w = factory({ fields: noteFields });
+      const note = w.find('#form-note');
+      await note.setValue('line one\nline two');
+      await note.trigger('keydown', { key: 'Enter' });
+      expect(w.emitted('save')).toBeUndefined();
+      await note.trigger('keydown', { key: 'Enter', ctrlKey: true });
+      expect(w.emitted('save')?.[0]?.[0]).toEqual({ note: 'line one\nline two' });
+      expect(w.emitted('update:visible')?.[0]).toEqual([false]);
+      w.unmount();
+    });
+  });
+
   it('pushes/pops modal stack', async () => {
     const w = factory();
     expect(modalStack.has('form-modal')).toBe(true);

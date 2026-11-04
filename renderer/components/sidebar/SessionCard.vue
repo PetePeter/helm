@@ -298,9 +298,9 @@ async function copyId(): Promise<void> {
 
 /** 📝: the note joins the row's notification carousel as its newest entry. */
 async function addNote(): Promise<void> {
-  const values = await showFormModal(`Note for ${props.displayName}`, [{ key: 'note', label: 'Note', type: 'textarea' }]);
+  const values = await showFormModal(`Note for ${props.displayName}`, [{ key: 'note', label: 'Note', type: 'multiline' }]);
   const content = values?.note?.trim();
-  if (content) useLlmNotificationsStore().add({ sessionId: props.session.id, title: '📝 Note', content, kind: 'note' });
+  if (content) useLlmNotificationsStore().add({ sessionId: props.session.id, title: 'Note', content, kind: 'note' });
 }
 const hasUserNote = computed(() => props.llmNotifications?.some(n => n.kind === 'note') ?? false);
 

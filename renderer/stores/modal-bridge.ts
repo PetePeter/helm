@@ -288,7 +288,7 @@ export const formModal = reactive({
     label: string;
     defaultValue?: string;
     placeholder?: string;
-    type?: 'text' | 'select' | 'textarea' | 'checkbox';
+    type?: 'text' | 'select' | 'textarea' | 'multiline' | 'checkbox';
     options?: Array<{ label: string; value: string }>;
     browse?: boolean;
     showLabels?: boolean;

@@ -18,7 +18,8 @@ export interface FormField {
   label: string;
   defaultValue?: string;
   placeholder?: string;
-  type?: 'text' | 'select' | 'textarea' | 'checkbox';
+  /** 'textarea' is the sequence-syntax editor; 'multiline' is plain free text. */
+  type?: 'text' | 'select' | 'textarea' | 'multiline' | 'checkbox';
   options?: Array<{ label: string; value: string }>;
   required?: boolean;
   browse?: boolean;
@@ -55,6 +56,8 @@ watch(() => props.visible, (v) => {
     formValues.value = vals;
     validationErrors.value = {};
     modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: new Set([...FORM_KEYS, 'enter']) });
+    const first = props.fields[0];
+    if (first) nextTick(() => document.getElementById(`form-${first.key}`)?.focus());
   } else {
     validationErrors.value = {};
     modalStack.pop(MODAL_ID);
@@ -223,6 +226,18 @@ defineExpose({ handleButton });
               :max-rows="12"
               textarea-class="form-textarea"
               @update:model-value="setFieldValue(field.key, $event)"
+            />
+
+            <!-- Plain multi-line text: Enter is a newline, Ctrl+Enter saves -->
+            <textarea
+              v-else-if="field.type === 'multiline'"
+              :id="`form-${field.key}`"
+              :value="formValues[field.key]"
+              :placeholder="field.placeholder"
+              rows="6"
+              class="form-textarea"
+              @input="setFieldValue(field.key, ($event.target as HTMLTextAreaElement).value)"
+              @keydown.ctrl.enter.prevent="onSave"
             />
 
             <!-- Checkbox -->

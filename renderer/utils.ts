@@ -157,7 +157,7 @@ export interface FormField {
   label: string;
   defaultValue?: string;
   placeholder?: string;
-  type?: 'text' | 'select' | 'textarea' | 'checkbox';
+  type?: 'text' | 'select' | 'textarea' | 'multiline' | 'checkbox';
   options?: FormFieldOption[];
   required?: boolean;
   browse?: boolean;
