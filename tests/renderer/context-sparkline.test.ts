@@ -26,8 +26,10 @@ describe('sparklineGeometry', () => {
     expect(g?.points.at(-1)?.y).toBe(0);
   });
 
-  it('needs at least two samples to draw a line', () => {
-    expect(sparklineGeometry([{ at: 0, tokens: 5 }], 10, { width: 10, height: 10 })).toBeUndefined();
+  it('renders a single reading as a centered dot', () => {
+    const geometry = sparklineGeometry([{ at: 0, tokens: 5 }], 10, { width: 10, height: 10 });
+    expect(geometry?.points).toEqual([{ x: 5, y: 5 }]);
+    expect(geometry?.area).toBe('');
     expect(sparklineGeometry(undefined, 10, { width: 10, height: 10 })).toBeUndefined();
   });
 });

@@ -68,7 +68,14 @@ export class SessionContextUsageTracker {
     this.sessionManager.on('session:added', this.onSession);
     this.sessionManager.on('session:updated', this.onSession);
     this.sessionManager.on('session:removed', this.onSessionRemoved);
-    this.hydrationQueue = this.sessionManager.getAllSessions()
+    const sessions = this.sessionManager.getAllSessions();
+    for (const session of sessions) {
+      if (session.remote || !session.contextUsage || session.contextHistory?.length) continue;
+      const measuredAt = Date.parse(session.contextUsage.measuredAtIso ?? '');
+      // A cached snapshot may seed history only with its measured time; don't invent one here.
+      if (Number.isFinite(measuredAt)) this.storeUsage(session, session.contextUsage, measuredAt);
+    }
+    this.hydrationQueue = sessions
       .filter((session) => !session.remote && !session.contextUsage && session.cliTranscriptPath)
       .map((session) => session.id);
     this.scheduleNextHydration();
@@ -200,12 +207,13 @@ export class SessionContextUsageTracker {
   }
 
   /** Every new snapshot also lands in the session's history, so the fill graph sees each reading. */
-  private storeUsage(session: SessionInfo, contextUsage: SessionContextUsageSnapshot | undefined): void {
+  private storeUsage(session: SessionInfo, contextUsage: SessionContextUsageSnapshot | undefined, sampleAt?: number): void {
     if (!contextUsage) {
       this.sessionManager.updateSession(session.id, { contextUsage });
       return;
     }
-    const at = Date.parse(contextUsage.measuredAtIso ?? '');
+    if (sampleAt !== undefined && !Number.isFinite(sampleAt)) return;
+    const at = sampleAt ?? Date.parse(contextUsage.measuredAtIso ?? '');
     const contextHistory = appendContextSample(session.contextHistory, {
       at: Number.isFinite(at) ? at : Date.now(),
       tokens: contextUsage.tokens,

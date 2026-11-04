@@ -52,7 +52,7 @@ fun ContextRing(
     state: SessionState,
     ring: ContextRing?,
     modifier: Modifier = Modifier,
-    size: Dp = RING_SIZE,
+    size: Dp = CONTEXT_RING_SIZE,
 ) {
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
         if (ring == null) {
@@ -149,7 +149,7 @@ private fun heartbeat(): Float {
     return scale
 }
 
-private val RING_SIZE = 22.dp
+internal val CONTEXT_RING_SIZE = 22.dp
 private val HEADER_RING_SIZE = 30.dp
 private val POPOVER_WIDTH = 260.dp
 private val POPOVER_GRAPH_HEIGHT = 80.dp

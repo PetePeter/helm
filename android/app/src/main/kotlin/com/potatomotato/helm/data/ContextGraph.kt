@@ -9,6 +9,8 @@ data class ContextLimits(val amber: Long, val red: Long)
 /** A session's readings, oldest first, plus the latest known model window and warning limits. */
 data class ContextHistory(val samples: List<ContextSample>, val window: Long?, val limits: ContextLimits?)
 
+data class ContextSparklinePoint(val x: Float, val y: Float)
+
 enum class ContextLevel { Ok, Warn, Hot }
 
 /** The context ring's geometry; mirrors `contextRing` in src/session/context-limits.ts. */
@@ -75,6 +77,25 @@ object ContextGraph {
         val reference = if (limits != null) maxOf(peak, limits.red) else peak
         val ceiling = if (limits != null || hasWindow) reference + reference / 10 else reference
         return if (hasWindow) minOf(ceiling, window!!) else ceiling
+    }
+
+    /** Point geometry for the sparkline; a lone reading is centered in the graph. */
+    fun sparklinePoints(
+        samples: List<ContextSample>,
+        ceiling: Float,
+        width: Float,
+        height: Float,
+    ): List<ContextSparklinePoint> {
+        if (samples.isEmpty()) return emptyList()
+        val scale = ceiling.coerceAtLeast(1f)
+        fun y(sample: ContextSample) = height - (sample.tokens.toFloat() / scale).coerceIn(0f, 1f) * height
+        if (samples.size == 1) return listOf(ContextSparklinePoint(width / 2f, y(samples.single())))
+
+        val first = samples.first().at
+        val span = (samples.last().at - first).coerceAtLeast(1L).toFloat()
+        return samples.map { sample ->
+            ContextSparklinePoint((sample.at - first) / span * width, y(sample))
+        }
     }
 
     /** "152k / 200k · 76%" for the latest reading; just "152k" when the window is unknown. */

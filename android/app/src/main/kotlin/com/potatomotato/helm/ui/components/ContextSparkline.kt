@@ -43,13 +43,11 @@ fun ContextSparkline(
     modifier: Modifier = Modifier,
     detailed: Boolean = false,
 ) {
-    if (samples.size < 2) return
+    if (samples.isEmpty()) return
     val color = ContextGraph.level(samples.last(), limits).color()
     Canvas(modifier) {
-        val first = samples.first().at
-        val span = (samples.last().at - first).coerceAtLeast(1L).toFloat()
         val ceiling = ContextGraph.ceiling(samples, limits, window).toFloat()
-        fun x(s: ContextSample) = (s.at - first) / span * size.width
+        val points = ContextGraph.sparklinePoints(samples, ceiling, size.width, size.height)
         fun y(fill: Float) = size.height - fill.coerceIn(0f, 1f) * size.height
         if (detailed) {
             val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
@@ -65,19 +63,21 @@ fun ContextSparkline(
             }
         }
         val line = Path().apply {
-            samples.forEachIndexed { i, s ->
-                if (i == 0) moveTo(x(s), y(s.tokens / ceiling)) else lineTo(x(s), y(s.tokens / ceiling))
+            points.forEachIndexed { i, point ->
+                if (i == 0) moveTo(point.x, point.y) else lineTo(point.x, point.y)
             }
         }
-        val area = Path().apply {
-            addPath(line)
-            lineTo(size.width, size.height)
-            lineTo(0f, size.height)
-            close()
+        if (points.size > 1) {
+            val area = Path().apply {
+                addPath(line)
+                lineTo(points.last().x, size.height)
+                lineTo(points.first().x, size.height)
+                close()
+            }
+            drawPath(area, color.copy(alpha = 0.2f))
+            drawPath(line, color, style = Stroke(width = (if (detailed) 2.dp else 1.5.dp).toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
-        drawPath(area, color.copy(alpha = 0.2f))
-        drawPath(line, color, style = Stroke(width = (if (detailed) 2.dp else 1.5.dp).toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        val last = samples.last()
-        drawCircle(color, radius = (if (detailed) 3.dp else 2.dp).toPx(), center = Offset(x(last), y(last.tokens / ceiling)))
+        val last = points.last()
+        drawCircle(color, radius = (if (detailed) 3.dp else 2.dp).toPx(), center = Offset(last.x, last.y))
     }
 }

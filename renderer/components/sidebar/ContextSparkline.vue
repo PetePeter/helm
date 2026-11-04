@@ -46,7 +46,7 @@ const guides = computed(() => (props.detailed && props.limits
       <line v-if="window && ceiling === window" class="limit" x1="0" :x2="width - pad * 2" y1="0" y2="0" />
       <line v-for="g in guides" :key="g.fill" class="guide" x1="0" :x2="width - pad * 2" :y1="g.y" :y2="g.y" />
     </template>
-    <path class="area" :d="geometry.area" />
+    <path v-if="geometry.area" class="area" :d="geometry.area" />
     <path class="line" :d="geometry.line" />
     <circle class="now" :cx="geometry.points.at(-1)!.x" :cy="geometry.points.at(-1)!.y" :r="detailed ? 3 : 1.8" />
   </svg>

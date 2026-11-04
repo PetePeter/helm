@@ -27,16 +27,21 @@ export function sparklineGeometry(
   ceiling: number,
   box: { width: number; height: number },
 ): SparklineGeometry | undefined {
-  if (!samples || samples.length < 2) return undefined;
+  if (!samples?.length) return undefined;
   const first = samples[0].at;
   const span = Math.max(samples.at(-1)!.at - first, 1);
   const scale = Math.max(ceiling, 1);
-  const points = samples.map((s) => ({
+  const point = (s: ContextUsageSample) => ({
     x: round((s.at - first) / span * box.width),
     y: round(box.height - Math.min(s.tokens / scale, 1) * box.height),
-  }));
+  });
+  const points = samples.length === 1
+    ? [{ ...point(samples[0]), x: round(box.width / 2) }]
+    : samples.map(point);
   const line = points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ');
-  const area = `${line} L${points.at(-1)!.x} ${box.height} L${points[0].x} ${box.height} Z`;
+  const area = points.length > 1
+    ? `${line} L${points.at(-1)!.x} ${box.height} L${points[0].x} ${box.height} Z`
+    : '';
   return { points, line, area };
 }
 

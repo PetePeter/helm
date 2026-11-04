@@ -3,8 +3,8 @@
 package com.potatomotato.helm.ui.sessions
 
 import com.potatomotato.helm.data.ContextHistory
-import com.potatomotato.helm.data.ContextGraph
-import com.potatomotato.helm.ui.components.ContextRing
+import com.potatomotato.helm.ui.components.CONTEXT_RING_SIZE
+import com.potatomotato.helm.ui.components.ContextRingButton
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -262,7 +262,7 @@ fun SessionRow(
             if (selected && !selectedMarkerAtEnd) {
                 Text("➜", color = HelmColors.Accent, style = MaterialTheme.typography.headlineMedium)
             }
-            ContextRing(state = session.activity, ring = context?.let { ContextGraph.ring(it) })
+            ContextRingButton(state = session.activity, history = context, size = CONTEXT_RING_SIZE)
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

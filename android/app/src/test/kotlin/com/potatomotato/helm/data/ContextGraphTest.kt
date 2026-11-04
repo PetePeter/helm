@@ -60,6 +60,19 @@ class ContextGraphTest {
     }
 
     @Test
+    fun aSingleSparklineSampleIsCenteredAtItsContextValue() {
+        val point = ContextGraph.sparklinePoints(
+            listOf(ContextSample(50, 25)),
+            ceiling = 100f,
+            width = 20f,
+            height = 10f,
+        ).single()
+
+        assertEquals(10f, point.x, 0.0001f)
+        assertEquals(7.5f, point.y, 0.0001f)
+    }
+
+    @Test
     fun windowCarriesTheEarlierLevelInAndTheLatestOutToNow() {
         val samples = listOf(ContextSample(0, 10), ContextSample(50, 20), ContextSample(80, 30))
         assertEquals(

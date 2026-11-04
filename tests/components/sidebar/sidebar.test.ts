@@ -1257,11 +1257,12 @@ describe('ContextRing', () => {
       props: {
         activityLevel: 'active',
         contextUsage: usage(100_000),
-        contextHistory: [{ at: 1, tokens: 50_000 }, { at: 2, tokens: 100_000 }],
+        contextHistory: [{ at: 2, tokens: 100_000 }],
       },
     });
     await w.trigger('mouseenter');
     expect(document.body.querySelector('.context-card')).not.toBeNull();
+    expect(document.body.querySelector('.context-card .context-sparkline circle.now')).not.toBeNull();
     await w.trigger('mouseleave');
     expect(document.body.querySelector('.context-card')).toBeNull();
     w.unmount();

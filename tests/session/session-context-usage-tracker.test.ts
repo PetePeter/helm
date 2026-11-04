@@ -94,11 +94,14 @@ describe('SessionContextUsageTracker', () => {
     tracker.stop();
   });
 
-  it('hydrates missing transcript snapshots in the background and keeps cached rows untouched', async () => {
+  it('hydrates missing snapshots and seeds history for cached Codex context', async () => {
     vi.useFakeTimers();
     const manager = fakeSessionManager([
       makeSession('missing'),
-      makeSession('cached', { contextUsage: { tokens: 9000, window: 200_000 } }),
+      makeSession('cached', {
+        cliType: 'codex',
+        contextUsage: { tokens: 9000, window: 200_000, measuredAtIso: '2026-10-15T00:00:00.000Z' },
+      }),
       makeSession('no-transcript', { cliTranscriptPath: undefined }),
     ]);
     const resolved: string[] = [];
@@ -118,8 +121,35 @@ describe('SessionContextUsageTracker', () => {
       window: 200_000,
       measuredAtIso: '2026-10-15T00:00:00.000Z',
     });
-    expect(manager.getSession('cached')?.contextUsage).toEqual({ tokens: 9000, window: 200_000 });
+    expect(manager.getSession('cached')?.contextUsage).toEqual({
+      tokens: 9000,
+      window: 200_000,
+      measuredAtIso: '2026-10-15T00:00:00.000Z',
+    });
+    expect(manager.getSession('cached')?.contextHistory).toEqual([
+      { at: Date.parse('2026-10-15T00:00:00.000Z'), tokens: 9000 },
+    ]);
     expect(resolved).toEqual(['missing']);
+    tracker.stop();
+  });
+
+  it('does not seed cached snapshots without a valid measurement time', () => {
+    const manager = fakeSessionManager([
+      makeSession('missing-time', { cliType: 'codex', contextUsage: { tokens: 3000 } }),
+      makeSession('invalid-time', { cliType: 'codex', contextUsage: { tokens: 4000, measuredAtIso: 'not-a-date' } }),
+    ]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: false, reason: 'no-usage-yet' }),
+    });
+
+    tracker.start(new EventEmitter());
+
+    expect(manager.getSession('missing-time')?.contextUsage).toEqual({ tokens: 3000 });
+    expect(manager.getSession('missing-time')?.contextHistory).toBeUndefined();
+    expect(manager.getSession('invalid-time')?.contextUsage).toEqual({ tokens: 4000, measuredAtIso: 'not-a-date' });
+    expect(manager.getSession('invalid-time')?.contextHistory).toBeUndefined();
+    expect(manager.updates).toEqual([]);
     tracker.stop();
   });
 
@@ -139,6 +169,7 @@ describe('SessionContextUsageTracker', () => {
     });
     const hooks = new EventEmitter();
     tracker.start(hooks);
+    manager.updates.length = 0;
 
     hooks.emit('hook', hook('Stop', 'first'));
     await vi.advanceTimersByTimeAsync(299);
@@ -160,6 +191,7 @@ describe('SessionContextUsageTracker', () => {
     });
     const hooks = new EventEmitter();
     tracker.start(hooks);
+    manager.updates.length = 0;
 
     hooks.emit('hook', hook('Stop', 'first'));
     await vi.advanceTimersByTimeAsync(300);
