@@ -76,14 +76,14 @@ blue for a first send, amber for a reply within the reply window.
 
 ## Context fill graph
 
-The `ctx` label on each desktop and Android row carries a small graph of the session's context size over the last 2 hours (`ROW_GRAPH_SPAN_MS` on desktop and `ROW_SPAN_MS` on Android). Every row uses the same rolling span, so rows are comparable, and an idle session draws a flat line at its last level. Hovering the desktop label opens a larger chart of the whole stored history, with the window limit and guides at the amber and red limits.
+On desktop a row shows context only as its status ring; hovering the ring opens the chart of the whole stored history, with the window limit and guides at the amber and red limits. The row stays uncluttered: no inline graph or `ctx`/% text. Android rows carry a small graph over the last 2 hours (`ROW_SPAN_MS`), the same span on every row so rows are comparable.
 
 ```mermaid
 graph LR
   SL[statusline / transcript / API] --> T[SessionContextUsageTracker]
   T -->|contextUsage + contextHistory| SI[SessionInfo]
   SI -->|serializeSession| Y[sessions.yaml]
-  SI -->|session:updated| R[SessionCard → ContextSparkline]
+  SI -->|session:updated| R[SessionCard → ContextRing]
 ```
 
 - **Why the tracker owns the history:** every snapshot already passes through `SessionContextUsageTracker.storeUsage`, so each reading lands in `contextHistory` without a second producer. The history is capped at `CONTEXT_HISTORY_LIMIT` (120) points, and a reading equal to the last one is skipped, so idle refreshes do not flatten the trend.
@@ -101,7 +101,7 @@ graph LR
   R -->|yes| M[amber / red tokens as set]
   R -->|no, window known| A[75% / 90% of window]
   R -->|no window| N[no limits: stays green]
-  M & A --> D[SessionCard sparkline]
+  M & A --> D[SessionCard ring]
   M & A --> G[session_get: limits + level]
   M & A --> P[chat reply: contextAmber / contextRed]
 ```

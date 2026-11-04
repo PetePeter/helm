@@ -2,11 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { mount } from '@vue/test-utils';
 import ContextSparkline from '../../renderer/components/sidebar/ContextSparkline.vue';
-import { ROW_GRAPH_SPAN_MS, sparklineCeiling, sparklineGeometry, windowSamples } from '../../renderer/context-sparkline.js';
-
-it('uses a two-hour rolling window for session-list graphs', () => {
-  expect(ROW_GRAPH_SPAN_MS).toBe(2 * 60 * 60 * 1000);
-});
+import { sparklineCeiling, sparklineGeometry, windowSamples } from '../../renderer/context-sparkline.js';
 
 describe('sparklineGeometry', () => {
   it('scales points against the provided ceiling, newest on the right edge', () => {

@@ -12,15 +12,11 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
-import { resolveContextLimits } from '../../../src/session/context-limits.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, SessionMission, UserPromptSource } from '../../../src/types/session.js';
 import type { SessionTodoCount } from '../../../src/types/todo.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
-import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
 import ContextRing from './ContextRing.vue';
-import ContextSparkline from './ContextSparkline.vue';
 import TickerText from '../common/TickerText.vue';
-import { ROW_GRAPH_SPAN_MS, windowSamples } from '../../context-sparkline.js';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import { formatSessionEta } from '../../session-eta.js';
 
@@ -182,11 +178,6 @@ const fadeStyle = computed(() => {
   return { animationDuration: `${durationMs}ms`, animationDelay: `${-(Date.now() - at)}ms` };
 });
 
-const contextLimits = computed(() => resolveContextLimits(
-  resolveCliTypeRecord(props.session.cliType),
-  props.session.contextUsage?.window,
-));
-
 // --- Local state ---
 
 const cardEl = ref<HTMLDivElement | null>(null);
@@ -251,15 +242,7 @@ const metaText = computed(() => {
   const title = props.session.title?.trim();
   return title && title !== props.displayName ? title : '';
 });
-const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
-const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
 const todoProgress = computed(() => props.todoCount ?? { done: 0, total: 0 });
-/** Last 2h for every row. A plain function, not a computed: it re-reads the
- *  clock on each render, and the parent's elapsed-timer tick re-renders the card. */
-function rowContextSamples(): ContextUsageSample[] {
-  const now = Date.now();
-  return windowSamples(props.session.contextHistory, now - ROW_GRAPH_SPAN_MS, now);
-}
 // --- Runtime group badge + drag ---
 
 const { groups: runtimeGroups } = useRuntimeGroups();
@@ -527,15 +510,6 @@ function onCardClick(e: MouseEvent): void {
           :title="`${todoProgress.done} of ${todoProgress.total} todos done`"
           :aria-label="`${todoProgress.done} of ${todoProgress.total} todos done`"
         >{{ todoProgress.done }}/{{ todoProgress.total }}</span>
-        <span
-          v-if="contextUsageText"
-          class="session-context-usage"
-          :title="contextUsageTooltip"
-          :aria-label="contextUsageTooltip"
-        >
-          <ContextSparkline :samples="rowContextSamples()" :window="session.contextUsage?.window" :limits="contextLimits" />
-          {{ contextUsageText }}
-        </span>
       </template>
     </div>
 
@@ -577,15 +551,6 @@ function onCardClick(e: MouseEvent): void {
    window (cacheWarnMinutes). Behind the content, never catching clicks. */
 .session-card { position: relative; isolation: isolate; }
 .session-card.interaction-disabled { cursor: default; }
-.session-context-usage {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
 .session-prompt-fade {
   position: absolute;
   inset: 0;

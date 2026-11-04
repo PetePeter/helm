@@ -45,9 +45,6 @@ export function sparklineGeometry(
   return { points, line, area };
 }
 
-/** The row graph's fixed span, so rows share one time scale and stay comparable. */
-export const ROW_GRAPH_SPAN_MS = 2 * 60 * 60 * 1000;
-
 /**
  * Clip readings to [from, to]. The level before the window carries in from the
  * left edge and the latest level runs out to `to`, so an idle session reads as a

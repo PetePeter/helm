@@ -102,14 +102,11 @@ describe('SessionCard menu and status icons', () => {
     expect(mountCard({ locked: true }).find('.session-close').attributes('disabled')).toBeDefined();
   });
 
-  it('shows cached context usage with an optional percentage and exact tooltip', () => {
-    const withWindow = mountCard({ contextUsage: { tokens: 18_400, window: 200_000 } });
-    expect(withWindow.find('.session-context-usage').text()).toBe('ctx 18.4k · 9%');
-    expect(withWindow.find('.session-context-usage').attributes('title')).toBe('18,400 context tokens · 9% of 200,000');
-
-    const withoutWindow = mountCard({ contextUsage: { tokens: 850 } });
-    expect(withoutWindow.find('.session-context-usage').text()).toBe('ctx 850');
-    expect(withoutWindow.find('.session-context-usage').attributes('title')).toBe('850 context tokens');
+  it('shows context only through the ring — no inline graph or ctx/% text', () => {
+    const card = mountCard({ contextUsage: { tokens: 18_400, window: 200_000 } });
+    expect(card.find('.session-context-usage').exists()).toBe(false);
+    expect(card.text()).not.toContain('ctx');
+    expect(card.findComponent({ name: 'ContextRing' }).exists()).toBe(true);
   });
 
   it('gamepad columns: 2 is the kebab, 3 is close', () => {
