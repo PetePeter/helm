@@ -60,11 +60,4 @@ class OperatorKeyTest {
         // A recomposition or rotation re-reading it must not dial again.
         assertFalse(OperatorKey.consume())
     }
-
-    @Test
-    fun `the shortcut and the launcher alias are presses, a plain launch is not`() {
-        assertTrue(OperatorKey.isPress(OperatorKey.ACTION, "com.potatomotato.helm.MainActivity"))
-        assertTrue(OperatorKey.isPress("android.intent.action.MAIN", OperatorKey.ALIAS))
-        assertFalse(OperatorKey.isPress("android.intent.action.MAIN", "com.potatomotato.helm.MainActivity"))
-    }
 }

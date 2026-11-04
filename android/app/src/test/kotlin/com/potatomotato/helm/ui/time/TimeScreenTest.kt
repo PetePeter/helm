@@ -42,6 +42,13 @@ class TimeScreenTest {
     }
 
     @Test
+    fun `multiplier is AI per human minute, dash when the human was idle`() {
+        assertEquals("2.5×", formatMultiplier(25, 10))
+        assertEquals("3×", formatMultiplier(30, 10))
+        assertEquals("–", formatMultiplier(30, 0))
+    }
+
+    @Test
     fun `statistics row backgrounds alternate and repeat every two rows`() {
         assertEquals(HelmColors.Surface, statisticsRowBackground(0))
         assertEquals(HelmColors.Surface2, statisticsRowBackground(1))
@@ -68,7 +75,7 @@ class TimeScreenTest {
             columns = listOf(1L),
             labels = listOf("today"),
             series = listOf(
-                TimeChartSeries("cli:second", "Second", "#abcdef", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1L)),
+                TimeChartSeries("cli:second", "Second", "#abcdef", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1.0)),
             ),
         )
 

@@ -63,7 +63,7 @@ class TimeRepositoryTest {
         assertEquals(
             TimeChartModel(
                 listOf(1L, 2L), listOf("one", "two"),
-                listOf(TimeChartSeries("cli:codex", "Codex", "#123456", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1500L, 250L))),
+                listOf(TimeChartSeries("cli:codex", "Codex", "#123456", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1500.0, 250.0))),
             ),
             answer.chartModel,
         )

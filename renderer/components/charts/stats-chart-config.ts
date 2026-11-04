@@ -1,7 +1,6 @@
 import type { ChartConfiguration, TooltipOptions } from 'chart.js';
 import { formatTokens } from '../../../src/session/format-tokens.js';
 import type { ChartAxisKind, ChartModel, ChartModelSeries } from '../../../src/session/chart-model.js';
-import { formatMinutes } from '../../composables/useTimesheetPane.js';
 
 export type StatsChartKind = 'timesheet' | 'tokens';
 
@@ -79,18 +78,19 @@ function buildScales(kind: StatsChartKind, theme: StatsChartTheme): NonNullable<
       grid: { color: theme.grid },
       border: { color: theme.grid },
     },
-    minutes: buildMinutesScale(theme, !isTokens),
+    multiplier: buildMultiplierScale(theme, !isTokens),
     tokens: buildTokensScale(theme, isTokens),
   };
 }
 
-function buildMinutesScale(theme: StatsChartTheme, display: boolean) {
+function buildMultiplierScale(theme: StatsChartTheme, display: boolean) {
   return {
     type: 'linear' as const,
     display,
     position: 'left' as const,
     stacked: false,
-    ticks: { color: theme.textMuted, callback: (value: string | number) => formatMinuteValue(Number(value)) },
+    beginAtZero: true,
+    ticks: { color: theme.textMuted, callback: (value: string | number) => `${Number(value)}×` },
     grid: { color: theme.grid },
     border: { color: theme.grid },
   };
@@ -109,9 +109,7 @@ function buildTokensScale(theme: StatsChartTheme, isTokens: boolean) {
 }
 
 export function formatStatsTooltipLabel(series: Pick<ChartModelSeries, 'label' | 'axis'>, value: number): string {
-  const formatted = series.axis === 'tokens'
-    ? `${formatTokens(value, false)} tokens`
-    : formatMinuteValue(value);
+  const formatted = series.axis === 'tokens' ? `${formatTokens(value, false)} tokens` : `${value}×`;
   return `${series.label}: ${formatted}`;
 }
 
@@ -131,8 +129,4 @@ export function readStatsChartTheme(element: HTMLElement): StatsChartTheme {
 
 function formatCompactTokens(value: string | number): string {
   return formatTokens(Number(value));
-}
-
-function formatMinuteValue(value: number): string {
-  return value === 0 ? '0m' : formatMinutes(value);
 }

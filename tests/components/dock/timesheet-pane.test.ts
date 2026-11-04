@@ -70,7 +70,8 @@ describe('TimesheetPane', () => {
     await wrapper.get('button.timesheet-project').trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('C:/alpha/src');
-    expect(wrapper.findAll('.timesheet-tokens')).toHaveLength(4);
+    expect(wrapper.findAll('.timesheet-tokens')).toHaveLength(2);
+    expect(wrapper.text()).toContain('0.5×');
     expect(wrapper.text()).toContain('Tokens 1.2k');
     expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ projectKey: 'pA' }));
 

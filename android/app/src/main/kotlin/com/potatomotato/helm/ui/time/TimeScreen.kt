@@ -350,7 +350,7 @@ private fun TableHeader(first: String, scrollState: ScrollState, includeTokens: 
         metrics = listOf(
             stringResource(R.string.time_col_you),
             stringResource(R.string.time_col_ai),
-            stringResource(R.string.time_total),
+            stringResource(R.string.time_col_multiplier),
         ) + listOfNotNull(if (includeTokens) stringResource(R.string.statistics_col_tokens) else null),
         scrollState = scrollState,
         header = true,
@@ -374,7 +374,7 @@ private fun TableRow(
         metrics = listOf(
             formatMinutes(user),
             formatMinutes(ai),
-            formatMinutes(user + ai),
+            formatMultiplier(ai, user),
         ) + listOfNotNull(tokens?.let { if (it == 0L) "–" else formatTokens(it) }),
         scrollState = scrollState,
         bold = bold,
@@ -465,6 +465,10 @@ private val TimePeriod.labelRes: Int
 /** Minutes as "3h05"; zero as an en dash, like the desktop pane. */
 internal fun formatMinutes(minutes: Int): String =
     if (minutes == 0) "–" else "${minutes / 60}h${(minutes % 60).toString().padStart(2, '0')}"
+
+/** AI minutes per human minute as "2.5×"; an en dash with no human time, like the desktop pane. */
+internal fun formatMultiplier(ai: Int, user: Int): String =
+    if (user <= 0) "–" else String.format(Locale.ROOT, "%.1f", ai.toDouble() / user).removeSuffix(".0") + "×"
 
 private fun formatTokens(tokens: Long): String = when {
     tokens >= 1_000_000 -> compactTokens(tokens, 1_000_000, 2) + "M"

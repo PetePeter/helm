@@ -161,6 +161,7 @@
     <string name="time_col_when">When</string>
     <string name="time_col_you">You</string>
     <string name="time_col_ai">AI</string>
+    <string name="time_col_multiplier">AI ×</string>
     <string name="statistics_view_timesheet">Timesheet</string>
     <string name="statistics_view_tokens">Tokens</string>
     <string name="statistics_tokens_loading">Reading token totals…</string>

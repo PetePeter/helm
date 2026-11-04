@@ -8,7 +8,7 @@ import { computed } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
 import PanelHeader from '../common/PanelHeader.vue';
 import type { TimesheetPeriod } from '../../../src/session/time-tracker.js';
-import { columnLabel } from '../../../src/session/chart-model.js';
+import { columnLabel, formatMultiplier } from '../../../src/session/chart-model.js';
 import { formatTokens } from '../../../src/session/format-tokens.js';
 import { formatMinutes, useTimesheetPane } from '../../composables/useTimesheetPane.js';
 import EstimatesView from './EstimatesView.vue';
@@ -134,7 +134,7 @@ const range = computed(() => {
       <div class="timesheet-chart"><StatsChart v-if="chartModel" :model="chartModel" kind="timesheet" /></div>
       <table class="timesheet-table">
         <thead>
-          <tr><th>Project</th><th>You</th><th>AI</th><th>Total</th><th>Tokens</th></tr>
+          <tr><th>Project</th><th>You</th><th>AI</th><th>AI ×</th><th>Tokens</th></tr>
         </thead>
         <tbody>
           <tr v-for="project in projects" :key="project.projectKey">
@@ -143,7 +143,7 @@ const range = computed(() => {
             </td>
             <td>{{ formatMinutes(project.user) }}</td>
             <td>{{ formatMinutes(project.ai) }}</td>
-            <td>{{ formatMinutes(project.user + project.ai) }}</td>
+            <td>{{ formatMultiplier(project.ai, project.user) }}</td>
             <td>{{ formatTokens(project.tokens) }}</td>
           </tr>
         </tbody>
@@ -152,7 +152,7 @@ const range = computed(() => {
             <td>Total</td>
             <td>{{ formatMinutes(sum(projects.map(p => p.user))) }}</td>
             <td>{{ formatMinutes(sum(projects.map(p => p.ai))) }}</td>
-            <td>{{ formatMinutes(sum(projects.map(p => p.user + p.ai))) }}</td>
+            <td>{{ formatMultiplier(sum(projects.map(p => p.ai)), sum(projects.map(p => p.user))) }}</td>
             <td>{{ formatTokens(sum(projects.map(p => p.tokens))) }}</td>
           </tr>
         </tfoot>
@@ -167,7 +167,7 @@ const range = computed(() => {
           <tr>
             <th>Folder</th>
             <th v-for="col in sheet.columns" :key="col">{{ columnLabel(period, col) }}</th>
-            <th>Total</th>
+            <th>AI ×</th>
           </tr>
         </thead>
         <tbody>
@@ -178,11 +178,7 @@ const range = computed(() => {
               <span v-if="row.ai[i]" class="timesheet-ai">AI {{ formatMinutes(row.ai[i]) }}</span>
               <span v-if="row.tokens[i]" class="timesheet-tokens">Tokens {{ formatTokens(row.tokens[i]) }}</span>
             </td>
-            <td>
-              <span class="timesheet-you">{{ formatMinutes(sum(row.user)) }}</span>
-              <span class="timesheet-ai">AI {{ formatMinutes(sum(row.ai)) }}</span>
-              <span v-if="sum(row.tokens)" class="timesheet-tokens">Tokens {{ formatTokens(sum(row.tokens)) }}</span>
-            </td>
+            <td>{{ formatMultiplier(sum(row.ai), sum(row.user)) }}</td>
           </tr>
         </tbody>
         <tfoot>
@@ -193,11 +189,7 @@ const range = computed(() => {
               <span v-if="sheet.totals.ai[i]" class="timesheet-ai">AI {{ formatMinutes(sheet.totals.ai[i]) }}</span>
               <span v-if="sheet.totals.tokens[i]" class="timesheet-tokens">Tokens {{ formatTokens(sheet.totals.tokens[i]) }}</span>
             </td>
-            <td>
-              <span class="timesheet-you">{{ formatMinutes(sum(sheet.totals.user)) }}</span>
-              <span class="timesheet-ai">AI {{ formatMinutes(sum(sheet.totals.ai)) }}</span>
-              <span v-if="sum(sheet.totals.tokens)" class="timesheet-tokens">Tokens {{ formatTokens(sum(sheet.totals.tokens)) }}</span>
-            </td>
+            <td>{{ formatMultiplier(sum(sheet.totals.ai), sum(sheet.totals.user)) }}</td>
           </tr>
         </tfoot>
       </table>

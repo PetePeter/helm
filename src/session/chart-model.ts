@@ -1,7 +1,7 @@
 import type { Timesheet, TimesheetPeriod, TokenSheet } from './time-tracker.js';
 
 export type ChartSeriesType = 'bar' | 'line';
-export type ChartAxisKind = 'minutes' | 'tokens';
+export type ChartAxisKind = 'tokens' | 'multiplier';
 
 /** Transport-neutral chart data. Series values stay raw and unstacked. */
 export interface ChartModel {
@@ -57,11 +57,6 @@ export function chartSeriesColors(keys: readonly string[]): Map<string, string> 
   return assigned;
 }
 
-/** Stable for a series key when a chart has only one series. */
-export function chartSeriesColor(key: string): string {
-  return chartSeriesColors([key]).get(key)!;
-}
-
 function nextSeriesColor(key: string, used: Set<string>): string {
   const hash = hashSeriesKey(key);
   const start = hash % SERIES_PALETTE.length;
@@ -96,6 +91,16 @@ function hashSeriesKey(key: string): number {
   return hash >>> 0;
 }
 
+/** AI minutes per human minute; 0 when the human recorded no time. */
+export function aiMultiplier(ai: number, user: number): number {
+  return user > 0 ? Math.round((ai / user) * 10) / 10 : 0;
+}
+
+/** Table cell for {@link aiMultiplier}: `2.5×`, or `–` with no human time. */
+export function formatMultiplier(ai: number, user: number): string {
+  return user > 0 ? `${aiMultiplier(ai, user)}×` : '–';
+}
+
 export function buildTimesheetChartModel(
   sheet: Pick<Timesheet, 'columns' | 'totals'>,
   period: TimesheetPeriod,
@@ -103,16 +108,15 @@ export function buildTimesheetChartModel(
 ): ChartModel {
   const columns = visibleColumns(sheet.columns, now);
   const count = columns.length;
-  const values = [sheet.totals.user, sheet.totals.ai, sheet.totals.tokens].map(series => series.slice(0, count));
-  const [you, ai, tokens] = values;
+  const multiplier = columns.map((_, i) => aiMultiplier(sheet.totals.ai[i] ?? 0, sheet.totals.user[i] ?? 0));
+  const tokens = sheet.totals.tokens.slice(0, count);
 
   return {
     columns,
     labels: columns.map(column => columnLabel(period, column)),
     series: [
-      { key: 'you', label: 'You', color: chartSeriesColor('you'), type: 'bar', axis: 'minutes', values: you },
-      { key: 'ai', label: 'AI', color: chartSeriesColor('ai'), type: 'bar', axis: 'minutes', values: ai },
-      { key: 'tokens', label: 'Tokens', color: chartSeriesColor('tokens'), type: 'line', axis: 'tokens', values: tokens },
+      { key: 'multiplier', label: 'AI ×', color: COLOR_BY_ROLE.ai, type: 'line', axis: 'multiplier', values: multiplier },
+      { key: 'tokens', label: 'Tokens', color: COLOR_BY_ROLE.tokens, type: 'bar', axis: 'tokens', values: tokens },
     ],
   };
 }

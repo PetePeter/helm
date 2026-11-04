@@ -66,17 +66,14 @@ describe('timesheetQuery (the phone Time tab)', () => {
     expect(overview.projects[0].tokens).toBe(1_234);
     expect(overview.sheet.totals.tokens[0]).toBe(1_234);
     const visibleColumns = overview.chartModel.columns.length;
-    expect(overview.chartModel.series.map(({ key, values }) => [key, values])).toEqual([
-      ['you', overview.sheet.totals.user.slice(0, visibleColumns)],
-      ['ai', overview.sheet.totals.ai.slice(0, visibleColumns)],
-      ['tokens', overview.sheet.totals.tokens.slice(0, visibleColumns)],
-    ]);
+    expect(overview.chartModel.series.map(({ key }) => key)).toEqual(['multiplier', 'tokens']);
+    expect(overview.chartModel.series[1].values).toEqual(overview.sheet.totals.tokens.slice(0, visibleColumns));
     const detail = timesheetQuery(t, { projectKey: 'pA', period: 'day', anchor: day }) as {
       sheet: { rows: unknown[] };
       chartModel: { series: Array<{ key: string }> };
     };
     expect(detail.sheet.rows).toHaveLength(1);
-    expect(detail.chartModel.series.map(({ key }) => key)).toEqual(['you', 'ai', 'tokens']);
+    expect(detail.chartModel.series.map(({ key }) => key)).toEqual(['multiplier', 'tokens']);
   });
 
   it("returns one project's folder grid when named", () => {

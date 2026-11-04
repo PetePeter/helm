@@ -68,7 +68,7 @@ enum class TimeChartSeriesType(val wire: String) {
 }
 
 enum class TimeChartAxisKind(val wire: String) {
-    MINUTES("minutes"), TOKENS("tokens");
+    TOKENS("tokens"), MULTIPLIER("multiplier");
 
     companion object {
         fun fromWire(wire: String): TimeChartAxisKind? = entries.firstOrNull { it.wire == wire }
@@ -81,7 +81,7 @@ data class TimeChartSeries(
     val color: String,
     val type: TimeChartSeriesType,
     val axis: TimeChartAxisKind,
-    val values: List<Long>,
+    val values: List<Double>,
 )
 
 data class TimeChartModel(val columns: List<Long>, val labels: List<String>, val series: List<TimeChartSeries>)
@@ -219,7 +219,7 @@ class TimeRepository {
             val axis = TimeChartAxisKind.fromWire(item.opt("axis") as? String ?: return null) ?: return null
             val values = item.optJSONArray("values") ?: return null
             if (values.length() != columns.length()) return null
-            TimeChartSeries(key, label, color, type, axis, longs(values))
+            TimeChartSeries(key, label, color, type, axis, (0 until values.length()).map { values.optDouble(it) })
         }
         val parsedLabels = (0 until labels.length()).map { labels.opt(it) as? String ?: return null }
         return TimeChartModel(

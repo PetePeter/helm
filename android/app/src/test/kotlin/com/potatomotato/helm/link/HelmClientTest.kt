@@ -1830,7 +1830,7 @@ class HelmClientTest {
                     "cli:codex", "Codex", "#123456",
                     com.potatomotato.helm.data.TimeChartSeriesType.BAR,
                     com.potatomotato.helm.data.TimeChartAxisKind.TOKENS,
-                    listOf(1_200L),
+                    listOf(1_200.0),
                 )),
             ),
             answer.chartModel,

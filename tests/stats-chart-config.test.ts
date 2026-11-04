@@ -32,34 +32,31 @@ describe('StatsChart configuration', () => {
     expect(config.options?.scales?.x?.grid?.color).toBe(theme.grid);
   });
 
-  it('keeps timesheet bars grouped and maps the token line to its own axis', () => {
+  it('puts the multiplier line on the left axis and token bars on the right', () => {
     const model: ChartModel = {
       columns: [1], labels: ['A'],
       series: [
-        { key: 'you', label: 'You', color: '#5aa9ff', type: 'bar', axis: 'minutes', values: [90] },
-        { key: 'ai', label: 'AI', color: '#4fd08b', type: 'bar', axis: 'minutes', values: [30] },
-        { key: 'tokens', label: 'Tokens', color: '#f0b34a', type: 'line', axis: 'tokens', values: [1250] },
+        { key: 'multiplier', label: 'AI ×', color: '#4fd08b', type: 'line', axis: 'multiplier', values: [2.5] },
+        { key: 'tokens', label: 'Tokens', color: '#f0b34a', type: 'bar', axis: 'tokens', values: [1250] },
       ],
     };
 
     const config = buildStatsChartConfig(model, 'timesheet', theme);
 
     expect(config.data.datasets.map(dataset => ({ type: dataset.type, label: dataset.label, yAxisID: dataset.yAxisID }))).toEqual([
-      { type: 'bar', label: 'You', yAxisID: 'minutes' },
-      { type: 'bar', label: 'AI', yAxisID: 'minutes' },
-      { type: 'line', label: 'Tokens', yAxisID: 'tokens' },
+      { type: 'line', label: 'AI ×', yAxisID: 'multiplier' },
+      { type: 'bar', label: 'Tokens', yAxisID: 'tokens' },
     ]);
     expect(config.options?.scales?.x?.stacked).toBe(false);
-    expect(config.options?.scales?.minutes?.stacked).toBe(false);
+    expect(config.options?.scales?.multiplier?.position).toBe('left');
     expect(config.options?.scales?.tokens?.position).toBe('right');
     expect(config.options?.scales?.tokens?.display).toBe('auto');
-    expect(config.options?.scales?.minutes?.grid?.color).toBe(theme.grid);
+    expect(config.options?.scales?.multiplier?.grid?.color).toBe(theme.grid);
   });
 
   it('formats tooltip values exactly and reads drawing colors from CSS tokens', () => {
     expect(formatStatsTooltipLabel({ label: 'Claude', axis: 'tokens' }, 1250)).toBe('Claude: 1,250 tokens');
-    expect(formatStatsTooltipLabel({ label: 'You', axis: 'minutes' }, 90)).toBe('You: 1h30');
-    expect(formatStatsTooltipLabel({ label: 'AI', axis: 'minutes' }, 0)).toBe('AI: 0m');
+    expect(formatStatsTooltipLabel({ label: 'AI ×', axis: 'multiplier' }, 2.5)).toBe('AI ×: 2.5×');
 
     const element = document.createElement('div');
     element.style.setProperty('--text-primary', '#e1e1e1');

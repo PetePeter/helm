@@ -42,11 +42,8 @@ describe('statisticsQuery', () => {
       { dir: 'C:/other', user: expect.any(Array), ai: expect.any(Array), tokens: [0, 0, 0, 0, 0, 400, 0] },
     ]);
     const visibleColumns = result.chartModel.columns.length;
-    expect(result.chartModel.series.map(({ key, values }) => [key, values])).toEqual([
-      ['you', result.sheet.totals.user.slice(0, visibleColumns)],
-      ['ai', result.sheet.totals.ai.slice(0, visibleColumns)],
-      ['tokens', result.sheet.totals.tokens.slice(0, visibleColumns)],
-    ]);
+    expect(result.chartModel.series.map(({ key }) => key)).toEqual(['multiplier', 'tokens']);
+    expect(result.chartModel.series[1].values).toEqual(result.sheet.totals.tokens.slice(0, visibleColumns));
   });
 
   it('returns the configured CLI token sheet, including zero and other rows', () => {

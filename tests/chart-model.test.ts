@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTimesheetChartModel, buildTokenChartModel, chartSeriesColors, columnLabel } from '../src/session/chart-model.js';
+import { aiMultiplier, buildTimesheetChartModel, buildTokenChartModel, chartSeriesColors, columnLabel, formatMultiplier } from '../src/session/chart-model.js';
 import type { Timesheet, TokenSheet } from '../src/session/time-tracker.js';
 
 const DAY0 = new Date(2026, 8, 28).getTime();
@@ -11,11 +11,18 @@ describe('ChartModel builders', () => {
     expect(columnLabel('month', new Date(2026, 8, 1).getTime())).toMatch(/^Sep/);
   });
 
-  it('maps timesheet values as raw bar and line series and clips future columns', () => {
+  it('multiplier is AI per human minute, 0 when the human was idle', () => {
+    expect(aiMultiplier(30, 10)).toBe(3);
+    expect(aiMultiplier(30, 0)).toBe(0);
+    expect(formatMultiplier(25, 10)).toBe('2.5×');
+    expect(formatMultiplier(25, 0)).toBe('–');
+  });
+
+  it('charts only the AI multiplier and tokens, clipping future columns', () => {
     const sheet: Timesheet = {
       columns: [DAY0, DAY0 + DAY, DAY0 + DAY * 2, DAY0 + DAY * 3],
       rows: [],
-      totals: { user: [5, 6, 7, 8], ai: [1, 2, 3, 4], tokens: [10, 20, 30, 40] },
+      totals: { user: [5, 0, 10, 8], ai: [10, 2, 15, 4], tokens: [10, 20, 30, 40] },
     };
 
     const model = buildTimesheetChartModel(sheet, 'day', DAY0 + DAY * 2);
@@ -23,9 +30,8 @@ describe('ChartModel builders', () => {
     expect(model.columns).toEqual(sheet.columns.slice(0, 3));
     expect(model.labels).toHaveLength(3);
     expect(model.series.map(({ key, type, axis, values }) => ({ key, type, axis, values }))).toEqual([
-      { key: 'you', type: 'bar', axis: 'minutes', values: [5, 6, 7] },
-      { key: 'ai', type: 'bar', axis: 'minutes', values: [1, 2, 3] },
-      { key: 'tokens', type: 'line', axis: 'tokens', values: [10, 20, 30] },
+      { key: 'multiplier', type: 'line', axis: 'multiplier', values: [2, 0, 1.5] },
+      { key: 'tokens', type: 'bar', axis: 'tokens', values: [10, 20, 30] },
     ]);
   });
 

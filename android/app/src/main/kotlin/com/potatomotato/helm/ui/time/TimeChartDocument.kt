@@ -115,8 +115,6 @@ internal object TimeChartDocument {
             if (value >= 1e3) return Number((value / 1e3).toFixed(1)) + 'k';
             return exactTokens(value);
           };
-          const formatMinuteValue = value => value === 0 ? '0m' :
-            Math.floor(value / 60) + 'h' + String(Math.trunc(value % 60)).padStart(2, '0');
           const color = '__TEXT__';
           const muted = '__MUTED__';
           const grid = '__GRID__';
@@ -157,7 +155,7 @@ internal object TimeChartDocument {
                       const value = Number(item.raw ?? 0);
                       const formatted = series.axis === 'tokens'
                         ? exactTokens(value) + ' tokens'
-                        : formatMinuteValue(value);
+                        : value + '×';
                       return series.label + ': ' + formatted;
                     }
                   }
@@ -170,12 +168,13 @@ internal object TimeChartDocument {
                   grid: {color: grid},
                   border: {color: grid}
                 },
-                minutes: {
+                multiplier: {
                   type: 'linear',
                   display: !model.stackedTokens,
                   position: 'left',
                   stacked: false,
-                  ticks: {color: muted, callback: value => formatMinuteValue(Number(value))},
+                  beginAtZero: true,
+                  ticks: {color: muted, callback: value => Number(value) + '×'},
                   grid: {color: grid},
                   border: {color: grid}
                 },

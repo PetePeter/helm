@@ -34,7 +34,7 @@ class TimeChartDocumentTest {
                     color = "#123456",
                     type = TimeChartSeriesType.BAR,
                     axis = TimeChartAxisKind.TOKENS,
-                    values = listOf(1_500L, 250L),
+                    values = listOf(1_500.0, 250.0),
                 ),
             ),
         )
@@ -68,8 +68,8 @@ class TimeChartDocumentTest {
             columns = listOf(1L),
             labels = listOf("today"),
             series = listOf(
-                TimeChartSeries("cli:codex", "Codex", "#123456", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1_500L)),
-                TimeChartSeries("cli:claude", "Claude", "#abcdef", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(250L)),
+                TimeChartSeries("cli:codex", "Codex", "#123456", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1_500.0)),
+                TimeChartSeries("cli:claude", "Claude", "#abcdef", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(250.0)),
             ),
         )
 
@@ -80,7 +80,7 @@ class TimeChartDocumentTest {
         assertTrue(html.contains("chart.setDatasetVisibility(index, !visible)"))
         assertTrue(html.contains("min-height:48px"))
         assertTrue(html.contains("new Intl.NumberFormat('en-US').format(value)"))
-        assertTrue(html.contains("formatMinuteValue(value)"))
+        assertTrue(html.contains("value + '×'"))
         assertTrue(html.contains("const series = model.series[item.datasetIndex]"))
     }
 
@@ -90,8 +90,8 @@ class TimeChartDocumentTest {
             columns = listOf(1L),
             labels = listOf("today"),
             series = listOf(
-                TimeChartSeries("user", "You", "#123456", TimeChartSeriesType.BAR, TimeChartAxisKind.MINUTES, listOf(65L)),
-                TimeChartSeries("tokens", "Tokens", "#abcdef", TimeChartSeriesType.LINE, TimeChartAxisKind.TOKENS, listOf(1_500L)),
+                TimeChartSeries("multiplier", "AI ×", "#123456", TimeChartSeriesType.LINE, TimeChartAxisKind.MULTIPLIER, listOf(2.5)),
+                TimeChartSeries("tokens", "Tokens", "#abcdef", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1_500.0)),
             ),
         )
 
@@ -104,7 +104,7 @@ class TimeChartDocumentTest {
             ?: error("Chart model JSON is missing")
         val data = JSONObject(encoded)
         assertFalse(data.getBoolean("stackedTokens"))
-        assertEquals("minutes", data.getJSONArray("series").getJSONObject(0).getString("axis"))
+        assertEquals("multiplier", data.getJSONArray("series").getJSONObject(0).getString("axis"))
         assertEquals("tokens", data.getJSONArray("series").getJSONObject(1).getString("axis"))
     }
 }
