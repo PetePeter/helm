@@ -281,6 +281,7 @@
       <li><span class="dot dot--idle"></span> <strong>Idle</strong> (grey) &mdash; silent for &gt;5 minutes</li>
     </ul>
   </li>
+  <li><strong>Context ring</strong> &mdash; the ring around the dot shows how full the session's context is. It is teal while healthy, <strong>amber</strong> from 75% and <strong>red</strong> from 90% of the context window (or your own limits for that CLI type), with red always drawn at 90% of the circle. Past the circle the ring <strong>heartbeats</strong>. Hover the ring to see the context graph with the amber and red lines. Group headers show one small ring per session, with the same hover.</li>
   <li><strong>Elapsed timer</strong> &mdash; time since last CLI output, refreshed every 10 seconds</li>
   <li><strong>Plan badges</strong> &mdash; coding + ready/blocked/review counts</li>
 </ul>
@@ -580,6 +581,20 @@
   <li>Install the APK from the GitHub release (the QR code in <strong>Settings</strong> points at the matching version)</li>
   <li>Start pairing on the desktop, pick this PC on the phone, and check the <strong>6-digit code</strong> matches on both screens before confirming</li>
   <li>Wi-Fi is preferred automatically when both are on the same network; Bluetooth takes over when it isn't</li>
+</ul>
+
+<h3>The session list</h3>
+<ul>
+  <li>Each row: a <strong>context ring</strong> around the activity dot, the session name, its age, and a second line with <em>status &middot; CLI &middot; git branch &middot; mission</em> (the mission is what gets cut off first when the line is long)</li>
+  <li>The ring fills with context use: teal, then <strong>amber</strong> and <strong>red</strong> as in the desktop, and it <strong>heartbeats</strong> once the session is past its limit</li>
+  <li>Lock, frozen and keep-warm icons sit in a fixed column after the name, and the unread count badge in its own column on the right, so every row lines up</li>
+  <li>Long-press a row for session actions; tap a group header to fold it</li>
+</ul>
+
+<h3>Inside a session</h3>
+<ul>
+  <li>The header shows the same ring next to the session name. <strong>Tap the ring</strong> to see the context graph (tokens, window, and the amber and red lines)</li>
+  <li>The Wi-Fi/Bluetooth link badge is shown on the session list, not repeated inside a session</li>
 </ul>
 
 <h3>Sharing a file to a session</h3>
