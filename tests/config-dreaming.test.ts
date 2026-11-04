@@ -6,7 +6,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { ConfigLoader } from '../src/config/loader.js';
-import { DEFAULT_DREAM_PROMPT } from '../src/types/dreaming.js';
+import { DEFAULT_DREAM_PROMPT, DREAM_IDEA_PROMPT_MARKER } from '../src/types/dreaming.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as YAML from 'yaml';
@@ -51,7 +51,7 @@ describe('ConfigLoader dreaming prompt', () => {
     makeLoader().setDreamingConfig({ prompt: '  Prune hard.  ' });
     const reloaded = new ConfigLoader(root!);
     reloaded.load();
-    expect(reloaded.getDreamingConfig().prompt).toBe('Prune hard.');
+    expect(reloaded.getDreamingConfig().prompt).toMatch(/^Prune hard\.\n\n<!-- helm-dream-ideas:v1 -->/);
   });
 
   it('stores the default or an empty prompt as no override', () => {
@@ -60,5 +60,20 @@ describe('ConfigLoader dreaming prompt', () => {
     expect(storedDreaming()).toEqual({ prompt: '' });
     loader.setDreamingConfig({ prompt: '   ' });
     expect(loader.getDreamingConfig().prompt).toBe(DEFAULT_DREAM_PROMPT);
+  });
+
+  it('appends the idea step to a saved prompt once without changing its existing text', () => {
+    const original = 'Keep my wording and priorities.\n';
+    const loader = makeLoader({ dreaming: { prompt: original } });
+    const migrated = loader.getDreamingConfig().prompt;
+
+    expect(migrated.startsWith(original)).toBe(true);
+    expect(migrated).toContain(DREAM_IDEA_PROMPT_MARKER);
+    expect(migrated.match(new RegExp(DREAM_IDEA_PROMPT_MARKER, 'g'))).toHaveLength(1);
+
+    const reloaded = new ConfigLoader(root!);
+    reloaded.load();
+    expect(reloaded.getDreamingConfig().prompt).toBe(migrated);
+    expect(storedDreaming()).toEqual({ prompt: migrated });
   });
 });

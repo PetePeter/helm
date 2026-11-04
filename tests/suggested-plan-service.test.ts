@@ -31,7 +31,7 @@ describe('SuggestedPlanService', () => {
     service = new SuggestedPlanService(plans, memories);
   }
 
-  function createSuggestedIdea(stage: 'suggested' | 'growing' = 'suggested') {
+  function createSuggestedIdea(stage: 'seed' | 'growing' | 'suggested' = 'suggested') {
     const idea = memories.createForSession('session-a', {
       kind: 'idea',
       tldr: 'A useful idea',
@@ -48,7 +48,7 @@ describe('SuggestedPlanService', () => {
 
   it('creates a linked suggested plan without putting it on the startable frontier', () => {
     setup();
-    const idea = createSuggestedIdea();
+    const idea = createSuggestedIdea('growing');
 
     const plan = service.createSuggested({
       dirPath,
@@ -59,15 +59,16 @@ describe('SuggestedPlanService', () => {
     createdPlanIds.push(plan.id);
 
     expect(plan).toMatchObject({ status: 'suggested', sourceIdeaId: idea.id, projectId });
+    expect(memories.getRecord(idea.id)?.ideaStage).toBe('suggested');
     expect(plans.getStartableForDirectory(dirPath).map(item => item.id)).not.toContain(plan.id);
     expect(plans.claimPlan(plan.id, 'session-a')).toBe(false);
     expect(plans.applyItem(plan.id)).toBeNull();
     expect(plans.setState(plan.id, 'planning')).toBeNull();
   });
 
-  it('refuses a second live suggested plan for the same idea and names the existing plan', () => {
+  it('returns the existing live suggestion on retry and reconciles the idea stage', () => {
     setup();
-    const idea = createSuggestedIdea();
+    const idea = createSuggestedIdea('growing');
     const existing = service.createSuggested({
       dirPath,
       title: 'First suggestion',
@@ -76,14 +77,40 @@ describe('SuggestedPlanService', () => {
     });
     createdPlanIds.push(existing.id);
 
-    expect(() => service.createSuggested({
+    const retry = service.createSuggested({
       dirPath,
-      title: 'Second suggestion',
-      description: 'A duplicate linked plan.',
+      title: 'Retry title is ignored',
+      description: 'The existing suggestion is reused.',
       sourceIdeaId: idea.id,
-    })).toThrow(existing.id);
+    });
+
+    expect(retry.id).toBe(existing.id);
+    expect(memories.getRecord(idea.id)?.ideaStage).toBe('suggested');
     expect(plans.getForDirectory(dirPath).filter(plan => plan.sourceIdeaId === idea.id && plan.status === 'suggested'))
       .toHaveLength(1);
+  });
+
+  it('repairs a plan created before the idea stage write landed', () => {
+    setup();
+    const idea = createSuggestedIdea('growing');
+    const interruptedPlan = plans.createSuggested(
+      dirPath,
+      'Interrupted suggestion',
+      'The plan write completed before the idea stage update.',
+      idea.id,
+    );
+    createdPlanIds.push(interruptedPlan.id);
+
+    const retry = service.createSuggested({
+      dirPath,
+      title: 'Retry title is ignored',
+      description: 'Reconcile the already-written suggestion.',
+      sourceIdeaId: idea.id,
+    });
+
+    expect(retry.id).toBe(interruptedPlan.id);
+    expect(memories.getRecord(idea.id)?.ideaStage).toBe('suggested');
+    expect(plans.getForDirectory(dirPath).filter(plan => plan.sourceIdeaId === idea.id)).toHaveLength(1);
   });
 
   it('accepts through planning and recomputes an unblocked plan to ready, idempotently', () => {
@@ -142,18 +169,18 @@ describe('SuggestedPlanService', () => {
     expect(memories.listRecords()).toHaveLength(0);
   });
 
-  it('validates idea kind, stage, and project before creating a plan', () => {
+  it('rejects a seed idea before creating a plan', () => {
     setup();
-    const growingIdea = createSuggestedIdea('growing');
+    const seedIdea = createSuggestedIdea('seed');
 
     expect(() => service.createSuggested({
       dirPath,
       title: 'Invalid source',
       description: 'Must not be created.',
-      sourceIdeaId: growingIdea.id,
-    })).toThrow(/suggested/i);
+      sourceIdeaId: seedIdea.id,
+    })).toThrow(/growing or suggested/i);
     expect(plans.getForDirectory(dirPath)).toHaveLength(0);
-    expect(memories.getRecord(growingIdea.id)?.ideaStage).toBe('growing');
+    expect(memories.getRecord(seedIdea.id)?.ideaStage).toBe('seed');
   });
 
   it('refuses a linked idea from another project before writing either side', () => {

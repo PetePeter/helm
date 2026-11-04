@@ -113,6 +113,69 @@ describe('dream candidates: session-bound memories', () => {
   });
 });
 
+describe('dream candidates: idea memories', () => {
+  it('returns the two least-recently-expanded project ideas only to a dream', () => {
+    const { manager } = setup();
+    const neverExpanded = manager.createForSession('s1', {
+      kind: 'idea', tldr: 'Never expanded', content: 'Initial observation.',
+    });
+    const expandedFirst = manager.createForSession('s1', {
+      kind: 'idea', tldr: 'Expanded first', content: 'Initial observation.',
+    });
+    manager.updateForSession('s1', expandedFirst.id, { ideaStage: 'growing' });
+    const expandedSecond = manager.createForSession('s1', {
+      kind: 'idea', tldr: 'Expanded second', content: 'Initial observation.',
+    });
+    manager.updateForSession('s1', expandedFirst.id, { content: 'First evidence.' });
+    manager.updateForSession('s1', expandedSecond.id, { content: 'Second evidence.' });
+
+    const suggested = manager.createForSession('s1', {
+      kind: 'idea', tldr: 'Already suggested', content: 'Initial observation.',
+    });
+    manager.updateForSession('s1', suggested.id, { ideaStage: 'suggested' });
+    const accepted = manager.createForSession('s1', {
+      kind: 'idea', tldr: 'Already accepted', content: 'Initial observation.',
+    });
+    manager.updateForSession('s1', accepted.id, { ideaStage: 'accepted' });
+    const rejected = manager.createForSession('s1', {
+      kind: 'idea', tldr: 'Already rejected', content: 'Initial observation.',
+    });
+    manager.updateForSession('s1', rejected.id, { ideaStage: 'rejected' });
+    const betaIdea = manager.createForSession('outsider', {
+      kind: 'idea', tldr: 'Other project', content: 'Must stay outside this dream.',
+    });
+
+    const first = manager.dreamForSession(DREAMER);
+    expect(first.ideas).toEqual([
+      expect.objectContaining({ id: neverExpanded.id, ideaStage: 'seed' }),
+      expect.objectContaining({ id: expandedFirst.id, ideaStage: 'growing' }),
+    ]);
+    expect(first.ideas).toHaveLength(2);
+    const ordinaryCandidates = [...first.faded, ...first.salient].map((item) => item.id);
+    expect(ordinaryCandidates).not.toContain(neverExpanded.id);
+    expect(ordinaryCandidates).not.toContain(expandedFirst.id);
+    expect(ordinaryCandidates).not.toContain(expandedSecond.id);
+    expect(manager.dreamForSession('s1').ideas).toEqual([]);
+    expect(manager.dreamForSession('beta-dreamer').ideas.map((item) => item.id)).toEqual([betaIdea.id]);
+
+    manager.updateForSession(DREAMER, neverExpanded.id, { content: 'New evidence from the dream.' });
+    const next = manager.dreamForSession(DREAMER);
+    expect(next.ideas.map((item) => item.id)).toEqual([expandedFirst.id, expandedSecond.id]);
+  });
+
+  it('returns ideas in the real memory_dream result only for a dream', async () => {
+    const { manager, call } = setupMcp();
+    const idea = manager.createForSession('s1', {
+      kind: 'idea', tldr: 'Promising observation', content: 'Evidence to inspect.',
+    });
+
+    await expect(call('memory_dream', {}, DREAMER)).resolves.toMatchObject({
+      ideas: [expect.objectContaining({ id: idea.id, tldr: idea.tldr, ideaStage: 'seed' })],
+    });
+    await expect(call('memory_dream', {}, 's1')).resolves.toMatchObject({ ideas: [] });
+  });
+});
+
 describe('digesting a bound memory', () => {
   it('lets the dream read, search and rewrite another session\'s bound memory', () => {
     const { manager, bind } = setup();
@@ -263,6 +326,8 @@ describe('dream guide', () => {
 
     expect(tools.filter((tool) => !known.has(tool))).toEqual([]);
     expect(tools).toEqual(expect.arrayContaining(['memory_dream', 'memory_update', 'memory_delete', 'memory_link']));
+    expect(tools).toEqual(expect.arrayContaining(['plan_create', 'chat_send']));
     expect(MCP_TOOLS.find((tool) => tool.name === 'memory_update')!.inputSchema.properties).toHaveProperty('promote');
+    expect(MCP_TOOLS.find((tool) => tool.name === 'memory_dream')!.description).toContain('up to two project ideas');
   });
 });

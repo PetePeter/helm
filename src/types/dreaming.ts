@@ -12,9 +12,20 @@ export type DreamingConfigResult =
   | { success: true; settings: DreamingSettings }
   | { success: false; error: string };
 
+export const DREAM_IDEA_PROMPT_MARKER = '<!-- helm-dream-ideas:v1 -->';
+
+export const DREAM_IDEA_PROMPT_SECTION = `${DREAM_IDEA_PROMPT_MARKER}
+## Ideas
+- Review the at-most-two items in memory_dream.ideas, least recently expanded first. For each one, call memory_get before researching it.
+- Research read-only. Append useful evidence, likely cost and risks to the same idea with memory_update, and set ideaStage to "growing". A content change advances lastExpandedAt automatically.
+- If an idea is worth pursuing, make exactly one plan_create call with status="suggested" and sourceIdeaId set to that idea's id. Its description must use these headings: Problem Statement, User POV, Done Statement, Files / Classes Affected, TDD Suggestions, Acceptance Criteria. The plan service advances the idea to "suggested" after creating the plan; do not make a separate stage update.
+- Do not edit code or implement the idea during a dream.
+- Optionally send a one-line summary with chat_send when that tool is available.
+`;
+
 export const DEFAULT_DREAM_PROMPT = `Time to dream: review and maintain this project's durable memories.
 
-Tools: memory_dream, memory_list, memory_get, memory_search, memory_create, memory_update, memory_delete, memory_link, memory_set_dormant, mess_check, mess_post, session_close
+Tools: memory_dream, memory_list, memory_get, memory_search, memory_create, memory_update, memory_delete, memory_link, memory_set_dormant, plan_create, chat_send, mess_check, mess_post, session_close
 
 ## What it is
 A dream is housekeeping, not new work: you are curating what this project already knows so future sessions inherit a sharper memory instead of a bigger one.
@@ -51,4 +62,6 @@ Leave none unexamined: every listed memory ends this dream deleted, merged or pr
 - Do not invent knowledge during a dream. New memories come only from splitting existing ones, or from a link revealing a fact worth stating.
 - A dream that changes nothing is a valid outcome. Say so and stop; churn is worse than a no-op.
 - Leave a brief account of what you retired, merged, or rewrote, so the next dream can see your reasoning.
+
+${DREAM_IDEA_PROMPT_SECTION}
 `;

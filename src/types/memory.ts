@@ -155,6 +155,14 @@ export interface DreamCandidate {
   plan: MemoryDreamPlan | null;
 }
 
+/** A small, project-local idea queued for the next dream to expand. */
+export interface DreamIdeaCandidate {
+  id: string;
+  tldr: string;
+  ideaStage: 'seed' | 'growing';
+  lastExpandedAt?: number;
+}
+
 /** An auto-saved memory waiting for a dream to drop, merge or promote it. */
 export interface DreamBoundMemory {
   id: string;
@@ -181,6 +189,8 @@ export interface MemoryDreamOptions {
 export interface MemoryDreamResult {
   faded: DreamCandidate[];
   salient: DreamCandidate[];
+  /** Up to two least-recently-expanded ideas; empty unless the caller is a dream. */
+  ideas: DreamIdeaCandidate[];
   /** Session-bound memories to digest, oldest first. Empty unless the caller is a dream. */
   bound: DreamBoundGroup[];
   totals: {

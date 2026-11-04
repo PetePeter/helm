@@ -1,6 +1,7 @@
 import type { MemoryManager } from './memory-manager.js';
 import type { PlanManager } from './plan-manager.js';
 import type { PlanItem, PlanType } from '../types/plan.js';
+import type { MemoryRecord } from '../types/memory.js';
 
 export interface CreateSuggestedPlanInput {
   dirPath: string;
@@ -19,10 +20,15 @@ export class SuggestedPlanService {
   ) {}
 
   createSuggested(input: CreateSuggestedPlanInput): PlanItem {
-    if (input.sourceIdeaId) {
-      this.validateSuggestedSource(input.sourceIdeaId, input.dirPath);
+    const idea = input.sourceIdeaId
+      ? this.requireIdea(input.sourceIdeaId, this.plans.getProjectIdForDirectory(input.dirPath), ['growing', 'suggested'])
+      : null;
+    const existing = idea ? this.plans.getLiveSuggestedPlanForSourceIdea(idea.id) : null;
+    if (existing && idea) {
+      this.markSuggested(idea);
+      return existing;
     }
-    return this.plans.createSuggested(
+    const plan = this.plans.createSuggested(
       input.dirPath,
       input.title,
       input.description,
@@ -30,6 +36,8 @@ export class SuggestedPlanService {
       input.type,
       input.autoImplement,
     );
+    if (idea) this.markSuggested(idea);
+    return plan;
   }
 
   /** Apply the same project and stage boundary to externally supplied plan links. */
@@ -94,5 +102,13 @@ export class SuggestedPlanService {
       throw new Error(`Source idea ${id} must be at stage ${allowedStages.join(' or ')}`);
     }
     return idea;
+  }
+
+  private markSuggested(idea: MemoryRecord): void {
+    if (idea.ideaStage === 'suggested') return;
+    const updated = this.memories.update(idea.id, { ideaStage: 'suggested' });
+    if (!updated || updated.ideaStage !== 'suggested') {
+      throw new Error(`Source idea ${idea.id} could not be marked suggested`);
+    }
   }
 }

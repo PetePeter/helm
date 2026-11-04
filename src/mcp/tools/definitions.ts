@@ -196,7 +196,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'plan_create',
     title: 'Create Plan',
-    description: `Create a plan item in a directory when follow-up work, later cleanup, or a blocking question should survive the current session. Optionally set type to "bug", "feature", or "research", and set autoImplement=true when this ready follow-up may be picked up automatically after its prerequisite is completed. To place work in the Suggestions queue, set status="suggested" and optionally sourceIdeaId to a suggested idea memory id. The description should include these sections: ${REQUIRED_PLAN_DESCRIPTION_SECTIONS.join(', ')}. For blocking questions, create a separate plan titled "QUESTION: ..." and link it to the original blocked plan with plan_nextplan_link so the question must be resolved first. Ordinary plans start in "planning" status and are recomputed to ready when unblocked. When you begin working on a ready plan, call session_plan_claim with your sessionId and the planId to claim it.`,
+    description: `Create a plan item in a directory when follow-up work, later cleanup, or a blocking question should survive the current session. Optionally set type to "bug", "feature", or "research", and set autoImplement=true when this ready follow-up may be picked up automatically after its prerequisite is completed. To place work in the Suggestions queue, set status="suggested" and optionally sourceIdeaId to an idea memory at stage growing or suggested. The service advances a linked growing idea after plan creation and returns an existing live suggestion on retry. The description should include these sections: ${REQUIRED_PLAN_DESCRIPTION_SECTIONS.join(', ')}. For blocking questions, create a separate plan titled "QUESTION: ..." and link it to the original blocked plan with plan_nextplan_link so the question must be resolved first. Ordinary plans start in "planning" status and are recomputed to ready when unblocked. When you begin working on a ready plan, call session_plan_claim with your sessionId and the planId to claim it.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -1966,7 +1966,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_dream',
     title: 'Dream Memories',
-    description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. For a dream session it also returns `bound`: the auto-saved, session-bound memories waiting to be digested, grouped by the session that saved them with its mission; `totals.bound` counts all of them. This tool only identifies candidates; it never decides what to forget, merge or promote.',
+    description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. For a dream session it also returns `bound`: the auto-saved memories waiting to be digested, and `ideas`: up to two project ideas at stage seed or growing, least recently expanded first. Both slices are empty for other sessions. `totals.bound` counts all waiting memories. This tool only identifies candidates; it never decides what to forget, merge or promote.',
     inputSchema: {
       type: 'object',
       properties: {

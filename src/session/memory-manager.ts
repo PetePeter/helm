@@ -6,6 +6,7 @@ import type { MemoryDiagnostic } from './memory-persistence.js';
 import { MemoryAttachmentManager } from './memory-attachment-manager.js';
 import { rankMemories, type RankedMemory } from './memory-search.js';
 import { assertIdeaCreate, assertIdeaUpdate, isGeneralMemoryCandidate } from './memory-idea-policy.js';
+import { selectDreamIdeaCandidates } from './memory-idea-dream.js';
 import {
   cloneMemoryRecord,
   cloneMemoryState,
@@ -314,6 +315,8 @@ export class MemoryManager extends EventEmitter {
     // Bound memories are not project knowledge yet; pruning or merging them
     // here would judge them by recall counts nobody else could have added to.
     const projectRecords = this.state.records.filter((record) => record.projectId === projectId && !record.sessionBound);
+    const isDream = this.dreamProject(sessionId) === projectId;
+    const ideas = isDream ? selectDreamIdeaCandidates(projectRecords) : [];
     const generalRecords = projectRecords.filter(isGeneralMemoryCandidate);
     const eligible = generalRecords.filter((record) =>
       record.dormantSince === undefined && this.isDiscardEligible(record.id));
@@ -328,14 +331,14 @@ export class MemoryManager extends EventEmitter {
     // Only a dream is handed other sessions' bound memories; a session calling
     // memory_dream by hand reviews project memory as it always did.
     let bound: DreamBoundGroup[] = [];
-    if (this.dreamProject(sessionId) === projectId) {
+    if (isDream) {
       const waiting = this.state.records.filter((record) =>
         record.projectId === projectId && record.sessionBound === true && record.dormantSince === undefined);
       totals.bound = waiting.length;
       // Oldest first, so a capped dream never starves an early memory.
       bound = this.toBoundGroups([...waiting].sort((left, right) => left.createdAt - right.createdAt).slice(0, maxCandidates));
     }
-    if (eligible.length === 0) return { faded: [], salient: [], bound, totals };
+    if (eligible.length === 0) return { faded: [], salient: [], ideas, bound, totals };
 
     // The bound applies to each decile. When the project is too small for two
     // full slices, split its records at the midpoint so neither side overlaps.
@@ -365,7 +368,7 @@ export class MemoryManager extends EventEmitter {
       .sort(compareSalient)
       .filter((candidate) => !fadedIds.has(candidate.id))
       .slice(0, salientCount);
-    return { faded, salient, bound, totals };
+    return { faded, salient, ideas, bound, totals };
   }
 
   /** Bound records grouped by their session, in the order each session first appears. */

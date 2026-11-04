@@ -20,6 +20,8 @@ flowchart LR
 
 The order is global prompt → unattended cue → optional addendum → mess cue. The complete prompt is present when the dream starts, so the memory procedure and the instructions that make the run unattended cannot be lost while a session is opening.
 
+The shipped prompt includes the idea research step described in [ideas.md](ideas.md). On load, Helm appends that versioned section to a non-empty saved custom prompt that does not already contain its marker. The migration preserves the saved text and writes only the app-data settings file; missing or empty overrides use the shipped prompt directly.
+
 The former system skill was removed because a global prompt gives every project one editable default and avoids a skill lookup that a project-specific skill could shadow.
 
 ## Digesting session-bound memories
@@ -45,6 +47,7 @@ flowchart TD
 - **What a dream may see.** Beyond bound memories, a dream's reads (`memory_list`, `memory_get`, `memory_search`, `memory_graph`, `memory_export`) also include its project's dormant memories and every unscoped memory (no project, so no project's privacy is crossed). Reading a dormant memory as a dream does not revive it — that is review, not retrieval. Other projects and private projects stay out of reach.
 - **Promote.** `memory_update` with `promote: true` clears the binding. Any other caller is refused, the owning session included: the binding exists so that an unattended write is read by a dream before the project inherits it. Promotion and the rewrite are one write (`MemoryManager.update`), so a refused caller or a stale `expectedUpdatedAt` changes nothing. Promotion alone does not touch `updatedAt`.
 - **The list.** `bound` holds up to `maxCandidates` memories, oldest first, each with its full content; `totals.bound` counts all that are waiting, so a capped dream knows the next one has more. Dormant bound memories are left out.
+- **Ideas.** `memory_dream.ideas` holds up to two same-project ideas at stage `seed` or `growing`, least recently expanded first, with never-expanded ideas first. Only a dream gets this slice; ideas stay out of faded and salient. The prompt asks the dream to read each idea, research without editing code, and append evidence, likely cost and risks to the same idea. A worthy idea becomes one linked suggestion; the plan service advances its stage and repairs it on retry. See [ideas.md](ideas.md) for the lifecycle.
 - **Closed sessions.** Their bound memories are kept for this and are listed with `mission: null`.
 - **Duplicates.** The judge only dedupes within its own window, so the same fact saved late in a session or by two sessions is resolved here.
 - **The procedure** is part of the shipped global prompt. Editing that prompt changes the guidance for every project's next run.
@@ -63,5 +66,6 @@ flowchart TD
 
 | Document | Content |
 |----------|---------|
+| [ideas.md](ideas.md) | Idea memory lifecycle and dream growth into suggested plans |
 | [scheduled-task-history.md](scheduled-task-history.md) | 7-day rolling run log of scheduled-task executions |
 | [mess.md](mess.md) | The project conversation a dream checks on completion |

@@ -176,7 +176,8 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 |----------|---------|
 | [docs/memory.md](docs/memory.md) | Memory as a knowledge graph — atoms, similar-on-write, typed links, MiniSearch ranking, cross-project search + privacy |
 | [docs/auto-memory.md](docs/auto-memory.md) | Auto memory — recording model picker, auto-save / auto-recall switches, silent runs through an API tool's slots |
-| [docs/dreaming.md](docs/dreaming.md) | Scheduled memory-maintenance dreams — shared editable prompt, per-project controls, prompt assembly, bound-memory digest, run-now |
+| [docs/dreaming.md](docs/dreaming.md) | Scheduled memory-maintenance dreams — shared prompt, idea slice, bound-memory digest, app-data prompt migration, run-now |
+| [docs/ideas.md](docs/ideas.md) | Idea memory lifecycle — dream research, linked suggestions, and user acceptance or rejection |
 | [docs/directory-plans.md](docs/directory-plans.md) | Directory Plans — DAG work items, lifecycle, canvas, layout, badges |
 | [docs/plans-file-structure.md](docs/plans-file-structure.md) | On-disk plan file layout |
 | [docs/scheduled-task-history.md](docs/scheduled-task-history.md) | 7-day rolling run log of scheduled-task executions |

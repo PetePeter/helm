@@ -38,6 +38,7 @@ import {
   type RecordingModelOption,
 } from '../types/auto-memory.js';
 import { DEFAULT_DREAM_PROMPT, type DreamingSettings } from '../types/dreaming.js';
+import { migrateSavedDreamPrompt } from './dreaming-prompt-migration.js';
 import type { ProjectStore } from '../session/project-store.js';
 import {
   DEFAULT_FLEET_CONFIG,
@@ -608,6 +609,11 @@ export class ConfigLoader {
 
   load(): void {
     this.loadSettings();
+    const migratedDreamPrompt = migrateSavedDreamPrompt(this.settings?.dreaming?.prompt);
+    if (migratedDreamPrompt !== null) {
+      this.settings!.dreaming = { prompt: migratedDreamPrompt };
+      this.saveSettings();
+    }
     this.cliTypeStore.load();
     this.bindingStore.load();
     this.inputConfigStore.load();
