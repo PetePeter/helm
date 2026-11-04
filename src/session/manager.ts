@@ -42,6 +42,8 @@ export class SessionManager extends EventEmitter {
       throw new Error(`Session with id "${id}" already exists`);
     }
 
+    if (sessionInfo.frozen) sessionInfo.activityLevel = 'idle';
+
     // Stamp creation/last-active times on first registration. Preserved on restore
     // (restored sessions already carry persisted values, so we never overwrite them).
     if (sessionInfo.createdAt === undefined) {
@@ -245,7 +247,10 @@ export class SessionManager extends EventEmitter {
     if (frozen && this.sessions.get(sessionId)?.role === 'operator') {
       throw new Error('The operator cannot be frozen');
     }
-    this.updateSession(sessionId, frozen ? { frozen } : { frozen, lastPromptAt: now });
+    this.updateSession(
+      sessionId,
+      frozen ? { frozen, activityLevel: 'idle' } : { frozen, lastPromptAt: now },
+    );
     return this.sessions.get(sessionId)!;
   }
 

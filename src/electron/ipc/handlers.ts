@@ -238,6 +238,11 @@ export function registerIPCHandlers(
   attachSessionTempCleanup(sessionManager, artifactTempRegistry);
   const ptyManager = new PtyManager();
   const stateDetector = new StateDetector();
+  const syncSessionFreeze = (session: Pick<SessionInfo, 'id' | 'frozen'>) => {
+    stateDetector.setSessionFrozen(session.id, session.frozen === true);
+  };
+  sessionManager.on('session:added', syncSessionFreeze);
+  sessionManager.on('session:updated', syncSessionFreeze);
   const pipelineQueue = new PipelineQueue();
   const artifactAttachmentManager = new ArtifactAttachmentManager();
   const artifactManager = new ArtifactManager(

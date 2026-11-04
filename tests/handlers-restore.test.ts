@@ -40,6 +40,7 @@ vi.mock('../src/session/pty-manager.js', () => ({
 vi.mock('../src/session/state-detector.js', () => ({
   StateDetector: vi.fn(function (this: any) {
     this.on = vi.fn();
+    this.setSessionFrozen = vi.fn();
     this.dispose = vi.fn();
     this.processOutput = vi.fn();
     this.removeSession = vi.fn();

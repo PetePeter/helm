@@ -20,6 +20,7 @@ interface SessionTracking {
   questionPending: boolean;
   lastOutputAt: number;
   activityLevel: ActivityLevel;
+  frozen: boolean;
   /** User input or hook-reported work opened a turn that fallback output may track. */
   turnArmed: boolean;
   /** Once a hook event is seen, only hook events may promote agent activity. */
@@ -189,6 +190,7 @@ export class StateDetector extends EventEmitter {
    *  Clears the scrolling flag since this is real user input. */
   markActive(sessionId: string): void {
     const tracking = this.getOrCreate(sessionId);
+    if (tracking.frozen) return;
     tracking.turnArmed = true;
     if (tracking.lastOutputAt <= 0) {
       tracking.lastOutputAt = Date.now();
@@ -237,6 +239,7 @@ export class StateDetector extends EventEmitter {
   /** Arm output-based activity detection for a prompt in a session without hooks. */
   armTurn(sessionId: string): void {
     const tracking = this.getOrCreate(sessionId);
+    if (tracking.frozen) return;
     if (!tracking.turnArmed && !tracking.hooksObserved) {
       tracking.turnArmed = true;
       this.resetActivityTimers(sessionId);
@@ -246,6 +249,7 @@ export class StateDetector extends EventEmitter {
   /** A correlated hook event makes hook activity authoritative for this session. */
   markHooksObserved(sessionId: string): void {
     const tracking = this.getOrCreate(sessionId);
+    if (tracking.frozen) return;
     tracking.hooksObserved = true;
     const debounceTimer = this.activityDebounceTimers.get(sessionId);
     if (debounceTimer) {
@@ -259,11 +263,31 @@ export class StateDetector extends EventEmitter {
     return this.sessionStates.get(sessionId)?.hooksObserved ?? false;
   }
 
+  /** Freeze lifecycle activity while allowing actual PTY output to remain visible. */
+  setSessionFrozen(sessionId: string, frozen: boolean): void {
+    const tracking = this.getOrCreate(sessionId);
+    if (tracking.frozen === frozen) return;
+
+    tracking.frozen = frozen;
+    if (!frozen) return;
+
+    tracking.turnArmed = false;
+    this.clearActivityTimers(sessionId);
+    const debounceTimer = this.activityDebounceTimers.get(sessionId);
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      this.activityDebounceTimers.delete(sessionId);
+    }
+
+    tracking.activityLevel = 'idle';
+  }
+
   /**
    * Hook-reported work: a tool is running. Hook-aware sessions stay active
    * until Stop, so PTY repaint output and silence cannot override hook truth.
    */
   markHookWorking(sessionId: string): void {
+    if (this.sessionStates.get(sessionId)?.frozen) return;
     this.markHooksObserved(sessionId);
     this.sessionStates.get(sessionId)!.turnArmed = true;
     this.markActive(sessionId);
@@ -275,6 +299,7 @@ export class StateDetector extends EventEmitter {
    * Trailing PTY output cannot override the hook-reported end.
    */
   markHookTurnEnded(sessionId: string): void {
+    if (this.sessionStates.get(sessionId)?.frozen) return;
     this.markHooksObserved(sessionId);
     const tracking = this.sessionStates.get(sessionId)!;
     tracking.turnArmed = false;
@@ -297,7 +322,7 @@ export class StateDetector extends EventEmitter {
 
     // Output is activity evidence only inside a fallback turn. Hook-aware
     // sessions use hook events as truth, while idle TUI repaints stay inert.
-    if (tracking.turnArmed && !tracking.hooksObserved && !tracking.resizing && !tracking.switching && !tracking.restoring) {
+    if ((tracking.frozen || (tracking.turnArmed && !tracking.hooksObserved)) && !tracking.resizing && !tracking.switching && !tracking.restoring) {
       // Large output chunks immediately promote to active (genuine content)
       if (data.length >= this.activityPromoteThreshold) {
         const existing = this.activityDebounceTimers.get(sessionId);
@@ -319,11 +344,11 @@ export class StateDetector extends EventEmitter {
         this.activityDebounceTimers.set(sessionId, setTimeout(() => {
           this.activityDebounceTimers.delete(sessionId);
           const current = this.sessionStates.get(sessionId);
-          if (current && current.turnArmed && !current.hooksObserved && current.activityLevel !== 'active') {
+          if (current && (current.frozen || (current.turnArmed && !current.hooksObserved)) && current.activityLevel !== 'active') {
             current.activityLevel = 'active';
             this.emit('activity-change', { sessionId, level: 'active', lastOutputAt: current.lastOutputAt } satisfies ActivityChange);
           }
-          if (current?.turnArmed && !current.hooksObserved) this.resetActivityTimers(sessionId);
+          if (current && (current.frozen || (current.turnArmed && !current.hooksObserved))) this.resetActivityTimers(sessionId);
         }, this.activityDebounceMs));
       }
     }
@@ -450,7 +475,7 @@ export class StateDetector extends EventEmitter {
    *  countdown starts from the actual last output, not from before suppression. */
   private promoteIfRecentOutput(sessionId: string): void {
     const tracking = this.sessionStates.get(sessionId);
-    if (!tracking || tracking.lastOutputAt === 0) return;
+    if (!tracking || tracking.frozen || tracking.lastOutputAt === 0) return;
     const elapsed = Date.now() - tracking.lastOutputAt;
     if (elapsed < this.inactiveTimeoutMs) {
       if (tracking.activityLevel !== 'active') {
@@ -478,7 +503,7 @@ export class StateDetector extends EventEmitter {
   private getOrCreate(sessionId: string): SessionTracking {
     let tracking = this.sessionStates.get(sessionId);
     if (!tracking) {
-      tracking = { questionPending: false, lastOutputAt: 0, activityLevel: 'idle', turnArmed: false, hooksObserved: false, scrolling: false, resizing: false, switching: false, restoring: false };
+      tracking = { questionPending: false, lastOutputAt: 0, activityLevel: 'idle', frozen: false, turnArmed: false, hooksObserved: false, scrolling: false, resizing: false, switching: false, restoring: false };
       this.sessionStates.set(sessionId, tracking);
     }
     return tracking;

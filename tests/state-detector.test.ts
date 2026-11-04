@@ -1204,4 +1204,113 @@ describe('StateDetector', () => {
       expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
   });
+
+  describe('freeze awareness', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_700_000_000_000);
+    });
+
+    afterEach(() => {
+      detector.dispose();
+      vi.useRealTimers();
+    });
+
+    it('clears a hook turn and idles without changing the last output time', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.markHooksObserved('s1');
+      detector.markHookWorking('s1');
+      detector.markHookTurnEnded('s1');
+      const lastOutputAt = detector.getLastOutputTime('s1');
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
+
+      handler.mockClear();
+      detector.setSessionFrozen('s1', true);
+
+      expect(detector.getLastOutputTime('s1')).toBe(lastOutputAt);
+      expect(handler).not.toHaveBeenCalled();
+
+      handler.mockClear();
+      vi.advanceTimersByTime(300_001);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('ignores a late Stop hook while frozen without refreshing last output', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+      detector.markHooksObserved('s1');
+      detector.markHookWorking('s1');
+      detector.setSessionFrozen('s1', true);
+      const lastOutputAt = detector.getLastOutputTime('s1');
+
+      handler.mockClear();
+      vi.setSystemTime(lastOutputAt + 60_000);
+      detector.markHookTurnEnded('s1');
+
+      expect(detector.getLastOutputTime('s1')).toBe(lastOutputAt);
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+    });
+
+    it('does not let the resize grace callback reactivate a frozen session', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+      detector.markActive('s1');
+      detector.markResizing('s1');
+      detector.setSessionFrozen('s1', true);
+
+      handler.mockClear();
+      vi.advanceTimersByTime(1_001);
+
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+    });
+
+    it('does not let the restore grace callback reactivate a frozen session', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+      detector.markActive('s1');
+      detector.markRestored('s1');
+      detector.setSessionFrozen('s1', true);
+
+      handler.mockClear();
+      vi.advanceTimersByTime(3_001);
+
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+    });
+
+    it('still shows real PTY output while frozen, then ages it to idle', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+      detector.setSessionFrozen('s1', true);
+      handler.mockClear();
+
+      const outputAt = Date.now();
+      detector.processOutput('s1', 'actual terminal output received while the session is frozen');
+
+      expect(detector.getLastOutputTime('s1')).toBe(outputAt);
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: 's1',
+        level: 'active',
+        lastOutputAt: outputAt,
+      }));
+
+      vi.advanceTimersByTime(300_001);
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'idle' }));
+    });
+
+    it('resumes hook activity after thaw', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+      detector.setSessionFrozen('s1', true);
+      detector.markHookWorking('s1');
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+
+      detector.setSessionFrozen('s1', false);
+      detector.markHookWorking('s1');
+
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+    });
+  });
 });
