@@ -13,6 +13,13 @@ import org.json.JSONObject
  */
 data class Draft(val text: String, val caret: Int)
 
+/** An uploaded file joins the draft as `[file] <desktop path>`, caret after it. */
+fun attachToDraft(current: Draft?, path: String): Draft {
+    val lead = current?.text.orEmpty().trimEnd().let { if (it.isEmpty()) it else "$it " }
+    val text = "$lead[file] $path "
+    return Draft(text, text.length)
+}
+
 /**
  * Where the per-session composer drafts live between visits to a thread.
  *

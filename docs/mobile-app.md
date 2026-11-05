@@ -392,12 +392,17 @@ Any app's share sheet offers **Helm** for a single file (`ACTION_SEND`, `*/*`).
 `ShareActivity` copies the file into the app cache (the same staging the artifact
 editor uses), shows the live session list, and on a pick sends the bytes over
 the secure channel. The desktop writes the file to `<appData>/Helm/tmp/inbox/<uuid>/<name>`
-(never the repo tree, per [config-boundary.md](config-boundary.md)) and **sends**
-`Attached: <name> at <absolute path>` to the picked session's CLI as a submitted
-phone prompt, the path a typed phone message takes. Sharing *is* the request;
-parking it in a pad the user had to go back and send added a step without adding
-a decision. A retried commit returns the same receipt and does not send twice.
-The phone reports the outcome, or the reason it failed.
+(never the repo tree, per [config-boundary.md](config-boundary.md)) and commits
+with `draft:false`, so **nothing reaches the CLI**. The phone adds
+`[file] <absolute path>` to that session's phone chat draft — exactly what the
+chat 📎 button does (`attachToDraft`) — and opens Helm on that chat. A share sent
+straight to the CLI arrived unseen; landing in the composer lets the user add
+words and send it like any attachment. A retried commit returns the same receipt.
+The share screen shows progress and any failure reason until the file lands.
+
+Over LAN the socket's send buffer is capped (`SEND_BUFFER_BYTES`) so the blocking
+write tracks the wire. With the OS default (megabytes) a slow 5G/VPN uplink
+swallowed the whole file at once: the bar hit 100% and then sat waiting.
 
 ```mermaid
 sequenceDiagram
@@ -406,7 +411,6 @@ sequenceDiagram
     participant G as MobileGate
     participant U as Upload slots
     participant I as MobileShareInbox
-    participant S as Session CLI (PTY)
     App->>P: ACTION_SEND (content:// uri)
     P->>P: stage copy + sha256, pick session
     P->>P: shareRefusal() — link, protocol, allow-list, size cap
@@ -414,12 +418,12 @@ sequenceDiagram
     G->>U: openShare (session must exist, cap 10 MB)
     U-->>P: {uploadId, maxSliceBytes}
     P->>U: blob slices (uploadId)
-    P->>G: session_share_file_commit {uploadId}
+    P->>G: session_share_file_commit {uploadId, draft:false}
     G->>U: verify size + sha256
     U->>I: receive(sessionId, filename, bytes)
     I-->>G: {sessionId, path}
-    G->>S: send "Attached: name at path" (phone prompt, submitted)
     G-->>P: {sessionId, path}
+    P->>P: attachToDraft → open the session's chat
 ```
 
 **Size cap — 10 MB on either link, refused on the phone before a byte leaves.**

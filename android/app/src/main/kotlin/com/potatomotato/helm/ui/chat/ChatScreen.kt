@@ -105,6 +105,7 @@ import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.ChatMessage
 import com.potatomotato.helm.data.Draft
+import com.potatomotato.helm.data.attachToDraft
 import com.potatomotato.helm.data.PrefsDraftStore
 import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.Delivery
@@ -515,10 +516,9 @@ fun ChatScreen(
                         if (session?.comfyUiTool == true) {
                             comfyInputImagePath = path
                         } else {
-                            val lead = draft.text.trimEnd().let { if (it.isEmpty()) it else "$it " }
-                            val text = "$lead[file] $path "
-                            draft = TextFieldValue(text, TextRange(text.length))
-                            drafts.save(sessionId, Draft(text, text.length))
+                            val next = attachToDraft(Draft(draft.text, draft.selection.min), path)
+                            draft = TextFieldValue(next.text, TextRange(next.caret))
+                            drafts.save(sessionId, next)
                         }
                     }
                 }

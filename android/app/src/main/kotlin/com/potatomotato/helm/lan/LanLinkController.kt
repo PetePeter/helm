@@ -392,6 +392,9 @@ private fun LanLinkState.toLinkState(): LinkState = when (this) {
  * works. Failing fast costs nothing; a default connect timeout would stall the
  * attempt for the better part of a minute.
  */
+/** ~128 KB in flight once Linux doubles it: enough for a fast LAN, honest on 5G. */
+private const val SEND_BUFFER_BYTES = 64 * 1024
+
 fun tcpDialer(
     connectTimeoutMs: Int = 1_500,
     /**
@@ -403,6 +406,11 @@ fun tcpDialer(
 ): LanLinkSession.Dialer =
     LanLinkSession.Dialer { host, port ->
         val socket = Socket()
+        // A small send buffer makes the blocking write track the wire: with the
+        // OS default (MBs) an upload over a slow 5G/VPN uplink "sends" the whole
+        // file into the kernel at once and the progress bar sits at 100%. Set
+        // before connect so the TCP window is sized from it.
+        socket.sendBufferSize = SEND_BUFFER_BYTES
         socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
         // Helm's frames are small and chatty during a handshake; Nagle would add
         // latency to every one of them for no benefit.

@@ -81,4 +81,17 @@ class DraftStoreTest {
     fun `nothing stored reads as no draft`() {
         assertNull(DraftCodec.decode(null))
     }
+
+    // -- attachToDraft: the 📎 button and the share sheet both land here --
+
+    @Test
+    fun `attaching to no draft starts one with the caret after the file`() {
+        assertEquals(Draft("[file] C:/inbox/a.png ", 22), attachToDraft(null, "C:/inbox/a.png"))
+    }
+
+    @Test
+    fun `attaching to a draft keeps the words and adds the file after them`() {
+        val text = "look at this [file] C:/inbox/a.png "
+        assertEquals(Draft(text, text.length), attachToDraft(Draft("look at this  ", 2), "C:/inbox/a.png"))
+    }
 }

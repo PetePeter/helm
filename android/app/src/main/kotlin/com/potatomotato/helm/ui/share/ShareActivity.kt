@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.BlePermissions
 import com.potatomotato.helm.ble.HelmLink
@@ -35,13 +36,16 @@ import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.HelmSession
 import com.potatomotato.helm.data.ShareState
+import com.potatomotato.helm.data.PrefsDraftStore
 import com.potatomotato.helm.data.StagedAttachment
+import com.potatomotato.helm.data.attachToDraft
 import com.potatomotato.helm.data.megabytes
 import com.potatomotato.helm.data.METHOD_SHARE_ADD
 import com.potatomotato.helm.data.shareRefusal
 import com.potatomotato.helm.data.uploadSupport
 import com.potatomotato.helm.link.HelmClient
 import com.potatomotato.helm.link.HelmPairing
+import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.save.AndroidAttachmentStaging
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.HelmRow
@@ -54,12 +58,13 @@ import com.potatomotato.helm.ui.theme.HelmTheme
 
 /**
  * The Android share-sheet target: one file from any app → pick a session → the
- * desktop saves it to its inbox and adds a DRAFT naming the path. Nothing is
+ * desktop saves it to its inbox, and the path joins that session's phone chat
+ * draft exactly as the 📎 button would; Helm then opens on that chat. Nothing is
  * sent to the CLI; the user sends the draft when ready (docs/mobile-app.md).
  *
  * Its own activity rather than a route in [com.potatomotato.helm.MainActivity]:
- * a share arrives on top of another app's task and should leave it there when
- * done, not drop the user into Helm's home.
+ * a share arrives on top of another app's task, so the picker and progress run
+ * there and only a landed file moves the user — straight to that session's chat.
  */
 class ShareActivity : ComponentActivity() {
     private val staging by lazy { AndroidAttachmentStaging(this) }
@@ -82,6 +87,7 @@ class ShareActivity : ComponentActivity() {
                     client = client,
                     source = source,
                     stage = { uri -> staging.stage(uri, null, mimeType).also { staged = it } },
+                    onLanded = { sessionId, path -> runOnUiThread { openInChat(sessionId, path) } },
                     onClose = ::finish,
                 )
             }
@@ -92,6 +98,15 @@ class ShareActivity : ComponentActivity() {
         // The cache copy is per-share, not a library: gone once the screen is.
         if (isFinishing) staged?.let(staging::discard)
         super.onDestroy()
+    }
+
+    /** The file is on the desktop: put it in the chat draft and go there. */
+    private fun openInChat(sessionId: String, path: String) {
+        val drafts = PrefsDraftStore(this)
+        drafts.save(sessionId, attachToDraft(drafts.load(sessionId), path))
+        PendingOpen.request(sessionId)
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        finish()
     }
 
     private fun sharedUri(intent: Intent?): String? {
@@ -111,6 +126,7 @@ private fun ShareScreen(
     client: HelmClient,
     source: String?,
     stage: suspend (String) -> StagedAttachment?,
+    onLanded: (sessionId: String, path: String) -> Unit,
     onClose: () -> Unit,
 ) {
     val sessions by client.sessions.sessions.collectAsState()
@@ -135,7 +151,7 @@ private fun ShareScreen(
                 linked = linkState == LinkState.Linked,
             )
             val refusal = shareRefusal(staged.sizeBytes, HelmLink.holderRank, support)
-            if (refusal != null) client.shares.failed(refusal) else client.shareFile(session.id, session.name, staged)
+            if (refusal != null) client.shares.failed(refusal) else client.shareFile(session.id, session.name, staged) { path -> onLanded(session.id, path) }
         }
     }
 
