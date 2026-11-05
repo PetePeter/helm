@@ -314,6 +314,7 @@ export class HelmSessionService {
         : now + KEEP_WARM_DEFAULT_MS)
       : undefined;
     this.sessionManager.updateSession(session.id, { keepWarmUntil: until });
+    logger.info(`[Session] Keep-warm ${on ? 'on' : 'off'} for ${session.name} (${session.id}) (MCP)`);
     return { ok: true, keepWarm: on, ...(until != null ? { keepWarmUntilEpochMs: until } : {}) };
   }
 

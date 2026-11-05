@@ -1,5 +1,5 @@
 import type { SessionManager } from './manager.js';
-import { promptStaleness, type StalenessThresholds } from './prompt-staleness.js';
+import { expireAfterMs, promptStaleness, type StalenessThresholds } from './prompt-staleness.js';
 import { logger } from '../utils/logger.js';
 
 const TICK_MS = 30_000;
@@ -37,8 +37,12 @@ export class AutoFreezer {
     const now = this.now();
     for (const session of this.sessionManager.getAllSessions()) {
       if (session.frozen || session.role === 'operator') continue;
-      if (promptStaleness(session.lastPromptAt, now, this.thresholds(session.cliType)) !== 'expired') continue;
-      logger.info(`[AutoFreezer] Freezing ${session.name} (${session.id}) — long prompt cache expired`);
+      const thresholds = this.thresholds(session.cliType);
+      if (promptStaleness(session.lastPromptAt, now, thresholds) !== 'expired') continue;
+      const keepWarm = session.keepWarmUntil !== undefined && session.keepWarmUntil >= now;
+      logger.info(`[AutoFreezer] Freezing ${session.name} (${session.id}) — long prompt cache expired`
+        + ` (age ${Math.round((now - session.lastPromptAt!) / 1000)}s, long ${expireAfterMs(thresholds) / 1000}s,`
+        + ` activity ${session.activityLevel ?? 'unknown'}, keep-warm ${keepWarm ? 'on' : 'off'})`);
       this.sessionManager.setSessionFrozen(session.id, true);
     }
   }

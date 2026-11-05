@@ -29,6 +29,8 @@ export type KeepWarmConfig = StalenessThresholds & { keepWarmPrompt?: string };
 export class KeepWarmer {
   private readonly now: () => number;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Last skip reason logged per due session, so a held skip logs once, not every tick. */
+  private readonly skipLogged = new Map<string, string>();
 
   constructor(
     private readonly sessionManager: SessionManager,
@@ -56,12 +58,27 @@ export class KeepWarmer {
       if (now > session.keepWarmUntil) {
         logger.info(`[KeepWarmer] Keep-warm on ${session.name} (${session.id}) expired`);
         this.sessionManager.updateSession(session.id, { keepWarmUntil: undefined });
+        this.skipLogged.delete(session.id);
         continue;
       }
-      if (session.frozen || session.activityLevel === 'active') continue;
       const config = this.cliConfig(session.cliType);
-      const since = now - (session.lastPromptAt ?? session.createdAt ?? now);
-      if (since < keepWarmAfterMs(config)) continue;
+      const anchor = session.lastPromptAt ?? session.createdAt ?? now;
+      const since = now - anchor;
+      const dueAfter = keepWarmAfterMs(config);
+      if (since < dueAfter) {
+        this.skipLogged.delete(session.id);
+        continue;
+      }
+      const skip = session.frozen ? 'frozen' : session.activityLevel === 'active' ? 'busy' : null;
+      if (skip) {
+        if (this.skipLogged.get(session.id) !== skip) {
+          this.skipLogged.set(session.id, skip);
+          logger.info(`[KeepWarmer] Ping due on ${session.name} (${session.id}) but skipped: ${skip} (age ${Math.round(since / 1000)}s, due at ${Math.round(dueAfter / 1000)}s)`);
+        }
+        continue;
+      }
+      this.skipLogged.delete(session.id);
+      logger.info(`[KeepWarmer] Pinging ${session.name} (${session.id}) — age ${Math.round(since / 1000)}s, due at ${Math.round(dueAfter / 1000)}s`);
       // Stamped before the send so a slow delivery cannot double-ping on the next tick.
       this.sessionManager.updateSession(session.id, { lastPromptAt: now });
       try {

@@ -169,6 +169,7 @@ export function setupSessionHandlers(
   ipcMain.handle('session:setKeepWarm', (_event, id: string, on: boolean) => {
     try {
       sessionManager.updateSession(id, { keepWarmUntil: on ? Date.now() + KEEP_WARM_DEFAULT_MS : undefined });
+      logger.info(`[Session] Keep-warm ${on ? 'on' : 'off'} for ${id} (UI)`);
       return { success: true };
     } catch (error) {
       logger.error(`[Session] Set keep-warm failed: ${error}`);
