@@ -117,7 +117,31 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Prompt',
     description: 'The open items in this session checklist. Value: {{items}}.',
     defaultTemplate:
-      '[HELM_TODOS]\nOpen items:\n{{items}}\nBefore acting on a request with more than one step, call session_todo_add once per step — do this first, even when the list is empty. Call session_todo_done as each step finishes, not at the end. If a step needs a user answer, park it with session_todo_wait and stop; resume it when they reply. Keep your session manifesto current and update the mission with session_mission_set when the direction changes.',
+      '[HELM_TODOS]\nOpen items:\n{{items}}\nBefore acting on a request with more than one step, call session_todo_add once per step — do this first, even when the list is empty. Call session_todo_done as each step finishes, not at the end. If a step needs a user answer, park it with session_todo_wait and stop; resume it when they reply. Update the mission with session_mission_set when the direction changes.',
+  },
+  {
+    id: 'manifestoPromptMissing',
+    label: 'Manifesto start reminder',
+    group: 'Prompt',
+    description: 'Shown on the first prompt, then every few, while the session has no manifesto.',
+    defaultTemplate:
+      '[HELM_MANIFESTO] No manifesto yet. Once work spans more than one turn, create one with artifact_create intent="manifesto", sections Goal / Decisions (and why) / State / Gotchas / Next. Helm hands it back to you after every compaction, so it is your memory. Rewrite it in place with artifact_update; never append a log.',
+  },
+  {
+    id: 'manifestoPromptStale',
+    label: 'Stale manifesto reminder',
+    group: 'Prompt',
+    description: 'Shown when the manifesto has gone a while without an update. Values: {{title}}, {{id}}, {{prompts}}.',
+    defaultTemplate:
+      '[HELM_MANIFESTO] Manifesto "{{title}}" ({{id}}) has not changed in {{prompts}} prompts. If State, Decisions or Next moved, rewrite it now with artifact_update — it is all you keep across a compaction.',
+  },
+  {
+    id: 'ideasPrompt',
+    label: 'Idea capture reminder',
+    group: 'Prompt',
+    description: 'Rides with the manifesto reminder while Settings → Auto memory → Idea prompts is on.',
+    defaultTemplate:
+      '[HELM_IDEAS] A curiosity or spark of inspiration beyond this task? Save it with memory_create kind="idea", one per memory — never task notes; those belong in the manifesto.',
   },
   {
     id: 'etaPrompt',
@@ -183,7 +207,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Stop',
     description: 'Reminder, once per user turn, not to stop with open todos. Values: {{todos}}.',
     defaultTemplate:
-      'You are stopping with open todos:\n{{todos}}\nFinish them, mark finished ones with session_todo_done, delete ones no longer wanted with session_todo_delete, then stop again. If one needs a user answer, park it with session_todo_wait and stop.',
+      'You are stopping with open todos:\n{{todos}}\nFinish them, mark finished or no-longer-wanted ones with session_todo_done, then stop again. If one needs a user answer, park it with session_todo_wait and stop.',
   },
   {
     id: 'stopEtaNudge',
@@ -200,7 +224,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     description:
       'Shown once on each user or Helm prompt above the amber limit. Available values: {{level}}, {{tokens}}, {{amber}}, {{red}}.',
     defaultTemplate:
-      'AMBER: context usage is {{tokens}} tokens (amber {{amber}}, red {{red}}). If idle or finishing this step, consider compacting. Options: session_compact for normal compact; session_compact with handover to carry a note across; session_quick_compact to preserve a transcript and reload with a pointer. Native CLI compaction remains available.',
+      'AMBER: context usage is {{tokens}} tokens (amber {{amber}}, red {{red}}). If idle or finishing this step, consider compacting. Options: session_compact for normal compact; session_compact with handover to carry a note across; session_quick_compact to preserve a transcript and reload with a pointer. Native CLI compaction remains available. Before compacting, update your manifesto with artifact_update — it is what survives.',
   },
   {
     id: 'redContextAlert',
@@ -209,7 +233,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     description:
       'Shown on every hook above the red limit. Available values: {{level}}, {{tokens}}, {{amber}}, {{red}}.',
     defaultTemplate:
-      'RED: context usage is {{tokens}} tokens (red limit {{red}}). Request a Helm quick compact ASAP with session_quick_compact. Options: session_compact for normal compact; session_compact with handover to carry a note across; session_quick_compact to preserve a transcript and reload with a pointer. Native CLI compaction remains available.',
+      'RED: context usage is {{tokens}} tokens (red limit {{red}}). Request a Helm quick compact ASAP with session_quick_compact. Options: session_compact for normal compact; session_compact with handover to carry a note across; session_quick_compact to preserve a transcript and reload with a pointer. Native CLI compaction remains available. Before compacting, update your manifesto with artifact_update — it is what survives.',
   },
 ] as const;
 

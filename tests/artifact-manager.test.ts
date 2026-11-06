@@ -176,9 +176,9 @@ describe('ArtifactManager', () => {
     expect(reveals).toEqual([]);
     expect(manager.update(first.id, 'v2')?.intent).toBe('manifesto');
     expect(manager.getManifestosForSession('s1')).toEqual([
-      { id: normal.id, title: 'Normal', content: 'ordinary' },
-      { id: first.id, title: 'Rules', content: 'v2' },
-      { id: second.id, title: 'Context', content: 'all context' },
+      { id: normal.id, title: 'Normal', content: 'ordinary', version: 1 },
+      { id: first.id, title: 'Rules', content: 'v2', version: 2 },
+      { id: second.id, title: 'Context', content: 'all context', version: 1 },
     ]);
   });
 

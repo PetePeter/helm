@@ -273,18 +273,17 @@ See [draft.md](draft.md).
 ## The session todo list: `session_todo_*`
 
 Each session has an LLM-maintained checklist. The desktop Todos pane and the
-sidebar's `done/total` chip show the same list read-only. Every tool acts on
+sidebar's open-item count show the same list read-only. Every tool acts on
 your authenticated session; do not pass `sessionId`.
 
 ```text
 session_todo_add(text="Add a regression test") -> { id, text, status, createdAt }
-session_todo_done(id="...")                 -> completed todo
-session_todo_delete(id="...")               -> true
+session_todo_done(id="...")                 -> completed todo (removed from the list)
 session_todo_clear()                          -> number of removed items
-session_todo_list()                           -> open items first
+session_todo_list()                           -> items still to do
 ```
 
-Delete is only for completed items. Mark open work done first. The
+Done removes the item, finished or no longer wanted. The
 `[HELM_TODOS]` prompt block contains open items and asks you to keep the list
 and session mission current. Helm supplies it again after session resets; see
 [todos.md](todos.md) for storage and lifecycle details.

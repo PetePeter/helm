@@ -10,6 +10,8 @@ export interface AutoMemorySettings {
   autoSave: boolean;
   /** Let the suggester hint at memories. Skill hints are unaffected. */
   autoRecall: boolean;
+  /** Remind sessions, beside the manifesto reminder, to save curiosities as idea memories. */
+  ideaPrompt: boolean;
   /** The judge's system prompt as edited in Settings. Empty = use DEFAULT_JUDGE_PROMPT. */
   judgePrompt: string;
 }
@@ -18,6 +20,7 @@ export const DEFAULT_AUTO_MEMORY_SETTINGS: AutoMemorySettings = {
   recordingModel: '',
   autoSave: true,
   autoRecall: true,
+  ideaPrompt: true,
   judgePrompt: '',
 };
 

@@ -28,12 +28,13 @@ describe('TodoManager', () => {
     expect(() => manager.setWaiting('s1', 'nope', true)).toThrow(/not found/);
   });
 
-  it('completes a waiting todo directly but never parks a done one', () => {
+  it('completes a waiting todo directly, removing it', () => {
     const manager = open();
     const todo = manager.add('s1', 'Ask which port');
     manager.setWaiting('s1', todo.id, true);
-    expect(manager.markDone('s1', todo.id)).toMatchObject({ status: 'done' });
-    expect(() => manager.setWaiting('s1', todo.id, true)).toThrow(/done/);
+    expect(manager.markDone('s1', todo.id)).toMatchObject({ id: todo.id, status: 'done', doneAt: expect.any(Number) });
+    expect(manager.list('s1')).toEqual([]);
+    expect(() => manager.setWaiting('s1', todo.id, true)).toThrow(/not found/);
   });
 
   it('persists independent session lists and survives a restart', () => {
@@ -46,14 +47,15 @@ describe('TodoManager', () => {
     expect(open().list('s2').map(todo => todo.text)).toEqual(['Other session']);
   });
 
-  it('returns open items before completed items and does not expose mutable manager state', () => {
+  it('drops a completed todo from the list and the store, and hides manager state', () => {
     const manager = open();
     const first = manager.add('s1', 'First');
     manager.add('s1', 'Second');
     manager.markDone('s1', first.id);
 
     const todos = manager.list('s1');
-    expect(todos.map(todo => [todo.text, todo.status])).toEqual([['Second', 'open'], ['First', 'done']]);
+    expect(todos.map(todo => todo.text)).toEqual(['Second']);
+    expect(open().list('s1').map(todo => todo.text)).toEqual(['Second']);
     todos[0]!.text = 'changed outside';
     expect(manager.list('s1')[0]!.text).toBe('Second');
   });
@@ -64,17 +66,13 @@ describe('TodoManager', () => {
     expect(() => manager.markDone('s1', 'missing')).toThrow(/Todo not found/);
   });
 
-  it('allows deleting completed items only and makes completion idempotent', () => {
-    const manager = open();
-    const openTodo = manager.add('s1', 'Open');
-    expect(() => manager.delete('s1', openTodo.id)).toThrow(/open todo/i);
-
-    const done = manager.markDone('s1', openTodo.id);
-    expect(done.status).toBe('done');
-    expect(manager.markDone('s1', openTodo.id)).toEqual(done);
-    expect(manager.delete('s1', openTodo.id)).toBe(true);
-    expect(manager.delete('s1', openTodo.id)).toBe(false);
-    expect(manager.list('s1')).toEqual([]);
+  it('drops done items left in a file written by an older version', () => {
+    const store = createTodoStore(dir);
+    store.save('s1', [
+      { id: 'a', text: 'Old done', status: 'done', createdAt: 1, doneAt: 2 } as never,
+      { id: 'b', text: 'Still open', status: 'open', createdAt: 3 },
+    ]);
+    expect(open().list('s1').map(todo => todo.id)).toEqual(['b']);
   });
 
   it('clears one session and prunes persisted orphans', () => {

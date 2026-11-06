@@ -26,6 +26,9 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
 import type { Artifact, ArtifactIntent, ArtifactKind, ArtifactSource } from '../types/artifact.js';
 
+/** A manifesto's latest content; `version` lets readers notice an update. */
+export interface ManifestoSnapshot { id: string; title: string; content: string; version: number }
+
 export class ArtifactManager extends EventEmitter {
   private artifacts = new Map<string, Artifact[]>(); // sessionId -> artifacts
 
@@ -143,14 +146,13 @@ export class ArtifactManager extends EventEmitter {
   }
 
   /** Latest content for every manifesto artifact, in stable creation order. */
-  getManifestosForSession(sessionId: string): Array<{ id: string; title: string; content: string }> {
+  getManifestosForSession(sessionId: string): ManifestoSnapshot[] {
     return (this.artifacts.get(sessionId) ?? [])
       .filter(artifact => (artifact.intent ?? 'normal') === 'manifesto')
-      .map(artifact => ({
-        id: artifact.id,
-        title: artifact.title,
-        content: artifact.versions[artifact.versions.length - 1].content,
-      }));
+      .map(artifact => {
+        const latest = artifact.versions[artifact.versions.length - 1];
+        return { id: artifact.id, title: artifact.title, content: latest.content, version: latest.version };
+      });
   }
 
   /**

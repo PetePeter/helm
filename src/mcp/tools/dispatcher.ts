@@ -799,8 +799,6 @@ export async function callMcpTool(
         return service.addSessionTodo(requireOwnTodo(authContext, args, 'session_todo_add'), asStringValue(args.text, 'text is required'));
       case 'session_todo_done':
         return service.completeSessionTodo(requireOwnTodo(authContext, args, 'session_todo_done'), asString(args.id, 'id is required'));
-      case 'session_todo_delete':
-        return service.deleteSessionTodo(requireOwnTodo(authContext, args, 'session_todo_delete'), asString(args.id, 'id is required'));
       case 'session_todo_wait':
         return service.setSessionTodoWaiting(
           requireOwnTodo(authContext, args, 'session_todo_wait'),

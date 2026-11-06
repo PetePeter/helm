@@ -14,7 +14,6 @@ import { getCliDisplayName, resolveCliTypeRecord, showFormModal } from '../../ut
 import { useLlmNotificationsStore } from '../../stores/llmNotifications.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, SessionMission, UserPromptSource } from '../../../src/types/session.js';
-import type { SessionTodoCount } from '../../../src/types/todo.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import ContextRing from './ContextRing.vue';
 import TickerText from '../common/TickerText.vue';
@@ -72,7 +71,8 @@ export interface SessionCardProps {
   displayName: string;
   artifactCount: number;
   unreadChatCount: number;
-  todoCount?: SessionTodoCount;
+  /** Open todos left. */
+  todoCount?: number;
   /** G8: consecutive Stop-hook auto-continues in flight. 0 = no active loop. */
   loopContinues: number;
   /** Subagents this session is waiting on. 0 = none. */
@@ -243,7 +243,6 @@ const metaText = computed(() => {
   const title = props.session.title?.trim();
   return title && title !== props.displayName ? title : '';
 });
-const todoProgress = computed(() => props.todoCount ?? { done: 0, total: 0 });
 // --- Runtime group badge + drag ---
 
 const { groups: runtimeGroups } = useRuntimeGroups();
@@ -508,11 +507,11 @@ function onCardClick(e: MouseEvent): void {
           :aria-label="`${unreadChatCount} new Chat messages`"
         >{{ unreadChatCount }} new</span>
         <span
-          v-if="todoProgress.total > 0"
+          v-if="todoCount"
           class="session-todo-count"
-          :title="`${todoProgress.done} of ${todoProgress.total} todos done`"
-          :aria-label="`${todoProgress.done} of ${todoProgress.total} todos done`"
-        >{{ todoProgress.done }}/{{ todoProgress.total }}</span>
+          :title="`${todoCount} todos left`"
+          :aria-label="`${todoCount} todos left`"
+        >{{ todoCount }}</span>
         <span
           v-if="etaTimer"
           class="session-timer session-eta-timer"

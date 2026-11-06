@@ -90,6 +90,16 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
       <span>Auto-recall: hint at related memories when you send a prompt</span>
     </label>
 
+    <label class="auto-memory-setting">
+      <input
+        type="checkbox"
+        class="focusable"
+        :checked="store.settings.ideaPrompt"
+        @change="store.save({ ideaPrompt: checked($event) })"
+      />
+      <span>Idea prompts: remind sessions to save curiosities and inspiration as ideas</span>
+    </label>
+
     <label class="auto-memory-prompt settings-span">
       <span>Judge prompt: what the recording model is told before each turn it judges</span>
       <textarea

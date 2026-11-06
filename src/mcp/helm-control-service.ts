@@ -76,7 +76,7 @@ import type { ArtifactAttachmentManager } from '../session/artifact-attachment-m
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
 import type { DraftManager } from '../session/draft-manager.js';
 import { DRAFT_MAX_BYTES, draftBytes, type Draft, type DraftRefusal, type DraftWriteResult } from '../types/draft.js';
-import type { SessionTodo } from '../types/todo.js';
+import type { CompletedSessionTodo, SessionTodo } from '../types/todo.js';
 import type { TodoManager } from '../session/todo-manager.js';
 import { HelmMemoryService, type MemoryExportResult, type WrittenMemory } from './services/helm-memory-service.js';
 import { HelmMessService } from './services/helm-mess-service.js';
@@ -1640,7 +1640,7 @@ export class HelmControlService extends EventEmitter {
     return manager.add(sessionId, text);
   }
 
-  completeSessionTodo(sessionRef: string, id: string): SessionTodo {
+  completeSessionTodo(sessionRef: string, id: string): CompletedSessionTodo {
     const { manager, sessionId } = this.todosFor(sessionRef);
     return manager.markDone(sessionId, id);
   }
@@ -1648,11 +1648,6 @@ export class HelmControlService extends EventEmitter {
   setSessionTodoWaiting(sessionRef: string, id: string, waiting: boolean): SessionTodo {
     const { manager, sessionId } = this.todosFor(sessionRef);
     return manager.setWaiting(sessionId, id, waiting);
-  }
-
-  deleteSessionTodo(sessionRef: string, id: string): boolean {
-    const { manager, sessionId } = this.todosFor(sessionRef);
-    return manager.delete(sessionId, id);
   }
 
   clearSessionTodos(sessionRef: string): number {

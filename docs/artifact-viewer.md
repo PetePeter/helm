@@ -9,6 +9,26 @@ are **markdown or HTML**, **versioned**, and **die with their session**.
 
 Artifacts default to the `normal` intent and are not automatically added to session context. Set an artifact's intent to `manifesto` to make its latest content persistent context. Every manifesto artifact belonging to a session is supplied after context resets, alongside any one-shot handover note. Multiple manifesto artifacts are all included.
 
+### Keeping the manifesto current
+
+A manifesto only helps if the session keeps writing it, so the UserPromptSubmit hook nudges — sparingly, because a reminder on every prompt becomes noise the model learns to ignore.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Missing
+    Missing --> Missing: prompt (reminder on 1st, then every 10th)
+    Missing --> Fresh: artifact_create intent=manifesto
+    Fresh --> Fresh: prompt (silent)
+    Fresh --> Stale: 10 prompts with no new version
+    Stale --> Fresh: artifact_update
+```
+
+- **Missing** — `[HELM_MANIFESTO]` asks for one with a fixed outline (Goal / Decisions / State / Gotchas / Next), rewritten in place rather than appended. While Settings → Auto memory → **Idea prompts** is on, a `[HELM_IDEAS]` line rides along, pointing curiosities and inspiration at idea memories instead — same cadence, so it adds no prompts of its own.
+- **Stale** — the reminder names the manifesto and its id, so the update is one call.
+- The amber and red context alerts say to update the manifesto before compacting, and the restored block after a reset is labelled as the session's own saved notes — the payoff that makes the habit stick.
+
+Staleness is counted per session in memory from the manifestos' latest version numbers; a restart simply starts the count again. The reminder is skipped while a requested compact is pending and for sessions that cannot call `artifact_update`. Both texts are editable under Hook injections (`manifestoPromptMissing`, `manifestoPromptStale`, `ideasPrompt`).
+
 Use the MCP `artifact_create` or `artifact_update` `intent` field when creating or revising content. Use `artifact_set_intent` to change intent without adding a content version. The session-addressed `session_artifact_update` tool can also change intent; omitting it preserves the current value. `artifact_list` and `session_artifact_list` report the intent.
 
 The context is supplied after CLI compact, Quick Compact, and clear flows, and after those resets in API sessions. It is not a replacement for the existing handover note.

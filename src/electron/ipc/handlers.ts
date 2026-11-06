@@ -958,6 +958,7 @@ export function registerIPCHandlers(
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
     onHandoverInjected: (sessionId) => handoverDelivery.markDeliveredByHook(sessionId),
     getManifestos: (sessionId) => artifactManager.getManifestosForSession(sessionId),
+    isIdeaPromptEnabled: () => configLoader.getAutoMemoryConfig().ideaPrompt,
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
     getTodos: (sessionId) => todoManager.list(sessionId),
     clearReportsTo: (sessionId) => sessionManager.updateSession(sessionId, { reportsTo: undefined }),

@@ -28,7 +28,7 @@ describe('persisted filter preferences', () => {
 
   it('loads and saves values through the registered stable ID', async () => {
     const { registerFilterPreference } = await import('../renderer/stores/filter-preferences.js');
-    const preference = registerFilterPreference('todo.done', 'either' as const, value =>
+    const preference = registerFilterPreference('example.done', 'either' as const, value =>
       value === 'yes' || value === 'no' || value === 'either' ? value : 'either',
     );
 
@@ -37,18 +37,18 @@ describe('persisted filter preferences', () => {
 
     preference.value.value = 'no';
     await nextTick();
-    expect(setPreference).toHaveBeenCalledWith('todo.done', 'no');
+    expect(setPreference).toHaveBeenCalledWith('example.done', 'no');
   });
 
   it('applies remote updates without writing them back', async () => {
     const { registerFilterPreference } = await import('../renderer/stores/filter-preferences.js');
-    const preference = registerFilterPreference('todo.done', 'either' as const, value =>
+    const preference = registerFilterPreference('example.done', 'either' as const, value =>
       value === 'yes' || value === 'no' || value === 'either' ? value : 'either',
     );
     await preference.ready;
     setPreference.mockClear();
 
-    changed?.({ id: 'todo.done', value: 'no' });
+    changed?.({ id: 'example.done', value: 'no' });
     await nextTick();
 
     expect(preference.value.value).toBe('no');

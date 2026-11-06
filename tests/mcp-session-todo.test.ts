@@ -32,7 +32,7 @@ function memoryStore() {
   };
 }
 
-const TOOLS = ['session_todo_add', 'session_todo_done', 'session_todo_delete', 'session_todo_clear', 'session_todo_list', 'session_todo_wait'];
+const TOOLS = ['session_todo_add', 'session_todo_done', 'session_todo_clear', 'session_todo_list', 'session_todo_wait'];
 
 describe('MCP session_todo_*', () => {
   let todos: InstanceType<typeof TodoManager>;
@@ -55,29 +55,27 @@ describe('MCP session_todo_*', () => {
     expect(getAvailableTools().map(tool => tool.name)).toEqual(expect.arrayContaining(TOOLS));
     expect(byName.get('session_todo_add')?.inputSchema.required).toEqual(['text']);
     expect(byName.get('session_todo_done')?.inputSchema.required).toEqual(['id']);
-    expect(byName.get('session_todo_delete')?.inputSchema.required).toEqual(['id']);
     expect(byName.get('session_todo_clear')?.inputSchema.required).toBeUndefined();
     expect(byName.get('session_todo_list')?.inputSchema.required).toBeUndefined();
     expect(byName.get('session_todo_wait')?.inputSchema.required).toEqual(['id', 'waiting']);
     for (const name of TOOLS) expect(byName.get(name)?.inputSchema.additionalProperties).toBe(false);
   });
 
-  it('adds, lists, completes, deletes completed items, and clears only the caller\'s list', async () => {
+  it('adds, lists, completes (removing the item), and clears only the caller\'s list', async () => {
     const added = await call('session_todo_add', { text: 'Ship the UI' });
     expect(added).toMatchObject({ id: 'generated-id', text: 'Ship the UI', status: 'open' });
     expect(await call('session_todo_list')).toEqual([added]);
     expect(await call('session_todo_done', { id: added.id })).toMatchObject({ id: added.id, status: 'done' });
-    expect(await call('session_todo_delete', { id: added.id })).toBe(true);
+    expect(await call('session_todo_list')).toEqual([]);
 
     todos.add('other', 'Keep this');
     expect(await call('session_todo_clear')).toBe(0);
     expect(todos.list('other').map(todo => todo.text)).toEqual(['Keep this']);
   });
 
-  it('refuses deleting open todos and never lets a caller address another session', async () => {
+  it('never lets a caller address another session', async () => {
     const other = todos.add('other', 'Private to sibling');
     const own = await call('session_todo_add', { text: 'Own item' });
-    await expect(call('session_todo_delete', { id: own.id })).rejects.toThrow(/open todo/i);
     await expect(call('session_todo_done', { id: other.id, sessionId: 'other' })).rejects.toThrow(/own session/);
     expect(await call('session_todo_list')).toEqual([own]);
     expect(todos.list('other')).toEqual([other]);

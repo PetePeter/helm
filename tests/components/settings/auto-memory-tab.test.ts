@@ -19,7 +19,7 @@ const ALL_MODELS = [
   { id: 'cli-shell', name: 'cmd', kind: 'cli', available: false, note: 'no headless command' },
 ];
 let models = ALL_MODELS;
-let stored = { recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' };
+let stored = { recordingModel: '', autoSave: true, autoRecall: true, ideaPrompt: true, judgePrompt: '' };
 let testResult: Record<string, string> = { status: 'ok', text: 'OK' };
 const setCalls: Array<Record<string, unknown>> = [];
 
@@ -46,7 +46,7 @@ async function factory() {
 
 describe('AutoMemoryTab', () => {
   beforeEach(() => {
-    stored = { recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' };
+    stored = { recordingModel: '', autoSave: true, autoRecall: true, ideaPrompt: true, judgePrompt: '' };
     testResult = { status: 'ok', text: 'OK' };
     setCalls.length = 0;
     models = ALL_MODELS;
@@ -89,14 +89,15 @@ describe('AutoMemoryTab', () => {
 
   it('saves each switch on its own', async () => {
     const wrapper = await factory();
-    const [autoSave, autoRecall] = wrapper.findAll('input[type="checkbox"]');
+    const [autoSave, autoRecall, ideaPrompt] = wrapper.findAll('input[type="checkbox"]');
 
     await autoSave.setValue(false);
     await autoRecall.setValue(false);
+    await ideaPrompt.setValue(false);
     await flushPromises();
 
-    expect(setCalls).toEqual([{ autoSave: false }, { autoRecall: false }]);
-    expect(stored).toMatchObject({ autoSave: false, autoRecall: false });
+    expect(setCalls).toEqual([{ autoSave: false }, { autoRecall: false }, { ideaPrompt: false }]);
+    expect(stored).toMatchObject({ autoSave: false, autoRecall: false, ideaPrompt: false });
   });
 
   it('shows why a pick was refused and falls back to the stored model', async () => {

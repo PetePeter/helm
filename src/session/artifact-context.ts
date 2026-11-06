@@ -5,7 +5,7 @@
 export function formatManifestoContext(artifacts: Array<{ title: string; content: string }>): string {
   if (artifacts.length === 0) return '';
   return [
-    'Persistent manifesto context. This content is supplied alongside any handover after session resets:',
+    'Persistent manifesto context. Restored from your manifesto — what you saved before this reset. Keep it current with artifact_update:',
     ...artifacts.flatMap(artifact => [`\n## ${artifact.title}`, artifact.content]),
   ].join('\n');
 }

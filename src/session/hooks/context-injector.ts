@@ -36,6 +36,7 @@ import {
 import type { LoopDriver } from './loop-driver.js';
 import { logger } from '../../utils/logger.js';
 import { appendManifestoContext, formatManifestoContext } from '../artifact-context.js';
+import type { ManifestoSnapshot } from '../artifact-manager.js';
 import { contextLevel, type ContextLimits } from '../context-limits.js';
 import { renderHookInjection, type HookInjectionOverrides } from './hook-injections.js';
 import { renderSessionTodoContext } from '../todo-context.js';
@@ -61,7 +62,9 @@ export interface ContextInjectorDeps {
   /** Startable (unclaimed, unblocked) plans in a directory. */
   getStartablePlans(dirPath: string): ClaimedPlanSummary[];
   /** Persistent artifact context; every selected manifesto is included. */
-  getManifestos?(sessionId: string): Array<{ title: string; content: string }>;
+  getManifestos?(sessionId: string): ManifestoSnapshot[];
+  /** Settings → Auto memory → Idea prompts. Absent = off. */
+  isIdeaPromptEnabled?(): boolean;
   /** Handover text pending across a compaction, when armed. */
   getHandover(sessionId: string): string | undefined;
   /** The handover just went out in SessionStart context; no paste needed. */
@@ -129,6 +132,8 @@ const SOURCE_CAP_CHARS = 800;
 const TOTAL_CAP_CHARS = 2500;
 /** A requested compact that never lands stops suspending todo/ETA bookkeeping after this. */
 const COMPACT_PENDING_TTL_MS = 10 * 60_000;
+/** Prompts between manifesto reminders: often enough to matter, rare enough not to be noise. */
+const MANIFESTO_REMINDER_PROMPTS = 10;
 
 function truncate(text: string, cap: number): string {
   return text.length <= cap ? text : text.slice(0, cap - 1) + '…';
@@ -147,6 +152,8 @@ export class ContextInjector {
   private readonly contextResetAt = new Map<string, number>();
   /** Sessions whose telegram-mode entry the injected mode block covered. */
   private readonly telegramModeAnnounced = new Set<string>();
+  /** Per session: the manifesto versions last seen, and prompts since they changed. */
+  private readonly manifestoWatch = new Map<string, { stamp: string; prompts: number }>();
 
   constructor(deps: ContextInjectorDeps) {
     this.deps = deps;
@@ -164,6 +171,7 @@ export class ContextInjector {
     this.stopEtaNudged.delete(sessionId);
     this.contextResetAt.delete(sessionId);
     this.telegramModeAnnounced.delete(sessionId);
+    this.manifestoWatch.delete(sessionId);
   }
 
   /** Route one normalised hook event, or null when there is nothing to say. */
@@ -388,6 +396,13 @@ export class ContextInjector {
       ));
     }
 
+    const manifestoReminder = can('artifact_update') && !this.compactPending(session) ? this.manifestoReminder(session.id) : null;
+    if (manifestoReminder) {
+      parts.push(manifestoReminder);
+      // Same cadence as the manifesto reminder, so idea capture adds no prompts of its own.
+      if (can('memory_create') && this.deps.isIdeaPromptEnabled?.()) parts.push(this.injection('ideasPrompt'));
+    }
+
     const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
     const pointer = await this.deps.suggest(session.id, prompt, projectId);
     if (pointer && (can('memory_get') || can('skill_get'))) parts.push(this.injection('suggestionPointer', { content: pointer }));
@@ -403,6 +418,25 @@ export class ContextInjector {
       `[HookInject] UserPromptSubmit session=${session.id}: ${parts.length} part(s), ${context.length} chars`,
     );
     return context;
+  }
+
+  /**
+   * The manifesto is the session's memory across compactions, so keep it
+   * current: ask for one on the first prompt without it, and name it once it
+   * goes MANIFESTO_REMINDER_PROMPTS prompts unchanged. Silent in between.
+   */
+  private manifestoReminder(sessionId: string): string | null {
+    if (!this.deps.getManifestos) return null;
+    const manifestos = this.deps.getManifestos(sessionId);
+    const stamp = manifestos.map(m => `${m.id}:${m.version}`).join(',');
+    const seen = this.manifestoWatch.get(sessionId);
+    const prompts = seen?.stamp === stamp ? seen.prompts + 1 : 0;
+    this.manifestoWatch.set(sessionId, { stamp, prompts });
+    if (prompts % MANIFESTO_REMINDER_PROMPTS !== 0) return null;
+    const latest = manifestos[manifestos.length - 1];
+    if (!latest) return this.injection('manifestoPromptMissing');
+    if (prompts === 0) return null;
+    return this.injection('manifestoPromptStale', { title: latest.title, id: latest.id, prompts });
   }
 
   /** The session asked to be compacted and no compact or clear has landed since. */

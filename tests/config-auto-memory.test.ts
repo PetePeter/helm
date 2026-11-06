@@ -65,20 +65,21 @@ describe('autoMemory settings', () => {
   });
 
   it('defaults to no recording model with both switches on and the default judge prompt', () => {
-    expect(makeLoader().getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' });
+    expect(makeLoader().getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true, ideaPrompt: true, judgePrompt: '' });
   });
 
   it('degrades a malformed section to the defaults', () => {
-    const loader = makeLoader({ autoMemory: { recordingModel: 7, autoSave: 'yes', autoRecall: null, judgePrompt: 3 } });
-    expect(loader.getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' });
+    const loader = makeLoader({ autoMemory: { recordingModel: 7, autoSave: 'yes', autoRecall: null, ideaPrompt: 'no', judgePrompt: 3 } });
+    expect(loader.getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true, ideaPrompt: true, judgePrompt: '' });
   });
 
   it('persists the picked model and both switches across a reload', () => {
     const loader = makeLoader();
     loader.setAutoMemoryConfig({ recordingModel: API_ID, autoSave: false });
     loader.setAutoMemoryConfig({ autoRecall: false });
+    loader.setAutoMemoryConfig({ ideaPrompt: false });
 
-    expect(reload().getAutoMemoryConfig()).toEqual({ recordingModel: API_ID, autoSave: false, autoRecall: false, judgePrompt: '' });
+    expect(reload().getAutoMemoryConfig()).toEqual({ recordingModel: API_ID, autoSave: false, autoRecall: false, ideaPrompt: false, judgePrompt: '' });
   });
 
   it('persists an edited judge prompt, and a blank or default one clears it back to the default', () => {

@@ -25,13 +25,13 @@ function sessionIdOf(fileName: string): string[] {
 
 function parseTodo(raw: unknown): SessionTodo | null {
   if (!isRecord(raw) || !isString(raw.id) || !isString(raw.text) || !isNumber(raw.createdAt)) return null;
-  if (raw.status !== 'open' && raw.status !== 'waiting' && raw.status !== 'done') return null;
+  // Older versions kept done items; they are dropped on load.
+  if (raw.status !== 'open' && raw.status !== 'waiting') return null;
   return {
     id: raw.id,
     text: raw.text,
     status: raw.status,
     createdAt: raw.createdAt,
-    ...(isNumber(raw.doneAt) ? { doneAt: raw.doneAt } : {}),
   };
 }
 

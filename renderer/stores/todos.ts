@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { reactive } from 'vue';
 import { eventsClient, sessionsClient } from '../ipc/clients.js';
-import { countSessionTodos, orderSessionTodos, type SessionTodo, type SessionTodosChanged } from '../../src/types/todo.js';
+import type { SessionTodo, SessionTodosChanged } from '../../src/types/todo.js';
 
 /** Renderer mirror used by both the read-only Todos pane and session-row counts. */
 export const useTodosStore = defineStore('todos', () => {
@@ -13,7 +13,7 @@ export const useTodosStore = defineStore('todos', () => {
 
   function apply(change: SessionTodosChanged): void {
     versions.set(change.sessionId, (versions.get(change.sessionId) ?? 0) + 1);
-    bySession.set(change.sessionId, orderSessionTodos(change.todos.map(todo => ({ ...todo }))));
+    bySession.set(change.sessionId, change.todos.map(todo => ({ ...todo })));
     errors.delete(change.sessionId);
     loaded.add(change.sessionId);
   }
@@ -30,7 +30,7 @@ export const useTodosStore = defineStore('todos', () => {
     const request = Promise.resolve().then(() => sessionsClient.todoList(sessionId))
       .then(todos => {
         if ((versions.get(sessionId) ?? 0) !== version) return;
-        bySession.set(sessionId, orderSessionTodos(todos.map(todo => ({ ...todo }))));
+        bySession.set(sessionId, todos.map(todo => ({ ...todo })));
         errors.delete(sessionId);
         loaded.add(sessionId);
       })
@@ -53,8 +53,9 @@ export const useTodosStore = defineStore('todos', () => {
     return bySession.get(sessionId) ?? [];
   }
 
-  function countFor(sessionId: string) {
-    return countSessionTodos(todosFor(sessionId));
+  /** Open items left — done ones are already gone from the list. */
+  function countFor(sessionId: string): number {
+    return todosFor(sessionId).length;
   }
 
   function errorFor(sessionId: string): string {

@@ -47,14 +47,14 @@ describe('filter preference IPC', () => {
   });
 
   it('writes values by ID and broadcasts changes to other windows', async () => {
-    const result = await handler('config:setFilterPreference')({ sender: {} }, 'todo.done', 'no');
+    const result = await handler('config:setFilterPreference')({ sender: {} }, 'example.done', 'no');
 
     expect(result).toEqual({ success: true });
-    expect(saved['todo.done']).toBe('no');
+    expect(saved['example.done']).toBe('no');
     expect(sourceWindow.webContents.send).not.toHaveBeenCalled();
     expect(otherWindow.webContents.send).toHaveBeenCalledWith('config:filterPreferenceChanged', {
-      id: 'todo.done', value: 'no',
+      id: 'example.done', value: 'no',
     });
-    expect(handler('config:getFilterPreference')({}, 'todo.done')).toBe('no');
+    expect(handler('config:getFilterPreference')({}, 'example.done')).toBe('no');
   });
 });

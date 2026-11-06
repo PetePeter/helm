@@ -9,17 +9,17 @@ describe('SessionList todo progress', () => {
   it('loads local session counts for the row and leaves peer rows empty', async () => {
     const asked: string[] = [];
     const todos: SessionTodo[] = [
-      { id: 'done', text: 'Finished', status: 'done', createdAt: 1, doneAt: 2 },
+      { id: 'waiting', text: 'Asked', status: 'waiting', createdAt: 1 },
       { id: 'open', text: 'Open', status: 'open', createdAt: 3 },
     ];
     (window as unknown as { helm: unknown }).helm = {
       sessions: { todoList: async (id: string) => { asked.push(id); return todos; } },
       events: { onTodosChanged: () => () => {} },
     };
-    const cards: Array<{ todoCount: { done: number; total: number } }> = [];
+    const cards: Array<{ todoCount: number }> = [];
     const CardStub = {
       props: ['session', 'todoCount'],
-      setup(props: { todoCount: { done: number; total: number } }) { cards.push(props as typeof cards[number]); return {}; },
+      setup(props: { todoCount: number }) { cards.push(props as typeof cards[number]); return {}; },
       template: '<div />',
     };
     const base = {
@@ -52,7 +52,7 @@ describe('SessionList todo progress', () => {
       global: { plugins: [createPinia()], stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
     });
     await flushPromises();
-    expect(cards[0]?.todoCount).toEqual({ done: 1, total: 2 });
+    expect(cards[0]?.todoCount).toBe(2);
     expect(asked).toEqual(['s1']);
     local.unmount();
 
@@ -61,7 +61,7 @@ describe('SessionList todo progress', () => {
       global: { plugins: [createPinia()], stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
     });
     await flushPromises();
-    expect(cards[1]?.todoCount).toEqual({ done: 0, total: 0 });
+    expect(cards[1]?.todoCount).toBe(0);
     expect(asked).toEqual(['s1']);
     remote.unmount();
   });

@@ -11,6 +11,7 @@ Settings → **Auto memory** holds one global setting, stored as `autoMemory` in
 | `recordingModel` | none | CLI type id of the model that does the recording. |
 | `autoSave` | on | Run the judge pass after each turn. With no model picked it does nothing, and the tab says so. |
 | `autoRecall` | on | Let the suggester hint at memories. Skill hints are unaffected. |
+| `ideaPrompt` | on | Add a `[HELM_IDEAS]` line beside the manifesto reminder, pointing curiosities and inspiration at idea memories. See [artifact-viewer.md](artifact-viewer.md#keeping-the-manifesto-current). |
 | `judgePrompt` | empty | The judge's system prompt. The tab shows the default text to edit in place; empty (or text equal to the default) stores nothing, so a later change to the default still reaches you. **Reset to default** clears it. Read live by the recorder. |
 
 Suggestion learning is a separate section on this page. It learns from both

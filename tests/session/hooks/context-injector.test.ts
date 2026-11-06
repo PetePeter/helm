@@ -19,6 +19,7 @@ import type { HookEvent } from '../../../src/session/hooks/hook-normaliser';
 import { SuggestionService } from '../../../src/session/hooks/suggestion-scorer';
 import type { SessionInfo } from '../../../src/types/session';
 import type { SessionTodo } from '../../../src/types/todo';
+import { ArtifactManager } from '../../../src/session/artifact-manager';
 
 vi.mock('../../../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -850,5 +851,102 @@ describe('context pressure reminders', () => {
 
     expect(await noUsage.injector.respond(hookEvent({ event: 'UserPromptSubmit' }))).toBeNull();
     expect(await noLimits.injector.respond(hookEvent({ event: 'UserPromptSubmit' }))).toBeNull();
+  });
+});
+
+describe('manifesto upkeep ([HELM_MANIFESTO])', () => {
+  const tools = new Set(['artifact_create', 'artifact_update']);
+  const limits = { amber: 75, red: 90 };
+
+  function withArtifacts(overrides: Partial<ContextInjectorDeps> = {}) {
+    const artifacts = new ArtifactManager(() => {});
+    const made = makeInjector({
+      getManifestos: (sessionId) => artifacts.getManifestosForSession(sessionId),
+      ...overrides,
+    });
+    return { ...made, artifacts };
+  }
+
+  async function prompts(injector: ContextInjector, count: number, can = tools): Promise<Array<string | null>> {
+    const out: Array<string | null> = [];
+    for (let i = 0; i < count; i++) out.push(await injector.promptContext('s1', `prompt ${i}`, can));
+    return out;
+  }
+
+  it('asks a session with no manifesto to start one, with the outline, then repeats only every 10 prompts', async () => {
+    const { injector } = withArtifacts();
+    const contexts = await prompts(injector, 11);
+    expect(contexts[0]).toContain('[HELM_MANIFESTO]');
+    expect(contexts[0]).toContain('intent');
+    expect(contexts[0]).toContain('Goal');
+    expect(contexts[0]).toContain('Next');
+    expect(contexts.slice(1, 10).some(c => c?.includes('[HELM_MANIFESTO]'))).toBe(false);
+    expect(contexts[10]).toContain('[HELM_MANIFESTO]');
+  });
+
+  it('stays silent while the manifesto is fresh and names it once it goes 10 prompts untouched', async () => {
+    const { injector, artifacts } = withArtifacts();
+    const a = artifacts.create('s1', 'Session manifesto', 'markdown', 'Goal: x', undefined, undefined, 'manifesto');
+    const contexts = await prompts(injector, 11);
+    expect(contexts.slice(0, 10).some(c => c?.includes('[HELM_MANIFESTO]'))).toBe(false);
+    expect(contexts[10]).toContain('Session manifesto');
+    expect(contexts[10]).toContain(a.id);
+    expect(contexts[10]).toContain('10 prompts');
+  });
+
+  it('an update resets the staleness count', async () => {
+    const { injector, artifacts } = withArtifacts();
+    const a = artifacts.create('s1', 'M', 'markdown', 'v1', undefined, undefined, 'manifesto');
+    await prompts(injector, 8);
+    artifacts.update(a.id, 'v2');
+    const contexts = await prompts(injector, 9);
+    expect(contexts.some(c => c?.includes('[HELM_MANIFESTO]'))).toBe(false);
+  });
+
+  it('says nothing when the session cannot write artifacts', async () => {
+    const { injector } = withArtifacts();
+    const [context] = await prompts(injector, 1, new Set(['session_todo_add']));
+    expect(context ?? '').not.toContain('[HELM_MANIFESTO]');
+  });
+
+  it('adds the ideas line beside the manifesto reminder only while the setting is on', async () => {
+    let enabled = true;
+    const { injector } = withArtifacts({ isIdeaPromptEnabled: () => enabled });
+    const can = new Set([...tools, 'memory_create']);
+    const [on] = await prompts(injector, 1, can);
+    expect(on).toContain('[HELM_IDEAS]');
+    expect(on).toContain('kind="idea"');
+    const quiet = await prompts(injector, 9, can);
+    expect(quiet.some(c => c?.includes('[HELM_IDEAS]'))).toBe(false);
+    enabled = false;
+    const [off] = await prompts(injector, 1, can);
+    expect(off).toContain('[HELM_MANIFESTO]');
+    expect(off).not.toContain('[HELM_IDEAS]');
+  });
+
+  it('respects a user override of the reminder text', async () => {
+    const { injector } = withArtifacts({
+      getHookInjectionOverrides: () => ({ manifestoPromptMissing: 'Write it down, friend.' }),
+    });
+    const [context] = await prompts(injector, 1);
+    expect(context).toContain('Write it down, friend.');
+  });
+
+  it('amber and red alerts tell the session to save its manifesto before compacting', async () => {
+    for (const tokens of [80, 95]) {
+      const { injector } = makeInjector(
+        { getContextLimits: () => limits },
+        { contextUsage: { tokens, window: 100 } },
+      );
+      expect(await injector.promptContext('s1', 'go')).toMatch(/manifesto/i);
+    }
+  });
+
+  it('labels restored manifestos as the session’s own saved notes after a reset', async () => {
+    const { injector, artifacts } = withArtifacts();
+    artifacts.create('s1', 'M', 'markdown', 'remember the vectors', undefined, undefined, 'manifesto');
+    const context = contextOf((await injector.respond(hookEvent()))!.body);
+    expect(context).toContain('Restored from your manifesto');
+    expect(context).toContain('remember the vectors');
   });
 });

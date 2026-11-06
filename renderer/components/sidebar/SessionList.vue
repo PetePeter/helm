@@ -352,7 +352,7 @@ function onNewGroupDrop(e: DragEvent): void {
               :display-name="session.name !== session.cliType ? session.name : getCliDisplayName(session.cliType)"
               :artifact-count="artifactCounts.get(session.id) ?? 0"
               :unread-chat-count="source === 'peer' ? 0 : unreadChatCountFor?.(session.id) ?? 0"
-              :todo-count="source === 'peer' ? { done: 0, total: 0 } : todosStore.countFor(session.id)"
+              :todo-count="source === 'peer' ? 0 : todosStore.countFor(session.id)"
               :loop-continues="session.loopContinues ?? 0"
               :pending-subagents="session.pendingSubagents ?? 0"
               :elapsed-text="sessionElapsedText(session.id)"

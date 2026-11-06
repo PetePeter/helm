@@ -26,7 +26,7 @@ async function createStore() {
 describe('Todos store', () => {
   it('loads lists for visible local sessions and derives the sidebar count', async () => {
     const first: SessionTodo[] = [
-      { id: '1', text: 'Done', status: 'done', createdAt: 1, doneAt: 2 },
+      { id: '1', text: 'Waiting', status: 'waiting', createdAt: 1 },
       { id: '2', text: 'Open', status: 'open', createdAt: 3 },
     ];
     const asked: string[] = [];
@@ -36,9 +36,9 @@ describe('Todos store', () => {
     await store.loadSessions(['s1', 's2', 's1']);
 
     expect(asked.sort()).toEqual(['s1', 's2']);
-    expect(store.todosFor('s1').map(todo => todo.id)).toEqual(['2', '1']);
-    expect(store.countFor('s1')).toEqual({ done: 1, total: 2 });
-    expect(store.countFor('s2')).toEqual({ done: 0, total: 0 });
+    expect(store.todosFor('s1').map(todo => todo.id)).toEqual(['1', '2']);
+    expect(store.countFor('s1')).toBe(2);
+    expect(store.countFor('s2')).toBe(0);
   });
 
   it('applies live MCP changes and does not replace them with an older pending snapshot', async () => {

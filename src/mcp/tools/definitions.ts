@@ -1291,21 +1291,10 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_todo_done',
     title: 'Complete Session Todo',
-    description: 'CALL AS EACH STEP FINISHES, not at the end. Mark an open todo in YOUR OWN session checklist done. Pass the id returned by session_todo_add or session_todo_list.',
+    description: 'CALL AS EACH STEP FINISHES, not at the end. Mark a todo in YOUR OWN session checklist done — finished or no longer wanted; it is removed from the list. Pass the id returned by session_todo_add or session_todo_list.',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: 'Todo id.' } },
-      required: ['id'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'session_todo_delete',
-    title: 'Delete Completed Session Todo',
-    description: 'Delete a completed todo from YOUR OWN session checklist. Open todos must be marked done first.',
-    inputSchema: {
-      type: 'object',
-      properties: { id: { type: 'string', description: 'Completed todo id.' } },
       required: ['id'],
       additionalProperties: false,
     },

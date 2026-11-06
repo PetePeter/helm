@@ -1474,10 +1474,10 @@ describe('ConfigLoader filter preferences', () => {
     loader.setPlanFilters(planFilters);
     expect(loader.getFilterPreference('plan.filters')).toEqual(planFilters);
 
-    loader.setFilterPreference('todo.done', 'no');
+    loader.setFilterPreference('example.done', 'no');
     const reloaded = new ConfigLoader(TEST_DIR);
     reloaded.load();
-    expect(reloaded.getFilterPreference('todo.done')).toBe('no');
+    expect(reloaded.getFilterPreference('example.done')).toBe('no');
     expect(reloaded.getFilterPreference('plan.filters')).toEqual(planFilters);
   });
 });

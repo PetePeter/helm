@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { logger } from '../utils/logger.js';
-import { orderSessionTodos, type SessionTodo, type SessionTodosChanged } from '../types/todo.js';
+import type { CompletedSessionTodo, SessionTodo, SessionTodosChanged } from '../types/todo.js';
 
 /** Persistence is injected so the manager remains usable with an in-memory store in tests. */
 export interface TodoStore {
@@ -24,7 +24,7 @@ export class TodoManager extends EventEmitter {
   }
 
   list(sessionId: string): SessionTodo[] {
-    return this.ordered(this.current(sessionId)).map(todo => ({ ...todo }));
+    return this.current(sessionId).map(todo => ({ ...todo }));
   }
 
   add(sessionId: string, text: string): SessionTodo {
@@ -38,14 +38,13 @@ export class TodoManager extends EventEmitter {
     return { ...todo };
   }
 
-  markDone(sessionId: string, id: string): SessionTodo {
+  /** A finished item leaves the checklist: only what is still to do is kept. */
+  markDone(sessionId: string, id: string): CompletedSessionTodo {
     const todos = this.current(sessionId);
     const current = todos.find(todo => todo.id === id);
     if (!current) throw new Error(`Todo not found: ${id}`);
-    if (current.status === 'done') return { ...current };
-    const completed: SessionTodo = { ...current, status: 'done', doneAt: this.now() };
-    this.write(sessionId, todos.map(todo => todo.id === id ? completed : todo));
-    return { ...completed };
+    this.write(sessionId, todos.filter(todo => todo.id !== id));
+    return { ...current, status: 'done', doneAt: this.now() };
   }
 
   /** Park an unfinished todo on a user answer, or resume it. */
@@ -53,20 +52,9 @@ export class TodoManager extends EventEmitter {
     const todos = this.current(sessionId);
     const current = todos.find(todo => todo.id === id);
     if (!current) throw new Error(`Todo not found: ${id}`);
-    if (current.status === 'done') throw new Error('Cannot park a done todo.');
     const next: SessionTodo = { ...current, status: waiting ? 'waiting' : 'open' };
     if (next.status !== current.status) this.write(sessionId, todos.map(todo => todo.id === id ? next : todo));
     return { ...next };
-  }
-
-  /** Completed items can be removed; open items must first be marked done. */
-  delete(sessionId: string, id: string): boolean {
-    const todos = this.current(sessionId);
-    const current = todos.find(todo => todo.id === id);
-    if (!current) return false;
-    if (current.status !== 'done') throw new Error('Cannot delete an open todo. Mark it done first.');
-    this.write(sessionId, todos.filter(todo => todo.id !== id));
-    return true;
   }
 
   clear(sessionId: string): number {
@@ -98,16 +86,11 @@ export class TodoManager extends EventEmitter {
     return todos;
   }
 
-  private ordered(todos: SessionTodo[]): SessionTodo[] {
-    return orderSessionTodos(todos);
-  }
-
   private write(sessionId: string, todos: SessionTodo[]): void {
-    const next = this.ordered(todos);
-    this.bySession.set(sessionId, next);
-    if (next.length) this.store.save(sessionId, next.map(todo => ({ ...todo })));
+    this.bySession.set(sessionId, todos);
+    if (todos.length) this.store.save(sessionId, todos.map(todo => ({ ...todo })));
     else this.store.remove(sessionId);
-    const event: SessionTodosChanged = { sessionId, todos: next.map(todo => ({ ...todo })) };
+    const event: SessionTodosChanged = { sessionId, todos: todos.map(todo => ({ ...todo })) };
     this.emit('todos:changed', event);
   }
 }
