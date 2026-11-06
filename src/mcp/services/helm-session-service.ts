@@ -24,6 +24,7 @@ import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
 import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
 import { resolveSessionContextSize, type ApiSessionContextSize, type SessionContextSize } from '../../session/context-size.js';
 import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
+import { buildHelmMsgEnvelope } from '../../session/intersession-directive.js';
 
 /**
  * Session lifecycle: list, get, spawn, close, read terminal, set AIAGENT state.
@@ -139,8 +140,15 @@ export class HelmSessionService {
     const createdByMobileDeviceId = deviceIdFromMobileSessionId(opts.creatorSessionId);
     // A first instruction (the phone's plan-scoped spawn) rides contextText so it
     // lands after the CLI's own init sequence, never into a half-started CLI.
-    const initialPrompt = opts.initialPrompt?.trim() ? opts.initialPrompt : undefined;
     const creator = opts.creatorSessionId ? this.sessionManager.getSession(opts.creatorSessionId) : null;
+    // Enveloped like session_send_text so the new session knows who sent the
+    // work and where to reply. A phone creator has no session row: its proxy id
+    // is its name, as on every other phone message.
+    const initialPrompt = !opts.initialPrompt?.trim()
+      ? undefined
+      : opts.creatorSessionId
+        ? buildHelmMsgEnvelope({ id: opts.creatorSessionId, name: creator?.name ?? opts.creatorSessionId }, false) + opts.initialPrompt
+        : opts.initialPrompt;
     const { sessionId } = spawnConfiguredSession({
       ptyManager: this.ptyManager,
       sessionManager: this.sessionManager,

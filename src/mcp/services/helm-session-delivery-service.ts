@@ -7,7 +7,7 @@ import type { PtyManager } from '../../session/pty-manager.js';
 import type { SessionInfo, UserPromptSource } from '../../types/session.js';
 import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
-import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
+import { buildHelmMsgDirective, buildHelmMsgEnvelope } from '../../session/intersession-directive.js';
 import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { isMobileSessionId } from '../../mobile/mobile-identity.js';
 import { resolveMobileShareInputPath } from '../../mobile/mobile-share-inbox.js';
@@ -45,17 +45,6 @@ const IDLE_WAIT_NOTE =
  * both delivery paths carry the same rules.
  */
 const buildNonBlockingDirective = buildHelmMsgDirective;
-
-/** The reply-routing hint carried on the opening tag when a response is expected. */
-function buildExpectsResponseTag(senderSessionId: string, senderSource?: 'desktop'): string {
-  if (senderSource === 'desktop') {
-    return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It appears in the desktop Chat pane.]';
-  }
-  if (isMobileSessionId(senderSessionId)) {
-    return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It reaches the user on the phone they sent this from; keep lines short.]';
-  }
-  return `[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__session_send_text with: sessionId="${senderSessionId}", text="<your reply>".]`;
-}
 
 /**
  * Flatten a verification result into the caller-facing delivery outcome.
@@ -419,18 +408,7 @@ export class HelmSessionDeliveryService {
 
     if (usePreamble) {
       // Send with [HELM_MSG] envelope
-      const expectsResponse = options.expectsResponse ?? false;
-      const envelope = JSON.stringify({
-        type: 'inter_llm_message',
-        fromSessionId: sender.id,
-        fromSessionName: sender.name,
-        expectsResponse,
-        timestamp: new Date().toISOString(),
-      });
-
-      const tag = expectsResponse
-        ? buildExpectsResponseTag(sender.id, desktopOrigin ? 'desktop' : undefined)
-        : '[HELM_MSG]';
+      const envelope = buildHelmMsgEnvelope(sender, options.expectsResponse ?? false, desktopOrigin ? 'desktop' : undefined);
       // Envelope JSON braces will be smart-escaped by escapeUnrecognizedBraces
       // (unrecognized brace groups get {{/}}), while user text tokens like {Send}
       // are preserved since they are recognized tokens.
@@ -454,7 +432,7 @@ export class HelmSessionDeliveryService {
       const directive = channel === 'pty'
         ? buildNonBlockingDirective(sender.id, desktopOrigin ? 'desktop' : undefined)
         : '';
-      const message = `${tag}${envelope}${deliveryText}${directive}`;
+      const message = `${envelope}${deliveryText}${directive}`;
 
       deliveryVerification = await deliverPromptSequenceToSession({
         sessionId: session.id,

@@ -129,3 +129,35 @@ export const HELM_TELEGRAM_MODE_INSTRUCTIONS =
   'ALL questions and confirmations MUST go through telegram_chat — do NOT use AskUserQuestion.\n' +
   'The user will return to their desk when they type in the terminal, which automatically exits Telegram mode.\n' +
   '[/HELM_TELEGRAM_MODE]';
+
+/**
+ * The `[HELM_MSG]{json}` opening of an inter-session message: the provenance a
+ * recipient reads to know who is talking and where a reply goes. Shared by
+ * session_send_text and session_create's initialPrompt so both look identical.
+ */
+export function buildHelmMsgEnvelope(
+  sender: { id: string; name: string },
+  expectsResponse: boolean,
+  senderSource?: 'desktop',
+): string {
+  const envelope = JSON.stringify({
+    type: 'inter_llm_message',
+    fromSessionId: sender.id,
+    fromSessionName: sender.name,
+    expectsResponse,
+    timestamp: new Date().toISOString(),
+  });
+  const tag = expectsResponse ? buildExpectsResponseTag(sender.id, senderSource) : '[HELM_MSG]';
+  return `${tag}${envelope}`;
+}
+
+/** The reply-routing hint carried on the opening tag when a response is expected. */
+function buildExpectsResponseTag(senderSessionId: string, senderSource?: 'desktop'): string {
+  if (senderSource === 'desktop') {
+    return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It appears in the desktop Chat pane.]';
+  }
+  if (isMobileSessionId(senderSessionId)) {
+    return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It reaches the user on the phone they sent this from; keep lines short.]';
+  }
+  return `[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__session_send_text with: sessionId="${senderSessionId}", text="<your reply>".]`;
+}
