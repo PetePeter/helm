@@ -70,7 +70,7 @@ class SessionRepositoryTest {
     }
 
     @Test
-    fun `question pending, aiagent state, last-active age and claimed plan arrive on the session`() {
+    fun `last-active age and claimed plan arrive on the session`() {
         // The row sub-line, the relative time and the plan pill are drawn from
         // these; the desktop sends them on every session_list result.
         val parsed = SessionWire.parseList(
@@ -79,8 +79,6 @@ class SessionRepositoryTest {
                     mapOf(
                         "id" to "s1",
                         "activityLevel" to "active",
-                        "questionPending" to true,
-                        "aiagentState" to "implementing",
                         "lastActiveAtEpochMs" to 1_700_000_000_000L,
                         "currentPlanId" to "P-0746",
                     ),
@@ -88,8 +86,6 @@ class SessionRepositoryTest {
             ).toJsonArray(),
         )!!.single()
 
-        assertTrue(parsed.questionPending)
-        assertEquals("implementing", parsed.aiagentState)
         assertEquals(1_700_000_000_000L, parsed.lastActiveAtEpochMs)
         assertEquals("P-0746", parsed.currentPlanId)
     }
@@ -115,22 +111,18 @@ class SessionRepositoryTest {
     }
 
     @Test
-    fun `the three row fields degrade to absent, never to a crash`() {
+    fun `a malformed last-active stamp degrades to absent, never to a crash`() {
         val parsed = SessionWire.parseList(
             listOf(
                 JSONObject(
                     mapOf(
                         "id" to "s1",
-                        "questionPending" to "yes",
-                        "aiagentState" to 7,
                         "lastActiveAtEpochMs" to "soon",
                     ),
                 ),
             ).toJsonArray(),
         )!!.single()
 
-        assertEquals(false, parsed.questionPending)
-        assertNull(parsed.aiagentState)
         assertNull(parsed.lastActiveAtEpochMs)
     }
 

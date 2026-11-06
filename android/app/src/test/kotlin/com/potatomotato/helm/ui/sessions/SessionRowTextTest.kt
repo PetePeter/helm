@@ -9,82 +9,23 @@ import org.junit.Test
  * The second line of a session row, and the relative time beside it.
  *
  * Both are decisions made from wire data, and both have real failure modes: a
- * sub-line that says "Idle" on a session demanding a decision, or an age that
- * reads "-1m" because the phone clock sits behind the desktop's.
+ * sub-line that contradicts itself ("Idle · now"), or an age that reads "-1m"
+ * because the phone clock sits behind the desktop's.
  */
 class SessionRowTextTest {
     private val labels = SessionRowText.Labels(
-        needsDecision = "Needs your decision",
         working = "Working",
         waitingApproval = "Waiting on approval",
         idle = "Idle",
-        planning = "Planning",
-        implementing = "Implementing",
-        completed = "Completed",
     )
 
     // --- sub-line ------------------------------------------------------------
 
     @Test
-    fun `a pending question outranks every other status`() {
-        assertEquals(
-            "Needs your decision",
-            SessionRowText.subLine(
-                activity = SessionState.Active,
-                questionPending = true,
-                aiagentState = "implementing",
-                cliTypeName = "claude",
-                age = "now",
-                labels = labels,
-            ),
-        )
-    }
-
-    @Test
-    fun `the aiagent state names the phase and the cli`() {
-        assertEquals(
-            "Implementing · claude",
-            SessionRowText.subLine(
-                activity = SessionState.Active,
-                questionPending = false,
-                aiagentState = "implementing",
-                cliTypeName = "claude",
-                age = "now",
-                labels = labels,
-            ),
-        )
-    }
-
-    @Test
-    fun `each aiagent state has its own word`() {
-        fun line(state: String) = SessionRowText.subLine(
-            activity = SessionState.Active,
-            questionPending = false,
-            aiagentState = state,
-            cliTypeName = "claude",
-            age = "now",
-            labels = labels,
-        )
-
-        assertEquals("Planning · claude", line("planning"))
-        assertEquals("Completed · claude", line("completed"))
-        assertEquals("Idle · claude", line("idle"))
-    }
-
-    @Test
-    fun `an unknown aiagent state falls back to the activity word, not to nothing`() {
-        // A future Helm can invent a state this build has never heard of; the row
-        // still has to say something true.
+    fun `an active session says working and names the cli`() {
         assertEquals(
             "Working · claude",
-            SessionRowText.subLine(
-                activity = SessionState.Active,
-                questionPending = false,
-                aiagentState = "vibing",
-                cliTypeName = "claude",
-                age = "now",
-                labels = labels,
-            ),
+            SessionRowText.subLine(SessionState.Active, cliTypeName = "claude", age = "now", labels = labels),
         )
     }
 
@@ -94,8 +35,6 @@ class SessionRowTextTest {
             "Waiting on approval",
             SessionRowText.subLine(
                 activity = SessionState.Waiting,
-                questionPending = false,
-                aiagentState = null,
                 cliTypeName = "claude",
                 age = "3m",
                 labels = labels,
@@ -107,8 +46,6 @@ class SessionRowTextTest {
     fun `idle carries its age`() {
         fun line(age: String?) = SessionRowText.subLine(
             activity = SessionState.Idle,
-            questionPending = false,
-            aiagentState = null,
             cliTypeName = "claude",
             age = age,
             labels = labels,

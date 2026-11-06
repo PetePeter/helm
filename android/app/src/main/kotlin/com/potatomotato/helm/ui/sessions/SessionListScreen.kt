@@ -233,13 +233,9 @@ fun SessionRow(
     context: ContextHistory? = null,
 ) {
     val labels = SessionRowText.Labels(
-        needsDecision = stringResource(R.string.sessions_sub_needs_decision),
         working = stringResource(R.string.sessions_sub_working),
         waitingApproval = stringResource(R.string.sessions_sub_waiting),
         idle = stringResource(R.string.sessions_sub_idle),
-        planning = stringResource(R.string.agent_planning),
-        implementing = stringResource(R.string.agent_implementing),
-        completed = stringResource(R.string.agent_completed),
     )
     // Re-read per composition, not remembered: the label must age ("3m" → "4m")
     // even when nothing else about the session changed.
@@ -300,8 +296,6 @@ fun SessionRow(
                     text = SessionRowText.detailLine(
                         status = SessionRowText.subLine(
                             activity = session.activity,
-                            questionPending = session.questionPending,
-                            aiagentState = session.aiagentState,
                             cliTypeName = session.cliTypeName,
                             // The age has its own column; repeating it here said it twice.
                             age = null,

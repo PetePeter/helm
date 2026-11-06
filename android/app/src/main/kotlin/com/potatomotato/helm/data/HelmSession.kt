@@ -23,10 +23,6 @@ data class HelmSession(
     val cliType: String,
     val cliTypeName: String,
     val activity: SessionState,
-    /** The session's own AIAGENT-* phase, when it has declared one. */
-    val aiagentState: String? = null,
-    /** Something is waiting for the user's answer. Outranks every other status. */
-    val questionPending: Boolean = false,
     /**
      * Desktop-clock epoch ms of the last activity — display-only (the phone clock
      * and the desktop clock disagree in the wild), and clamped at the reader.
@@ -213,8 +209,6 @@ object SessionWire {
             cliTypeName = summary.opt("cliTypeName") as? String ?: "",
             gitBranch = (summary.opt("gitBranch") as? String)?.takeIf { it.isNotBlank() },
             activity = activityOf(summary.opt("activityLevel")),
-            aiagentState = summary.opt("aiagentState") as? String,
-            questionPending = summary.opt("questionPending") == true,
             // org.json hands back Integer or Long by magnitude; both are the number.
             lastActiveAtEpochMs = (summary.opt("lastActiveAtEpochMs") as? Number)?.toLong(),
             currentPlanId = summary.opt("currentPlanId") as? String,

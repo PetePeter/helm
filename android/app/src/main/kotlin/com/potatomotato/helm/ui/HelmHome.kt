@@ -1899,19 +1899,13 @@ private fun SessionTabScaffold(
 @Composable
 private fun sessionHeaderDetails(session: HelmSession): String {
     val labels = SessionRowText.Labels(
-        needsDecision = stringResource(R.string.sessions_sub_needs_decision),
         working = stringResource(R.string.sessions_sub_working),
         waitingApproval = stringResource(R.string.sessions_sub_waiting),
         idle = stringResource(R.string.sessions_sub_idle),
-        planning = stringResource(R.string.agent_planning),
-        implementing = stringResource(R.string.agent_implementing),
-        completed = stringResource(R.string.agent_completed),
     )
     val now = System.currentTimeMillis()
     val status = SessionRowText.subLine(
         activity = session.activity,
-        questionPending = session.questionPending,
-        aiagentState = session.aiagentState,
         cliTypeName = session.cliTypeName,
         age = SessionRowText.relativeTime(session.lastActiveAtEpochMs, now),
         labels = labels,

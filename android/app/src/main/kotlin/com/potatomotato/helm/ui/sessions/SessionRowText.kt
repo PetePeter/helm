@@ -5,9 +5,8 @@ import com.potatomotato.helm.ui.components.SessionState
 /**
  * The words under a session name, and the age beside it — mockup screen 1.
  *
- * Pure on purpose: the branch order (a pending question outranks everything),
- * the fallbacks (an unknown aiagent state degrades to the activity word), and
- * the clock-skew clamp are real decisions with real failure modes, so they live
+ * Pure on purpose: the activity words, the idle age and the clock-skew clamp
+ * are real decisions with real failure modes, so they live
  * here where they are testable, not inside a composable where they are not.
  * The screen resolves [Labels] from resources and reads the answers.
  */
@@ -15,32 +14,18 @@ object SessionRowText {
 
     /** Display words, resolved from resources by the caller. */
     class Labels(
-        val needsDecision: String,
         val working: String,
         val waitingApproval: String,
         val idle: String,
-        val planning: String,
-        val implementing: String,
-        val completed: String,
     )
 
     fun subLine(
         activity: SessionState,
-        questionPending: Boolean,
-        aiagentState: String?,
         cliTypeName: String,
         age: String?,
         labels: Labels,
     ): String {
-        if (questionPending) return labels.needsDecision
-
-        val agentWord = when (aiagentState) {
-            "planning" -> labels.planning
-            "implementing" -> labels.implementing
-            "completed" -> labels.completed
-            "idle" -> labels.idle
-            else -> null
-        } ?: when (activity) {
+        val word = when (activity) {
             SessionState.Active -> labels.working
             SessionState.Waiting -> return labels.waitingApproval
             SessionState.Idle, SessionState.Flash ->
@@ -49,7 +34,7 @@ object SessionRowText {
                 return if (age == null || age == "now") labels.idle else "${labels.idle} · $age"
         }
 
-        return if (cliTypeName.isEmpty()) agentWord else "$agentWord · $cliTypeName"
+        return if (cliTypeName.isEmpty()) word else "$word · $cliTypeName"
     }
 
     /**
