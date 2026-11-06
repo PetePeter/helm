@@ -21,6 +21,7 @@ release/
 /config/
 config-deploy/
 src/config/skill-analytics.json
+src/config/hooks/helm-hook.exe
 tmp/helm-work*
 tmp/helm-attachment*
 .mcp.json

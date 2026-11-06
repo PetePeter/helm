@@ -8,7 +8,8 @@
   "scripts": {
     "start": "npm run build && electron .",
     "dev": "npm run build && electron .",
-    "build": "npm run build:electron && npm run build:preload && npm run build:renderer",
+    "build": "npm run build:electron && npm run build:preload && npm run build:renderer && npm run build:hook-shim",
+    "build:hook-shim": "node scripts/build-hook-shim.mjs",
     "build:electron": "esbuild src/electron/main.ts --bundle --platform=node --packages=external --outfile=dist-electron/main.js --format=esm --sourcemap && node scripts/copy-mermaid-asset.mjs",
     "build:preload": "esbuild src/electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs --format=cjs --sourcemap",
     "build:renderer": "vite build --config vite.renderer.config.ts",

@@ -26,6 +26,7 @@ import { logger } from '../../utils/logger.js';
 
 const execFileAsync = promisify(execFile);
 const CLAUDE_STATUSLINE_CONFIG = 'helm-claude-statusline.json';
+const NATIVE_SHIM = 'helm-hook.exe';
 
 export type HookIntegrationStatus = 'installed' | 'outdated' | 'not-installed' | 'interpreter-missing';
 
@@ -97,14 +98,32 @@ export async function probeInterpreter(deps: HookInstallerDeps): Promise<Resolve
  * is quoted only when it contains whitespace.
  */
 function hookCommand(deps: HookInstallerDeps, interpreter: ResolvedInterpreter, provider: HookProvider, event: string): string {
-  const parts = [interpreter.command, ...interpreter.args, deps.shimPath, provider, event];
+  const native = nativeShimPath(deps);
+  const program = native ?? deps.shimPath;
+  const parts = native ? [native, provider, event] : [interpreter.command, ...interpreter.args, deps.shimPath, provider, event];
   if (provider === 'codex') {
-    warnIfCodexCannotSpawn(parts, deps.shimPath);
+    warnIfCodexCannotSpawn(parts, program);
     return parts.join(' ');
   }
   return parts
-    .map((part) => (part === deps.shimPath || /\s/.test(part) ? `"${part}"` : part))
+    .map((part) => (part === program || /\s/.test(part) ? `"${part}"` : part))
     .join(' ');
+}
+
+/**
+ * The native shim (tools/hook-shim, Go) when the build produced one. Hooks fire
+ * on every tool call, and Python's start-up plus imports cost ~150 ms each; the
+ * native one does the same forward in a few. The Python shim stays the fallback
+ * and still serves the status line.
+ */
+function nativeShimPath(deps: HookInstallerDeps): string | null {
+  const native = path.join(path.dirname(deps.shimPath), NATIVE_SHIM);
+  return process.platform === 'win32' && existsSync(native) ? native : null;
+}
+
+/** Every command Helm writes runs a file in the shim dir whose name starts with this. */
+function ownerMarker(deps: HookInstallerDeps): string {
+  return path.join(path.dirname(deps.shimPath), 'helm-hook');
 }
 
 function statuslineCommand(deps: HookInstallerDeps, interpreter: ResolvedInterpreter): string {
@@ -242,7 +261,7 @@ function writeConfigFile(file: string, obj: JsonRecord): void {
 }
 
 /** A nested matcher-group is ours when any of its handlers runs our shim. */
-function isOurGroup(group: unknown, shimPath: string): boolean {
+function isOurGroup(group: unknown, marker: string): boolean {
   if (!group || typeof group !== 'object') return false;
   const handlers = (group as { hooks?: unknown }).hooks;
   if (!Array.isArray(handlers)) return false;
@@ -251,15 +270,15 @@ function isOurGroup(group: unknown, shimPath: string): boolean {
       !!handler &&
       typeof handler === 'object' &&
       typeof (handler as { command?: unknown }).command === 'string' &&
-      ((handler as { command: string }).command as string).includes(shimPath),
+      ((handler as { command: string }).command as string).includes(marker),
   );
 }
 
 /** A flat Copilot entry is ours when its command runs our shim. */
-function isOurEntry(entry: unknown, shimPath: string): boolean {
+function isOurEntry(entry: unknown, marker: string): boolean {
   if (!entry || typeof entry !== 'object') return false;
   const command = (entry as { command?: unknown }).command;
-  return typeof command === 'string' && command.includes(shimPath);
+  return typeof command === 'string' && command.includes(marker);
 }
 
 function sameJson(a: unknown, b: unknown): boolean {
@@ -289,8 +308,8 @@ export async function installCliHooks(hooks: CliHooksIntegration, deps: HookInst
     const desired = isCopilot(hooks) ? desiredCopilotEntry(command) : desiredGroup(command);
     const existing = Array.isArray(hooksBlock[event]) ? (hooksBlock[event] as unknown[]) : [];
     const isOurs = isCopilot(hooks) ? isOurEntry : isOurGroup;
-    const ours = existing.filter((entry) => isOurs(entry, deps.shimPath));
-    const kept = existing.filter((entry) => !isOurs(entry, deps.shimPath));
+    const ours = existing.filter((entry) => isOurs(entry, ownerMarker(deps)));
+    const kept = existing.filter((entry) => !isOurs(entry, ownerMarker(deps)));
     // Already current: exactly our desired entry and nothing stale of ours.
     if (ours.length === 1 && sameJson(ours[0], desired)) continue;
     hooksBlock[event] = [...kept, desired];
@@ -319,7 +338,7 @@ export function uninstallCliHooks(hooks: CliHooksIntegration, deps: HookInstalle
     for (const event of Object.keys(hooksBlock as JsonRecord)) {
       const existing = (hooksBlock as JsonRecord)[event];
       if (!Array.isArray(existing)) continue;
-      const kept = existing.filter((entry) => !isOurs(entry, deps.shimPath));
+      const kept = existing.filter((entry) => !isOurs(entry, ownerMarker(deps)));
       if (kept.length === existing.length) continue;
       changed = true;
       if (kept.length === 0) delete (hooksBlock as JsonRecord)[event];
@@ -369,7 +388,7 @@ export async function readHookIntegrationStatus(
   let complete = true;
   for (const event of hooks.events) {
     const existing = Array.isArray((hooksBlock as JsonRecord)[event]) ? ((hooksBlock as JsonRecord)[event] as unknown[]) : [];
-    const ours = existing.filter((entry) => isOurs(entry, deps.shimPath));
+    const ours = existing.filter((entry) => isOurs(entry, ownerMarker(deps)));
     if (ours.length === 0) {
       // A registered event with no Helm entry on disk: a partial (or trimmed)
       // install counts as outdated, never as installed.

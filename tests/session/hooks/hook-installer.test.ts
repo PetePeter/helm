@@ -468,3 +468,29 @@ describe('buildHookSnippet', () => {
     expect(snippet).toContain('<python>');
   });
 });
+
+describe.runIf(process.platform === 'win32')('native shim', () => {
+  it('runs the native shim with no interpreter when it was built, replacing the Python entries', async () => {
+    await installCliHooks(CLAUDE, depsWithPython());
+    mkdirSync(join(shimPath, '..'), { recursive: true });
+    const native = join(shimPath, '..', 'helm-hook.exe');
+    writeFileSync(native, '');
+
+    const result = await installCliHooks(CLAUDE, depsWithPython());
+
+    expect(result).toEqual({ status: 'installed', written: true });
+    const groups = readJson('.claude/settings.json').hooks.Stop;
+    expect(groups).toHaveLength(1);
+    expect(groups[0].hooks[0].command).toBe(`"${native}" claude Stop`);
+    expect(await readHookIntegrationStatus(CLAUDE, depsWithPython())).toBe('installed');
+  });
+
+  it('uninstall removes native-shim entries too', async () => {
+    mkdirSync(join(shimPath, '..'), { recursive: true });
+    writeFileSync(join(shimPath, '..', 'helm-hook.exe'), '');
+    await installCliHooks(CODEX, depsWithPython());
+
+    expect(uninstallCliHooks(CODEX, depsWithPython()).changed).toBe(true);
+    expect(readJson('.codex/hooks.json').hooks).toBeUndefined();
+  });
+});

@@ -26,6 +26,15 @@ Stdlib `urllib` only, no pip, ever. It:
 4. on ANY failure (no session id, Helm down, refused, timeout, malformed
    stdin) prints nothing and **exits 0**
 
+**Native shim.** Hooks fire twice per tool call, and Python's start-up plus
+imports cost ~150 ms each time. `npm run build` therefore also compiles
+`tools/hook-shim` (Go, same forward, same fail-open rules) to
+`src/config/hooks/helm-hook.exe`, which seeds alongside the Python shim. When
+that exe exists the installer writes `"<exe>" <cli> <EventName>` with no
+interpreter (~5 ms per hook); without Go the build skips it and hooks stay on
+Python. The status line always runs the Python shim. Entries running either
+file are recognised as Helm's, so a reinstall swaps them in place.
+
 Exit 2 is the trap: for command hooks, **exit code 2 DENIES** on supported
 events. The shim catches everything so it can never exit 2 by accident.
 Fail-open matches Claude's and Copilot's own timeout behaviour — a hook must

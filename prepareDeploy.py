@@ -197,6 +197,8 @@ def main():
 
     # 4. Create deploy-safe config staging directory
     print("[4/7] Creating deploy configs (stripping personal paths)...")
+    # The native hook shim lands in src/config/hooks/ and ships from there.
+    run("npm run build:hook-shim", check=False)
     create_deploy_configs()
     print("  OK: Deploy configs staged in config-deploy/")
     print()
