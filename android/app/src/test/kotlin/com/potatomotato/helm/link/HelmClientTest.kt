@@ -1065,15 +1065,15 @@ class HelmClientTest {
         client.onInbound(
             resultFor(
                 lastCallId(),
-                """[{"cliType":"claudecode","name":"Claude Code","supportedDirPaths":["x:\\c"]},
+                """[{"cliType":"claudecode","name":"Claude Code","kind":"cli"},
                     {"cliType":"codex"}]""",
             ),
         )
 
         assertEquals(
             listOf(
-                HelmCli("claudecode", "Claude Code", listOf("x:\\c")),
-                HelmCli("codex", "codex", emptyList()),
+                HelmCli("claudecode", "Claude Code"),
+                HelmCli("codex", "codex"),
             ),
             client.control.clis.value,
         )

@@ -1,7 +1,7 @@
 import type { ConfigLoader } from '../../config/loader.js';
 import type { PlanManager } from '../../session/plan-manager.js';
 import type { SessionManager } from '../../session/manager.js';
-import type { DirectorySummary, CliSummary } from '../helm-control-service.js';
+import type { DirectorySummary } from '../helm-control-service.js';
 import type { ProjectStore } from '../../session/project-store.js';
 import { normalizeProjectPath } from '../../session/project-identity.js';
 
@@ -80,27 +80,5 @@ export class HelmDirectoryService {
 
     return [...consolidated.values()]
       .sort((a, b) => a.dirPath.localeCompare(b.dirPath));
-  }
-
-  listClis(): CliSummary[] {
-    const supportedDirPaths = this.configLoader.getWorkingDirectories().map((entry) => entry.path);
-    return this.configLoader.getCliTypes().map((cliType) => {
-      const entry = this.requireCliEntry(cliType);
-      return {
-        cliType,
-        name: entry.name,
-        command: entry.spawnCommand ?? '',
-        supportsResume: Boolean(entry.spawnCommand || entry.resumeCommand || entry.continueCommand),
-        supportedDirPaths,
-      };
-    });
-  }
-
-  private requireCliEntry(cliType: string) {
-    const entry = this.configLoader.getCliTypeEntry(cliType);
-    if (!entry) {
-      throw new Error(`Unknown CLI type: ${cliType}`);
-    }
-    return entry;
   }
 }

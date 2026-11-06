@@ -351,12 +351,7 @@ class ControlRepository {
         _clis.value = (0 until array.length()).mapNotNull { index ->
             val entry = array.opt(index) as? JSONObject ?: return@mapNotNull null
             val cliType = entry.opt("cliType") as? String ?: return@mapNotNull null
-            val paths = entry.opt("supportedDirPaths") as? JSONArray
-            HelmCli(
-                cliType = cliType,
-                name = entry.opt("name") as? String ?: cliType,
-                supportedDirPaths = (0 until (paths?.length() ?: 0)).mapNotNull { paths?.opt(it) as? String },
-            )
+            HelmCli(cliType = cliType, name = entry.opt("name") as? String ?: cliType)
         }.sortedBy { it.name.lowercase() }
         return true
     }
@@ -404,11 +399,10 @@ data class SpawnMachine(val id: String, val name: String)
 
 /**
  * One CLI Helm can spawn, from the `tool_list` catalogue. [cliType] is the wire
- * id `session_create` needs; [name] is only what the row shows. [supportedDirPaths]
- * is carried for parity with the desktop answer even though the form does not
- * filter on it yet — the phone-width row does not need it today.
+ * id `session_create` needs; [name] is only what the row shows. Spawn
+ * directories come from `directory_list`, not from here.
  */
-data class HelmCli(val cliType: String, val name: String, val supportedDirPaths: List<String>)
+data class HelmCli(val cliType: String, val name: String)
 
 /**
  * One directory Helm can spawn into. The path IS the identity — two projects can

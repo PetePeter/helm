@@ -229,6 +229,18 @@ const envelope = JSON.parse(chunk.slice(10, chunk.indexOf('\n')));
 await replyViaHelm(envelope.fromSessionName, response);
 ```
 
+## Picking a CLI type: `tool_list`, `tool_get`
+
+```text
+tool_list()                 -> [{ cliType, name, kind, model? }]   (model only for API tools)
+tool_get(cliType="...")     -> { ...that row, command, supportsResume }
+directory_list()            -> the directories a session can be spawned into
+```
+
+`tool_list` stays small on purpose: it is read at the start of many workflows,
+and repeating every directory and spawn command under every type made it tens
+of kilobytes. Ask `tool_get` only when you need one type's details.
+
 ## Keeping your mission current: `session_mission_set`
 
 Every session has a mission — a TL;DR (max 500 characters) pinned above its

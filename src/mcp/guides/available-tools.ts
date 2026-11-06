@@ -9,7 +9,8 @@ import { REQUIRED_PLAN_DESCRIPTION_SECTIONS } from './agent-plan-guide.js';
 /** List of all MCP tools with names and titles (used by tests to verify tool surface). */
 export function getAvailableTools(): McpToolSummary[] {
   return [
-    { name: 'tool_list', title: 'List CLI Types', description: 'List CLI types configured in Helm and the configured working directories they can be spawned into.' },
+    { name: 'tool_list', title: 'List CLI Types', description: 'List the CLI types configured in Helm (id, name, kind).' },
+    { name: 'tool_get', title: 'Get CLI Type', description: 'Spawn details for one CLI type: command and resume support.' },
     { name: 'skill_list', title: 'List Skills', description: 'List Helm skills (user-managed and system), optionally filtered by projectId or dirPath. session_info returns skills applicable to the current session project.' },
     { name: 'skill_get', title: 'Get Skill', description: 'Fetch a Helm skill by ID, or resolve by type with optional projectId/dirPath for project-scoped effective resolution.' },
     { name: 'skill_submit_feedback', title: 'Submit Skill Feedback', description: 'Rate a user skill after applying it; stores stars, summary, optional improvement, and caller CLI attribution.' },

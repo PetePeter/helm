@@ -192,11 +192,11 @@ class ControlRepositoryTest {
     }
 
     @Test
-    fun `the CLI catalogue arrives with display names and spawn targets`() {
+    fun `the CLI catalogue arrives with display names`() {
         assertTrue(
             control.clisArrived(
                 JSONArray(
-                    """[{"cliType":"claudecode","name":"Claude Code","supportedDirPaths":["x:\\c","/w"]},
+                    """[{"cliType":"claudecode","name":"Claude Code","kind":"cli"},
                        {"name":"pathless"},
                        {"cliType":"codex"}]""",
                 ),
@@ -207,8 +207,8 @@ class ControlRepositoryTest {
         // the id the wire actually needs.
         assertEquals(
             listOf(
-                HelmCli("claudecode", "Claude Code", listOf("x:\\c", "/w")),
-                HelmCli("codex", "codex", emptyList()),
+                HelmCli("claudecode", "Claude Code"),
+                HelmCli("codex", "codex"),
             ),
             control.clis.value,
         )

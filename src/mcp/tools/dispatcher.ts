@@ -235,6 +235,8 @@ export async function callMcpTool(
         return service.plansSummary(asString(args.dirPath, 'dirPath is required'), asPlanFilter(args.filter));
       case 'tool_list':
         return service.listClis();
+      case 'tool_get':
+        return service.getCli(asString(args.cliType, 'cliType is required'));
       case 'skill_list':
         return service.listSkills({
           ...(typeof args.projectId === 'string' ? { projectId: args.projectId } : {}),

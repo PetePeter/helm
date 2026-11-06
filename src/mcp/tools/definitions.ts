@@ -14,10 +14,21 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'tool_list',
     title: 'List CLI Types',
-    description: 'List CLI types configured in Helm and the configured working directories they can be spawned into. Call this near the start of a Helm workflow when you need to know what CLIs and spawn targets are actually available before creating a session.',
+    description: 'List the CLI types configured in Helm: cliType id, name, kind (cli/api/comfyui) and, for API tools, model. Pass a cliType to session_create. Spawn details (command, resume support) come from tool_get; spawn directories from directory_list.',
     inputSchema: {
       type: 'object',
       properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'tool_get',
+    title: 'Get CLI Type',
+    description: 'Details for one CLI type from tool_list: its spawn command and whether it can resume a session.',
+    inputSchema: {
+      type: 'object',
+      properties: { cliType: { type: 'string', description: 'A cliType id from tool_list.' } },
+      required: ['cliType'],
       additionalProperties: false,
     },
   },

@@ -204,13 +204,17 @@ export interface SessionContextSummary {
 /** session_get keeps its detailed context metadata while sharing summary fields. */
 export type SessionDetails = Omit<SessionSummary, 'context'> & { context: SessionContextSize };
 
+/** One `tool_list` row: just enough to pick a type. Details come from `tool_get`. */
 export interface CliSummary {
   cliType: string;
   name: string;
+  kind: 'cli' | 'api' | 'comfyui';
+  model?: string;
+}
+
+export interface CliDetails extends CliSummary {
   command: string;
-  kind?: 'cli' | 'api' | 'comfyui';
   supportsResume: boolean;
-  supportedDirPaths: string[];
 }
 
 export interface McpToolSummary {
@@ -1420,21 +1424,29 @@ export class HelmControlService extends EventEmitter {
     return this.directoryService.listDirectories();
   }
 
-  listClis() {
-    const supportedDirPaths = this.configLoader.getWorkingDirectories().map(e => e.path);
-    return this.configLoader.getCliTypes().map(cliType => {
-      const entry = this.configLoader.getCliTypeEntry(cliType)!;
-      return {
-        cliType,
-        name: entry.displayName ?? entry.name,
-        // Helm-hosted tools have no CLI process; ComfyUI sessions use the local media host.
-        kind: entry.api ? 'api' as const : entry.comfyUi ? 'comfyui' as const : 'cli' as const,
-        ...(entry.api ? { model: entry.api.model } : {}),
-        command: entry.spawnCommand ?? '',
-        supportsResume: Boolean(entry.api || entry.spawnCommand || entry.resumeCommand || entry.continueCommand),
-        supportedDirPaths,
-      };
-    });
+  /** The catalogue stays small: directories live in directory_list, details in getCli. */
+  listClis(): CliSummary[] {
+    return this.configLoader.getCliTypes().map(cliType => this.cliSummary(cliType, this.configLoader.getCliTypeEntry(cliType)!));
+  }
+
+  getCli(cliType: string): CliDetails {
+    const entry = this.configLoader.getCliTypeEntry(cliType);
+    if (!entry) throw new Error(`Unknown cliType: ${cliType}. Call tool_list for the configured types.`);
+    return {
+      ...this.cliSummary(cliType, entry),
+      command: entry.spawnCommand ?? '',
+      supportsResume: Boolean(entry.api || entry.spawnCommand || entry.resumeCommand || entry.continueCommand),
+    };
+  }
+
+  private cliSummary(cliType: string, entry: NonNullable<ReturnType<ConfigLoader['getCliTypeEntry']>>): CliSummary {
+    return {
+      cliType,
+      name: entry.displayName ?? entry.name,
+      // Helm-hosted tools have no CLI process; ComfyUI sessions use the local media host.
+      kind: entry.api ? 'api' : entry.comfyUi ? 'comfyui' : 'cli',
+      ...(entry.api ? { model: entry.api.model } : {}),
+    };
   }
 
   // ---------------------------------------------------------------------------

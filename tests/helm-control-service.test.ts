@@ -102,14 +102,33 @@ describe('HelmControlService.listClis', () => {
       spawnCommand: 'claude',
     } as any);
 
-    expect(service.listClis()).toEqual([{
-      cliType: 'peer-cli-id',
-      name: 'Claude Code',
-      kind: 'cli',
-      command: 'claude',
-      supportsResume: true,
-      supportedDirPaths: ['/work'],
-    }]);
+    expect(service.listClis()).toEqual([{ cliType: 'peer-cli-id', name: 'Claude Code', kind: 'cli' }]);
+  });
+
+  it('lists only identity, with the model for API tools — no commands or directories', () => {
+    const { service, configLoader } = makeService();
+    configLoader.getCliTypes.mockReturnValue(['api-id']);
+    configLoader.getCliTypeEntry.mockReturnValue({ name: 'local', api: { model: 'qwen' } } as any);
+
+    expect(service.listClis()).toEqual([{ cliType: 'api-id', name: 'local', kind: 'api', model: 'qwen' }]);
+  });
+});
+
+describe('HelmControlService.getCli', () => {
+  it('returns one type with its spawn details', () => {
+    const { service, configLoader } = makeService();
+    configLoader.getCliTypeEntry.mockReturnValue({ name: 'claude', spawnCommand: 'claude --x' } as any);
+
+    expect(service.getCli('cli-id')).toEqual({
+      cliType: 'cli-id', name: 'claude', kind: 'cli', command: 'claude --x', supportsResume: true,
+    });
+  });
+
+  it('refuses an unknown type and points at tool_list', () => {
+    const { service, configLoader } = makeService();
+    configLoader.getCliTypeEntry.mockReturnValue(undefined as any);
+
+    expect(() => service.getCli('nope')).toThrow(/tool_list/);
   });
 });
 
