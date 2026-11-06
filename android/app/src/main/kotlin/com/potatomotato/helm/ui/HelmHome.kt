@@ -152,6 +152,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import com.potatomotato.helm.ui.share.ShareWaitDialog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -656,8 +657,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             val path = withContext(Dispatchers.IO) {
                 artifactFiles.save(ready.file.filename, ready.file.mimeType, ready.file.bytes)
             }
-            client.artifacts.saveLanded(ready.file.artifactId, path.location)
+            // Done first: saveLanded changes artifactSave, which cancels this effect.
             client.control.noticed(SessionAction.SaveArtifact, ActionOutcome.Done)
+            client.artifacts.saveLanded(ready.file.artifactId, path.location)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             client.artifacts.saveFailed(
                 ready.file.artifactId,
@@ -995,6 +999,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             saved.uri,
                         )
                         Toast.makeText(context, comfyGallerySaved.format(saved.location), Toast.LENGTH_LONG).show()
+                    } catch (error: CancellationException) {
+                        throw error
                     } catch (error: Exception) {
                         Toast.makeText(
                             context,
