@@ -2065,7 +2065,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_search',
     title: 'Search Memories',
-    description: 'Search memories, best match first (BM25 over tldr and content: any term, typo-tolerant, prefixes). Returns the 5 best `hits` as id + tldr, never the content: memory_get the hit you want. `matched` counts every match; when it is above 5, narrow the query. Covers your project plus other projects that share; each hit carries its score, projectId and `foreign` flag. A foreign memory is another repo\'s knowledge: check that it applies here before acting on it. regex=true filters by regular expression instead of ranking, under the same cap. Start narrow with the most specific multi-term query, then widen: drop terms, then try synonyms and alternate spellings, until your terminology is exhausted; only then conclude nothing is stored.',
+    description: 'Search memories, best match first (BM25 over tldr and content: any term, typo-tolerant, prefixes). Returns the 5 best `hits` as id + tldr, never the content: memory_get the hit you want. `matched` counts every match; when it is above 5, narrow the query. Covers your project plus other projects that share; each hit carries its score, projectId and `foreign` flag. A foreign memory is another repo\'s knowledge: check that it applies here before acting on it. regex=true filters by regular expression instead of ranking, under the same cap. Expressions filter before ranking: AND, OR, NOT or -word, (parentheses), "exact phrase", word* prefix, word~ typo, a NEAR/5 b (within 5 words), a ONEAR/5 b (in order). A plain query already matches any term, so put every synonym in one query rather than retrying.',
     inputSchema: {
       type: 'object',
       properties: {

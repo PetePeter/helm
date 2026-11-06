@@ -9,8 +9,8 @@ description = "How to find what this project already knows before starting work.
 tools = ["memory_search", "memory_get", "memory_graph"]
 
 [procedure]
-step_1 = "memory_search the task with its most specific terms: file, function, error text, feature name."
-step_2 = "Widen until your terminology is exhausted: drop terms, try synonyms and alternate spellings. Only then conclude nothing is stored."
+step_1 = "memory_search once with the specific terms and their synonyms together: file, function, error text, feature name. A plain query matches any term, so one query covers them."
+step_2 = "Too many hits? Narrow with an expression: a AND b, \"exact phrase\", a NEAR/5 b, -word."
 step_3 = "A search returns the 5 best hits as id + tldr. memory_get the hits that matter: you get the memory in full and its links as id + tldr. memory_get a linked one too when its tldr looks relevant; it often carries the reason or the trap. If matched is above 5, narrow the query."
 
 [rules]

@@ -85,6 +85,14 @@ flowchart LR
   `foreign`; never content. `MEMORY_SEARCH_LIMIT` (5) caps `memory_search`, and
   `matched` says how many matched so the caller knows to narrow the query.
   `regex=true` follows the same shape and cap.
+- **Query expressions** (`src/session/memory-query.ts`): `AND`, `OR`, `NOT`/`-word`,
+  parentheses, `"exact phrase"`, `word*`, `word~`, `a NEAR/n b`, `a ONEAR/n b`
+  (ordered). An expression is a filter; BM25 over its positive words ranks
+  the survivors. A plain query skips the parser — it already matches any term
+  with typo and prefix slack, so there is nothing wider to retry.
+  **Why:** 43% of agent searches were followed by another search within three
+  calls, driven by "start narrow, then widen" guidance; one wide query plus
+  an expression to narrow replaces that loop.
 - **`memory_get`** returns the asked-for memory whole and everything it reaches
   (`graphDepth` defaults to 1) as id + tldr, with the edge type on `via`.
 - **Not capped:** the Memory pane's search. It highlights every match on the
