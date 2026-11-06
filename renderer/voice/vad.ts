@@ -35,6 +35,11 @@ export class Vad {
     return this.startedAt !== null;
   }
 
+  /** When the voice was last above the threshold — where a closed segment's speech ended. */
+  get lastSpeechAt(): number {
+    return this.lastLoudAt;
+  }
+
   feed(energy: number, atMs: number): VadEvent | null {
     this.openedAt ??= atMs;
     if (this.startedAt !== null && atMs - this.startedAt >= this.options.maxSegmentMs) {

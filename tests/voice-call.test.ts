@@ -71,10 +71,15 @@ class FakeMic implements VoiceMic {
     return { bytes: new Uint8Array([9]), mimeType: 'audio/webm' };
   }
   close() { this.open_ = false; this.listening = false; this.onEnergy = null; }
-  /** Say something: loud for 500ms, then silence past the hangover. */
-  talk(start: number) {
-    for (let t = start; t < start + 500; t += 20) if (this.listening) this.onEnergy?.(0.5, t);
-    for (let t = start + 500; t < start + 1500; t += 20) if (this.listening) this.onEnergy?.(0.001, t);
+  /** Say something: loud for `loudMs`, then `quietMs` of silence (default: past the turn pause). */
+  async talk(start: number, loudMs = 500, quietMs = 2000) {
+    for (let t = start; t < start + loudMs; t += 20) await this.frame(0.5, t);
+    for (let t = start + loudMs; t < start + loudMs + quietMs; t += 20) await this.frame(0.001, t);
+  }
+  /** One 20ms frame, then let the call's async work (take, listen) run. */
+  async frame(energy: number, t: number) {
+    if (this.listening) this.onEnergy?.(energy, t);
+    await flush();
   }
 }
 
@@ -240,7 +245,7 @@ describe('voice call hands-free', () => {
     expect(call.phase.value).toBe('listening');
     expect(mic.listening).toBe(true);
 
-    mic.talk(0);
+    await mic.talk(0);
     await flush(); await flush();
     expect(client.asked).toEqual(['status please']);
     expect(call.phase.value).toBe('listening');
@@ -254,7 +259,7 @@ describe('voice call hands-free', () => {
     expect(listeningWhilePlaying).toBe(false);
     expect(mic.listening).toBe(true);
 
-    mic.talk(5000);
+    await mic.talk(5000);
     await flush(); await flush();
     expect(client.asked).toEqual(['status please', 'status please']);
   });
@@ -263,7 +268,7 @@ describe('voice call hands-free', () => {
     client.transcript = '   ';
     const call = make();
     await call.startCall();
-    mic.talk(0);
+    await mic.talk(0);
     await flush(); await flush();
     expect(client.asked).toEqual([]);
     expect(mic.listening).toBe(true);
@@ -291,9 +296,7 @@ describe('voice call hands-free', () => {
   it('a blip is dropped and listening restarts with a fresh recording', async () => {
     const call = make();
     await call.startCall();
-    for (let t = 0; t < 60; t += 20) mic.onEnergy?.(0.5, t);
-    for (let t = 60; t < 1000; t += 20) mic.onEnergy?.(0.001, t);
-    await flush();
+    await mic.talk(0, 60, 940);
     expect(mic.takes).toBe(1);
     expect(mic.listening).toBe(true);
     expect(client.asked).toEqual([]);
@@ -336,14 +339,13 @@ describe('voice call hands-free', () => {
     client.voiceTranscribe = async (a, m) => { await new Promise<void>(r => { finishTranscribe = r; }); return transcribe(a, m); };
     const call = make();
     await call.startCall();
-    mic.talk(0);
-    await flush();
-    expect(call.phase.value).toBe('transcribing');
+    await mic.talk(0);
     call.hangUp();
     finishTranscribe();
     await flush(); await flush();
     expect(mic.listening).toBe(false);
     expect(call.phase.value).toBe('idle');
+    expect(client.asked).toEqual([]);
   });
 
   it('a mic failure reports and leaves no call open', async () => {
@@ -352,5 +354,51 @@ describe('voice call hands-free', () => {
     await call.startCall();
     expect(call.inCall.value).toBe(false);
     expect(call.error.value).toMatch(/denied/);
+  });
+});
+
+describe('voice call hands-free turns', () => {
+  it('segments split by a short pause are sent as one turn, the pause marked', async () => {
+    const transcripts = ['check the build', 'and run the tests'];
+    client.voiceTranscribe = async () => ({ ok: true as const, text: transcripts.shift() ?? '' });
+    const call = make();
+    await call.startCall();
+
+    await mic.talk(0, 500, 1000); // Segment ends at 1300ms: under the 1.5s turn pause.
+    expect(client.asked).toEqual([]);
+    await mic.talk(1500, 500, 2000);
+
+    expect(client.asked).toEqual(['check the build [pause 1.0s] and run the tests']);
+    expect(call.transcript.value.at(-1)).toEqual({ from: 'you', text: client.asked[0] });
+  });
+
+  it('a reply that arrives mid-turn is spoken only after the turn is sent', async () => {
+    const call = make();
+    await call.startCall();
+
+    await mic.talk(0, 500, 1000);
+    client.reply('on it');
+    await flush(); await flush();
+    expect(player.played).toEqual([]);
+
+    for (let t = 1500; t < 2200; t += 20) await mic.frame(0.001, t);
+    await flush(); await flush(); await flush();
+
+    expect(client.asked).toEqual(['status please']);
+    expect(player.played).toEqual(['on it']);
+  });
+
+  it('hanging up mid-turn drops it and lets a waiting reply go', async () => {
+    const call = make();
+    await call.startCall();
+    await mic.talk(0, 500, 1000);
+    client.reply('on it');
+    await flush();
+
+    call.hangUp();
+    await flush(); await flush();
+
+    expect(client.asked).toEqual([]);
+    expect(player.played).toEqual([]);
   });
 });

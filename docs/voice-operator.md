@@ -247,10 +247,11 @@ stateDiagram-v2
     Idle --> Idle: start (user's call): ask Telecom, "Connecting…"
     Idle --> Listening: Telecom took the call / answered ring (mic opens once)
     Idle --> Ended: Telecom refused (Busy / Unavailable) / hang up while connecting
-    Listening --> Sending: non-empty final (unmuted; barge-in report rides on this call)
+    Listening --> Listening: non-empty final (stitched into the turn; turn hold armed)
+    Listening --> Sending: turn hold (1s past the last final) or mute (barge-in report rides on this call)
     Sending --> Listening: carried
     Sending --> Speaking: send failed (spoken error)
-    Listening --> Speaking: reply arrives (mic stays open)
+    Listening --> Speaking: reply arrives, user not mid-turn (mic stays open)
     Speaking --> Speaking: next queued reply
     Speaking --> Listening: queue empty
     Speaking --> Listening: barge-in (2+ words; snapshot active range + dropped queue)
@@ -264,6 +265,15 @@ Why each rule exists:
   old per-utterance `SpeechRecognizer` restarted on every pause, grabbed audio
   focus on each restart (which churned the Bluetooth headset's call link) and
   could not listen while Helm spoke.
+- **A pause is not "send".** Vosk closes a final on every short pause; the
+  user has not finished. `TurnStitcher` joins finals into one turn, writing
+  each pause of 300ms+ inline (`[pause 0.8s]`) so the agent can tell
+  hesitation from separate thoughts. The turn is sent once the user has been
+  quiet 1s past the last final (~1.5s in total, since Vosk already waited out
+  its endpoint); any partial before then keeps it open. Muting sends what was
+  already heard. The same concept as Timbre's P-1172, not shared code.
+- **Never talk over the user.** A reply that arrives mid-turn (words heard, or
+  a turn not yet sent) is queued and spoken once the turn is sent.
 - **Silence is never sent.** Empty or whitespace finals are dropped.
 - **Heard, instantly.** Each send plays a short ack tone on the call route.
   TTS runs at 1.15×. `call sending` / `call target replied` /
@@ -439,16 +449,22 @@ outside a hands-free call.
 ```mermaid
 stateDiagram-v2
     [*] --> listening: Call (mic.open + listen)
-    listening --> transcribing: Vad 'end' (quiet ≥ 800ms after ≥ 250ms speech, or 30s cap)
+    listening --> listening: Vad 'end' (quiet ≥ 800ms after ≥ 250ms speech, or 30s cap) — fresh recording, segment transcribed into the turn
     listening --> listening: Vad 'discard' (blip / 30s silence) — drop, fresh recording
-    transcribing --> listening: voice:transcribe → voice:ask
-    listening --> speaking: operator reply (mic.take — paused)
-    transcribing --> speaking: operator reply
+    listening --> listening: 1.5s quiet past the last speech — stitched turn → voice:ask
+    listening --> speaking: operator reply, user not mid-turn (mic.take — paused)
     speaking --> listening: clip played + 300ms (fresh recording)
     listening --> [*]: Hang up (mic.close)
     speaking --> [*]: Hang up
 ```
 
+- **Turns, not segments.** Each segment is transcribed as soon as it ends,
+  behind a fresh recording, so the text is ready when the pause runs out. A
+  `TurnStitcher` (`renderer/voice/turn-stitcher.ts`) joins them with inline
+  `[pause Xs]` markers; the turn is asked once the voice has been quiet 1.5s.
+  A reply that arrives mid-turn waits until the turn is sent instead of
+  pausing the mic mid-sentence. Rolling overlapped windows were not needed:
+  segments already cut on the VAD's quiet edges.
 - **Vad** (`renderer/voice/vad.ts`) is pure: fed one RMS energy per 20ms frame
   with its time, it emits `start` / `end` / `discard` (blips shorter than the
   minimum speech length). No WebAudio in its tests.
@@ -733,9 +749,8 @@ sequenceDiagram
 ## Limitations
 
 - Desktop voice: the transcript holds only this run's lines (the phone
-  keeps history); no barge-in — a reply that arrives while you talk is spoken
-  after the one before it, and in a hands-free call it pauses the mic even
-  mid-sentence. The VAD threshold is a fixed energy level, not calibrated.
+  keeps history); no barge-in — a reply waits for your turn to end, but once
+  speaking it cannot be talked over. The VAD threshold is a fixed energy level, not calibrated.
   Not yet judged live (needs a restart + a real call).
 
 - Not yet judged on a device: routing, screen-off survival, BT switching and

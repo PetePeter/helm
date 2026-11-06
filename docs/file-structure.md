@@ -214,6 +214,7 @@ renderer/
 ├── voice/
 │   ├── voice-call.ts           # createVoiceCall: hold-to-talk + hands-free call controller, ordered once-per-reply speech, shared transcript
 │   ├── vad.ts                  # Vad: pure energy gate (threshold, 800ms hangover, min speech, 30s cap) for hands-free turns
+│   ├── turn-stitcher.ts        # TurnStitcher: joins hands-free segments into one turn with inline [pause Xs] markers
 │   ├── voice-talk-binding.ts   # Press/release tracking for the `voice-talk` binding action
 │   └── browser-audio.ts        # MediaRecorder (no mic leak on release-before-open), hands-free mic (AnalyserNode RMS meter), Audio player with stop()
 ├── ipc/

@@ -7,12 +7,16 @@
  * spoken once, strictly in arrival order. Replies that land with no call open
  * are still shown — the phone may be the one talking — but never spoken.
  *
- * Hands-free (startCall): the mic stays open and a Vad cuts it into segments;
- * each segment is transcribed and sent. The mic is paused while a reply plays
- * so Helm never hears itself, then listens again until hang-up.
+ * Hands-free (startCall): the mic stays open and a Vad cuts it into segments.
+ * Each segment is transcribed as soon as it ends, but a pause is not "send":
+ * segments are stitched into one turn (TurnStitcher) that is sent only after
+ * `turnPauseMs` of quiet. A reply that arrives mid-turn waits for the turn to
+ * be sent. The mic is paused while a reply plays so Helm never hears itself,
+ * then listens again until hang-up.
  */
 import { ref } from 'vue';
 import { Vad } from './vad.js';
+import { TurnStitcher } from './turn-stitcher.js';
 
 export type VoiceCallPhase = 'idle' | 'listening' | 'recording' | 'transcribing' | 'speaking';
 
@@ -62,9 +66,13 @@ export interface VoiceCallDeps {
   vad?: Vad;
   /** Quiet gap after a reply before the mic listens again (room echo tail). */
   resumeDelayMs?: number;
+  /** Quiet after the last speech before a hands-free turn is sent. */
+  turnPauseMs?: number;
 }
 
 const DEFAULT_RESUME_DELAY_MS = 300;
+/** Cheap to wait: every segment is already transcribed when the pause runs out. */
+const DEFAULT_TURN_PAUSE_MS = 1500;
 
 const OPERATOR_OFF = 'The Helm operator is off — enable it in Settings → Operator';
 
@@ -83,6 +91,16 @@ export function createVoiceCall(deps: VoiceCallDeps) {
   const handsFree = ref(false);
   const vad = deps.vad ?? new Vad();
   const resumeDelayMs = deps.resumeDelayMs ?? DEFAULT_RESUME_DELAY_MS;
+  const turnPauseMs = deps.turnPauseMs ?? DEFAULT_TURN_PAUSE_MS;
+  const turn = new TurnStitcher();
+  /** Segment transcriptions, in order; a turn is sent only once they have all landed. */
+  let transcripts: Promise<void> = Promise.resolve();
+  let segmentStartAt = 0;
+  /** Where the open turn's last speech ended; null while no turn is open. */
+  let turnEndAt: number | null = null;
+  let sendingTurn = false;
+  /** Replies waiting for the user to finish their turn. */
+  let turnWaiters: Array<() => void> = [];
   /** Bumped by every call start and hang-up: async work from an older call is stale. */
   let callGeneration = 0;
   let opening = false;
@@ -149,29 +167,79 @@ export function createVoiceCall(deps: VoiceCallDeps) {
     phase.value = 'listening';
   }
 
-  async function onSegmentEnd(): Promise<void> {
+  /** The user is talking, or paused for less than a turn: not the moment to speak. */
+  function midTurn(): boolean {
+    return vad.speaking || turnEndAt !== null || sendingTurn;
+  }
+
+  function releaseTurnWaiters(): void {
+    if (midTurn()) return;
+    const waiters = turnWaiters;
+    turnWaiters = [];
+    waiters.forEach(release => release());
+  }
+
+  function turnSettled(): Promise<void> {
+    if (!handsFree.value || !midTurn()) return Promise.resolve();
+    return new Promise(resolve => turnWaiters.push(resolve));
+  }
+
+  /** Record the next segment at once; transcribe this one behind it. */
+  async function onSegmentEnd(startMs: number, endMs: number): Promise<void> {
     const generation = callGeneration;
-    phase.value = 'transcribing';
+    turnEndAt = endMs;
     try {
-      await send(await deps.mic.take());
+      const clip = await deps.mic.take();
+      if (generation === callGeneration && phase.value === 'listening') listen();
+      transcripts = transcripts.then(async () => {
+        if (clip.bytes.byteLength === 0) return;
+        const heard = await deps.client.voiceTranscribe(clip.bytes, clip.mimeType);
+        if (generation !== callGeneration) return;
+        if (heard.ok) turn.add(heard.text, startMs, endMs);
+        else error.value = heard.error;
+      }).catch((err) => { error.value = message(err); });
+    } catch (err) {
+      error.value = message(err);
+    }
+  }
+
+  /** Quiet long enough: send the stitched turn once every segment is transcribed. */
+  async function closeTurn(): Promise<void> {
+    const generation = callGeneration;
+    turnEndAt = null;
+    sendingTurn = true;
+    try {
+      await transcripts;
+      if (generation !== callGeneration) return;
+      const text = turn.take();
+      if (!text) return;
+      append({ from: 'you', text });
+      const asked = await deps.client.voiceAsk(text);
+      if (!asked.ok) error.value = asked.error;
     } catch (err) {
       error.value = message(err);
     } finally {
-      if (generation === callGeneration && phase.value === 'transcribing') listen();
+      if (generation === callGeneration) {
+        sendingTurn = false;
+        releaseTurnWaiters();
+      }
     }
   }
 
   /** Drop a recording that held no real speech and start a fresh one. */
   async function restartListening(): Promise<void> {
     const generation = callGeneration;
+    releaseTurnWaiters();
     await deps.mic.take();
     if (generation === callGeneration && phase.value === 'listening') listen();
   }
 
   function onEnergy(energy: number, atMs: number): void {
     const event = vad.feed(energy, atMs);
-    if (event === 'end') void onSegmentEnd();
+    if (event === 'start') segmentStartAt = atMs;
+    else if (event === 'end') void onSegmentEnd(segmentStartAt, vad.lastSpeechAt);
     else if (event === 'discard') void restartListening();
+    if (turnEndAt !== null && !vad.speaking && atMs - turnEndAt >= turnPauseMs) void closeTurn();
   }
 
   async function startCall(): Promise<void> {
@@ -210,6 +278,9 @@ export function createVoiceCall(deps: VoiceCallDeps) {
   }
 
   async function speak(text: string): Promise<void> {
+    if (!inCall.value) return;
+    // Never talk over the user: a reply waits until their turn is sent.
+    await turnSettled();
     if (!inCall.value) return;
     const voiced = await deps.client.voiceSpeak(text);
     if (!voiced.ok) { error.value = voiced.error; return; }
@@ -251,6 +322,10 @@ export function createVoiceCall(deps: VoiceCallDeps) {
     if (handsFree.value) {
       handsFree.value = false;
       vad.reset();
+      turn.take();
+      turnEndAt = null;
+      sendingTurn = false;
+      releaseTurnWaiters();
       deps.mic.close();
       phase.value = 'idle';
     }

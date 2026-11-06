@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * callback must arrive on ONE thread — the main thread in the app.
  *
  * It behaves like a phone call, not a walkie-talkie:
- * - the mic opens once and stays open; every finalised utterance is sent, once;
+ * - the mic opens once and stays open; a pause is not "send": finals are
+ *   stitched into one turn ([TurnStitcher]) that is sent, once, after
+ *   [TURN_HOLD_MS] of quiet past the last final. Speech resumed sooner joins it;
+ * - a reply that arrives while the user is mid-turn waits until the turn is sent;
  * - silence is never sent: an empty or whitespace final is dropped;
  * - Helm speaks with the mic still open, so the user can talk over it: a
  *   partial of [BARGE_IN_WORDS]+ words while speaking stops Helm, drops what was
@@ -35,11 +38,19 @@ class CallController(
     private val sendFailedLine: String,
     private val line: CallLine,
     private val micSwitch: MicSwitch,
+    /** Closes a turn once the user has been quiet long enough. */
+    private val turnTimer: TurnTimer,
+    private val now: () -> Long = System::currentTimeMillis,
 ) : CallMic.Listener {
     private val _state = MutableStateFlow(CallState())
     val state: StateFlow<CallState> = _state.asStateFlow()
 
     private val queue = ArrayDeque<String>()
+
+    private val turn = TurnStitcher()
+
+    /** Cancels the armed turn close; null while none is armed. */
+    private var cancelTurnClose: (() -> Unit)? = null
 
     /** Held until the user's barge-in final is carried as one call record. */
     private var pendingInterruption: MobileCallInterruption? = null
@@ -123,6 +134,8 @@ class CallController(
     fun setMicMode(mode: MicMode) {
         if (!live) return
         val muted = mode != MicMode.Open
+        // What was said before muting was meant to be heard.
+        if (muted) closeTurn()
         held.clear()
         _state.value = _state.value.copy(micMode = mode, pttHeld = false, muted = muted, heard = "")
         micSwitch.muted = muted
@@ -174,6 +187,9 @@ class CallController(
         queue.clear()
         held.clear()
         unsent = ""
+        cancelTurnClose?.invoke()
+        cancelTurnClose = null
+        turn.clear()
         pendingInterruption = null
         utterance++
         tts.release()
@@ -198,6 +214,12 @@ class CallController(
             pendingInterruption = interrupt()
         }
         unsent = text
+        if (text.isNotBlank()) {
+            // Still talking: the turn stays open until the next quiet.
+            cancelTurnClose?.invoke()
+            cancelTurnClose = null
+            turn.speech(now())
+        }
         _state.value = _state.value.copy(heard = text)
     }
 
@@ -209,7 +231,7 @@ class CallController(
         }
         val words = text.trim()
         if (_state.value.muted || words.isEmpty()) {
-            pendingInterruption = null
+            if (!turn.pending) pendingInterruption = null
             return
         }
         if (_state.value.micMode == MicMode.PushToTalk) {
@@ -220,7 +242,18 @@ class CallController(
             if (wordCount(words) < BARGE_IN_WORDS) return
             pendingInterruption = interrupt()
         }
-        deliver(words)
+        turn.add(words, now())
+        cancelTurnClose?.invoke()
+        cancelTurnClose = turnTimer.arm(TURN_HOLD_MS, ::closeTurn)
+    }
+
+    /** The user went quiet: send the stitched turn, then say what waited for it. */
+    private fun closeTurn() {
+        cancelTurnClose?.invoke()
+        cancelTurnClose = null
+        if (!live || !turn.pending) return
+        deliver(turn.take())
+        if (phase == CallPhase.Listening && queue.isNotEmpty()) speakNext()
     }
 
     private fun deliver(words: String) {
@@ -258,7 +291,7 @@ class CallController(
     private fun say(text: String) {
         if (!live || text.isBlank()) return
         queue.addLast(text)
-        if (phase != CallPhase.Speaking) speakNext()
+        if (phase != CallPhase.Speaking && !userMidTurn) speakNext()
     }
 
     private fun speakNext() {
@@ -272,13 +305,27 @@ class CallController(
         tts.speak(next) { if (mine == utterance && phase == CallPhase.Speaking) speakNext() }
     }
 
+    /** Speaking, or quiet for less than the turn hold: not the moment to talk. */
+    private val userMidTurn get() = turn.pending || (unsent.isNotBlank() && !_state.value.muted)
+
     private fun wordCount(text: String): Int = text.trim().split(WHITESPACE).count { it.isNotEmpty() }
 
     private companion object {
         /** Words heard while Helm speaks before it counts as the user, not echo. */
         const val BARGE_IN_WORDS = 2
+
+        /**
+         * Quiet after a final before the turn is sent. Vosk already waited out
+         * its own endpoint (~0.5s), so the user's total pause is ~1.5s.
+         */
+        const val TURN_HOLD_MS = 1_000L
         val WHITESPACE = Regex("\\s+")
     }
+}
+
+/** Runs [fire] after [delayMs] on the controller's thread; returns its cancel. */
+fun interface TurnTimer {
+    fun arm(delayMs: Long, fire: () -> Unit): () -> Unit
 }
 
 enum class CallPhase { Idle, Listening, Sending, Speaking, Ended }

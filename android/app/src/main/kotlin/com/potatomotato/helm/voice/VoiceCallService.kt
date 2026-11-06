@@ -307,6 +307,10 @@ class VoiceCallService : Service() {
                 targetId?.let { client.sendChat(it, text, interruption = interruption) } ?: false
             },
             sendFailedLine = getString(R.string.call_send_failed),
+            turnTimer = { delayMs, fire ->
+                val wait = scope.launch { delay(delayMs); fire() }
+                ({ wait.cancel() })
+            },
         )
         controller = call
         syncEarSensor()

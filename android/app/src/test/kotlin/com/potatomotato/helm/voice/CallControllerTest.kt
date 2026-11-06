@@ -21,6 +21,8 @@ class CallControllerTest {
     private val sent = mutableListOf<String>()
     private val sentInterruptions = mutableListOf<MobileCallInterruption?>()
     private var sendWorks = true
+    private val turnTimer = FakeTurnTimer()
+    private var clock = 0L
     private val controller = CallController(
         mic = mic,
         tts = tts,
@@ -32,6 +34,8 @@ class CallControllerTest {
         sendFailedLine = SEND_FAILED,
         line = line,
         micSwitch = micSwitch,
+        turnTimer = turnTimer,
+        now = { clock },
     )
 
     /** A call the user starts, once Android's call system has taken it. */
@@ -618,5 +622,96 @@ class CallControllerTest {
 
     private companion object {
         const val SEND_FAILED = "That did not send."
+    }
+
+    @Test
+    fun `finals separated by short pauses are sent as one turn once the user goes quiet`() {
+        turnTimer.immediate = false
+        dial()
+
+        clock = 1_000
+        mic.final("check the build")
+        clock = 1_800
+        mic.partial("and run")
+        clock = 3_000
+        mic.final("and run the tests")
+        assertTrue(sent.isEmpty())
+
+        turnTimer.elapse()
+
+        assertEquals(listOf("check the build [pause 0.8s] and run the tests"), sent)
+    }
+
+    @Test
+    fun `speech resumed before the hold runs out keeps the turn open`() {
+        turnTimer.immediate = false
+        dial()
+
+        mic.final("check the build")
+        assertTrue(turnTimer.isArmed)
+        mic.partial("and")
+
+        assertFalse(turnTimer.isArmed)
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun `a reply that arrives mid-turn waits until the turn is sent`() {
+        turnTimer.immediate = false
+        dial()
+
+        mic.partial("check the")
+        controller.onReply("On it")
+        assertTrue(tts.spoken.isEmpty())
+
+        mic.final("check the build")
+        controller.onReply("Still on it")
+        assertTrue(tts.spoken.isEmpty())
+
+        turnTimer.elapse()
+
+        assertEquals(listOf("check the build"), sent)
+        assertEquals(listOf("On it"), tts.spoken)
+        assertEquals(CallPhase.Speaking, controller.state.value.phase)
+    }
+
+    @Test
+    fun `muting sends the turn already heard`() {
+        turnTimer.immediate = false
+        dial()
+
+        mic.final("check the build")
+        controller.setMuted(true)
+
+        assertEquals(listOf("check the build"), sent)
+        assertFalse(turnTimer.isArmed)
+    }
+
+    @Test
+    fun `hanging up drops an unsent turn`() {
+        turnTimer.immediate = false
+        dial()
+
+        mic.final("check the build")
+        controller.hangUp()
+        turnTimer.elapse()
+
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun `a barge-in report rides on the stitched turn`() {
+        turnTimer.immediate = false
+        dial()
+        controller.onReply("Here is a long answer")
+
+        mic.partial("wait stop")
+        mic.final("wait stop")
+        mic.final("")
+        mic.final("do the other thing")
+        turnTimer.elapse()
+
+        assertEquals(1, sent.size)
+        assertEquals("Here is a long answer", sentInterruptions.single()?.text)
     }
 }
