@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { callMcpTool } from '../src/mcp/tools/dispatcher.js';
+import { HelmControlService } from '../src/mcp/helm-control-service.js';
+import { ArtifactManager } from '../src/session/artifact-manager.js';
 
 function makeDeps() {
   const service = {
@@ -50,6 +52,20 @@ describe('MCP artifact file dispatch', () => {
     const deps = makeDeps();
     await callMcpTool(deps, 'artifact_set_intent', { id: 'a1', intent: 'manifesto' }, { sessionId: 'sess-1' });
     expect(deps.serviceMocks.setArtifactIntent).toHaveBeenCalledWith('sess-1', 'a1', 'manifesto');
+  });
+
+  it('artifact create/update replies are receipts, never the content echoed back', async () => {
+    const service = Object.create(HelmControlService.prototype) as any;
+    service.artifactManager = new ArtifactManager();
+    const deps = { service, setPlanStateWithValidation: vi.fn(), completePlanWithValidation: vi.fn() } as any;
+    const body = 'x'.repeat(5000);
+
+    const created: any = await callMcpTool(deps, 'artifact_create', { title: 'R', kind: 'html', content: body }, { sessionId: 'sess-1' });
+    const updated = await callMcpTool(deps, 'artifact_update', { id: created.id, content: body + '!' }, { sessionId: 'sess-1' });
+
+    expect(created).toEqual({ id: created.id, title: 'R', kind: 'html', version: 1, intent: 'normal' });
+    expect(updated).toMatchObject({ id: created.id, version: 2 });
+    expect(JSON.stringify([created, updated])).not.toContain('xxxx');
   });
 
   it('rejects content and filePath together', async () => {

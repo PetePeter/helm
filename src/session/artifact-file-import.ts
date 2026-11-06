@@ -37,7 +37,7 @@ export function createArtifactFromBytes(
   if (inlineText && isTextLikeFile(input.filename, input.contentType) && input.content.byteLength <= TEXT_INLINE_MAX_BYTES) {
     const draft = buildTextArtifact(input.filename, input.content.toString('utf8'));
     return {
-      artifact: artifactManager.create(sessionId, title ?? draft.title, 'markdown', draft.content, source, undefined, intent),
+      artifact: artifactManager.create(sessionId, title ?? draft.title, draft.kind, draft.content, source, undefined, intent),
     };
   }
 

@@ -1646,7 +1646,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'artifact_create',
     title: 'Create Artifact',
     description:
-      'Create a NEW readable report artifact for THIS session and show it in the user\'s in-app Artifact panel. Provide either inline content (title, kind, content) or an absolute local filePath. The path is resolved on the Helm instance handling the call (for peer calls, the receiving instance). For filePath, the caller owns the source file: Helm reads it during the call and never deletes or modifies it. Text files become readable markdown; binary files are stored as Helm-owned attachments. Returns the new artifact including its id. Auto-reveals (brings it forward) so the user sees it immediately. Ephemeral: artifacts belong to this session and are discarded when it closes. The session is resolved from your auth context — no sessionId argument.',
+      'Create a NEW readable report artifact for THIS session and show it in the user\'s in-app Artifact panel. Provide either inline content (title, kind, content) or an absolute local filePath. The path is resolved on the Helm instance handling the call (for peer calls, the receiving instance). For filePath, the caller owns the source file: Helm reads it during the call and never deletes or modifies it. Text files become readable markdown; binary files are stored as Helm-owned attachments. Returns a receipt {id, title, kind, version, intent} (plus attachmentId for binary files) — never the content; use artifact_get to read. Auto-reveals (brings it forward) so the user sees it immediately. Ephemeral: artifacts belong to this session and are discarded when it closes. The session is resolved from your auth context — no sessionId argument.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1668,7 +1668,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'artifact_update',
     title: 'Update Artifact',
     description:
-      'Append a NEW version to an existing artifact you created and bring it forward in the viewer. Provide either inline content or an absolute local filePath. The path is resolved on the Helm instance handling the call (for peer calls, the receiving instance). For filePath, the caller owns the source file: Helm reads it during the call and never deletes or modifies it. Text files become the new readable version; binary files create a new Helm-owned attachment and metadata-card version. Prior versions and attachments are retained. Returns the updated artifact. Use for user-facing content only, not code.',
+      'Append a NEW version to an existing artifact you created and bring it forward in the viewer. Provide either inline content or an absolute local filePath. The path is resolved on the Helm instance handling the call (for peer calls, the receiving instance). For filePath, the caller owns the source file: Helm reads it during the call and never deletes or modifies it. Text files become the new readable version; binary files create a new Helm-owned attachment and metadata-card version. Prior versions and attachments are retained. Returns a receipt {id, title, kind, version, intent} (plus attachmentId for binary files) — never the content; use artifact_get to read. Use for user-facing content only, not code.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1784,7 +1784,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_create',
     title: 'Create Session Artifact',
     description:
-      'Create a NEW markdown artifact for a NAMED session (sessionId argument) and reveal it in the desktop viewer. kind is restricted to md in v1. Returns the new artifact including its id.',
+      'Create a NEW markdown artifact for a NAMED session (sessionId argument) and reveal it in the desktop viewer. kind is restricted to md in v1. Returns a receipt {id, title, kind, version, intent} — never the content; use session_artifact_get to read.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1802,7 +1802,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_update',
     title: 'Update Session Artifact',
     description:
-      'Revise an artifact owned by a NAMED session (sessionId argument): content appends a NEW version (prior versions retained), title renames it. Give content, title, or both; a title-only call renames without adding a version. A blank title is rejected. The artifact must belong to that session — a cross-session id answers not-found. Returns the updated artifact.',
+      'Revise an artifact owned by a NAMED session (sessionId argument): content appends a NEW version (prior versions retained), title renames it. Give content, title, or both; a title-only call renames without adding a version. A blank title is rejected. The artifact must belong to that session — a cross-session id answers not-found. Returns a receipt {id, title, kind, version, intent} — never the content; use session_artifact_get to read.',
     inputSchema: {
       type: 'object',
       properties: {

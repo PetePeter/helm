@@ -540,7 +540,7 @@ async function addBlobAsArtifact(blob: Blob, filename?: string): Promise<boolean
   const name = filename ?? '';
   if (blob.size <= TEXT_INLINE_MAX_BYTES && isTextLikeFile(name, blob.type)) {
     const draft = buildTextArtifact(name, await blob.text());
-    return Boolean(await viewer.createTextArtifact(draft.title, draft.content, undefined, newArtifactIntent.value));
+    return Boolean(await viewer.createTextArtifact(draft.title, draft.content, draft.kind, newArtifactIntent.value));
   }
   return Boolean(await viewer.createFileArtifact(await clipboardFileInput(blob, filename), newArtifactIntent.value));
 }

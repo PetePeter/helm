@@ -82,6 +82,17 @@ describe('artifact file import', () => {
     expect(result.artifact.versions[0].content).toContain('{"ok":true}');
   });
 
+  it('imports an html file as an html artifact with its raw source', () => {
+    const { artifacts, attachments } = makeStores();
+    const html = '<!doctype html><h1>Report</h1>';
+    const result = createArtifactFromBytes(artifacts, attachments, 'sess-1', {
+      filename: 'report.html', content: Buffer.from(html), contentType: 'text/html',
+    });
+
+    expect(result.artifact.kind).toBe('html');
+    expect(result.artifact.versions[0].content).toBe(html);
+  });
+
   it('stores binary files as attachments and returns the attachment id', () => {
     const { artifacts, attachments } = makeStores();
     const result = createArtifactFromBytes(artifacts, attachments, 'sess-1', {

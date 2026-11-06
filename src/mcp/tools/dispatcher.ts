@@ -2,6 +2,8 @@ import { basename } from 'node:path';
 import { logger } from '../../utils/logger.js';
 import type { HelmControlService } from '../helm-control-service.js';
 import type { AuthContext } from './types.js';
+import type { Artifact } from '../../types/artifact.js';
+import type { ArtifactFileResult } from '../../session/artifact-file-import.js';
 import type { ScheduledTaskFrozenPolicy } from '../../types/scheduled-task.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
@@ -54,6 +56,20 @@ import {
  * to something when they arrive with their neighbours.
  */
 const RECALL_GRAPH_DEPTH = 1;
+
+/**
+ * What an artifact write returns to the model: identity, never content. The
+ * caller just wrote the body, so echoing it (plus every prior version) back
+ * only burns tokens — artifact_get exists for reading.
+ */
+function artifactReceipt(artifact: Artifact) {
+  const { id, title, kind, intent, versions } = artifact;
+  return { id, title, kind, version: versions?.at(-1)?.version, intent };
+}
+
+function artifactFileReceipt(result: ArtifactFileResult) {
+  return { ...artifactReceipt(result.artifact), ...(result.attachment ? { attachmentId: result.attachment.id } : {}) };
+}
 
 /**
  * Resolve the caller's own session for session-scoped tools (artifacts). The
@@ -952,41 +968,41 @@ export async function callMcpTool(
         const sessionId = requireCallerSession(authContext, 'artifact_create');
         if (args.filePath !== undefined) {
           if (args.content !== undefined) throw new Error('Provide either content or filePath, not both');
-          return service.createArtifactFromFile(
+          return artifactFileReceipt(service.createArtifactFromFile(
             sessionId,
             asString(args.filePath, 'filePath is required'),
             args.title === undefined ? undefined : asString(args.title, 'title must not be empty'),
             args.contentType === undefined ? undefined : asString(args.contentType, 'contentType must not be empty'),
             args.intent === undefined ? undefined : asArtifactIntent(args.intent),
-          );
+          ));
         }
-        return service.createArtifact(
+        return artifactReceipt(service.createArtifact(
           sessionId,
           asString(args.title, 'title is required'),
           asArtifactKind(args.kind),
           asString(args.content, 'content is required'),
           args.intent === undefined ? undefined : asArtifactIntent(args.intent),
-        );
+        ));
       }
       case 'artifact_update': {
         const sessionId = requireCallerSession(authContext, 'artifact_update');
         if (args.filePath !== undefined) {
           if (args.content !== undefined) throw new Error('Provide either content or filePath, not both');
-          return service.updateArtifactFromFile(
+          return artifactFileReceipt(service.updateArtifactFromFile(
             sessionId,
             asString(args.id, 'id is required'),
             asString(args.filePath, 'filePath is required'),
             args.contentType === undefined ? undefined : asString(args.contentType, 'contentType must not be empty'),
             args.intent === undefined ? undefined : asArtifactIntent(args.intent),
-          );
+          ));
         }
-        return service.updateArtifact(
+        return artifactReceipt(service.updateArtifact(
           sessionId,
           asString(args.id, 'id is required'),
           asString(args.content, 'content is required'),
           undefined,
           args.intent === undefined ? undefined : asArtifactIntent(args.intent),
-        );
+        ));
       }
       case 'artifact_set_intent': {
         const sessionId = requireCallerSession(authContext, 'artifact_set_intent');
@@ -1035,23 +1051,23 @@ export async function callMcpTool(
       }
       case 'session_artifact_create': {
         const target = requireTargetSession(service, args);
-        return service.createArtifact(
+        return artifactReceipt(service.createArtifact(
           target,
           asString(args.title, 'title is required'),
           asMdArtifactKind(args.kind),
           asString(args.content, 'content is required'),
           args.intent === undefined ? undefined : asArtifactIntent(args.intent),
-        );
+        ));
       }
       case 'session_artifact_update': {
         const target = requireTargetSession(service, args);
-        return service.updateArtifact(
+        return artifactReceipt(service.updateArtifact(
           target,
           asString(args.artifactId, 'artifactId is required'),
           args.content === undefined ? undefined : asStringValue(args.content, 'content must be a string'),
           args.title === undefined ? undefined : asStringValue(args.title, 'title must be a string'),
           args.intent === undefined ? undefined : asArtifactIntent(args.intent),
-        );
+        ));
       }
       case 'session_artifact_set_intent': {
         const target = requireTargetSession(service, args);

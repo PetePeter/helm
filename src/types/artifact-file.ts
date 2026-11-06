@@ -4,6 +4,7 @@
 export const TEXT_INLINE_MAX_BYTES = 1_000_000;
 
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkd']);
+const HTML_EXTENSIONS = new Set(['html', 'htm']);
 
 /** Extensions inlined as fenced code. Value is the fence language tag. */
 const CODE_EXTENSIONS: Record<string, string> = {
@@ -13,7 +14,7 @@ const CODE_EXTENSIONS: Record<string, string> = {
   py: 'python', rb: 'ruby', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin', swift: 'swift',
   c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cs: 'csharp',
   sh: 'bash', bash: 'bash', zsh: 'bash', ps1: 'powershell', bat: '', cmd: '',
-  sql: 'sql', css: 'css', scss: 'css', html: 'html', htm: 'html', svg: 'xml',
+  sql: 'sql', css: 'css', scss: 'css', svg: 'xml',
   gradle: '', dockerfile: '', gitignore: '', patch: 'diff', diff: 'diff',
 };
 
@@ -24,7 +25,7 @@ function extensionOf(filename: string): string {
 
 export function isTextLikeFile(filename: string, contentType?: string): boolean {
   const ext = extensionOf(filename);
-  if (MARKDOWN_EXTENSIONS.has(ext) || ext in CODE_EXTENSIONS) return true;
+  if (MARKDOWN_EXTENSIONS.has(ext) || HTML_EXTENSIONS.has(ext) || ext in CODE_EXTENSIONS) return true;
   return (contentType ?? '').toLowerCase().startsWith('text/');
 }
 
@@ -35,14 +36,16 @@ function fenceFor(text: string): string {
 
 export interface TextArtifactDraft {
   title: string;
+  kind: 'markdown' | 'html';
   content: string;
 }
 
 export function buildTextArtifact(filename: string, text: string): TextArtifactDraft {
   const ext = extensionOf(filename);
-  if (MARKDOWN_EXTENSIONS.has(ext)) return { title: filename, content: text };
+  if (MARKDOWN_EXTENSIONS.has(ext)) return { title: filename, kind: 'markdown', content: text };
+  if (HTML_EXTENSIONS.has(ext)) return { title: filename, kind: 'html', content: text };
 
   const fence = fenceFor(text);
   const lang = CODE_EXTENSIONS[ext] ?? '';
-  return { title: filename, content: `${fence}${lang}\n${text}\n${fence}` };
+  return { title: filename, kind: 'markdown', content: `${fence}${lang}\n${text}\n${fence}` };
 }

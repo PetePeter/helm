@@ -89,7 +89,7 @@ describe('ArtifactViewer — dropping readable files', () => {
     await flushPromises();
 
     expect(artifactCreateWithFile).not.toHaveBeenCalled();
-    expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'notes.md', '# Title\n\nBody', undefined);
+    expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'notes.md', '# Title\n\nBody', 'markdown');
   });
 
   it('fences a dropped .txt so it stays readable', async () => {
@@ -98,7 +98,7 @@ describe('ArtifactViewer — dropping readable files', () => {
     w.element.dispatchEvent(dropEventWith(new File(['line one'], 'log.txt', { type: 'text/plain' })));
     await flushPromises();
 
-    expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'log.txt', '```\nline one\n```', undefined);
+    expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'log.txt', '```\nline one\n```', 'markdown');
   });
 
   it('still stores a real binary as an attachment', async () => {

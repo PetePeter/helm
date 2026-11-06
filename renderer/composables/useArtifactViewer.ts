@@ -218,7 +218,7 @@ async function attachFile(intent: ArtifactIntent = 'normal'): Promise<Artifact |
     if (!fileData) return null;
     if (isTextLikeFile(fileData.filename, fileData.contentType)) {
       const draft = buildTextArtifact(fileData.filename, decodeBase64Text(fileData.contentBase64));
-      return createTextArtifact(draft.title, draft.content, undefined, intent);
+      return createTextArtifact(draft.title, draft.content, draft.kind, intent);
     }
     return createFileArtifact(fileData, intent);
   } catch { return null; }

@@ -101,11 +101,16 @@ surfaces the same `Artifact not found` error (no existence leak).
 
 | Tool | Args | Effect |
 |------|------|--------|
-| `artifact_create` | `title, kind('markdown'\|'html'), content` **or** `filePath, title?, contentType?` | New artifact (returns id); auto-reveals. With `filePath`, the caller owns the source file; Helm reads it but never deletes or modifies it. |
+| `artifact_create` | `title, kind('markdown'\|'html'), content` **or** `filePath, title?, contentType?` | New artifact; auto-reveals. With `filePath`, `.html`/`.htm` become `html` artifacts and other text files markdown; the caller owns the source file; Helm reads it but never deletes or modifies it. |
 | `artifact_update` | `id, content` **or** `id, filePath, contentType?` | Append a version; brings forward. With `filePath`, the caller owns the source file; Helm reads it but never deletes or modifies it. |
 | `artifact_show` | `id` | Bring forward in the viewer (no change) |
 | `artifact_list` | — | The caller's artifacts (id/title/kind/versionCount/timestamps) |
 | `artifact_get` | `id, version?, asFile?, attachmentId?` | Read own content inline, or receive a Helm temp path for artifact content/attachment. Caller must delete returned `tempPath` after reading; Helm may reap stale temp files on startup. |
+
+Create and update (including `session_artifact_create`/`_update`) reply with a
+receipt — `{id, title, kind, version, intent}`, plus `attachmentId` for binary
+files — never the content: the caller just wrote it, and echoing every version
+back was a large avoidable payload in usage analysis.
 
 The old `artifact_delete`/`artifact_delete_all` MCP tools were removed: they
 resolved the subject from the caller's auth context, which a paired phone can
