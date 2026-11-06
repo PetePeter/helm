@@ -270,8 +270,9 @@ describe('HelmSessionService session times', () => {
     const summary = service.getSession('s1')!;
     expect(summary.createdAtEpochMs).toBe(1700000000000);
     expect(summary.lastActiveAtEpochMs).toBe(1700000500000);
-    expect(summary.createdAtIso).toBe(new Date(1700000000000).toISOString());
-    expect(summary.lastActiveAtIso).toBe(new Date(1700000500000).toISOString());
+    // One form per timestamp: the ISO twins doubled every row of session_list.
+    expect(summary).not.toHaveProperty('createdAtIso');
+    expect(summary).not.toHaveProperty('lastActiveAtIso');
   });
 
   it('reports lastActiveAt as "now" while the session is active (green)', () => {

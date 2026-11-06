@@ -91,6 +91,7 @@ import type {
   MemoryExportFormat,
   MemoryListOptions,
   MemoryRecord,
+  MemorySummary,
   MemoryEdgeType,
   MemorySearchOptions,
   MemorySearchResult,
@@ -145,12 +146,8 @@ export interface SessionSummary {
   windowId?: number;
   /** Epoch MILLISECONDS when the session was first spawned. */
   createdAtEpochMs?: number;
-  /** ISO-8601 rendering of createdAtEpochMs (convenience). */
-  createdAtIso?: string;
   /** Epoch MILLISECONDS of when the activity dot last left green; reports "now" while currently active. */
   lastActiveAtEpochMs?: number;
-  /** ISO-8601 rendering of lastActiveAtEpochMs (convenience). */
-  lastActiveAtIso?: string;
   /**
    * Activity-dot level, derived purely from PTY I/O timing (invariant 8).
    * This is what a status dot must be drawn from — `state` is pipeline state and
@@ -1048,8 +1045,9 @@ export class HelmControlService extends EventEmitter {
     return this.memoryService;
   }
 
-  listMemories(sessionId: string, options: MemoryListOptions = {}): MemoryRecord[] {
-    return this.requireMemoryService().listMemories(sessionId, options);
+  /** Summaries only — a list of full bodies runs to tens of KB; memory_get reads one. */
+  listMemorySummaries(sessionId: string, options: MemoryListOptions = {}): MemorySummary[] {
+    return this.requireMemoryService().listMemorySummaries(sessionId, options);
   }
 
   getMemory(sessionId: string, id: string, graphDepth?: number): MemoryTraversal | null {

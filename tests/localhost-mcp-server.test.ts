@@ -1287,7 +1287,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect(json.result.structuredContent).toEqual({
-      items: [{ id: 'p1', dirPath: 'X:\\coding\\gamepad-cli-hub', title: 'Task', description: 'Desc', status: 'ready' }],
+      items: [{ id: 'p1', dirPath: 'X:\\coding\\gamepad-cli-hub', title: 'Task', status: 'ready' }],
     });
   });
 
@@ -1442,7 +1442,7 @@ describe('LocalhostMcpServer', () => {
 
     expect((service.listDirectories as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
     const json = await response.json();
-    expect(json.result.structuredContent.items).toEqual([{ dirPath: 'X:\\coding\\gamepad-cli-hub', name: 'Helm', source: ['config', 'plans'], planCount: 8, sessionCount: 0 }]);
+    expect(json.result.structuredContent.items).toEqual([{ dirPath: 'X:\\coding\\gamepad-cli-hub', name: 'Helm', planCount: 8, sessionCount: 0 }]);
   });
 
   it('returns explicit errors instead of null structured content for invalid plan transitions', async () => {

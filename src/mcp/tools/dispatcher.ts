@@ -40,6 +40,14 @@ import {
 } from './validation.js';
 import { MEMORY_EDGE_TYPES, MEMORY_SEARCH_LIMIT, type IdeaStage, type MemoryKind } from '../../types/memory.js';
 import { compactNeighbours } from '../../session/memory-graph.js';
+import {
+  projectContextList,
+  projectDirectoryList,
+  projectPlanList,
+  projectProjectList,
+  projectSchedulerList,
+  projectSequenceList,
+} from './list-projections.js';
 
 /**
  * Reading a memory brings its direct links along: small memories only add up
@@ -230,7 +238,7 @@ export async function callMcpTool(
     logger.info(`[MCP] callTool: ${name} | session=${authContext.sessionId ?? 'anonymous'} (${authContext.sessionName ?? '-'})`);
     switch (name) {
       case 'plan_list':
-        return service.listPlans(asString(args.dirPath, 'dirPath is required'), asPlanFilter(args.filter));
+        return projectPlanList(service.listPlans(asString(args.dirPath, 'dirPath is required'), asPlanFilter(args.filter)));
       case 'plan_summary':
         return service.plansSummary(asString(args.dirPath, 'dirPath is required'), asPlanFilter(args.filter));
       case 'tool_list':
@@ -396,10 +404,10 @@ export async function callMcpTool(
         );
         return { unlinked: true };
       case 'sequence_list':
-        return service.listPlanSequences({
+        return projectSequenceList(service.listPlanSequences({
           ...(typeof args.dirPath === 'string' ? { dirPath: args.dirPath } : {}),
           ...(typeof args.planId === 'string' ? { planRef: args.planId } : {}),
-        });
+        }));
       case 'sequence_get':
         return requireResult(
           service.getPlanSequence(asString(args.id, 'id is required')),
@@ -442,7 +450,7 @@ export async function callMcpTool(
       case 'context_clear_unreferenced':
         return service.clearUnreferencedContexts(asString(args.dirPath, 'dirPath is required'));
       case 'context_list':
-        return service.listContexts(asString(args.projectId, 'projectId is required'));
+        return projectContextList(service.listContexts(asString(args.projectId, 'projectId is required')));
       case 'context_create':
         return service.createContext({
           projectId: asString(args.projectId, 'projectId is required'),
@@ -532,7 +540,7 @@ export async function callMcpTool(
           asString(args.attachmentId, 'attachmentId is required'),
         );
       case 'directory_list':
-        return service.listDirectories();
+        return projectDirectoryList(service.listDirectories());
       case 'project_create':
         return service.createProject(
           asString(args.dirPath, 'dirPath is required'),
@@ -551,7 +559,7 @@ export async function callMcpTool(
       case 'project_delete':
         return service.deleteProject(asString(args.projectId, 'projectId is required'));
       case 'project_list':
-        return service.listProjects();
+        return projectProjectList(service.listProjects());
       case 'project_dir_list':
         return service.listProjectDirs(asString(args.projectId, 'projectId is required'));
       case 'project_dir_add':
@@ -920,7 +928,7 @@ export async function callMcpTool(
         });
       }
       case 'scheduler_list':
-        return service.listScheduledTasks();
+        return projectSchedulerList(service.listScheduledTasks());
       case 'scheduler_get':
         return service.getScheduledTask(asString(args.id, 'id is required'));
       case 'scheduler_update': {
@@ -1179,7 +1187,7 @@ export async function callMcpTool(
       }
       case 'memory_list': {
         const sessionId = requireCallerSession(authContext, 'memory_list');
-        return service.listMemories(sessionId, {
+        return service.listMemorySummaries(sessionId, {
           ...(args.sortBy !== undefined
             ? { sortBy: asEnum(args.sortBy, MEMORY_SORT_FIELDS, 'sortBy') }
             : {}),

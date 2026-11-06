@@ -72,7 +72,7 @@ describe('MCP memory surface', () => {
       .rejects.toThrow(`Memory not found: ${first.id}`);
     await expect(callMcpTool(deps, 'memory_list', {}, {}))
       .rejects.toThrow('memory_list could not determine your session');
-    expect(service.listMemories('s2')).toEqual([]);
+    expect(service.listMemorySummaries('s2')).toEqual([]);
   });
 
   it('supports regex search and pure export without attachment bytes or storage paths', async () => {
@@ -217,6 +217,14 @@ describe('MCP memory surface', () => {
     ) as Array<{ id: string }>;
 
     expect(ranked[0].id).toBe(first.id);
+  });
+
+  it('lists summaries only: the body comes from memory_get', async () => {
+    const { deps } = setup();
+    await callMcpTool(deps, 'memory_create', { tldr: 'short', content: 'a long body '.repeat(50) }, { sessionId: 's1' });
+    const [item] = await callMcpTool(deps, 'memory_list', {}, { sessionId: 's1' }) as Array<Record<string, unknown>>;
+    expect(item).toMatchObject({ tldr: 'short' });
+    expect(item).not.toHaveProperty('content');
   });
 
   it('exposes dormant state changes and project dream results through MCP', async () => {

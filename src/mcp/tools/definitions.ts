@@ -157,7 +157,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'plan_list',
     title: 'List Plans',
-    description: "List plan items for a directory. Use this before editing or assigning plan work so you can reference the human-readable P-00xx plan IDs Helm returns. The optional filter narrows results: 'active' (default) omits completed plans; 'all' includes done plans; 'startable' returns only the dependency frontier — non-done plans whose precursors are all complete (or have none).",
+    description: "List plan items for a directory, without descriptions or completion notes (read one with plan_get). Use this before editing or assigning plan work so you can reference the human-readable P-00xx plan IDs Helm returns. The optional filter narrows results: 'active' (default) omits completed plans; 'all' includes done plans; 'startable' returns only the dependency frontier — non-done plans whose precursors are all complete (or have none).",
     inputSchema: {
       type: 'object',
       properties: {
@@ -371,7 +371,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'sequence_list',
     title: 'List Sequences',
-    description: 'List sequence coordination lanes for a directory, or for a specific plan by UUID/P-id. Returned sharedMemory is legacy common memory for member plans; prefer context_* tools for new durable memory and use expectedUpdatedAt on writes to avoid concurrent overwrite.',
+    description: 'List sequence coordination lanes for a directory, or for a specific plan by UUID/P-id, without missionStatement or sharedMemory (read them with sequence_get; sharedMemory is legacy common memory for member plans); prefer context_* tools for new durable memory and use expectedUpdatedAt on writes to avoid concurrent overwrite.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -489,7 +489,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'context_list',
     title: 'List Context Nodes',
-    description: 'List project-level context nodes. Use project_list first when you need the projectId for a directory or repo.',
+    description: 'List project-level context nodes without their bodies (read one with context_get). Use project_list first when you need the projectId for a directory or repo.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -733,7 +733,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'project_list',
     title: 'List Projects',
-    description: 'List all known projects with their IDs, names, canonical paths, directories, and root kinds. Call this before creating plans or sessions to discover which project directories Helm tracks.',
+    description: 'List all known projects with their IDs, names, canonical paths, and root kinds (folders via project_dir_list). Call this before creating plans or sessions to discover which project directories Helm tracks.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -1570,7 +1570,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'scheduler_list',
     title: 'List Scheduler Entries',
-    description: 'List all scheduled tasks.',
+    description: 'List scheduled task summaries (id, title, dirPath, status, enabled, nextRunAt, lastRunAt). Prompt and schedule details via scheduler_get.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -1993,7 +1993,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_list',
     title: 'List Memories',
-    description: 'List durable memories for the project resolved from the authenticated caller session. Memories survive compaction, restart, and session death while the project remains; attachments are returned as metadata only. Optional sortBy/order rank them for trimming; memories never read (or never matched) sort last rather than oldest.',
+    description: 'List durable memory SUMMARIES (id, tldr, kind, timestamps — no bodies; read one with memory_get) for the project resolved from the authenticated caller session. Memories survive compaction, restart, and session death while the project remains; attachments are returned as metadata only. Optional sortBy/order rank them for trimming; memories never read (or never matched) sort last rather than oldest.',
     inputSchema: {
       type: 'object',
       properties: {

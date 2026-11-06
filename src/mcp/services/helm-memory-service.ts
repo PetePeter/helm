@@ -51,10 +51,6 @@ export class HelmMemoryService {
     private readonly resolvePlan?: (planId: string) => MemoryDreamPlan | null,
   ) {}
 
-  listMemories(sessionId: string, options: MemoryListOptions = {}): MemoryRecord[] {
-    return this.memoryManager.listRecordsForSession(sessionId, options);
-  }
-
   listMemorySummaries(sessionId: string, options: MemoryListOptions = {}): MemorySummary[] {
     return this.memoryManager.listRecordsForSession(sessionId, options).map(toMemorySummary);
   }

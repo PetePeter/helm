@@ -429,10 +429,10 @@ export class HelmSessionService {
       currentPlanId: session.currentPlanId,
       windowId: session.windowId,
       ...(session.createdAt != null
-        ? { createdAtEpochMs: session.createdAt, createdAtIso: new Date(session.createdAt).toISOString() }
+        ? { createdAtEpochMs: session.createdAt }
         : {}),
       ...(lastActiveMs != null
-        ? { lastActiveAtEpochMs: lastActiveMs, lastActiveAtIso: new Date(lastActiveMs).toISOString() }
+        ? { lastActiveAtEpochMs: lastActiveMs }
         : {}),
       ...(session.activityLevel ? { activityLevel: session.activityLevel } : {}),
       ...(session.createdByPeerId ? { createdByPeerId: session.createdByPeerId } : {}),
