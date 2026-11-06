@@ -13,8 +13,8 @@
  *    [HELM_MISSION] line on EVERY prompt (the deliberate exception to
  *    "silent when nothing to say": the mission must track the work, so the AI
  *    is asked each turn whether the direction changed).
- * C. Stop — the one-shot nudge. A claimed plan still open or an unset
- *    AIAGENT state blocks the turn ONCE; the second Stop always passes.
+ * C. Stop — the one-shot nudge. A claimed plan still open blocks the turn
+ *    ONCE; the second Stop always passes.
  *    The cap is 1 by decision and is NOT configurable.
  *
  * Context pressure alerts are amber on each prompt and red on each hook.
@@ -487,11 +487,6 @@ export class ContextInjector {
    */
   private oneShotNudges(session: SessionInfo, can: (tool: string) => boolean): string | null {
     const lines: string[] = [];
-    if (session.aiagentState === undefined && can('session_set_aiagent_state')) {
-      if (this.markNudged(session.id, 'aiagent-state')) {
-        lines.push(this.injection('aiagentNudge'));
-      }
-    }
     if (can('session_plan_claim') && !this.deps.getClaimedPlan(session.id)) {
       const dirPath = session.workingDir ?? '';
       for (const plan of this.deps.getStartablePlans(dirPath)) {
@@ -528,10 +523,9 @@ export class ContextInjector {
     }
 
     const plan = this.deps.getClaimedPlan(session.id);
-    const unsettled = session.aiagentState === undefined;
-    // The plan/state nudge fires once per session (the second Stop always passes);
+    // The plan nudge fires once per session (the second Stop always passes);
     // the todo reminder once per user turn.
-    const nudge = (plan || unsettled) && !this.stopNudged.has(session.id);
+    const nudge = plan && !this.stopNudged.has(session.id);
     // A requested compact makes todo/ETA nudges moot: the turn ends so the
     // compact can run, and the nudges re-arm once it lands.
     const bookkeeping = !this.compactPending(session);
@@ -544,8 +538,7 @@ export class ContextInjector {
     const lines: string[] = [];
     if (nudge) {
       this.stopNudged.add(session.id);
-      if (plan) lines.push(this.injection('stopPlanNudge', { humanId: plan.humanId ?? '?', title: plan.title }));
-      if (unsettled) lines.push(this.injection('stopAiagentNudge'));
+      lines.push(this.injection('stopPlanNudge', { humanId: plan.humanId ?? '?', title: plan.title }));
     }
     if (openTodos.length) {
       this.stopTodosNudged.add(session.id);

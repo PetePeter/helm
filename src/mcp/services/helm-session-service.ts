@@ -27,7 +27,7 @@ import { contextLevel, resolveContextLimits } from '../../session/context-limits
 import { buildHelmMsgEnvelope } from '../../session/intersession-directive.js';
 
 /**
- * Session lifecycle: list, get, spawn, close, read terminal, set AIAGENT state.
+ * Session lifecycle: list, get, spawn, close, read terminal.
  * Plan assignment delegated to HelmSessionPlanService.
  */
 export class HelmSessionService {
@@ -363,16 +363,6 @@ export class HelmSessionService {
     return { ok: true };
   }
 
-  setAiagentState(sessionRef: string, state: 'planning' | 'implementing' | 'completed' | 'idle'): { ok: true } {
-    const session = this.findSession(sessionRef);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionRef}`);
-    }
-
-    this.sessionManager.updateSession(session.id, { aiagentState: state });
-    return { ok: true };
-  }
-
   async readSessionTerminal(
     sessionRef: string,
     requestedLines = 50,
@@ -432,7 +422,6 @@ export class HelmSessionService {
       projectId: session.projectId,
       projectPath: session.projectPath,
       state: session.state,
-      questionPending: session.questionPending,
       cliSessionName: session.cliSessionName,
       currentPlanId: session.currentPlanId,
       windowId: session.windowId,
@@ -445,7 +434,6 @@ export class HelmSessionService {
       ...(session.activityLevel ? { activityLevel: session.activityLevel } : {}),
       ...(session.createdByPeerId ? { createdByPeerId: session.createdByPeerId } : {}),
       ...(session.remote ? { remote: { ...session.remote } } : {}),
-      ...(session.aiagentState ? { aiagentState: session.aiagentState } : {}),
       ...(session.locked ? { locked: true } : {}),
       ...(session.frozen ? { frozen: true } : {}),
       ...(session.keepWarmUntil != null && session.keepWarmUntil > Date.now()

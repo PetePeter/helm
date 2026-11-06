@@ -37,7 +37,6 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
       const chatBindings = serializeChatBindings(s);
       return chatBindings ? { chatBindings } : {};
     })(),
-    ...(s.aiagentState ? { aiagentState: s.aiagentState } : {}),
     // G10: no loop-driving session consent is persisted — autoImplement on
     // the plan is the only switch — and the ephemeral loopContinues counter
     // is deliberately not here either (invariant 6: persistence is an

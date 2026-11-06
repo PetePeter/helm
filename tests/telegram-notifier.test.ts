@@ -7,15 +7,15 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TelegramNotifier } from '../src/telegram/notifier.js';
-import type { SessionState } from '../src/types/session.js';
+import type { ActivityLevel } from '../src/types/session.js';
 import type { TelegramConfig } from '../src/config/loader.js';
 import type { SessionInfo } from '../src/types/session.js';
 
 /** StateTransition shape consumed by TelegramNotifier.handleStateChange. */
 interface StateTransition {
   sessionId: string;
-  previousState: SessionState;
-  newState: SessionState;
+  previousState: ActivityLevel;
+  newState: ActivityLevel;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,13 +74,9 @@ function defaultConfig(overrides: Partial<TelegramConfig> = {}): TelegramConfig 
   };
 }
 
-/** Build a transition from active → target state. */
-function transition(
-  sessionId: string,
-  newState: 'completed' | 'idle' | 'waiting',
-  previousState: 'implementing' | 'planning' = 'implementing',
-): StateTransition {
-  return { sessionId, previousState, newState };
+/** Build a turn-ended transition (active → inactive). */
+function transition(sessionId: string, _label?: string): StateTransition {
+  return { sessionId, previousState: 'active', newState: 'inactive' };
 }
 
 // ---------------------------------------------------------------------------
@@ -134,16 +130,6 @@ describe('TelegramNotifier', () => {
       );
     });
 
-    it('sends notification on active→idle', () => {
-      notifier.handleStateChange(transition('sess-1', 'idle'));
-      expect(bot.sendToTopic).toHaveBeenCalledTimes(1);
-    });
-
-    it('sends notification on active→waiting', () => {
-      notifier.handleStateChange(transition('sess-1', 'waiting'));
-      expect(bot.sendToTopic).toHaveBeenCalledTimes(1);
-    });
-
     it('includes keyboard (reply_markup) in notification', () => {
       notifier.handleStateChange(transition('sess-1', 'completed'));
 
@@ -177,22 +163,6 @@ describe('TelegramNotifier', () => {
       expect(text).toContain('my-session');
     });
 
-    it('includes emoji and state info for idle', () => {
-      notifier.handleStateChange(transition('sess-1', 'idle'));
-
-      const text = bot.sendToTopic.mock.calls[0][1] as string;
-      expect(text).toContain('💤');
-      expect(text).toContain('Session Idle');
-    });
-
-    it('includes emoji and state info for waiting', () => {
-      notifier.handleStateChange(transition('sess-1', 'waiting'));
-
-      const text = bot.sendToTopic.mock.calls[0][1] as string;
-      expect(text).toContain('⏳');
-      expect(text).toContain('Session Needs Attention');
-    });
-
     it('includes directory basename in text', () => {
       notifier.handleStateChange(transition('sess-1', 'completed'));
 
@@ -206,28 +176,28 @@ describe('TelegramNotifier', () => {
   // =========================================================================
 
   describe('non-active transitions ignored', () => {
-    it('ignores idle→completed (not from active state)', () => {
+    it('ignores idle→inactive (not from active)', () => {
       notifier.handleStateChange({
         sessionId: 'sess-1',
         previousState: 'idle',
-        newState: 'completed',
+        newState: 'inactive',
       });
       expect(bot.sendToTopic).not.toHaveBeenCalled();
     });
 
-    it('ignores implementing→planning (active→active)', () => {
+    it('ignores active→active', () => {
       notifier.handleStateChange({
         sessionId: 'sess-1',
-        previousState: 'implementing',
-        newState: 'planning',
+        previousState: 'active',
+        newState: 'active',
       });
       expect(bot.sendToTopic).not.toHaveBeenCalled();
     });
 
-    it('ignores completed→idle (not from active state)', () => {
+    it('ignores inactive→idle (already stopped)', () => {
       notifier.handleStateChange({
         sessionId: 'sess-1',
-        previousState: 'completed',
+        previousState: 'inactive',
         newState: 'idle',
       });
       expect(bot.sendToTopic).not.toHaveBeenCalled();
@@ -342,17 +312,6 @@ describe('TelegramNotifier', () => {
       expect(bot.sendToTopic).not.toHaveBeenCalled();
     });
 
-    it('skips idle notification when notifyOnIdle=false', () => {
-      config = defaultConfig({ notifyOnIdle: false });
-      notifier.handleStateChange(transition('sess-1', 'idle'));
-      expect(bot.sendToTopic).not.toHaveBeenCalled();
-    });
-
-    it('skips waiting notification when notifyOnError=false', () => {
-      config = defaultConfig({ notifyOnError: false });
-      notifier.handleStateChange(transition('sess-1', 'waiting'));
-      expect(bot.sendToTopic).not.toHaveBeenCalled();
-    });
   });
 
   // =========================================================================

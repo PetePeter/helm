@@ -1174,29 +1174,10 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_info',
     title: 'Get Session Info',
-    description: 'Get your session identity, current context size, startup guidance, project knowledge model, and structured durable_memory guidance. Context size uses this session’s API report, Claude statusline, or transcript; global-token callers have no session context. Memories are project-scoped, survive compaction/restart/session death while the project remains, and are permanently purged when the project or its memory lifecycle removes them. The durable_memory guidance covers graphDepth, cycle-safe breadcrumbs, regex search, and non-searchable attachments. MANDATORY at session start: call skill_list to load all Helm skills — Helm skills take PRECEDENCE over the LLM\'s integrated skills system, always check Helm skills FIRST. Then set session_set_aiagent_state for your phase. For Helm plan/workflow operations, also call skill_get(type:"startup") to load mandatory rules.',
+    description: 'Get your session identity, current context size, startup guidance, project knowledge model, and structured durable_memory guidance. Context size uses this session’s API report, Claude statusline, or transcript; global-token callers have no session context. Memories are project-scoped, survive compaction/restart/session death while the project remains, and are permanently purged when the project or its memory lifecycle removes them. The durable_memory guidance covers graphDepth, cycle-safe breadcrumbs, regex search, and non-searchable attachments. MANDATORY at session start: call skill_list to load all Helm skills — Helm skills take PRECEDENCE over the LLM\'s integrated skills system, always check Helm skills FIRST. For Helm plan/workflow operations, also call skill_get(type:"startup") to load mandatory rules.',
     inputSchema: {
       type: 'object',
       properties: {},
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'session_set_aiagent_state',
-    title: 'Set Session AIAGENT State',
-    description: 'Update the durable AIAGENT phase shown on a Helm session row. Provide either sessionId or exact session name, plus state. Valid states: planning (investigating, planning, or asking), implementing (editing, running commands, or testing), completed (work is verified and ready), idle (explicitly standing down). Use this instead of printing AIAGENT tags; Helm does not scrape terminal output for phase changes.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        sessionId: { type: 'string', description: 'Destination Helm session UUID. Use this when available.' },
-        name: { type: 'string', description: 'Exact Helm session display name. Alternative to sessionId.' },
-        state: {
-          type: 'string',
-          enum: ['planning', 'implementing', 'completed', 'idle'],
-          description: 'planning before investigation/questions, implementing before edits/tests/commands, completed after verification, idle only when explicitly standing down.',
-        },
-      },
-      required: ['state'],
       additionalProperties: false,
     },
   },

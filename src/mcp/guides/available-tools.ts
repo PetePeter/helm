@@ -72,7 +72,6 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'session_export', title: 'Export Session To File', description: 'Export a target session (sessionId required) to a caller-supplied file path via its configured helmActions.export command ($path placeholder). Harvest an old session\'s knowledge without paying to reactivate it. Errors if unconfigured.' },
     { name: 'session_read_terminal', title: 'Read Session Terminal', description: 'Read chronological terminal output or the rendered screen for any known session by ID or exact display name.' },
     { name: 'session_plan_claim', title: 'Claim Plan', description: 'Claim a plan for this session: records ownership, auto-transitions ready→coding, and shows the plan badge on the session row.' },
-    { name: 'session_set_aiagent_state', title: 'Set Session AIAGENT State', description: 'Update the durable AIAGENT phase for a session. Valid states: planning, implementing, completed, idle.' },
     { name: 'session_set_frozen', title: 'Set Session Freeze', description: 'Freeze (refuse all input) or thaw a session; sessions auto-freeze past their long prompt cache.' },
     { name: 'session_set_keep_warm', title: 'Keep Session Cache Warm', description: 'Turn prompt-cache keep-warm on or off for your session or a target session.' },
     { name: 'session_set_locked', title: 'Set Session Lock', description: 'Set or clear a durable lock that prevents deliberate session closure.' },

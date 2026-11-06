@@ -96,7 +96,6 @@ The directive instructs the recipient to:
 1. Never use `AskUserQuestion` or any other blocking prompt.
 2. Send the question back via `session_send_text` to the envelope's `fromSessionId`, with `expectsResponse=true`.
 3. **Stand by** for the reply — not guess, not proceed on assumptions.
-4. Call `session_set_aiagent_state(state="planning")` while waiting, so the standby is visible on the session row rather than looking like a stalled session.
 
 **Phone senders get a different first rule.** A `mobile:<deviceId>` proxy sender
 cannot read the recipient's terminal at all, so before anything else the directive

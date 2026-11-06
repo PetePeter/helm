@@ -169,13 +169,11 @@ export function setupPtyHandlers(
     }
   });
 
-  // pty:scrollInput - Write scroll keys to PTY without triggering marker detection.
-  // Screen redraws from scroll can contain stale agent-visible text.
+  // pty:scrollInput - Write scroll keys to PTY tagged as scroll, not user input.
   ipcMain.handle('pty:scrollInput', (event, sessionId: string, data: string) => {
     if (!isRendererOwner(event, sessionId)) return;
     try {
       ptyManager.write(sessionId, data, 'scroll');
-      stateDetector.markScrolling(sessionId);
     } catch (error) {
       logger.error(`[PTY IPC] pty:scrollInput failed for session=${sessionId}: ${error}`);
     }
@@ -214,7 +212,7 @@ export function setupPtyHandlers(
 
   // Forward PTY data events to renderer
   ptyManager.on('data', (sessionId: string, data: string) => {
-    // Feed to state detector for activity and question tracking.
+    // Feed to state detector for activity tracking.
     stateDetector.processOutput(sessionId, data);
 
     // Feed to pattern matcher for regex-triggered actions
@@ -272,27 +270,6 @@ export function setupPtyHandlers(
     }
   });
 
-  stateDetector.on('question-detected', (event) => {
-    const win = windowManager.getWindowForSession(event.sessionId);
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('pty:question-detected', event);
-    }
-    const session = sessionManager.getSession(event.sessionId);
-    if (session) {
-      sessionManager.updateSession(event.sessionId, { questionPending: true });
-    }
-  });
-
-  stateDetector.on('question-cleared', (event) => {
-    const win = windowManager.getWindowForSession(event.sessionId);
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('pty:question-cleared', event);
-    }
-    const session = sessionManager.getSession(event.sessionId);
-    if (session) {
-      sessionManager.updateSession(event.sessionId, { questionPending: false });
-    }
-  });
 
   // Forward activity change events to renderer
   stateDetector.on('activity-change', (event) => {

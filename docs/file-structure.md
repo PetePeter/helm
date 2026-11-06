@@ -39,7 +39,7 @@ src/
 │   ├── delivery-lock.ts         # Per-session gate serializing the nudge/payload/settle/submit delivery transaction
 │   ├── prompt-submit-signal.ts  # Last hook-reported prompt submit per session — confirms a delivery was actually submitted
 │   ├── bracketed-paste-tracker.ts # Per-session DEC 2004 state scanned from PTY output (incremental, chunk-boundary safe)
-│   ├── state-detector.ts       # PTY activity tracking + question markers; AIAGENT phase state is MCP-owned + markRestored() grace period for restored sessions
+│   ├── state-detector.ts       # PTY activity tracking + markRestored() grace period for restored sessions
 │   ├── context-limits.ts       # Per-CLI amber/red context warning thresholds and level resolution
 │   ├── chart-model.ts          # Transport-neutral Statistics series builders, period labels, and CLI colours
 │   ├── format-tokens.ts        # Compact axis labels and exact token tooltip values
@@ -405,7 +405,7 @@ tests/
 ├── session.test.ts             # Session management
 ├── sessions-screen.test.ts     # Session cards + group headers + spawn grid navigation + directional buttons
 ├── sort-logic.test.ts          # Session sort order tests
-├── state-detector.test.ts      # AIAGENT phase text ignore tests + activity tracking
+├── state-detector.test.ts      # activity tracking
 ├── tab-cycling.test.ts         # Terminal tab cycling tests
 ├── telegram-bot.test.ts        # TelegramBotCore lifecycle + auth tests
 ├── telegram-config.test.ts     # Telegram config loading/saving tests

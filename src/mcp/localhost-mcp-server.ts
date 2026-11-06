@@ -16,7 +16,6 @@ import {
   asPlanStatus,
   asPlanTypeOrNull,
   asContextBindingTargetType,
-  asAiagentState,
   requireResult,
   requireBooleanResult,
   normalizeStructuredContent,
@@ -606,7 +605,7 @@ function getToolReminder(name: string): string {
     return 'Reminder: after a handoff, inspect this terminal tail for receipt evidence. If the sent text or new recipient activity is not visible, report that uncertainty to the user.';
   }
   if (name === 'session_info') {
-    return 'Reminder: now call session_set_aiagent_state for your current phase. If a Helm plan is assigned and you are implementing it, claim it by calling session_plan_claim with your sessionId and the planId.';
+    return 'Reminder: if a Helm plan is assigned and you are implementing it, claim it by calling session_plan_claim with your sessionId and the planId.';
   }
   if (name === 'plans_list') {
     return '💡 Skills: the user has defined custom skills for this project. Call skill_list before starting work — there may be one directly applicable to this task.';

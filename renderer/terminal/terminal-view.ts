@@ -16,7 +16,7 @@ export interface TerminalViewOptions {
   sessionId: string;
   container: HTMLElement;
   onData?: (data: string) => void;
-  /** Callback for scroll input — bypasses AIAGENT keyword detection. */
+  /** Callback for scroll input — tagged as scroll, not user input. */
   onScrollInput?: (data: string) => void;
   /** Read-only snapshot (frozen, or compacting behind a handover); scrolling stays available. */
   isFrozen?: () => boolean;
@@ -245,7 +245,7 @@ export class TerminalView {
    * Normal buffer: scrollLines() to move viewport.
    * Alternate buffer: sends PageUp/PageDown escape sequences to the PTY so
    * the CLI app scrolls its own content. Uses scrollCallback (pty:scrollInput)
-   * to avoid false AIAGENT state changes from screen redraws.
+   * to avoid false activity from screen redraws.
    * Used by gamepad scroll bindings — mouse wheel handled natively by xterm.js.
    */
   scroll(direction: 'up' | 'down', lines: number): void {

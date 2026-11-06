@@ -2,7 +2,7 @@
  * Shared activity-level-to-color mapping for session activity dots.
  * Used by session cards and group activity indicators.
  *
- * Activity level is based purely on output timing — independent of AIAGENT session state.
+ * Activity level is based purely on output timing — independent of pipeline state.
  */
 
 export const ACTIVITY_COLORS: Record<string, string> = {

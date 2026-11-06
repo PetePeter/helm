@@ -11,7 +11,6 @@ import { parsePlanTask } from '../../session/operator-tasks.js';
 import { parseSessionFeedCursor } from '../../session/session-change-feed.js';
 import { requireOperatorTask, trackOperatorTask } from '../../session/operator-delegation.js';
 import {
-  asAiagentState,
   asArtifactKind,
   asArtifactIntent,
   asBoolean,
@@ -810,11 +809,6 @@ export async function callMcpTool(
         );
       case 'session_info':
         return service.getSessionInfo(authContext);
-      case 'session_set_aiagent_state':
-        return service.setAiagentState(
-          asString(args.sessionId ?? args.name, 'sessionId or name is required'),
-          asAiagentState(args.state, 'state must be one of planning, implementing, completed, or idle'),
-        );
       case 'session_set_locked':
         return service.setSessionLocked(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),

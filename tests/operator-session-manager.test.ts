@@ -331,14 +331,13 @@ describe('hourly self-clear (fake clock)', () => {
 
   it.each([
     ['active dot', { activityLevel: 'active' as const }],
-    ['implementing', { aiagentState: 'implementing' as const }],
   ])('defers while busy (%s) and retries every 30 min until idle', async (_label, busy) => {
     start();
     touch(busy);
     await advance(60);
     await advance(30);
     expect(ctx.clears).toHaveLength(0);
-    ctx.sessionManager.updateSession(opId, { activityLevel: 'inactive', aiagentState: 'idle' });
+    ctx.sessionManager.updateSession(opId, { activityLevel: 'inactive' });
     await advance(30);
     expect(ctx.clears).toHaveLength(1);
   });

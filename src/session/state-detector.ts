@@ -1,14 +1,6 @@
 import { EventEmitter } from 'events';
 import type { ActivityLevel } from '../types/session.js';
 
-export interface QuestionDetected {
-  sessionId: string;
-}
-
-export interface QuestionCleared {
-  sessionId: string;
-}
-
 export interface ActivityChange {
   sessionId: string;
   level: ActivityLevel;
@@ -17,7 +9,6 @@ export interface ActivityChange {
 }
 
 interface SessionTracking {
-  questionPending: boolean;
   lastOutputAt: number;
   activityLevel: ActivityLevel;
   frozen: boolean;
@@ -25,8 +16,6 @@ interface SessionTracking {
   turnArmed: boolean;
   /** Once a hook event is seen, only hook events may promote agent activity. */
   hooksObserved: boolean;
-  /** When true, processOutput skips marker scanning (scroll redraws). */
-  scrolling: boolean;
   /** When true, processOutput skips activity promotion (resize redraws). */
   resizing: boolean;
   /** When true, processOutput skips activity promotion (terminal switch/focus redraws). */
@@ -35,24 +24,11 @@ interface SessionTracking {
   restoring: boolean;
 }
 
-/** Strip ANSI escape sequences so keyword detection works on raw PTY output. */
-function stripAnsi(text: string): string {
-  return text
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')              // CSI sequences
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')   // Complete OSC sequences
-    .replace(/\x1b\][^\x07\x1b]*/g, '');                  // Incomplete OSC (strip prefix)
-}
-
-const QUESTION_KEYWORD = 'AIAGENT-QUESTION';
-
 /** Default timeout before considering a session inactive (no output for 10s) */
 export const DEFAULT_INACTIVE_TIMEOUT_MS = 10_000;
 
 /** Default timeout before considering a session idle (no output for 5 minutes) */
 export const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
-
-/** How long after the last scroll input before marker scanning resumes (2s) */
-export const DEFAULT_SCROLL_CLEAR_MS = 2_000;
 
 /** How long after the last resize before activity promotion resumes (1s) */
 export const DEFAULT_RESIZE_CLEAR_MS = 1_000;
@@ -82,13 +58,9 @@ export interface ActivityTimeouts {
 }
 
 /**
- * Tracks PTY activity and question markers for sessions.
- * AIAGENT phase state is intentionally not parsed from terminal text; agents
- * must update durable phase state through the MCP session_set_aiagent_state tool.
+ * Tracks PTY activity for sessions. Nothing is parsed from terminal text.
  *
  * Events:
- * - 'question-detected'  (QuestionDetected) — AIAGENT-QUESTION found
- * - 'question-cleared'   (QuestionCleared)  — new output arrived after question
  * - 'activity-change'   (ActivityChange)   — session activity level changed
  *
  * Activity detection uses per-session debounced timeouts:
@@ -101,7 +73,6 @@ export class StateDetector extends EventEmitter {
   private sessionStates: Map<string, SessionTracking> = new Map();
   private inactiveTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private idleTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
-  private scrollTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private resizeTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private switchTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private restoreTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -120,21 +91,6 @@ export class StateDetector extends EventEmitter {
     this.idleTimeoutMs = timeouts?.idleMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.activityPromoteThreshold = DEFAULT_ACTIVITY_PROMOTE_THRESHOLD;
     this.activityDebounceMs = DEFAULT_ACTIVITY_DEBOUNCE_MS;
-  }
-
-  /** Mark a session as scrolling — processOutput skips marker scanning.
-   *  Auto-clears after 2s of no further scroll input. */
-  markScrolling(sessionId: string): void {
-    const tracking = this.getOrCreate(sessionId);
-    tracking.scrolling = true;
-
-    // Reset the auto-clear timer
-    const existing = this.scrollTimers.get(sessionId);
-    if (existing) clearTimeout(existing);
-    this.scrollTimers.set(sessionId, setTimeout(() => {
-      tracking.scrolling = false;
-      this.scrollTimers.delete(sessionId);
-    }, DEFAULT_SCROLL_CLEAR_MS));
   }
 
   /** Mark a session as resizing — processOutput skips activity promotion.
@@ -186,8 +142,7 @@ export class StateDetector extends EventEmitter {
   }
 
   /** Mark a session as active due to user input (PTY stdin).
-   *  Unlike processOutput, this only touches activity state.
-   *  Clears the scrolling flag since this is real user input. */
+   *  Unlike processOutput, this only touches activity state. */
   markActive(sessionId: string): void {
     const tracking = this.getOrCreate(sessionId);
     if (tracking.frozen) return;
@@ -196,13 +151,7 @@ export class StateDetector extends EventEmitter {
       tracking.lastOutputAt = Date.now();
     }
 
-    // Real user input clears scrolling and resizing flags
-    tracking.scrolling = false;
-    const scrollTimer = this.scrollTimers.get(sessionId);
-    if (scrollTimer) {
-      clearTimeout(scrollTimer);
-      this.scrollTimers.delete(sessionId);
-    }
+    // Real user input clears the resizing flag
     tracking.resizing = false;
     const resizeTimer = this.resizeTimers.get(sessionId);
     if (resizeTimer) {
@@ -352,46 +301,11 @@ export class StateDetector extends EventEmitter {
         }, this.activityDebounceMs));
       }
     }
-
-    // Skip marker scanning during scroll — output is a screen redraw, not new CLI content.
-    if (tracking.scrolling) return;
-
-    const clean = stripAnsi(data);
-
-    let hasQuestion = false;
-    {
-      let pos = 0;
-      while ((pos = clean.indexOf(QUESTION_KEYWORD, pos)) !== -1) {
-        hasQuestion = true;
-        pos += QUESTION_KEYWORD.length;
-      }
-    }
-
-    if (!hasQuestion && tracking.questionPending) {
-      tracking.questionPending = false;
-      this.emit('question-cleared', { sessionId } satisfies QuestionCleared);
-      return;
-    }
-
-    if (hasQuestion && !tracking.questionPending) {
-      tracking.questionPending = true;
-      this.emit('question-detected', { sessionId } satisfies QuestionDetected);
-    }
-  }
-
-  /** Check if a session has a pending question. */
-  hasQuestion(sessionId: string): boolean {
-    return this.sessionStates.get(sessionId)?.questionPending ?? false;
   }
 
   /** Remove tracking for a session. */
   removeSession(sessionId: string): void {
     this.clearActivityTimers(sessionId);
-    const scrollTimer = this.scrollTimers.get(sessionId);
-    if (scrollTimer) {
-      clearTimeout(scrollTimer);
-      this.scrollTimers.delete(sessionId);
-    }
     const resizeTimer = this.resizeTimers.get(sessionId);
     if (resizeTimer) {
       clearTimeout(resizeTimer);
@@ -419,14 +333,12 @@ export class StateDetector extends EventEmitter {
   dispose(): void {
     for (const timer of this.inactiveTimers.values()) clearTimeout(timer);
     for (const timer of this.idleTimers.values()) clearTimeout(timer);
-    for (const timer of this.scrollTimers.values()) clearTimeout(timer);
     for (const timer of this.resizeTimers.values()) clearTimeout(timer);
     for (const timer of this.switchTimers.values()) clearTimeout(timer);
     for (const timer of this.restoreTimers.values()) clearTimeout(timer);
     for (const timer of this.activityDebounceTimers.values()) clearTimeout(timer);
     this.inactiveTimers.clear();
     this.idleTimers.clear();
-    this.scrollTimers.clear();
     this.resizeTimers.clear();
     this.switchTimers.clear();
     this.restoreTimers.clear();
@@ -503,7 +415,7 @@ export class StateDetector extends EventEmitter {
   private getOrCreate(sessionId: string): SessionTracking {
     let tracking = this.sessionStates.get(sessionId);
     if (!tracking) {
-      tracking = { questionPending: false, lastOutputAt: 0, activityLevel: 'idle', frozen: false, turnArmed: false, hooksObserved: false, scrolling: false, resizing: false, switching: false, restoring: false };
+      tracking = { lastOutputAt: 0, activityLevel: 'idle', frozen: false, turnArmed: false, hooksObserved: false, resizing: false, switching: false, restoring: false };
       this.sessionStates.set(sessionId, tracking);
     }
     return tracking;

@@ -62,7 +62,7 @@ function activity(sessionId: string): string {
 }
 
 function sessionState(session: Session): string {
-  return appStore.state.sessionStates.get(session.id) ?? session.aiagentState ?? session.state ?? 'idle';
+  return appStore.state.sessionStates.get(session.id) ?? session.state ?? 'idle';
 }
 
 function time(at: number): string {

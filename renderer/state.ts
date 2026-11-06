@@ -23,9 +23,6 @@ export interface Session {
   lastOutputAt?: number;
   windowId?: number;
   state?: string;
-  /** True when the terminal detector has observed an AIAGENT question. */
-  questionPending?: boolean;
-  aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle';
   /** Wall-clock epoch ms when this hub session was first spawned. */
   createdAt?: number;
   /** Wall-clock epoch ms of when the activity dot last left green. */
@@ -98,7 +95,7 @@ export interface AppState {
   /** Project registry shared by sidebar, settings, and planner surfaces. */
   projects: ProjectSummary[];
   settingsTab: string;
-  /** Per-session AIAGENT state (idle, waiting, implementing, etc.) */
+  /** Per-session pipeline state (idle, waiting, implementing, etc.) */
   sessionStates: Map<string, string>;
   /** Per-session activity level (active, inactive, idle) */
   sessionActivityLevels: Map<string, string>;

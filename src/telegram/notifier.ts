@@ -2,7 +2,7 @@ import type { TelegramBotCore } from './bot.js';
 import type { TopicManager } from './topic-manager.js';
 import type { SessionManager } from '../session/manager.js';
 import type { TelegramConfig } from '../config/loader.js';
-import type { SessionState } from '../types/session.js';
+import type { ActivityLevel } from '../types/session.js';
 import { notificationKeyboard } from './keyboards.js';
 import { logger } from '../utils/logger.js';
 import { alertKindForTransition } from '../session/session-alert.js';
@@ -15,24 +15,20 @@ const DEDUP_WINDOW_MS = 15_000;
 /** Max notifications per minute across all sessions. */
 const MAX_NOTIFICATIONS_PER_MIN = 3;
 
-const STATE_LABELS: Record<string, { emoji: string; title: string; verb: string }> = {
-  completed: { emoji: '🎉', title: 'Session Completed', verb: 'is done' },
-  idle: { emoji: '💤', title: 'Session Idle', verb: 'is idle' },
-  waiting: { emoji: '⏳', title: 'Session Needs Attention', verb: 'needs input' },
-};
+const COMPLETED_LABEL = { emoji: '🎉', title: 'Session Completed', verb: 'is done' };
 
 /** Local definition — StateDetector no longer exports this interface. */
 interface StateTransition {
   sessionId: string;
-  previousState: SessionState;
-  newState: SessionState;
+  previousState: ActivityLevel;
+  newState: ActivityLevel;
 }
 
 /**
  * Sends Telegram notifications when session state changes.
  *
  * Triggers on:
- * - State change: active → non-active (implementing/planning → completed/idle/waiting)
+ * - Turn ended: the session's activity leaves 'active' (see session-alert.ts)
  * - Crash/error events (future)
  *
  * Each notification includes inline action buttons and is sent only to
@@ -50,25 +46,16 @@ export class TelegramNotifier {
   ) {}
 
   /**
-   * Handle a state change from StateDetector.
-   * Only notifies on active → non-active transitions.
+   * Handle an activity transition (fed from session:updated).
+   * Only notifies when a turn ends.
    */
   handleStateChange(transition: StateTransition): void {
     // The definition of "something happened" is shared with the mobile surface
     // so the two can never drift into telling the user different things.
     if (!alertKindForTransition(transition.previousState, transition.newState)) return;
 
-    const config = this.getConfig();
-
-    // Check per-event notification settings
-    if (transition.newState === 'completed' && !config.notifyOnComplete) return;
-    if (transition.newState === 'idle' && !config.notifyOnIdle) return;
-    if (transition.newState === 'waiting' && !config.notifyOnError) return;
-
-    const labelInfo = STATE_LABELS[transition.newState];
-    if (!labelInfo) return;
-
-    this.sendNotification(transition.sessionId, transition.newState, labelInfo);
+    if (!this.getConfig().notifyOnComplete) return;
+    this.sendNotification(transition.sessionId, COMPLETED_LABEL);
   }
 
   /** Remove dedup tracking for a session. */
@@ -84,7 +71,6 @@ export class TelegramNotifier {
 
   private async sendNotification(
     sessionId: string,
-    newState: SessionState,
     labelInfo: { emoji: string; title: string; verb: string },
   ): Promise<void> {
     if (!this.shouldNotify(sessionId)) return;
@@ -101,7 +87,7 @@ export class TelegramNotifier {
       `${cliLabel(session.cliType)} — ${labelInfo.verb}`,
     ].join('\n');
 
-    const keyboard = notificationKeyboard(sessionId, newState);
+    const keyboard = notificationKeyboard(sessionId);
 
     // Send to the session's topic
     const topicId = this.topicManager.getTopicId(sessionId);

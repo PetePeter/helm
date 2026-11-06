@@ -191,7 +191,6 @@ export class OperatorSessionManager extends EventEmitter {
       if (now - sentAt > OPEN_RELAY_MAX_AGE_MS) this.openRelays.delete(recipient);
     }
     return session.activityLevel === 'active'
-      || session.aiagentState === 'implementing'
       || this.deps.isHandoverPending(session.id)
       || this.openRelays.size > 0;
   }

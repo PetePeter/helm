@@ -381,8 +381,6 @@ export const PRELOAD_API_DOMAINS = {
   events: [
     'onPtyData',
     'onPtyExit',
-    'onPtyQuestionDetected',
-    'onPtyQuestionCleared',
     'onPtyActivityChange',
     'onPtyHandoff',
     'onHandoverArmed',

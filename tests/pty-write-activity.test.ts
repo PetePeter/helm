@@ -105,7 +105,6 @@ describe('pty IPC handlers — activity marking after the move', () => {
 
     const stateDetector = new StateDetector();
     const markActive = vi.spyOn(stateDetector, 'markActive');
-    const markScrolling = vi.spyOn(stateDetector, 'markScrolling');
 
     const session = { id: 's1', interactionChannel: 'telegram' };
     const sessionManager = {
@@ -133,7 +132,7 @@ describe('pty IPC handlers — activity marking after the move', () => {
       onPtyInput,
     );
 
-    return { ptyManager, stateDetector, markActive, markScrolling, sessionManager, onPtyInput };
+    return { ptyManager, stateDetector, markActive, sessionManager, onPtyInput };
   }
 
   beforeEach(() => {
@@ -158,11 +157,10 @@ describe('pty IPC handlers — activity marking after the move', () => {
   });
 
   it('keeps scroll input off the activity dots', async () => {
-    const { markActive, markScrolling } = setup();
+    const { markActive } = setup();
 
     await handlers.get('pty:scrollInput')?.({}, 's1', '\x1b[A');
 
     expect(markActive).not.toHaveBeenCalled();
-    expect(markScrolling).toHaveBeenCalledWith('s1');
   });
 });

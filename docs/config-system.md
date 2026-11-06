@@ -412,7 +412,6 @@ The MCP server exposes the following tools for external clients:
 | `session_send_text` | Send text to a running session's PTY |
 | `session_read_terminal` | Read the recent terminal tail for any known session, with `raw`, `stripped`, or `both` output modes |
 | `session_plan_claim` | Claim a plan: records ownership, transitions ready→coding, shows plan badge on session row |
-| `session_set_aiagent_state` | Update the session AIAGENT state icon |
-| `session_info` | Return MCP endpoint, AIAGENT state registry, directories, tool descriptions, and agent plan guidance |
+| `session_info` | Return MCP endpoint, directories, tool descriptions, and agent plan guidance |
 
 All tools return JSON via MCP's `tools/call` endpoint. Errors are returned as JSON-RPC error responses with descriptive messages.

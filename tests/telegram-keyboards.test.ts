@@ -54,8 +54,8 @@ function allCallbackData(keyboard: any[][]): string[] {
 // ---------------------------------------------------------------------------
 
 describe('notificationKeyboard', () => {
-  it('creates keyboard for completed state', () => {
-    const kb = notificationKeyboard('sess-1', 'completed');
+  it('creates the turn-ended keyboard', () => {
+    const kb = notificationKeyboard('sess-1');
 
     expect(kb.length).toBeGreaterThanOrEqual(2);
     const data = allCallbackData(kb);
@@ -64,30 +64,8 @@ describe('notificationKeyboard', () => {
     expect(data).toContain('sessions:list');
   });
 
-  it('creates keyboard for idle state', () => {
-    const kb = notificationKeyboard('sess-1', 'idle');
-    const data = allCallbackData(kb);
-    expect(data).toContain('topic:sess-1');
-    expect(data).toContain('sessions:list');
-    expect(data).not.toContain('prompt:sess-1');
-  });
-
-  it('creates keyboard for waiting state', () => {
-    const kb = notificationKeyboard('sess-1', 'waiting');
-    const data = allCallbackData(kb);
-    expect(data).toContain('topic:sess-1');
-    expect(data).not.toContain('prompt:sess-1');
-  });
-
-  it('creates keyboard for implementing (fallback)', () => {
-    const kb = notificationKeyboard('sess-1', 'implementing');
-    const data = allCallbackData(kb);
-    expect(data).toContain('topic:sess-1');
-    expect(data).toContain('sessions:list');
-  });
-
   it('all callback_data values contain session id or known prefix', () => {
-    const kb = notificationKeyboard('abc', 'completed');
+    const kb = notificationKeyboard('abc');
     const data = allCallbackData(kb);
     for (const d of data) {
       expect(d).toMatch(/^(topic:|continue:|sessions:)/);

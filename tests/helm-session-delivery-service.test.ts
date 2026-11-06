@@ -369,7 +369,7 @@ describe('HelmSessionDeliveryService', () => {
 
       const all = allDeliveredText(ptyManager);
       expect(all).toContain('stand by');
-      expect(all).toContain('session_set_aiagent_state');
+      expect(all).not.toContain('session_set_aiagent_state');
     });
 
     it('carries the same directive for a cross-machine fleet sender address', async () => {

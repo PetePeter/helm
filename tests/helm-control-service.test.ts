@@ -302,17 +302,6 @@ describe('HelmControlService.sendTextToSession', () => {
   });
 });
 
-describe('HelmControlService.setAiagentState', () => {
-  it('updates durable aiagentState through the session manager', () => {
-    const { service, sessionManager } = makeService();
-
-    const result = service.setAiagentState('s1', 'completed');
-
-    expect(result).toEqual({ ok: true });
-    expect(sessionManager.updateSession).toHaveBeenCalledWith('s1', { aiagentState: 'completed' });
-  });
-});
-
 describe('HelmControlService plan sequences', () => {
   it('returns sequence membership and shared memory for a plan', () => {
     const { service, planManager } = makeService();

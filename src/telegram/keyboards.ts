@@ -54,30 +54,12 @@ function stateEmoji(state?: SessionState): string {
   return STATE_EMOJI[state ?? 'idle'] ?? '⚪';
 }
 
-/**
- * Build notification action buttons for a session state change.
- * Shows different buttons depending on the new state.
- */
-export function notificationKeyboard(
-  sessionId: string,
-  state: SessionState,
-): TelegramBot.InlineKeyboardButton[][] {
-  const rows: TelegramBot.InlineKeyboardButton[][] = [];
-
-  if (state === 'completed') {
-    rows.push([
-      { text: '📌 Go to Topic', callback_data: `topic:${sessionId}` },
-      { text: '🚀 Continue', callback_data: `continue:${sessionId}` },
-    ]);
-  } else if (state === 'idle' || state === 'waiting') {
-    rows.push([
-      { text: '📌 Go to Topic', callback_data: `topic:${sessionId}` },
-    ]);
-  } else {
-    rows.push([
-      { text: '📌 Go to Topic', callback_data: `topic:${sessionId}` },
-    ]);
-  }
+/** Action buttons for a turn-ended notification. */
+export function notificationKeyboard(sessionId: string): TelegramBot.InlineKeyboardButton[][] {
+  const rows: TelegramBot.InlineKeyboardButton[][] = [[
+    { text: '📌 Go to Topic', callback_data: `topic:${sessionId}` },
+    { text: '🚀 Continue', callback_data: `continue:${sessionId}` },
+  ]];
 
   rows.push([
     { text: '📂 Sessions', callback_data: 'sessions:list' },

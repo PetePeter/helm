@@ -432,7 +432,7 @@ The bytes were never the problem.
 
 ```mermaid
 graph LR
-    SM[SessionManager<br/>session:updated] -->|aiagentState transition| MAN[MobileAlertNotifier]
+    SM[SessionManager<br/>session:updated] -->|activity leaves active (turn ended)| MAN[MobileAlertNotifier]
     NM[NotificationManager<br/>notify_user · flash_attention] --> MAN
     SA[session-alert.ts<br/>shared transition filter] -.-> MAN
     SA -.-> TN[TelegramNotifier]

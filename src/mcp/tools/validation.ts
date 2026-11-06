@@ -110,13 +110,6 @@ export function asContextBindingTargetType(value: unknown): ContextBindingTarget
 }
 
 
-export function asAiagentState(value: unknown, errorMessage?: string): 'planning' | 'implementing' | 'completed' | 'idle' {
-  if (value === 'planning' || value === 'implementing' || value === 'completed' || value === 'idle') {
-    return value;
-  }
-  throw new Error(errorMessage ?? 'state must be one of planning, implementing, completed, or idle');
-}
-
 
 export function asTerminalReadMode(value: unknown): 'raw' | 'stripped' | 'both' | 'screen' {
   if (value === undefined) return 'stripped';

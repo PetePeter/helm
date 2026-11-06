@@ -1,8 +1,8 @@
-# session_info MCP Tool — AIAGENT State Registry & Endpoint Context
+# session_info MCP Tool — Endpoint Context
 
 ## Overview
 
-The `session_info` MCP tool is an **autocall endpoint** that provides AI agents with session context, MCP connectivity information, and the canonical AIAGENT state registry. Call this tool on session startup to prime the state machine.
+The `session_info` MCP tool is an **autocall endpoint** that provides AI agents with session context, MCP connectivity information. Call this tool on session startup to prime the state machine.
 
 It is also the main place Helm teaches agents about durable memory: prefer `context_*` tools for notes that should survive this session, and treat sequence `sharedMemory` as legacy coordination text rather than the default place to accumulate new knowledge.
 
@@ -45,10 +45,6 @@ Context lookup is deliberately limited to `session_info` and `session_get`: read
 ### Chat Guidance
 
 - **`chat`** (string) — Points agents at `chat_send` as the transport-neutral way to reach the user's bound chat surfaces (a paired phone over BLE; Telegram if configured), with `telegram_chat` documented as its identical-behavior alias.
-
-### AIAGENT States
-
-Valid states for `session_set_aiagent_state`: `planning`, `implementing`, `completed`, `idle`. The tool definition is authoritative — no need to enumerate them in the response.
 
 ### Available Resources
 
@@ -107,23 +103,6 @@ Response:
       "piperPath": "C:\\piper\\piper.exe",
       "ffmpeg": false
     }
-  }
-}
-```
-
-### 2. State Updates
-
-Use `session_set_aiagent_state` with states: `planning`, `implementing`, `completed`, `idle`.
-Printed `AIAGENT-*` tags are optional display text; Helm state changes come from the MCP call.
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "session_set_aiagent_state",
-    "arguments": { "sessionId": "a1b2c3d4-e5f6-...", "state": "planning" }
   }
 }
 ```
@@ -265,87 +244,12 @@ Two auth models:
    - Server accepts but does not decode — `authContext` is empty.
    - Used by global tooling that doesn't have a session context.
 
-## AIAGENT State Machine Integration
-
-Helm tracks four independent state systems. Keep them aligned when useful, but do not treat them as aliases:
-
-| System | Owner | Purpose |
-| --- | --- | --- |
-| `activityLevel` | `StateDetector`, from PTY I/O timing alone | What the activity DOT shows: `active`, `inactive`, `idle` (invariant 8). Carried on `session_list` / `session_get` so a remote surface — the paired phone — can draw the same dot. Never derive a dot from `sessionState`: it answers a different question. |
-| `aiagentState` | External agents via `session_set_aiagent_state` | Durable agent-declared phase shown on session rows: planning, implementing, completed, or idle. |
-| `sessionState` | Helm UI and pipeline controls | Runtime pipeline state for manual state overrides and handoff queue coordination. |
-| `planState` | Helm plan tools | Durable lifecycle for a plan item: planning, ready, coding, review, blocked, or done. |
-
-The session detector in Helm's main process tracks PTY activity timing and
-question markers. It no longer turns printed `AIAGENT-*` text into state
-changes, so printed tags cannot trigger hidden Telegram completion/idle
-notifications.
-
-Use `session_set_aiagent_state` to make your state transitions durable and visible in Helm. Valid states: `planning`, `implementing`, `completed`, `idle`.
-
-The explicit state endpoint is:
-
-```json
-{
-  "name": "session_set_aiagent_state",
-  "arguments": {
-    "sessionId": "your-session-id",
-    "state": "implementing"
-  }
-}
-```
-
-### State Machine
-
-```mermaid
-stateDiagram-v2
-  [*] --> idle
-  idle --> planning: inspect context or ask questions
-  idle --> implementing: direct execution starts
-  idle --> completed: report-only task is done
-  planning --> implementing: enough context to edit or execute
-  planning --> completed: investigation-only work is done
-  planning --> idle: paused or cancelled
-  implementing --> planning: blocker or ambiguity appears
-  implementing --> completed: implementation and verification finish
-  implementing --> idle: paused or cancelled
-  completed --> planning: follow-up question or review starts
-  completed --> implementing: follow-up change starts
-  completed --> idle: accepted or stood down
-```
-
-### Integration Patterns
-
-Starting implementation:
-
-1. Call `session_plan_claim` with your `sessionId` and `planId` — this claims the plan, transitions it to coding, and shows the badge on the session row.
-2. Call `session_set_aiagent_state` with `state: "implementing"` when edits, commands, or other execution begins.
-
-Blocked by a question:
-
-1. Call `session_set_aiagent_state` with `state: "planning"` while deciding or asking.
-2. Create a separate `QUESTION: ...` plan if the blocker should survive chat history.
-3. Link the question plan to the blocked plan with `plan_nextplan_link`; set the original plan blocked when work cannot continue.
-
-Completing work:
-
-1. Run the relevant verification and collect concise completion notes.
-2. Call `plan_complete` with changed behavior, important files, tests or review, and remaining risk.
-3. Call `session_set_aiagent_state` with `state: "completed"` so the user can see the session is ready for review.
-
-Expected errors:
-
-- `session_set_aiagent_state` rejects values outside `planning`, `implementing`, `completed`, and `idle`.
-- Unknown session references fail with `Session not found`; use `HELM_SESSION_ID` from spawned sessions where possible.
-- Plan ownership calls may fail if another session already owns the plan.
-
 ## Example: Full Session Initialization
 
 ```javascript
 // Step 1: Call session_info to prime the state machine
 const sessionInfo = await mcp.callTool('session_info', {});
 console.log(`Session: ${sessionInfo.sessionName} (${sessionInfo.sessionId})`);
-// Valid states: planning, implementing, completed, idle
 
 // Step 2: Fetch detailed workflow guidance only when needed
 const planGuide = await mcp.callTool('skills_get', {
@@ -353,20 +257,10 @@ const planGuide = await mcp.callTool('skills_get', {
   dirPath: sessionInfo.workingDir
 });
 
-// Step 3: Start work with explicit AIAGENT state updates
-await mcp.callTool('session_set_aiagent_state', { sessionId: sessionInfo.sessionId, state: 'planning' });
-console.log('Researching the task...');
-
-// Step 4: Make MCP calls as needed
+// Step 3: Make MCP calls as needed
 const plans = await mcp.callTool('plans_summary', {
   dirPath: sessionInfo.workingDir
 });
-
-await mcp.callTool('session_set_aiagent_state', { sessionId: sessionInfo.sessionId, state: 'implementing' });
-console.log('Implementing the solution...');
-
-await mcp.callTool('session_set_aiagent_state', { sessionId: sessionInfo.sessionId, state: 'completed' });
-console.log('Ready for review.');
 ```
 
 ## See Also

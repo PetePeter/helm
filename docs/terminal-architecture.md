@@ -48,7 +48,6 @@ PTY Data Flow:
   voice/paste ───────┘                    │                    │
   StateDetector  ←── PTY stdout ──────── └──────────────────┘
                ←── PTY stdin (markActive)┌──────────────────┐
-               ←── scroll input (markScrolling)
                                          │ [●Claude][●Copilot]│
   PipelineQueue  ←── state changes       └──────────────────┘
 ```
@@ -59,7 +58,7 @@ PTY Data Flow:
 
 ## Activity Dots
 
-Session cards use activity-based coloring (turn activity, not AIAGENT phase state):
+Session cards use activity-based coloring (turn activity):
 
 - 🟢 active (green `#44cc44` — receiving user input, or hook-reported work until `Stop`)
 - 🔵 inactive (blue `#4488ff` — >10s silence)
@@ -100,7 +99,7 @@ flowchart TD
     D[Fallback idle] --> Y[Idle dot and disarm]
 ```
 
-`markActive()` updates activity timers; it does not scan for AIAGENT-* keywords. Helm no longer scrapes printed AIAGENT phase tags from PTY output; agents update durable phase state through `session_set_aiagent_state`. Scroll input uses a distinct path: `pty:scrollInput` IPC handler calls `StateDetector.markScrolling(sessionId)` instead of `markActive()`, suppressing marker scanning for 2s during PageUp/PageDown redraws. Resize uses an analogous path: `pty:resize` IPC handler calls `StateDetector.markResizing(sessionId)`, which suppresses activity promotion for 1s to prevent false green dots when tab switches trigger resize → CLI redraws → output. Terminal switching uses: `pty:markSwitching` IPC (called by TerminalManager before fit()) routes to `markResizing()` to suppress false activity promotion during Ctrl+Tab switching. Session restore uses: `markRestored(sessionId)` sets a 3s grace period that prevents shell startup output from promoting restored sessions to green — ensures restored sessions start as grey (idle) dots.
+`markActive()` updates activity timers. Nothing is parsed from PTY text. Scroll input uses a distinct path: `pty:scrollInput` writes with a scroll origin and never calls `markActive()`. Resize uses an analogous path: `pty:resize` IPC handler calls `StateDetector.markResizing(sessionId)`, which suppresses activity promotion for 1s to prevent false green dots when tab switches trigger resize → CLI redraws → output. Terminal switching uses: `pty:markSwitching` IPC (called by TerminalManager before fit()) routes to `markResizing()` to suppress false activity promotion during Ctrl+Tab switching. Session restore uses: `markRestored(sessionId)` sets a 3s grace period that prevents shell startup output from promoting restored sessions to green — ensures restored sessions start as grey (idle) dots.
 
 Session cards also display an elapsed timer showing time since last CLI output (e.g. "just now", "5s", "2m"). `formatElapsed()` helper in `sessions.ts`, driven by `lastOutputAt` piggybacked on the `pty:activity-change` event, refreshed every 10s and on each activity-change.
 
@@ -284,7 +283,7 @@ flowchart TD
 |--------|------|------|
 | PtyManager | `src/session/pty-manager.ts` | Spawns node-pty processes (cmd.exe), routes stdin/stdout, handles resize/kill. `deliverText()` is the single programmatic delivery path — framing via `BracketedPasteTracker`, suffix as a separate write after the settle delay, no IPC involved. `write()` marks session activity for every caller. `beginShutdown()` latches app quit: PTY exits after it still free local bookkeeping but no longer emit `exit`, so a quitting app never looks like a wave of closed sessions |
 | BracketedPasteTracker | `src/session/bracketed-paste-tracker.ts` | Per-session DEC 2004 state scanned incrementally from PTY output — the main process's source of truth for framing. `waitUntilEnabled()` spends the readiness budget for a just-spawned CLI and bails out if the PTY dies. Cleared on exit/kill/killAll so a reused session id starts disabled |
-| StateDetector | `src/session/state-detector.ts` | Tracks PTY I/O activity (active/inactive/idle levels via `activity-change` events) and question markers. `processOutput()` handles PTY stdout (marker + activity); printed AIAGENT phase tags do not mutate session state. `markActive()` handles PTY stdin (activity only, no keyword scan). `markScrolling(sessionId)` handles scroll input — sets per-session flag that makes `processOutput()` skip marker scanning (still tracks activity); auto-clears after 2s; `markActive()` clears it immediately. `markResizing(sessionId)` handles resize — sets per-session flag that makes `processOutput()` skip activity promotion for 1s; prevents false green dots from tab-switch redraws. `markRestored(sessionId)` handles session restore — suppresses activity promotion for 3s grace period; prevents shell startup output from promoting restored sessions to green |
+| StateDetector | `src/session/state-detector.ts` | Tracks PTY I/O activity (active/inactive/idle levels via `activity-change` events). `processOutput()` handles PTY stdout (activity only). `markActive()` handles PTY stdin (activity only, no keyword scan). `markResizing(sessionId)` handles resize — sets per-session flag that makes `processOutput()` skip activity promotion for 1s; prevents false green dots from tab-switch redraws. `markRestored(sessionId)` handles session restore — suppresses activity promotion for 3s grace period; prevents shell startup output from promoting restored sessions to green |
 | PipelineQueue | `src/session/pipeline-queue.ts` | Auto-handoff: routes queued tasks to waiting sessions. Handoff triggers on completed or idle state transitions |
 | InitialPrompt | `src/session/initial-prompt.ts` | Converts sequence parser syntax to PTY escape codes, sends after configurable delay. `onComplete` callback signals when all items are done |
 | SequenceParser | `src/input/sequence-parser.ts` | Parses `{Enter}`, `{Ctrl+C}`, `{Wait 500}` etc. into typed actions |

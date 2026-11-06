@@ -32,7 +32,6 @@ function session(patch: Partial<SessionInfo> = {}): SessionInfo {
     cliType: 'claude-code',
     processId: 42,
     workingDir: 'x:/repo',
-    aiagentState: 'implementing',
     ...patch,
   };
 }
@@ -269,7 +268,7 @@ describe('UserPromptSubmit', () => {
   });
 
   // Regression: a local model spent ~100 s of tool calls hunting for
-  // session_mission_set / session_set_aiagent_state before answering "hi".
+  // session_mission_set before answering "hi".
   it('promptContext drops hints whose tool the session cannot call', async () => {
     const { injector } = makeInjector(
       {
@@ -277,13 +276,12 @@ describe('UserPromptSubmit', () => {
         getMission: () => undefined,
         getStartablePlans: () => [{ humanId: 'P-1', title: 'plan', status: 'planned' }],
       },
-      { aiagentState: undefined },
+      {},
     );
     expect(await injector.promptContext('s1', 'hi', new Set(['Read']))).toBeNull();
-    const withTools = await injector.promptContext('s1', 'hi', new Set(['memory_get', 'session_mission_set', 'session_set_aiagent_state', 'session_plan_claim']));
+    const withTools = await injector.promptContext('s1', 'hi', new Set(['memory_get', 'session_mission_set', 'session_plan_claim']));
     expect(withTools).toContain('possibly related: memory/x');
     expect(withTools).toContain('No mission set');
-    expect(withTools).toContain('session_set_aiagent_state');
     expect(withTools).toContain('P-1');
   });
 
@@ -307,14 +305,6 @@ describe('UserPromptSubmit', () => {
     expect(
       await injector.respond(hookEvent({ cli: 'copilot', event: 'UserPromptSubmit', prompt: '[HELM_MSG]hi' })),
     ).toBeNull();
-  });
-
-  it('nudges an unset AIAGENT state exactly once', async () => {
-    const { injector } = makeInjector({}, { aiagentState: undefined });
-    const first = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'do something' }));
-    expect(contextOf(first!.body)).toContain('AIAGENT state is unset');
-    const second = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'do more' }));
-    expect(second).toBeNull(); // silent afterwards — nagging is the failure mode
   });
 
   it('nudges a startable plan once, and never while one is claimed', async () => {
@@ -486,14 +476,6 @@ describe('Stop — the one-shot nudge', () => {
     expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
   });
 
-  it('blocks once for an unset AIAGENT state alone', async () => {
-    const { injector } = makeInjector({}, { aiagentState: undefined });
-    const first = await injector.respond(hookEvent({ event: 'Stop' }));
-    expect(contextOf(first!.body) ?? '').toBe('');
-    expect((first!.body as { reason: string }).reason).toContain('session_set_aiagent_state');
-    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
-  });
-
   it('NEVER answers StopFailure — a died turn is not something to retry', async () => {
     const { injector } = makeInjector({
       getClaimedPlan: () => ({ humanId: 'P-0785', title: 'Hook G4', status: 'coding' }),
@@ -648,13 +630,12 @@ describe('Mission statement ([HELM_MISSION])', () => {
   });
 
   it('combines with the rules and nudges instead of replacing them', async () => {
-    const { injector } = makeInjector({ getMission: () => mission }, { aiagentState: undefined });
+    const { injector } = makeInjector({ getMission: () => mission });
     const result = await injector.respond(
       hookEvent({ event: 'UserPromptSubmit', prompt: '[HELM_MSG]{"type":"inter_llm_message"}hi' }),
     );
     const context = contextOf(result!.body);
     expect(context).toContain('[HELM_MSG_RULES]');
-    expect(context).toContain('session_set_aiagent_state');
     expect(context).toContain('[HELM_MISSION] Current mission');
   });
 

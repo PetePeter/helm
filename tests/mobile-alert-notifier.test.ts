@@ -34,25 +34,15 @@ beforeEach(() => {
 
 describe('MobileAlertNotifier', () => {
   it('alerts when a working session stops working', () => {
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'completed' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'inactive' });
 
     expect(sink.alerts).toEqual([{ sessionId: 's1', kind: 'completion', text: 'Finished' }]);
   });
 
-  it('maps each stopping state to the channel that can be silenced for it', () => {
-    for (const [id, state] of [['s1', 'completed'], ['s2', 'idle'], ['s3', 'waiting']] as const) {
-      notifier.observe({ id, aiagentState: 'implementing' });
-      notifier.observe({ id, aiagentState: state });
-    }
-
-    expect(sink.alerts.map(alert => alert.kind)).toEqual(['completion', 'idle', 'attention']);
-  });
-
   it('says nothing while a session is still working', () => {
-    notifier.observe({ id: 's1', aiagentState: 'planning' });
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'planning' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
 
     expect(sink.alerts).toEqual([]);
   });
@@ -60,10 +50,10 @@ describe('MobileAlertNotifier', () => {
   it('does not re-alert while a session stays stopped', () => {
     // session:updated fires for every field, not only this one. Re-alerting on
     // a rename would buzz the phone about something that did not happen.
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'idle' });
-    notifier.observe({ id: 's1', aiagentState: 'idle' });
-    notifier.observe({ id: 's1', aiagentState: 'idle' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'idle' });
+    notifier.observe({ id: 's1', activityLevel: 'idle' });
+    notifier.observe({ id: 's1', activityLevel: 'idle' });
 
     expect(sink.alerts).toHaveLength(1);
   });
@@ -71,35 +61,35 @@ describe('MobileAlertNotifier', () => {
   it('never alerts on the first sighting of a session', () => {
     // A session restored at startup arrives already completed. Announcing it
     // would buzz the phone for work that finished before the app was running.
-    notifier.observe({ id: 's1', aiagentState: 'completed' });
+    notifier.observe({ id: 's1', activityLevel: 'inactive' });
 
     expect(sink.alerts).toEqual([]);
   });
 
   it('forgets a closed session so a reused id cannot transition from a ghost', () => {
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
     notifier.forget('s1');
 
-    notifier.observe({ id: 's1', aiagentState: 'completed' });
+    notifier.observe({ id: 's1', activityLevel: 'inactive' });
 
     expect(sink.alerts).toEqual([]);
   });
 
   it('alerts again after the session goes back to work', () => {
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'completed' });
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'completed' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'inactive' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'inactive' });
 
     expect(sink.alerts).toHaveLength(2);
   });
 
-  it('drops idle and completion alerts shortly after a chat message for that session', () => {
+  it('drops completion alerts shortly after a chat message for that session', () => {
     notifier.recordChatMessage('s1');
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'idle' });
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'completed' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'idle' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'inactive' });
 
     expect(sink.alerts).toEqual([]);
   });
@@ -107,14 +97,14 @@ describe('MobileAlertNotifier', () => {
   it('sends status alerts after the window and for other sessions', () => {
     notifier.recordChatMessage('s1');
     currentTime += 5_001;
-    notifier.observe({ id: 's1', aiagentState: 'implementing' });
-    notifier.observe({ id: 's1', aiagentState: 'completed' });
-    notifier.observe({ id: 's2', aiagentState: 'implementing' });
-    notifier.observe({ id: 's2', aiagentState: 'idle' });
+    notifier.observe({ id: 's1', activityLevel: 'active' });
+    notifier.observe({ id: 's1', activityLevel: 'inactive' });
+    notifier.observe({ id: 's2', activityLevel: 'active' });
+    notifier.observe({ id: 's2', activityLevel: 'idle' });
 
     expect(sink.alerts.map(alert => [alert.sessionId, alert.kind])).toEqual([
       ['s1', 'completion'],
-      ['s2', 'idle'],
+      ['s2', 'completion'],
     ]);
   });
 

@@ -274,7 +274,6 @@ describe('LocalhostMcpServer', () => {
     const planSetStateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_set_state');
     const sendTextTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'session_send_text');
     const readTerminalTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'session_read_terminal');
-    const setAiagentStateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'session_set_aiagent_state');
     const attachmentAddTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_attachment_add');
     const attachmentGetTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_attachment_get');
     const telegramStatusTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'telegram_status');
@@ -311,11 +310,6 @@ describe('LocalhostMcpServer', () => {
       type: 'boolean',
       description: 'When true, omit empty and whitespace-only rows from the returned tail.',
     });
-    expect(setAiagentStateTool.description).toContain('Valid states');
-    expect(setAiagentStateTool.description).toContain('planning');
-    expect(setAiagentStateTool.description).toContain('Helm does not scrape terminal output');
-    expect(setAiagentStateTool.inputSchema.properties.state.enum).toEqual(['planning', 'implementing', 'completed', 'idle']);
-    expect(setAiagentStateTool.inputSchema.properties.sessionId.description).toContain('UUID');
     expect(attachmentAddTool.description).toContain('file path');
     expect(attachmentAddTool.description).toContain('Helm config');
     expect(attachmentGetTool.description).toContain('temp file');
@@ -1702,7 +1696,7 @@ describe('LocalhostMcpServer', () => {
     expect(response.status).toBe(405);
   });
 
-  it('session_info keeps AIAGENT state compact and leaves detailed usage on the state tool', () => {
+  it('session_info carries no AIAGENT state guidance', () => {
     const service = new HelmControlService(
       {} as any,
       {
@@ -1779,33 +1773,8 @@ describe('LocalhostMcpServer', () => {
     const sessionInfoTool = json.result.tools.find((t: { name: string }) => t.name === 'session_info');
     expect(sessionInfoTool).toBeDefined();
     expect(sessionInfoTool.title).toBe('Get Session Info');
-    expect(sessionInfoTool.description).toContain('session_set_aiagent_state');
     expect(sessionInfoTool.description).toContain('startup');
     expect(sessionInfoTool.inputSchema.properties).toEqual({});
-  });
-
-  it('session_info response reminds agents to set AIAGENT state', async () => {
-    const service = makeService();
-    (service as any).getSessionInfo = vi.fn(() => ({
-      your_session_id: 'test-session',
-      your_working_dir: '/home/user/project',
-      helm_workflow: 'call skill_get(type:"startup") for mandatory rules',
-    }));
-    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
-    servers.push(server);
-    await server.start();
-    const port = server.getAddress()!.port;
-
-    const response = await rpc(port, 'secret-token', {
-      jsonrpc: '2.0',
-      id: 102,
-      method: 'tools/call',
-      params: { name: 'session_info', arguments: {} },
-    });
-
-    const json = await response.json();
-    expect(json.result.content[0].text).toContain('Reminder: now call session_set_aiagent_state');
-    expect(json.result.structuredContent.helm_workflow).toContain('startup');
   });
 
   it('session_read_terminal response reminds agents to verify handoff receipt', async () => {

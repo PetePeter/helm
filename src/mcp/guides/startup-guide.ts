@@ -1,6 +1,5 @@
 export function buildStartupGuide(): string {
   return [
-    'Set session_set_aiagent_state on phase changes: planning (investigating), implementing (editing/testing), completed (done).',
     'Call notify_user when work completes, blocked for input, or error stops progress — Helm routes automatically.',
     'Before implementing a plan: plan_get + plan_context_list just-in-time, context_get only for the current phase, and claim it with session_plan_claim before editing.',
     'Blocking questions: create QUESTION: plan, link to blocked plan via plan_nextplan_link, leave original intact.',

@@ -1007,8 +1007,6 @@ export function registerIPCHandlers(
   const cleanupMess = setupMessHandlers(messManager, projectStore, windowManager, sessionManager);
 
   // Wire events ONCE (no-ops when bot not running — notifier checks isRunning).
-  // AIAGENT phase changes are now explicit MCP state updates, not PTY text
-  // parsing, so StateDetector transitions must not drive Telegram notifications.
   sessionManager.on('session:added', async (event) => {
     // Push to renderer so it can adopt externally-spawned terminals (e.g. Telegram)
     const win = windowManager.getMainWindow();

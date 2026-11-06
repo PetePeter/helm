@@ -37,7 +37,6 @@ class MockPtyManager extends EventEmitter {
 
 class MockStateDetector extends EventEmitter {
   markActive = vi.fn();
-  markScrolling = vi.fn();
   markResizing = vi.fn();
   markSwitching = vi.fn();
   processOutput = vi.fn();

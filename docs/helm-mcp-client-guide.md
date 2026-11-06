@@ -13,7 +13,7 @@ When a Claude Code session receives a `[HELM_MSG]` message, it should:
 > human at your terminal — an `AskUserQuestion` modal there is one nobody can see
 > or answer, and your session hangs silently. If you need a decision, send the
 > question back to `envelope.fromSessionId` with `session_send_text`
-> (`expectsResponse=true`), set `session_set_aiagent_state(state="planning")`, and
+> (`expectsResponse=true`), and
 > stand by for the reply. Do not guess. Helm restates this in the
 > `[HELM_MSG_RULES]` block appended to every enveloped message — see
 > [helm-mcp-protocol.md](helm-mcp-protocol.md).

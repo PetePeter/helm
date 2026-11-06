@@ -1,7 +1,6 @@
 /**
  * Pipeline state for an AI CLI session.
- * Updated by explicit UI controls and pipeline machinery. AIAGENT phase state is
- * stored separately in aiagentState and is updated through MCP.
+ * Updated by explicit UI controls and pipeline machinery.
  */
 export type SessionState = 'implementing' | 'waiting' | 'planning' | 'completed' | 'idle';
 
@@ -56,8 +55,6 @@ export interface SessionInfo {
   projectPath?: string;
   /** Pipeline state for manual/pipeline coordination */
   state?: SessionState;
-  /** True when AIAGENT-QUESTION detected; clears on next non-question output */
-  questionPending?: boolean;
   /** CLI-internal session name used for resume (UUID v4, e.g., 'a1b2c3d4-e5f6-...'). Set after spawn. */
   cliSessionName?: string;
   /** The CLI's OWN session/thread id, as reported by its hooks (`session_id`).
@@ -92,8 +89,6 @@ export interface SessionInfo {
   activityLevel?: ActivityLevel;
   /** BrowserWindow ID if this session is snapped out to a child window. Undefined/null means main window. */
   windowId?: number;
-  /** AIAGENT state controlled by external agents (planning, implementing, completed, idle). Persists across restarts. */
-  aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle';
   /** Which channel the user last interacted through. Ephemeral — not persisted. */
   interactionChannel?: 'telegram' | 'desktop';
   /** Id of the remote Fleet peer that created this session, when it was spawned

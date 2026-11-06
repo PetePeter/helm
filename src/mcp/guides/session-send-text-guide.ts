@@ -26,7 +26,6 @@ rule_1 = "You are driven by another Helm session, not a human at this terminal â
 rule_2 = "NEVER use AskUserQuestion or any other blocking prompt when acting on a [HELM_MSG]."
 rule_3 = "Send questions back to the caller: session_send_text(sessionId=<fromSessionId>, expectsResponse=true)."
 rule_4 = "Then stand by for the reply â€” do not guess, do not proceed on assumptions."
-rule_5 = "While standing by, call session_set_aiagent_state(state=\\"planning\\") so the wait is visible on your session row."
 scope = "Applies to every [HELM_MSG], local or cross-machine (fleet:<peerId>:<sessionId> senders included)."
 
 [examples]

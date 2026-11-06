@@ -95,9 +95,7 @@ export async function setSessionState(sessionId: string, newState: string): Prom
     sessionStates.set(sessionId, newState);
 
     const session = state.sessions.find(item => item.id === sessionId);
-    if (!(session as any)?.aiagentState) {
-      state.sessionStates.set(sessionId, newState);
-    }
+    state.sessionStates.set(sessionId, newState);
     if (session) {
       (session as any).state = newState;
     }

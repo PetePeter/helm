@@ -20,7 +20,7 @@ describe('buildHelmMsgDirective (prepended form)', () => {
     expect(directive).toContain('[HELM_MSG_RULES]');
     expect(directive).toContain('session_send_text sessionId="sender-1"');
     expect(directive).toContain('Do NOT use AskUserQuestion');
-    expect(directive).toContain('session_set_aiagent_state');
+    expect(directive).not.toContain('session_set_aiagent_state');
   });
 
   it('adds the chat_send-only rule for a phone sender', () => {
@@ -46,7 +46,7 @@ describe('injected forms', () => {
     expect(HELM_MSG_HOOK_RULES).toContain('chat_send');
     expect(HELM_MSG_HOOK_RULES).toContain('fromSessionId is "desktop"');
     expect(HELM_MSG_HOOK_RULES).toContain('Do NOT use AskUserQuestion');
-    expect(HELM_MSG_HOOK_RULES).toContain('session_set_aiagent_state');
+    expect(HELM_MSG_HOOK_RULES).not.toContain('session_set_aiagent_state');
   });
 
   it('HELM_TELEGRAM_HOOK_RULES routes everything through telegram_chat', () => {

@@ -181,7 +181,7 @@ export async function refreshSessions(): Promise<void> {
       title: terminalSession?.title || managed.title,
     });
 
-    const displayState = managed.aiagentState ?? managed.state;
+    const displayState = managed.state;
     if (displayState) {
       state.sessionStates.set(managed.id, displayState);
     } else if (!state.sessionStates.has(managed.id)) {
@@ -550,7 +550,7 @@ function setupIpcListeners(): void {
     if (idx !== -1) {
       state.sessions[idx] = { ...state.sessions[idx], ...session };
     }
-    const displayState = session.aiagentState ?? session.state;
+    const displayState = session.state;
     if (displayState) {
       state.sessionStates.set(session.id, displayState);
     }

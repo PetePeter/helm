@@ -12,6 +12,7 @@ import type { TelegramNotifier } from '../../telegram/notifier.js';
 import type { SessionManager } from '../../session/manager.js';
 import type { StateDetector } from '../../session/state-detector.js';
 import { logger } from '../../utils/logger.js';
+import type { ActivityLevel } from '../../types/session.js';
 
 export function setupTelegramHandlers(
   configLoader: ConfigLoader,
@@ -22,6 +23,16 @@ export function setupTelegramHandlers(
   stateDetector: StateDetector,
   onConfigChanged?: () => void,
 ): () => void {
+  // --- Turn-ended notifications: activity leaving 'active' (see session-alert.ts) ---
+
+  const lastLevel = new Map<string, ActivityLevel>();
+  const onActivity = (event: { sessionId: string; level: ActivityLevel }) => {
+    const previous = lastLevel.get(event.sessionId);
+    lastLevel.set(event.sessionId, event.level);
+    if (previous) notifier.handleStateChange({ sessionId: event.sessionId, previousState: previous, newState: event.level });
+  };
+  stateDetector.on('activity-change', onActivity);
+
   // --- Config CRUD ---
 
   ipcMain.handle('telegram:getConfig', () => {
@@ -107,6 +118,7 @@ export function setupTelegramHandlers(
   });
 
   return () => {
+    stateDetector.off('activity-change', onActivity);
     botCore.stop();
     notifier.dispose();
   };

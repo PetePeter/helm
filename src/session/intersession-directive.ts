@@ -49,7 +49,6 @@ export function buildHelmMsgDirective(senderSessionId: string, senderSource?: 'd
     'Do NOT use AskUserQuestion or any other blocking prompt.\n' +
     `If you need a decision, ${buildReplyInstruction(senderSessionId, senderSource)} — ` +
     'then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +
-    'While standing by, call session_set_aiagent_state with state="planning" so the wait is visible on your session row.\n' +
     '[/HELM_MSG_RULES]'
   );
 }
@@ -102,7 +101,6 @@ export const HELM_MSG_HOOK_RULES =
   'for a phone sender (address starts with mobile:), chat_send instead — the user reads ONLY chat_send, ' +
   'so reply to EVERY phone message with it, and keep lines short because they are read on a phone.\n' +
   'Then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +
-  'While standing by, call session_set_aiagent_state with state="planning" so the wait is visible on your session row.\n' +
   '[/HELM_MSG_RULES]';
 
 /**

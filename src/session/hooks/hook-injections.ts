@@ -160,14 +160,6 @@ export const HOOK_INJECTION_DEFINITIONS = [
     defaultTemplate: '{{content}}',
   },
   {
-    id: 'aiagentNudge',
-    label: 'AIAGENT state nudge',
-    group: 'Prompt',
-    description: 'One-time reminder to set the visible session state.',
-    defaultTemplate:
-      'Your AIAGENT state is unset — call session_set_aiagent_state so your row shows what you are doing.',
-  },
-  {
     id: 'startablePlanNudge',
     label: 'Startable plan nudge',
     group: 'Prompt',
@@ -192,14 +184,6 @@ export const HOOK_INJECTION_DEFINITIONS = [
       'One-time reminder not to stop with a claimed plan open. Values: {{humanId}}, {{title}}.',
     defaultTemplate:
       'You are stopping with plan item {{humanId}} "{{title}}" still claimed and open. Finish it, or complete/set it down with plan_complete or session_plan_claim, then stop again.',
-  },
-  {
-    id: 'stopAiagentNudge',
-    label: 'AIAGENT stop nudge',
-    group: 'Stop',
-    description: 'One-time reminder to set AIAGENT state before stopping.',
-    defaultTemplate:
-      'Your AIAGENT state is unset — call session_set_aiagent_state (e.g. "completed") before stopping.',
   },
   {
     id: 'stopTodosNudge',

@@ -12,15 +12,14 @@ import type { PlanTask } from '../types/plan.js';
 import type { ScheduledTask } from '../types/scheduled-task.js';
 import { logger } from '../utils/logger.js';
 
-/** Builder phases that mean "come and look". */
-const NEWS_STATES = new Set(['completed', 'idle']);
+/** A builder's turn ending (activity leaving 'active') means "come and look". */
 
 export interface OperatorTaskWatcherPort {
-  onSessionUpdated(listener: (e: { id: string; aiagentState?: string }) => void): void;
+  onSessionUpdated(listener: (e: { id: string; activityLevel?: string }) => void): void;
   onSessionRemoved(listener: (e: { sessionId: string }) => void): void;
   onTimerChanged(listener: (timer: ScheduledTask) => void): void;
-  /** The session's AIAGENT phase record, or null when the session does not exist. */
-  getSession(id: string): { aiagentState?: string } | null;
+  /** The session's activity record, or null when the session does not exist. */
+  getSession(id: string): { activityLevel?: string } | null;
   getPlan(id: string): { status: string; task?: PlanTask } | null;
   patchPlanTask(id: string, patch: PlanTask): void;
   listScheduledTasks(): ScheduledTask[];
@@ -34,7 +33,7 @@ export class OperatorTaskWatcher {
   constructor(private readonly port: OperatorTaskWatcherPort) {}
 
   start(): void {
-    this.port.onSessionUpdated((e) => this.onStateChange(e.id, e.aiagentState));
+    this.port.onSessionUpdated((e) => this.onStateChange(e.id, e.activityLevel));
     this.port.onSessionRemoved((e) => this.endChecksFor(e.sessionId));
     this.port.onTimerChanged((t) => this.onTimerChanged(t));
     for (const { planId, task } of this.checks()) {
@@ -48,7 +47,7 @@ export class OperatorTaskWatcher {
       // Closed while Helm was down: session:removed never came.
       if (!session) this.endCheck(planId, task.id);
       // Seed, so a builder that finished before a restart is not news again.
-      else this.lastState.set(builder, session.aiagentState);
+      else this.lastState.set(builder, session.activityLevel);
     }
   }
 
@@ -70,10 +69,10 @@ export class OperatorTaskWatcher {
   private onStateChange(sessionId: string, state: string | undefined): void {
     const previous = this.lastState.get(sessionId);
     this.lastState.set(sessionId, state);
-    if (!state || state === previous || !NEWS_STATES.has(state)) return;
+    if (previous !== 'active' || !state || state === 'active') return;
     for (const { planId, task } of this.checksBuiltBy(sessionId)) {
       if (this.isDisabled(task) || this.port.getPlan(planId)?.task?.checks === 'off') continue;
-      logger.info(`[OperatorTaskWatcher] builder ${sessionId} is ${state} — checking "${task.title}" now`);
+      logger.info(`[OperatorTaskWatcher] builder ${sessionId} turn ended — checking "${task.title}" now`);
       void this.port.runTaskNow(task.id);
     }
   }

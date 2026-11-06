@@ -677,7 +677,7 @@ Polling woke the operator every 30 minutes with nothing to do. Now:
 
 ```mermaid
 graph LR
-    B[builder sets AIAGENT<br/>completed / idle] -->|run check now| O[operator:<br/>check task P-x: probe session]
+    B[builder turn ends<br/>activity leaves active] -->|run check now| O[operator:<br/>check task P-x: probe session]
     R[builder session removed<br/>or gone at startup] -->|delete timer,<br/>waitingOn: gone| X[no prompt]
     C[user cancels the timer] -->|task.checks = off| N[never re-armed]
 ```

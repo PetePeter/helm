@@ -140,7 +140,6 @@ export interface SessionSummary {
   projectId?: string;
   projectPath?: string;
   state?: string;
-  questionPending?: boolean;
   cliSessionName?: string;
   currentPlanId?: string;
   windowId?: number;
@@ -155,8 +154,6 @@ export interface SessionSummary {
    * phone) that cannot see the renderer's own activity mirror.
    */
   activityLevel?: 'active' | 'inactive' | 'idle';
-  /** AIAGENT phase state (planning, implementing, completed, idle). */
-  aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle';
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */
   createdByPeerId?: string;
   /** Set on a Remote row (`peer_attach`): the peer and ITS session id this row views. */
@@ -1856,10 +1853,6 @@ export class HelmControlService extends EventEmitter {
     return resume
       ? this.restartHelm(true, { callerSessionId, resumePrompt: prompt })
       : this.restartHelm(false);
-  }
-
-  setAiagentState(sessionRef: string, state: 'planning' | 'implementing' | 'completed' | 'idle') {
-    return this.sessionService.setAiagentState(sessionRef, state);
   }
 
   readSessionTerminal(sessionRef: string, requestedLines?: number, mode?: TerminalReadMode, stripBlankLines?: boolean) {

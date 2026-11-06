@@ -298,7 +298,7 @@ nothing) is the common case by design:
 - **UserPromptSubmit** — for a prompt carrying a `[HELM_MSG]` /
   `[HELM_TELEGRAM]` envelope, the inter-session rules as additionalContext
   instead of prepended prompt text (dual-path, below); the hint-only
-  suggester pointer; conditional one-shot nudges (unset AIAGENT state, one
+  suggester pointer; conditional one-shot nudges (one
   startable plan); and on EVERY prompt the `[HELM_MISSION]` line (current
   mission, or a request to set one — see [mission-statement.md](mission-statement.md)).
   Claude and Codex receive this output. Copilot drops
@@ -308,9 +308,11 @@ nothing) is the common case by design:
   result can add one skill or memory pointer beside the result. Claude Code,
   Codex, and Copilot support this response; the same per-session no-repeat
   ledger applies as prompt hints.
-- **Stop** — the one-shot nudge: a claimed-but-open plan item or an unset
-  AIAGENT state blocks the turn ONCE with a reason naming the alternative
-  (`plan_complete` / `session_plan_claim` / `session_set_aiagent_state`).
+- **Stop** — the one-shot nudge: a claimed-but-open plan item blocks the
+  turn ONCE with a reason naming the alternative (`plan_complete` /
+  `session_plan_claim`). Stop is also Helm's "turn ended" signal: the
+  activity dot leaves green, which drives phone/Telegram "Finished" alerts
+  and operator builder checks — the agent never announces it is done.
   The second Stop always passes; the cap is 1 by decision and not
   configurable. `StopFailure` is never blocked or retried — a red alert may
   accompany the event without changing that decision. G8's loop decision

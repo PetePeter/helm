@@ -9,23 +9,18 @@
  * state. See docs/chat-fan-out.md.
  *
  * What must NOT diverge is the DEFINITION: which transitions are worth a buzz.
- * Two copies of this rule would drift the day one surface learned about a new
- * state, and the drift would present as "my phone tells me things Telegram
- * doesn't", which nobody would file as a bug.
+ * The event is a turn ending — the session's activity leaving 'active'. Hooked
+ * CLIs report that exactly (Stop); unhooked ones fall back to output timing.
+ * No agent bookkeeping is involved: the model never has to announce it is done.
  *
  * Per-surface PREFERENCES deliberately live elsewhere — `TelegramConfig`'s
- * notifyOnComplete/notifyOnIdle/notifyOnError are Telegram's own and are read
- * only by Telegram. Reading them from the mobile path would couple the
- * transports, which is exactly what ChatBroker exists to prevent.
+ * notifyOnComplete is Telegram's own and is read only by Telegram.
  */
 
-import type { SessionState } from '../types/session.js';
+import type { ActivityLevel } from '../types/session.js';
 
 /** The three classes a phone can silence independently. Mirrored in Kotlin's `AlertKind`. */
 export type SessionAlertKind = 'attention' | 'completion' | 'idle';
-
-/** States that mean the CLI is working. Leaving this set is the event. */
-export const ACTIVE_STATES: ReadonlySet<SessionState> = new Set(['implementing', 'planning']);
 
 /** The short body a lock-screen row shows. The session's NAME is the title. */
 const ALERT_TEXT: Record<SessionAlertKind, string> = {
@@ -34,24 +29,16 @@ const ALERT_TEXT: Record<SessionAlertKind, string> = {
   idle: 'Went quiet',
 };
 
-const KIND_BY_STATE: Partial<Record<SessionState, SessionAlertKind>> = {
-  completed: 'completion',
-  idle: 'idle',
-  waiting: 'attention',
-};
-
 /**
  * The one transition gate. Returns the alert class, or null when this is not an
- * event: still working, still stopped, or a state nobody has a class for.
+ * event: still working, already stopped, or an unknown end.
  */
 export function alertKindForTransition(
-  previous: SessionState | undefined,
-  next: SessionState | undefined,
+  previous: ActivityLevel | undefined,
+  next: ActivityLevel | undefined,
 ): SessionAlertKind | null {
-  if (!previous || !next) return null;
-  if (!ACTIVE_STATES.has(previous)) return null;
-  if (ACTIVE_STATES.has(next)) return null;
-  return KIND_BY_STATE[next] ?? null;
+  if (previous !== 'active' || !next || next === 'active') return null;
+  return 'completion';
 }
 
 /** The default body for an alert with nothing more specific to say. */

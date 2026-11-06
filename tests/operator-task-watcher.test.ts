@@ -11,12 +11,12 @@ import type { PlanTask } from '../src/types/plan.js';
 import type { ScheduledTask } from '../src/types/scheduled-task.js';
 
 class FakePort extends EventEmitter implements OperatorTaskWatcherPort {
-  sessions = new Map<string, { aiagentState?: string }>([['worker', {}], ['op', {}]]);
+  sessions = new Map<string, { activityLevel?: string }>([['worker', {}], ['op', {}]]);
   plans = new Map<string, { status: string; task?: PlanTask }>();
   timers: ScheduledTask[] = [];
   ran: string[] = [];
 
-  onSessionUpdated(fn: (e: { id: string; aiagentState?: string }) => void) { this.on('session:updated', fn); }
+  onSessionUpdated(fn: (e: { id: string; activityLevel?: string }) => void) { this.on('session:updated', fn); }
   onSessionRemoved(fn: (e: { sessionId: string }) => void) { this.on('session:removed', fn); }
   onTimerChanged(fn: (t: ScheduledTask) => void) { this.on('task:changed', fn); }
   getSession(id: string) { return this.sessions.get(id) ?? null; }
@@ -44,21 +44,23 @@ beforeEach(() => {
   new OperatorTaskWatcher(port).start();
 });
 
-const setState = (sessionId: string, aiagentState: string) =>
-  port.emit('session:updated', { id: sessionId, aiagentState });
+const setLevel = (sessionId: string, activityLevel: string) =>
+  port.emit('session:updated', { id: sessionId, activityLevel });
+/** A whole builder turn: works, then stops. */
+const turnEnds = (sessionId: string) => { setLevel(sessionId, 'active'); setLevel(sessionId, 'inactive'); };
 
 describe('OperatorTaskWatcher', () => {
-  it('checks the task as soon as its builder reports completed or idle', () => {
-    setState('worker', 'implementing');
+  it('checks the task as soon as its builder turn ends', () => {
+    setLevel('worker', 'active');
     expect(port.ran).toEqual([]);
-    setState('worker', 'completed');
+    setLevel('worker', 'inactive');
     expect(port.ran).toEqual(['t1']);
   });
 
   it('does not run an unscheduled operator check when its builder finishes', () => {
     port.timers[0] = { ...port.timers[0], scheduleKind: 'none' };
 
-    setState('worker', 'completed');
+    turnEnds('worker');
 
     expect(port.ran).toEqual([]);
   });
@@ -69,24 +71,23 @@ describe('OperatorTaskWatcher', () => {
     expect(port.plans.get('p1')!.task?.checks).toBe('off');
 
     port.timers[0] = { ...timer('t1', 'p1'), scheduleKind: 'interval' };
-    setState('worker', 'completed');
+    turnEnds('worker');
 
     expect(port.ran).toEqual([]);
   });
 
-  it('checks once per transition, not on every repeat of the same state', () => {
-    setState('worker', 'completed');
-    setState('worker', 'completed');
+  it('checks once per turn end, not when an ended turn later goes idle', () => {
+    turnEnds('worker');
+    setLevel('worker', 'idle');
     expect(port.ran).toEqual(['t1']);
-    setState('worker', 'implementing');
-    setState('worker', 'idle');
+    turnEnds('worker');
     expect(port.ran).toEqual(['t1', 't1']);
   });
 
   it('ignores sessions that build no task, and tasks that are done', () => {
-    setState('op', 'completed');
+    turnEnds('op');
     port.plans.get('p1')!.status = 'done';
-    setState('worker', 'completed');
+    turnEnds('worker');
     expect(port.ran).toEqual([]);
   });
 
@@ -120,12 +121,12 @@ describe('OperatorTaskWatcher', () => {
 
   it('does not treat a builder that finished before a restart as news', () => {
     const fresh = new FakePort();
-    fresh.sessions.set('worker', { aiagentState: 'completed' });
+    fresh.sessions.set('worker', { activityLevel: 'inactive' });
     fresh.plans.set('p1', { status: 'coding', task: { builderSessionId: 'worker' } });
     fresh.timers.push(timer('t1', 'p1'));
     new OperatorTaskWatcher(fresh).start();
 
-    fresh.emit('session:updated', { id: 'worker', aiagentState: 'completed' });
+    fresh.emit('session:updated', { id: 'worker', activityLevel: 'idle' });
 
     expect(fresh.ran).toEqual([]);
   });

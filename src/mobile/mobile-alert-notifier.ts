@@ -38,7 +38,7 @@
 import { logger } from '../utils/logger.js';
 import { alertKindForTransition, alertText } from '../session/session-alert.js';
 import type { SessionAlertKind } from '../session/session-alert.js';
-import type { SessionState } from '../types/session.js';
+import type { ActivityLevel } from '../types/session.js';
 
 /** The slice of MobileChatBridge this drives. Narrow by design: no gate, no BLE. */
 export interface MobileAlertSink {
@@ -48,7 +48,7 @@ export interface MobileAlertSink {
 /** What `session:updated` gives us, reduced to the two fields that matter. */
 export interface ObservedSession {
   id: string;
-  aiagentState?: SessionState;
+  activityLevel?: ActivityLevel;
 }
 
 /** The body for a flash, which carries no text of its own by design. */
@@ -57,7 +57,7 @@ export const FLASH_ALERT_TEXT = 'Needs your attention';
 const RECENT_CHAT_STATUS_SUPPRESSION_MS = 5_000;
 
 export class MobileAlertNotifier {
-  private readonly lastState = new Map<string, SessionState>();
+  private readonly lastState = new Map<string, ActivityLevel>();
   private readonly recentChatMessagesAt = new Map<string, number>();
 
   constructor(
@@ -66,18 +66,18 @@ export class MobileAlertNotifier {
   ) {}
 
   /**
-   * One `session:updated`. Pushes only on an active → non-active transition of
-   * the session's AIAGENT phase, which is the same gate Telegram uses.
+   * One `session:updated`. Pushes only when the session's activity leaves
+   * 'active' (its turn ended) — the same gate Telegram uses.
    */
   observe(session: ObservedSession): void {
     const previous = this.lastState.get(session.id);
-    const next = session.aiagentState;
+    const next = session.activityLevel;
     if (next) this.lastState.set(session.id, next);
     else this.lastState.delete(session.id);
 
     const kind = alertKindForTransition(previous, next);
     if (!kind) return;
-    if ((kind === 'idle' || kind === 'completion') && this.hasRecentChatMessage(session.id)) return;
+    if (kind === 'completion' && this.hasRecentChatMessage(session.id)) return;
     this.push(session.id, kind, alertText(kind));
   }
 

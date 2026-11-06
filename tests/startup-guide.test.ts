@@ -8,9 +8,9 @@ describe('buildStartupGuide', () => {
     expect(buildStartupGuide().length).toBeGreaterThan(0);
   });
 
-  it('returns exactly 9 newline-separated rules', () => {
+  it('returns exactly 8 newline-separated rules', () => {
     const lines = buildStartupGuide().trim().split('\n').filter(l => l.trim().length > 0);
-    expect(lines).toHaveLength(9);
+    expect(lines).toHaveLength(8);
   });
 
   it('contains no JSON structural syntax', () => {
@@ -47,7 +47,4 @@ describe('buildStartupGuide', () => {
     expect(names).toContain('skill_clear_reviews');
   });
 
-  it('contains session_set_aiagent_state', () => {
-    expect(buildStartupGuide()).toContain('session_set_aiagent_state');
-  });
 });

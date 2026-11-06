@@ -394,7 +394,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   ptyWrite: (sessionId: string, data: string, options?: PtyWriteOptions) =>
     ipcRenderer.invoke('pty:write', sessionId, data, options),
 
-  /** Write scroll keys to a PTY without triggering AIAGENT keyword detection */
+  /** Write scroll keys to a PTY without triggering output-activity detection */
   ptyScrollInput: (sessionId: string, data: string) =>
     ipcRenderer.invoke('pty:scrollInput', sessionId, data),
 
@@ -424,19 +424,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return () => ipcRenderer.removeListener('pty:exit', listener);
   },
 
-  /** Subscribe to question detected events */
-  onPtyQuestionDetected: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
-    ipcRenderer.on('pty:question-detected', listener);
-    return () => ipcRenderer.removeListener('pty:question-detected', listener);
-  },
-
-  /** Subscribe to question cleared events */
-  onPtyQuestionCleared: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
-    ipcRenderer.on('pty:question-cleared', listener);
-    return () => ipcRenderer.removeListener('pty:question-cleared', listener);
-  },
 
   /** Subscribe to activity change events */
   onPtyActivityChange: (callback: (event: { sessionId: string; level: string; lastOutputAt?: number }) => void) => {
@@ -537,7 +524,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   },
 
   /** Subscribe to session metadata updates such as renames. */
-  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle'; questionPending?: boolean; lastOutputAt?: number; frozen?: boolean; hidden?: boolean }) => void) => {
+  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; lastOutputAt?: number; frozen?: boolean; hidden?: boolean }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('session:updated', listener);
     return () => ipcRenderer.removeListener('session:updated', listener);
