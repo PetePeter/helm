@@ -305,7 +305,8 @@ export class LocalhostMcpServer {
             onItemFetched: (sessionId: string, type: 'skill' | 'memory', id: string) => this.onItemFetched?.(sessionId, type, id),
           };
           const result = await callMcpTool(deps, name, args, authContext);
-          const structuredContent = normalizeStructuredContent(result);
+          // One copy, compact: clients (Codex) keep both content and structuredContent in context.
+          const reply = normalizeStructuredContent(result);
           let suffix = getToolReminder(name);
 
           // Special handling for session_send_text when preambleUsed is false
@@ -316,11 +317,8 @@ export class LocalhostMcpServer {
             }
           }
 
-          const text = `${JSON.stringify(result, null, 2)}${suffix ? `\n\n${suffix}` : ''}`;
-          this.writeJsonRpcResult(res, id, {
-            content: [{ type: 'text', text }],
-            structuredContent,
-          });
+          const text = `${JSON.stringify(reply)}${suffix ? `\n\n${suffix}` : ''}`;
+          this.writeJsonRpcResult(res, id, { content: [{ type: 'text', text }] });
           return;
         }
         default:

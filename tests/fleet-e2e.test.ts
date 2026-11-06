@@ -363,11 +363,9 @@ describe('Cross-Machine Fleet E2E (A↔B over loopback TLS)', () => {
     const pid = peerIdOnA();
 
     // 1a. Discover B's sessions via the real HelmPeerService.call path.
-    const listResult = (await A.peerService.call(pid, 'session_list', {})) as {
-      structuredContent?: unknown;
-    } | Array<{ id: string; name: string }>;
+    const listResult = await A.peerService.call(pid, 'session_list', {});
     // callMcpTool returns the raw service result; session_list returns an array.
-    const sessions = listResult as unknown as Array<{ id: string; name: string }>;
+    const sessions = listResult as Array<{ id: string; name: string }>;
     expect(sessions.map((s) => s.id)).toEqual(B_SESSIONS.map((s) => s.id));
 
     // 1b. Deliver text to one of B's sessions — assert B's fake PTY got it.

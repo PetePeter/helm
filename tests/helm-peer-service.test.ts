@@ -80,13 +80,13 @@ describe('HelmPeerService', () => {
     const mgr = new FakePeerLinkManager([
       { id: 'mac', alias: 'the Mac', direction: 'bidirectional', online: true },
     ]);
-    mgr.callResult = { structuredContent: { ok: 42 } };
+    mgr.callResult = { ok: 42 };
     const svc = serviceWith(mgr);
     const args = { sessionId: 'dest', text: 'hi', nested: { a: 1 } };
 
     const result = await svc.call('mac', 'session_send_text', args);
 
-    expect(result).toEqual({ structuredContent: { ok: 42 } });
+    expect(result).toEqual({ ok: 42 });
     expect(mgr.calls).toHaveLength(1);
     expect(mgr.calls[0].peerId).toBe('mac');
     expect(mgr.calls[0].method).toBe('session_send_text');

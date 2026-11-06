@@ -8,6 +8,11 @@ import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
 import { mintSessionAuthToken } from '../src/mcp/session-auth.js';
 
+/** The tool payload: compact JSON on the first line of the text content (a reminder may follow). */
+function toolPayload(json: any): any {
+  return JSON.parse(json.result.content[0].text.split('\n\n')[0]);
+}
+
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -358,7 +363,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect((service.sendTextToSession as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'hello', { senderSessionId: 's1', senderSessionName: 'Claude' });
-    expect(json.result.structuredContent).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
+    expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
 
     const restartResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -377,7 +382,7 @@ describe('LocalhostMcpServer', () => {
     const restartJson = await restartResponse.json();
     // No resume arg → defaults to resume:true (sessions preserved for auto-resume).
     expect((service.restartHelmGated as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('sender-1', 'art-1', true);
-    expect(restartJson.result.structuredContent).toEqual({ sessionsClosed: 0, resume: true });
+    expect(toolPayload(restartJson)).toEqual({ sessionsClosed: 0, resume: true });
 
     const forceResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -395,7 +400,7 @@ describe('LocalhostMcpServer', () => {
     });
     const forceJson = await forceResponse.json();
     expect((service.restartHelmGated as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('sender-1', 'art-1', false);
-    expect(forceJson.result.structuredContent).toEqual({ sessionsClosed: 2, resume: false });
+    expect(toolPayload(forceJson)).toEqual({ sessionsClosed: 2, resume: false });
   });
 
   it('rejects helm_restart without a handoverArtifactId — phase 1 teaches the ritual, never restarts', async () => {
@@ -479,15 +484,15 @@ describe('LocalhostMcpServer', () => {
       params: { name: 'skill_list', arguments: {} },
     });
     const listJson = await listResponse.json();
-    expect(listJson.result.structuredContent.items[0].name).toBe('Review');
-    expect(listJson.result.structuredContent.items[0].triggerCondition).toBe('Use for reviews');
-    expect(listJson.result.structuredContent.items[0]).not.toHaveProperty('description');
-    expect(listJson.result.structuredContent.items[0]).not.toHaveProperty('allProjects');
-    expect(listJson.result.structuredContent.items[0]).not.toHaveProperty('projectIds');
-    expect(listJson.result.structuredContent.items[0]).not.toHaveProperty('aiAmendable');
-    expect(listJson.result.structuredContent.items[0]).not.toHaveProperty('useCount');
-    expect(listJson.result.structuredContent.items[0]).not.toHaveProperty('avgRating');
-    expect(listJson.result.structuredContent.items[0]).not.toHaveProperty('reviewCount');
+    expect(toolPayload(listJson).items[0].name).toBe('Review');
+    expect(toolPayload(listJson).items[0].triggerCondition).toBe('Use for reviews');
+    expect(toolPayload(listJson).items[0]).not.toHaveProperty('description');
+    expect(toolPayload(listJson).items[0]).not.toHaveProperty('allProjects');
+    expect(toolPayload(listJson).items[0]).not.toHaveProperty('projectIds');
+    expect(toolPayload(listJson).items[0]).not.toHaveProperty('aiAmendable');
+    expect(toolPayload(listJson).items[0]).not.toHaveProperty('useCount');
+    expect(toolPayload(listJson).items[0]).not.toHaveProperty('avgRating');
+    expect(toolPayload(listJson).items[0]).not.toHaveProperty('reviewCount');
     expect(service.listSkills).toHaveBeenCalledWith({}, expect.objectContaining({}));
 
     const filteredListResponse = await rpc(port, 'secret-token', {
@@ -506,7 +511,7 @@ describe('LocalhostMcpServer', () => {
       params: { name: 'skill_get', arguments: { id: 'skill-1' } },
     });
     const getJson = await getResponse.json();
-    expect(getJson.result.structuredContent.body).toBe('Check the diff');
+    expect(toolPayload(getJson).body).toBe('Check the diff');
 
     const feedbackResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -515,8 +520,8 @@ describe('LocalhostMcpServer', () => {
       params: { name: 'skill_submit_feedback', arguments: { skillId: 'skill-1', stars: 5, summary: 'Useful' } },
     }, { 'x-helm-session-id': 's1' });
     const feedbackJson = await feedbackResponse.json();
-    expect(feedbackJson.result.structuredContent).toEqual({ received: true });
-    expect(feedbackJson.result.content[0].text).toBe('{\n  "received": true\n}');
+    expect(toolPayload(feedbackJson)).toEqual({ received: true });
+    expect(feedbackJson.result.content[0].text).toBe('{"received":true}');
     expect(service.submitSkillFeedback).toHaveBeenCalledWith('skill-1', 5, 'Useful', undefined, expect.objectContaining({ sessionId: 's1' }));
 
     const createResponse = await rpc(port, 'secret-token', {
@@ -526,7 +531,7 @@ describe('LocalhostMcpServer', () => {
       params: { name: 'skill_create', arguments: { name: 'Commit', aiAmendable: true, allProjects: false, projectIds: ['project-1'] } },
     });
     const createJson = await createResponse.json();
-    expect(createJson.result.structuredContent).toMatchObject({ name: 'Commit', aiAmendable: true, allProjects: false, projectIds: ['project-1'] });
+    expect(toolPayload(createJson)).toMatchObject({ name: 'Commit', aiAmendable: true, allProjects: false, projectIds: ['project-1'] });
 
     const updateResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -535,7 +540,7 @@ describe('LocalhostMcpServer', () => {
       params: { name: 'skill_update', arguments: { id: 'skill-1', body: 'Updated', aiAmendable: true, allProjects: false, projectIds: ['project-1'] } },
     });
     const updateJson = await updateResponse.json();
-    expect(updateJson.result.structuredContent.body).toBe('Updated');
+    expect(toolPayload(updateJson).body).toBe('Updated');
     expect(service.updateSkill).toHaveBeenCalledWith('skill-1', { body: 'Updated', aiAmendable: true, allProjects: false, projectIds: ['project-1'] });
   });
 
@@ -557,7 +562,7 @@ describe('LocalhostMcpServer', () => {
       method: 'tools/call',
       params: { name: 'skill_get_feedback', arguments: { skillId: 'skill-1' } },
     });
-    const stats = (await statsResponse.json()).result.structuredContent;
+    const stats = toolPayload((await statsResponse.json()));
     expect(service.getSkillStats).toHaveBeenCalledWith('skill-1');
     expect(stats).toMatchObject({ useCount: 7, avgRating: 2.5, reviewCount: 2 });
     expect(stats.reviews[0]).toMatchObject({ stars: 1, summary: 'Did nothing useful', improvement: 'Drop step 3', cliName: 'codex-a' });
@@ -568,7 +573,7 @@ describe('LocalhostMcpServer', () => {
       method: 'tools/call',
       params: { name: 'skill_clear_reviews', arguments: { skillId: 'skill-1' } },
     });
-    const cleared = (await clearResponse.json()).result.structuredContent;
+    const cleared = toolPayload((await clearResponse.json()));
     expect(service.clearSkillReviews).toHaveBeenCalledWith('skill-1');
     // Clearing wipes opinions but keeps the usage signal.
     expect(cleared).toEqual({ useCount: 7, avgRating: 0, reviewCount: 0, reviews: [] });
@@ -610,7 +615,7 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const json = await response.json();
-    expect(json.result.content[0].text).toContain('"deleted": true');
+    expect(json.result.content[0].text).toContain('"deleted":true');
   });
 
   it('skill_get with type returns error when not found', async () => {
@@ -671,7 +676,7 @@ describe('LocalhostMcpServer', () => {
     });
     const listJson = await listResponse.json();
     expect((service.listContexts as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('proj-1');
-    expect(listJson.result.structuredContent.items[0].id).toBe('ctx-1');
+    expect(toolPayload(listJson).items[0].id).toBe('ctx-1');
 
     const createResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -688,7 +693,7 @@ describe('LocalhostMcpServer', () => {
       title: 'Testing Strategy',
       permission: 'readonly',
     });
-    expect(createJson.result.structuredContent.title).toBe('Testing Strategy');
+    expect(toolPayload(createJson).title).toBe('Testing Strategy');
 
     const bindResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -701,7 +706,7 @@ describe('LocalhostMcpServer', () => {
     });
     const bindJson = await bindResponse.json();
     expect((service.bindContext as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('ctx-1', 'sequence', 'seq-1');
-    expect(bindJson.result.structuredContent.bound).toBe(true);
+    expect(toolPayload(bindJson).bound).toBe(true);
 
     const unbindResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -714,7 +719,7 @@ describe('LocalhostMcpServer', () => {
     });
     const unbindJson = await unbindResponse.json();
     expect((service.unbindContext as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('ctx-1', 'sequence', 'seq-1');
-    expect(unbindJson.result.structuredContent.unbound).toBe(true);
+    expect(toolPayload(unbindJson).unbound).toBe(true);
   });
 
   it('dispatches effective plan context listing through the MCP surface', async () => {
@@ -735,7 +740,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect((service.listPlanContexts as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('P-0001');
-    expect(json.result.structuredContent.items).toEqual([{ id: 'ctx-1', type: 'Testing', source: 'both' }]);
+    expect(toolPayload(json).items).toEqual([{ id: 'ctx-1', type: 'Testing', source: 'both' }]);
   });
 
   it('plan_get includes lightweight context metadata in its structured response', async () => {
@@ -757,8 +762,8 @@ describe('LocalhostMcpServer', () => {
     const json = await response.json();
 
     expect((service.getPlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('P-0001');
-    expect(json.result.structuredContent.sequenceId).toBe('seq-1');
-    expect(json.result.structuredContent.sequenceContextMetadata).toEqual([
+    expect(toolPayload(json).sequenceId).toBe('seq-1');
+    expect(toolPayload(json).sequenceContextMetadata).toEqual([
       { id: 'ctx-1', title: 'Testing Strategy', type: 'Testing', permission: 'readonly' },
     ]);
   });
@@ -786,7 +791,7 @@ describe('LocalhostMcpServer', () => {
     const json = await response.json();
 
     expect((service.getPlanIdMapping as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('P-0001');
-    expect(json.result.structuredContent).toEqual({
+    expect(toolPayload(json)).toEqual({
       uuid: 'p1',
       humanId: 'P-0001',
     });
@@ -810,7 +815,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect((service.claimSessionPlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'plan-1');
-    expect(json.result.structuredContent).toEqual({
+    expect(toolPayload(json)).toEqual({
       sessionId: 's1',
       name: 'Claude',
       planId: 'plan-1',
@@ -838,7 +843,7 @@ describe('LocalhostMcpServer', () => {
     const json = await response.json();
 
     expect((service.readSessionTerminal as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('Claude', 120, 'both', true);
-    expect(json.result.structuredContent).toMatchObject({
+    expect(toolPayload(json)).toMatchObject({
       sessionId: 'Claude',
       requestedLines: 120,
       raw: ['\x1b[32mhello\x1b[0m'],
@@ -889,7 +894,7 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const createJson = await createResponse.json();
-    expect(createJson.result.structuredContent).toEqual({
+    expect(toolPayload(createJson)).toEqual({
       id: 'created',
       dirPath: '/proj',
       title: 'Task',
@@ -912,7 +917,7 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const setStateJson = await setStateResponse.json();
-    expect(setStateJson.result.structuredContent).toEqual({
+    expect(toolPayload(setStateJson)).toEqual({
       id: 'p1',
       dirPath: '/proj',
       title: 'Task',
@@ -943,7 +948,7 @@ describe('LocalhostMcpServer', () => {
     expect((service.createPlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
       '/proj', 'Task', 'Desc', 'bug', undefined, undefined, undefined,
     );
-    expect(createJson.result.structuredContent.type).toBe('bug');
+    expect(toolPayload(createJson).type).toBe('bug');
 
     const updateResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -956,7 +961,7 @@ describe('LocalhostMcpServer', () => {
     });
     const updateJson = await updateResponse.json();
     expect((service.updatePlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('p1', { type: 'research' });
-    expect(updateJson.result.structuredContent.type).toBe('research');
+    expect(toolPayload(updateJson).type).toBe('research');
   });
 
   it('advertises and sets autoImplement through plan_update MCP calls', async () => {
@@ -987,7 +992,7 @@ describe('LocalhostMcpServer', () => {
     });
     const updateJson = await updateResponse.json();
     expect((service.updatePlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('p1', { autoImplement: true });
-    expect(updateJson.result.structuredContent.autoImplement).toBe(true);
+    expect(toolPayload(updateJson).autoImplement).toBe(true);
   });
 
   it('advertises and sets completionRecap through plan_update MCP calls', async () => {
@@ -1019,7 +1024,7 @@ describe('LocalhostMcpServer', () => {
     });
     const updateJson = await updateResponse.json();
     expect((service.updatePlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('p1', { completionRecap: true });
-    expect(updateJson.result.structuredContent.completionRecap).toBe(true);
+    expect(toolPayload(updateJson).completionRecap).toBe(true);
   });
 
   it('dispatches plan attachment tools through the MCP surface', async () => {
@@ -1043,7 +1048,7 @@ describe('LocalhostMcpServer', () => {
       filePath: '/tmp/note.txt',
       contentType: 'text/plain',
     });
-    expect(addJson.result.structuredContent).toMatchObject({ id: 'a1', planId: 'P-0001', filename: 'note.txt' });
+    expect(toolPayload(addJson)).toMatchObject({ id: 'a1', planId: 'P-0001', filename: 'note.txt' });
 
     const listResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -1056,7 +1061,7 @@ describe('LocalhostMcpServer', () => {
     });
     const listJson = await listResponse.json();
     expect((service.listPlanAttachments as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('P-0001');
-    expect(listJson.result.structuredContent.items[0].id).toBe('a1');
+    expect(toolPayload(listJson).items[0].id).toBe('a1');
 
     const getResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -1069,7 +1074,7 @@ describe('LocalhostMcpServer', () => {
     });
     const getJson = await getResponse.json();
     expect((service.getPlanAttachment as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('P-0001', 'a1');
-    expect(getJson.result.structuredContent.tempPath).toContain('helm-attachment');
+    expect(toolPayload(getJson).tempPath).toContain('helm-attachment');
 
     const deleteResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -1082,7 +1087,7 @@ describe('LocalhostMcpServer', () => {
     });
     const deleteJson = await deleteResponse.json();
     expect((service.deletePlanAttachment as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('P-0001', 'a1');
-    expect(deleteJson.result.structuredContent).toEqual({ deleted: true });
+    expect(toolPayload(deleteJson)).toEqual({ deleted: true });
   });
 
   it('dispatches telegram tools through the MCP surface', async () => {
@@ -1100,8 +1105,8 @@ describe('LocalhostMcpServer', () => {
     });
     const statusJson = await statusResponse.json();
     expect((service.getTelegramStatus as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
-    expect(statusJson.result.structuredContent.available).toBe(true);
-    expect(JSON.stringify(statusJson.result.structuredContent)).not.toContain('botToken');
+    expect(toolPayload(statusJson).available).toBe(true);
+    expect(JSON.stringify(toolPayload(statusJson))).not.toContain('botToken');
 
     const chatResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -1111,7 +1116,7 @@ describe('LocalhostMcpServer', () => {
     });
     const chatJson = await chatResponse.json();
     expect((service.sendTelegramChat as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'Need a quick decision?', undefined);
-    expect(chatJson.result.structuredContent.sent).toBe(true);
+    expect(toolPayload(chatJson).sent).toBe(true);
 
     // Create a temporary file for the filePath test
     const tempDir = mkdtempSync(join(tmpdir(), 'test-'));
@@ -1136,7 +1141,7 @@ describe('LocalhostMcpServer', () => {
     });
     const closeJson = await closeResponse.json();
     expect((service.closeTelegramChannel as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('tc1');
-    expect(closeJson.result.structuredContent.status).toBe('closed');
+    expect(toolPayload(closeJson).status).toBe('closed');
   });
 
   it('dispatches LLM notification tools through the MCP surface', async () => {
@@ -1154,7 +1159,7 @@ describe('LocalhostMcpServer', () => {
     });
     const notifyJson = await notifyResponse.json();
     expect((service.notifyUser as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'Need input', 'Choose one');
-    expect(notifyJson.result.structuredContent.delivered).toBe('bubble');
+    expect(toolPayload(notifyJson).delivered).toBe('bubble');
 
     const visibilityResponse = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -1164,7 +1169,7 @@ describe('LocalhostMcpServer', () => {
     });
     const visibilityJson = await visibilityResponse.json();
     expect((service.getAppVisibility as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
-    expect(visibilityJson.result.structuredContent).toMatchObject({ visibility: 'visible-focused', activeSessionId: 's1' });
+    expect(toolPayload(visibilityJson)).toMatchObject({ visibility: 'visible-focused', activeSessionId: 's1' });
   });
 
   it('dispatches scheduler tools through the MCP surface', async () => {
@@ -1280,7 +1285,7 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const json = await response.json();
-    expect(json.result.structuredContent).toEqual({
+    expect(toolPayload(json)).toEqual({
       items: [{ id: 'p1', dirPath: 'X:\\coding\\gamepad-cli-hub', title: 'Task', status: 'ready' }],
     });
   });
@@ -1303,7 +1308,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect(service.plansSummary).toHaveBeenCalledWith('X:\\coding\\gamepad-cli-hub', 'active');
-    expect(json.result.structuredContent).toEqual({
+    expect(toolPayload(json)).toEqual({
       items: [{ id: 'p1', humanId: 'P-0001', title: 'Task', status: 'ready', blockedBy: [], blocks: [] }],
     });
   });
@@ -1325,7 +1330,7 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const json = await response.json();
-    expect(json.result.structuredContent).toEqual({
+    expect(toolPayload(json)).toEqual({
       items: [{ cliType: 'codex', name: 'codex', command: 'codex', supportsResume: false, supportedDirPaths: ['X:\\coding\\gamepad-cli-hub'] }],
     });
   });
@@ -1348,7 +1353,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect((service.spawnCli as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('codex', 'X:\\coding\\gamepad-cli-hub', 'Builder', {});
-    expect(json.result.structuredContent).toEqual({ id: 's2', name: 'Builder', cliType: 'codex', workingDir: 'X:\\coding\\gamepad-cli-hub' });
+    expect(toolPayload(json)).toEqual({ id: 's2', name: 'Builder', cliType: 'codex', workingDir: 'X:\\coding\\gamepad-cli-hub' });
   });
 
   it('passes no name through as undefined rather than refusing the spawn', async () => {
@@ -1374,7 +1379,7 @@ describe('LocalhostMcpServer', () => {
     // with a session — the naming default is proven in cli-type-resolution.
     const json = await response.json();
     expect(json.error).toBeUndefined();
-    expect(json.result.structuredContent.id).toBe('s2');
+    expect(toolPayload(json).id).toBe('s2');
   });
 
   it('passes an optional dirPath filter into session_list', async () => {
@@ -1436,7 +1441,7 @@ describe('LocalhostMcpServer', () => {
 
     expect((service.listDirectories as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
     const json = await response.json();
-    expect(json.result.structuredContent.items).toEqual([{ dirPath: 'X:\\coding\\gamepad-cli-hub', name: 'Helm', planCount: 8, sessionCount: 0 }]);
+    expect(toolPayload(json).items).toEqual([{ dirPath: 'X:\\coding\\gamepad-cli-hub', name: 'Helm', planCount: 8, sessionCount: 0 }]);
   });
 
   it('returns explicit errors instead of null structured content for invalid plan transitions', async () => {
@@ -1527,7 +1532,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect((service.sendTextToSession as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'hello', { senderSessionId: 's1', senderSessionName: 'Claude' });
-    expect(json.result.structuredContent).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
+    expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
   });
 
   it('infers sender info from a trusted session token when explicit sender fields are omitted', async () => {
@@ -1553,7 +1558,7 @@ describe('LocalhostMcpServer', () => {
       senderSessionName: 'Codex Session',
       expectsResponse: true,
     });
-    expect(json.result.structuredContent).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
+    expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
   });
 
   it('infers sender info from session headers with the shared bearer token', async () => {
@@ -1581,7 +1586,7 @@ describe('LocalhostMcpServer', () => {
       senderSessionName: 'Claude',
       expectsResponse: true,
     });
-    expect(json.result.structuredContent).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
+    expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
   });
 
   it('passes expectsResponse into sendTextToSession', async () => {
@@ -1602,7 +1607,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect((service.sendTextToSession as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'hello', { senderSessionId: 's1', senderSessionName: 'Claude', expectsResponse: true });
-    expect(json.result.structuredContent).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
+    expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
   });
 
   it('rejects session_send_text when sender info is missing', async () => {
@@ -1747,7 +1752,7 @@ describe('LocalhostMcpServer', () => {
     });
 
     const json = await response.json();
-    const content = json.result.structuredContent;
+    const content = toolPayload(json);
     expect(Object.keys(content).sort()).toEqual(['helm_workflow', 'your_session_id', 'your_working_dir']);
     expect(content.helm_workflow).toContain('startup');
     expect(content).not.toHaveProperty('mandatory_rules');
@@ -1833,14 +1838,14 @@ describe('LocalhostMcpServer', () => {
       });
       const json = await response.json();
       expect((service.completePlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('p1', 'All tests pass and feature works');
-      expect(json.result.structuredContent.followUpPlans).toEqual([
+      expect(toolPayload(json).followUpPlans).toEqual([
         { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'ready', autoImplement: true },
         { id: 'p3', humanId: 'P-0003', title: 'Manual QA', status: 'planning', autoImplement: false },
       ]);
-      expect(json.result.structuredContent.autoFollowUpPlans).toBeUndefined();
-      expect(json.result.structuredContent.testingInstructions).toBeUndefined();
+      expect(toolPayload(json).autoFollowUpPlans).toBeUndefined();
+      expect(toolPayload(json).testingInstructions).toBeUndefined();
       // The moment a plan closes is when its lessons are freshest.
-      expect(json.result.structuredContent.memoryReminder).toMatch(/memory_create/);
+      expect(toolPayload(json).memoryReminder).toMatch(/memory_create/);
     });
 
     it('rejects missing documentation param', async () => {
@@ -1978,7 +1983,7 @@ describe('LocalhostMcpServer', () => {
         },
       }, { 'x-helm-session-id': 's1' });
       const json = await response.json();
-      expect(json.result.structuredContent.followUpPlans).toEqual([]);
+      expect(toolPayload(json).followUpPlans).toEqual([]);
     });
 
 
@@ -2055,7 +2060,7 @@ describe('LocalhostMcpServer', () => {
       }
 
       expect(json.result).toBeDefined();
-      expect(json.result.structuredContent).toEqual({
+      expect(toolPayload(json)).toEqual({
         success: true,
         sessionId: 's1',
         name: 'Claude',
@@ -2106,7 +2111,7 @@ describe('LocalhostMcpServer', () => {
       });
       const json = await response.json();
 
-      expect(json.result.structuredContent).toEqual({
+      expect(toolPayload(json)).toEqual({
         success: true,
         sessionId: 'target-sess',
         name: 'Recipient',
@@ -2344,7 +2349,7 @@ describe('LocalhostMcpServer', () => {
       });
 
       const json = await response.json();
-      expect(json.result.structuredContent).toEqual({
+      expect(toolPayload(json)).toEqual({
         success: true,
         sessionId: 's1',
         name: 'Claude',
@@ -2403,7 +2408,7 @@ describe('LocalhostMcpServer', () => {
       }, { 'x-helm-session-id': 's1' });
 
       const json = await response.json();
-      expect(json.result.structuredContent.ok).toBe(true);
+      expect(toolPayload(json).ok).toBe(true);
       // Target sessionId is required; the authenticated caller is passed as sender for audit.
       expect(clearMock).toHaveBeenCalledWith(
         's1',
@@ -2448,7 +2453,7 @@ describe('LocalhostMcpServer', () => {
       }, { 'x-helm-session-id': 's1' });
 
       const json = await response.json();
-      expect(json.result.structuredContent).toEqual({ sent: true });
+      expect(toolPayload(json)).toEqual({ sent: true });
       expect(service.sendTelegramChat).toHaveBeenCalledWith('s1', 'hi', undefined);
     });
 
@@ -2488,7 +2493,7 @@ describe('LocalhostMcpServer', () => {
       });
 
       const json = await response.json();
-      expect(json.result.structuredContent).toEqual({ sent: true });
+      expect(toolPayload(json)).toEqual({ sent: true });
       expect(service.sendTelegramChat).toHaveBeenCalledWith('s7', 'hi', undefined);
     });
   });
