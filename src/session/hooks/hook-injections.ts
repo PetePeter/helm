@@ -117,7 +117,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Prompt',
     description: 'The open items in this session checklist. Value: {{items}}.',
     defaultTemplate:
-      '[HELM_TODOS]\nOpen items:\n{{items}}\nBefore acting on a request with more than one step, call session_todo_add once per step — do this first, even when the list is empty. Call session_todo_done as each step finishes, not at the end. If a step needs a user answer, park it with session_todo_wait and stop; resume it when they reply. Update the mission with session_mission_set when the direction changes.',
+      '[HELM_TODOS]\nOpen items:\n{{items}}\nBefore acting on a request with more than one step, call session_todo_add once with items: [every step] — do this first, even when the list is empty. Call session_todo_done as each step finishes, not at the end. If a step needs a user answer, park it with session_todo_wait and stop; resume it when they reply. Update the mission with session_mission_set when the direction changes.',
   },
   {
     id: 'manifestoPromptMissing',
@@ -149,7 +149,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Prompt',
     description: 'Reminder to estimate multi-step work and clear the estimate when done.',
     defaultTemplate:
-      '[HELM_ETA] Starting multi-step work? Call session_eta_set {minutes: N} first. Scope changed? Call it again with rescope: "why". Done? Call session_eta_clear at once — Helm scores the estimate then, and one left open counts as unmarked.',
+      '[HELM_ETA] Starting multi-step work? Call session_eta_set {minutes: N} first (or pass etaMinutes to session_mission_set). Scope changed? Call it again with rescope: "why". Done? Call session_eta_clear at once — Helm scores the estimate then, and one left open counts as unmarked.',
   },
   {
     id: 'suggestionPointer',

@@ -53,6 +53,7 @@ export const MCP_TOOLS: McpTool[] = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'Exact skill UUID for direct lookup.' },
+        ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Several skill UUIDs in one call (instead of id). Returns {items, errors}.' },
         type: { type: 'string', description: 'Stable skill type for effective resolution.' },
         projectId: { type: 'string', description: 'Project ID for type-based scope resolution.' },
         dirPath: { type: 'string', description: 'Directory path — resolved to projectId for type-based scope resolution.' },
@@ -188,8 +189,10 @@ export const MCP_TOOLS: McpTool[] = [
     description: 'Get a single plan item by UUID. Before implementation, use this with plan_context_list to inspect the plan and effective context refs; fetch full context just-in-time with context_get only when it is relevant to the current phase. To convert a P-00xx human-readable ID to UUID, use plan_get_id first.',
     inputSchema: {
       type: 'object',
-      properties: { uuid: { type: 'string' } },
-      required: ['uuid'],
+      properties: {
+        uuid: { type: 'string' },
+        ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Several plan UUIDs in one call (instead of uuid). Returns {items, errors}.' },
+      },
       additionalProperties: false,
     },
   },
@@ -1139,11 +1142,12 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_read_terminal',
     title: 'Read Session Terminal',
-    description: 'Read the terminal tail or rendered terminal screen for any known session by sessionId or exact name. Raw mode preserves raw ANSI escape sequences; stripped mode removes them. Use after session_send_text handoffs to verify the recipient received the message by checking for its text, a new prompt, or a response. lines must be a positive integer (buffer holds up to 500). mode is raw, stripped, both, or screen; screen applies terminal cursor and erase controls and preserves blank rows.',
+    description: 'Read the terminal tail or rendered terminal screen for any known session by sessionId or exact name. Raw mode preserves raw ANSI escape sequences; stripped mode removes them. Use after session_send_text handoffs to verify the recipient received the message by checking for its text, a new prompt, or a response. lines must be a positive integer (buffer holds up to 500). mode is raw, stripped (default), both, or screen; screen applies terminal cursor and erase controls and preserves blank rows.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
+        sessionIds: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Several session ids in one call. Returns {items, errors}.' },
         name: { type: 'string' },
         lines: { type: 'number', minimum: 1 },
         mode: { type: 'string', enum: ['raw', 'stripped', 'both', 'screen'] },
@@ -1220,6 +1224,7 @@ export const MCP_TOOLS: McpTool[] = [
       properties: {
         sessionId: { type: 'string', description: 'Target session ID or exact name. Defaults to your own session.' },
         text: { type: 'string', description: 'The mission TL;DR (max 500 characters). Empty clears it.' },
+        etaMinutes: { type: 'number', exclusiveMinimum: 0, description: 'Also set your finish estimate (session_eta_set minutes) in the same call.' },
       },
       required: ['text'],
       additionalProperties: false,
@@ -1291,11 +1296,13 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_todo_add',
     title: 'Add Session Todo',
-    description: 'CALL FIRST, once per step, on any request needing more than one action — before doing the work. Add an open todo to YOUR OWN session checklist. The desktop Todos pane is a read-only view; use this MCP tool to maintain the list. Returns the new todo including its id.',
+    description: 'CALL FIRST — one call with items: [every step] — on any request needing more than one action — before doing the work. Add an open todo to YOUR OWN session checklist. The desktop Todos pane is a read-only view; use this MCP tool to maintain the list. Returns the new todo including its id.',
     inputSchema: {
       type: 'object',
-      properties: { text: { type: 'string', description: 'A short, actionable todo.' } },
-      required: ['text'],
+      properties: {
+        text: { type: 'string', description: 'A short, actionable todo.' },
+        items: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Several todos in one call, in order (instead of text). Returns {items, errors}.' },
+      },
       additionalProperties: false,
     },
   },
@@ -1305,8 +1312,10 @@ export const MCP_TOOLS: McpTool[] = [
     description: 'CALL AS EACH STEP FINISHES, not at the end. Mark a todo in YOUR OWN session checklist done — finished or no longer wanted; it is removed from the list. Pass the id returned by session_todo_add or session_todo_list.',
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'Todo id.' } },
-      required: ['id'],
+      properties: {
+        id: { type: 'string', description: 'Todo id.' },
+        ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Several todo ids in one call (instead of id). Returns {items, errors}.' },
+      },
       additionalProperties: false,
     },
   },
@@ -2020,9 +2029,9 @@ export const MCP_TOOLS: McpTool[] = [
       type: 'object',
       properties: {
         id: { type: 'string', minLength: 1 },
+        ids: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Several memory ids in one call (instead of id). Returns {items, errors}.' },
         graphDepth: { type: 'integer', minimum: 0, maximum: 100 },
       },
-      required: ['id'],
       additionalProperties: false,
     },
   },

@@ -67,6 +67,46 @@ function artifactReceipt(artifact: Artifact) {
   return { id, title, kind, version: versions?.at(-1)?.version, intent };
 }
 
+/**
+ * Tools that accept a plural argument in place of their single one, so a model
+ * does N fetches/marks in ONE round trip instead of N (each round trip re-reads
+ * the whole context). The batch is a loop over the single-item path, so every
+ * validation and side effect stays identical; one bad item never sinks the rest.
+ */
+const BATCH_ARGS: Record<string, { single: string; plural: string }> = {
+  skill_get: { single: 'id', plural: 'ids' },
+  memory_get: { single: 'id', plural: 'ids' },
+  plan_get: { single: 'uuid', plural: 'ids' },
+  session_todo_add: { single: 'text', plural: 'items' },
+  session_todo_done: { single: 'id', plural: 'ids' },
+  session_read_terminal: { single: 'sessionId', plural: 'sessionIds' },
+};
+
+async function callBatched(
+  deps: McpToolDispatcherDeps,
+  name: string,
+  args: Record<string, unknown>,
+  authContext: AuthContext,
+  { single, plural }: { single: string; plural: string },
+): Promise<{ items: unknown[]; errors: Array<{ id: string; error: string }> }> {
+  if (args[single] !== undefined) throw new Error(`Pass either ${single} or ${plural} to ${name}, not both`);
+  const values = args[plural];
+  if (!Array.isArray(values) || values.length === 0 || !values.every((v) => typeof v === 'string')) {
+    throw new Error(`${plural} must be a non-empty array of strings`);
+  }
+  const items: unknown[] = [];
+  const errors: Array<{ id: string; error: string }> = [];
+  for (const value of values) {
+    const { [plural]: _omit, ...rest } = args;
+    try {
+      items.push(await callMcpTool(deps, name, { ...rest, [single]: value }, authContext));
+    } catch (error) {
+      errors.push({ id: value, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { items, errors };
+}
+
 function artifactFileReceipt(result: ArtifactFileResult) {
   return { ...artifactReceipt(result.artifact), ...(result.attachment ? { attachmentId: result.attachment.id } : {}) };
 }
@@ -250,6 +290,11 @@ export async function callMcpTool(
   authContext: AuthContext,
 ): Promise<unknown> {
   const { service, setPlanStateWithValidation, completePlanWithValidation } = deps;
+
+  const batch = BATCH_ARGS[name];
+  if (batch && args[batch.plural] !== undefined) {
+    return callBatched(deps, name, args, authContext, batch);
+  }
 
     logger.info(`[MCP] callTool: ${name} | session=${authContext.sessionId ?? 'anonymous'} (${authContext.sessionName ?? '-'})`);
     switch (name) {
@@ -791,7 +836,11 @@ export async function callMcpTool(
         const target = typeof args.sessionId === 'string' && args.sessionId.trim()
           ? args.sessionId
           : requireCallerSession(authContext, 'session_mission_set');
-        return service.setSessionMission(target, asStringValue(args.text, 'text is required'));
+        const mission = service.setSessionMission(target, asStringValue(args.text, 'text is required'));
+        if (args.etaMinutes === undefined) return mission;
+        // One round trip for the two things a model sets when starting work.
+        const eta = service.setSessionEta(requireOwnEta(authContext, args, name), { minutes: args.etaMinutes });
+        return { mission, eta };
       }
       case 'session_eta_set':
         return service.setSessionEta(requireOwnEta(authContext, args, name), {

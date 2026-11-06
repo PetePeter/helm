@@ -119,7 +119,7 @@ export function asAiagentState(value: unknown, errorMessage?: string): 'planning
 
 
 export function asTerminalReadMode(value: unknown): 'raw' | 'stripped' | 'both' | 'screen' {
-  if (value === undefined) return 'both';
+  if (value === undefined) return 'stripped';
   if (value === 'raw' || value === 'stripped' || value === 'both' || value === 'screen') return value;
   throw new Error('mode must be one of raw, stripped, both, or screen');
 }

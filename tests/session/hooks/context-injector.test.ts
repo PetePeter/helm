@@ -694,7 +694,7 @@ describe('Mission statement ([HELM_MISSION])', () => {
       const context = contextOf((await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt })))!.body);
       expect(context).toContain('[HELM_TODOS]');
       expect(context).toContain('todo-1: Ship the pane');
-      expect(context).toContain('call session_todo_add once per step');
+      expect(context).toContain('call session_todo_add once with items: [every step]');
       expect(context).toContain('[HELM_MISSION] Current mission');
     }
   });

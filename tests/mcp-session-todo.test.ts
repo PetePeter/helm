@@ -52,9 +52,8 @@ describe('MCP session_todo_*', () => {
 
   it('publishes the six tools with the requested arguments', () => {
     const byName = new Map(MCP_TOOLS.map(tool => [tool.name, tool]));
+    expect(byName.get('session_todo_add')?.inputSchema.properties).toHaveProperty('items');
     expect(getAvailableTools().map(tool => tool.name)).toEqual(expect.arrayContaining(TOOLS));
-    expect(byName.get('session_todo_add')?.inputSchema.required).toEqual(['text']);
-    expect(byName.get('session_todo_done')?.inputSchema.required).toEqual(['id']);
     expect(byName.get('session_todo_clear')?.inputSchema.required).toBeUndefined();
     expect(byName.get('session_todo_list')?.inputSchema.required).toBeUndefined();
     expect(byName.get('session_todo_wait')?.inputSchema.required).toEqual(['id', 'waiting']);

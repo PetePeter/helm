@@ -229,6 +229,24 @@ const envelope = JSON.parse(chunk.slice(10, chunk.indexOf('\n')));
 await replyViaHelm(envelope.fromSessionName, response);
 ```
 
+## Batching: one call instead of N
+
+Every tool call is a full model round trip that re-reads the whole context, so
+the tools you call in runs take a plural argument in place of the single one:
+
+| Tool | Single | Batch |
+|------|--------|-------|
+| `skill_get` | `id` | `ids: [...]` |
+| `memory_get` | `id` | `ids: [...]` |
+| `plan_get` | `uuid` | `ids: [...]` |
+| `session_todo_add` | `text` | `items: [...]` (kept in order) |
+| `session_todo_done` | `id` | `ids: [...]` |
+| `session_read_terminal` | `sessionId` | `sessionIds: [...]` |
+
+A batch replies `{items, errors}`: one failing entry is reported in `errors`
+and never sinks the rest. Pass one form, not both. `session_mission_set` also
+takes `etaMinutes`, setting mission and ETA in one call.
+
 ## Picking a CLI type: `tool_list`, `tool_get`
 
 ```text
