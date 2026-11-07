@@ -126,6 +126,8 @@ export async function deliverPromptSequenceToSession(input: {
     label?: string;
     delayMs?: number;
     retrySubmit?: boolean;
+    /** Require a post-delivery submit hook even when the target appears idle. */
+    requirePromptSubmit?: boolean;
     /** Run verification in background — returns undefined immediately, calls onComplete when done. */
     background?: boolean;
     onComplete?: (result: DeliveryVerificationResult) => void;
@@ -178,7 +180,10 @@ export async function deliverPromptSequenceToSession(input: {
         && !(writeIntent === 'input' && busyBeforeTextInCurrentSubmit === false);
       busyBeforeTextInCurrentSubmit = undefined;
       await deliverText(sid, '', { ...textDeliveryOptions, submitSuffix });
-      if (cliEntry?.provider === 'codex' && targetWasBusy && submitSuffix === '\r') {
+      // When verification owns recovery, let it wait for the submit hook before
+      // retrying. An early Enter can still land inside the running turn.
+      const verifierOwnsRecovery = verifyDelivery !== undefined && verifyDelivery.retrySubmit !== false;
+      if (cliEntry?.provider === 'codex' && targetWasBusy && submitSuffix === '\r' && !verifierOwnsRecovery) {
         await new Promise<void>((resolve) => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
         codexBusySubmitRecoverySent = ptyManager.write(sid, submitSuffix, writeIntent);
         if (codexBusySubmitRecoverySent) {
@@ -245,7 +250,7 @@ export async function deliverPromptSequenceToSession(input: {
     promptSubmit: { since: deliveryStartedAt, lastAt: () => promptSubmitSignal.lastAt(sessionId) },
     // Busy targets can redraw their composer while a turn is running. Require
     // the submit hook even for a fresh session with no prior hook observation.
-    requirePromptSubmit: targetWasBusy,
+    requirePromptSubmit: verifyDelivery.requirePromptSubmit ?? targetWasBusy,
   };
 
   if (verifyDelivery.background) {

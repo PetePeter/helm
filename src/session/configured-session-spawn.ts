@@ -236,6 +236,9 @@ function buildPromptCompleteHandler(
   if (contextText) {
     callbacks.push(() => {
       if (params.configLoader) {
+        const target = params.sessionManager.getSession(params.sessionId);
+        const cliEntry = target ? params.configLoader.getCliTypeEntry(target.cliType) : undefined;
+        const isCodex = cliEntry?.provider === 'codex' || cliEntry?.hooks?.provider === 'codex';
         void deliverPromptSequenceToSession({
           sessionId: params.sessionId,
           text: contextText,
@@ -243,6 +246,17 @@ function buildPromptCompleteHandler(
           sessionManager: params.sessionManager,
           configLoader: params.configLoader,
           ...(params.contextDeliveryContext ? { deliveryContext: params.contextDeliveryContext } : {}),
+          verifyDelivery: {
+            label: 'spawn initial prompt',
+            background: true,
+            ...(isCodex ? { requirePromptSubmit: true } : {}),
+            onComplete: (result) => {
+              const writeLog = result.status === 'confirmed' || result.status === 'retry_confirmed'
+                ? logger.info
+                : logger.warn;
+              writeLog(`[ConfiguredSessionSpawn] Initial prompt verification ${result.status} for ${params.sessionId}: ${result.detail}`);
+            },
+          },
         });
       } else {
         void deliverText(params.sessionId, contextText);

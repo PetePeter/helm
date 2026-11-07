@@ -142,9 +142,9 @@ PTY in two parts: the text, then the submit suffix. They are never coalesced.
 submit, and any interleaving of two of those corrupts both messages. `DeliveryLock`
 (`src/session/delivery-lock.ts`) serializes the whole sequence per session.
 `deliverPromptSequenceToSession` is the gate for the senders that deliver in this shape —
-scheduled tasks, inter-session sends, MCP. It is not a universal choke point: pattern-matcher
-send-text and spawn-time initial prompts are single atomic writes that bypass the gate, and
-renderer-origin delivery (below) runs outside it entirely. Locking the write alone would not have
+scheduled tasks, inter-session sends, MCP, and spawn-time context prompts. It is not a universal
+choke point: pattern-matcher send-text and the configured startup prompt sequence bypass the gate,
+and renderer-origin delivery (below) runs outside it entirely. Locking the write alone would not have
 been enough: two senders could each nudge before either wrote, landing one message's resize between
 the other's payload and its submit.
 
@@ -252,10 +252,12 @@ Codex ticks the tail twice and still sits unsent. So once a session has reported
 hook (recorded by `HookTracker` in `PromptSubmitSignal`), a pass confirms only on a submit hook at or
 after the delivery started; otherwise it is `suspected_stuck` and recovery re-sends Enter only. Busy
 targets always require a submit hook, even when no hook event has been seen yet, because a queued
-message can redraw while the current turn is still running. They never use tail timing to confirm and
-get one submit-only recovery. For non-busy targets with no hook history, tail timing remains the
-fallback. Busy state is checked immediately before each submit, and the settled Codex fallback covers
-explicit Enter submissions as well as implied submits.
+message can redraw while the current turn is still running. Fresh Codex spawn context prompts also
+require the hook: the configured startup prompt's completion means its Enter was written, not that
+Codex finished that turn or is ready for another composer input. These deliveries never use tail
+timing to confirm and get one submit-only recovery after the hook wait. For non-busy targets with no
+hook history, tail timing remains the fallback. Busy state is checked immediately before each
+submit, and the settled Codex fallback covers explicit Enter submissions as well as implied submits.
 
 **Recovery.** A failed pass is remedied, not just logged. Recovery mode is fixed by the first pass so
 a stuck CLI is never sent the same message twice. Callers delivering raw terminal control input pass

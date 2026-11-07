@@ -190,7 +190,7 @@ Resume templates accept two placeholders:
 
 No `terminal` field — all CLIs run as embedded PTY sessions (no external window config). `initialPrompt` items are sent in order; use `{Wait N}` within sequences for inter-item timing.
 
-`renameCommand` runs **before** the `initialPrompt` items, onto a guaranteed-empty composer, and only once the PTY's output has been quiet for a beat (`waitForQuiet`): a full-screen TUI re-render landing mid-paste (e.g. a SessionStart hook reply) splits the paste and submits its tail as a stray user message. A wedge-proof second CR follows the rename for composers that swallow the submit after a paste.
+`renameCommand` runs **before** the `initialPrompt` items, onto a guaranteed-empty composer, and only once the PTY's output has been quiet for a beat (`waitForQuiet`): a full-screen TUI re-render landing mid-paste (e.g. a SessionStart hook reply) splits the paste and submits its tail as a stray user message. A wedge-proof second CR follows the rename for composers that swallow the submit after a paste. For Codex, the caller's spawn-time context prompt is delivered after these configured items through hook-based verification; `onComplete` means the startup Enter was written, not that its turn finished.
 
 > **Note:** The legacy per-CLI `sequences:` block and its successor, the global prompt-template library, are both gone. A `sequences:` block in an old profile is ignored.
 

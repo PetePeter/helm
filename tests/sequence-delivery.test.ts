@@ -27,7 +27,7 @@ function makeMocks(overrides?: { submitSuffix?: string; cliType?: string; provid
   return { ptyManager, sessionManager, configLoader, session };
 }
 
-function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { origin?: 'user' | 'system'; impliedSubmit?: boolean; deliveryContext?: 'background' | 'interactive'; verifyDelivery?: { label?: string; delayMs?: number; retrySubmit?: boolean } }) {
+function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { origin?: 'user' | 'system'; impliedSubmit?: boolean; deliveryContext?: 'background' | 'interactive'; verifyDelivery?: { label?: string; delayMs?: number; retrySubmit?: boolean; requirePromptSubmit?: boolean } }) {
   return deliverPromptSequenceToSession({
     sessionId: 's1',
     text: input,
@@ -61,19 +61,45 @@ describe('deliverPromptSequenceToSession', () => {
     expect(mocks.ptyManager.write).not.toHaveBeenCalledWith('s1', '\r');
   });
 
-  it('sends a settled fallback Enter for an implied submit to busy Codex', async () => {
+  it('sends a settled fallback Enter for an unverified implied submit to busy Codex', async () => {
     vi.useFakeTimers();
     try {
       const mocks = makeMocks({ cliType: 'codex', provider: 'codex', activityLevel: 'active' });
-      mocks.ptyManager.getTerminalTail = vi.fn(() => ({ lastOutputAt: Date.now() }));
-      const pending = deliver('hello', mocks, { origin: 'user', verifyDelivery: { delayMs: 0 } });
+      const pending = deliver('hello', mocks, { origin: 'user' });
 
-      await vi.advanceTimersByTimeAsync(3000);
-      const result = await pending;
+      await vi.advanceTimersByTimeAsync(800);
+      await pending;
 
       expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\r', 'input');
-      expect(result?.codexBusySubmitRecoverySent).toBe(true);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses only the post-hook submit recovery for a verified busy Codex delivery', async () => {
+    vi.useFakeTimers();
+    promptSubmitSignal.forget('s1');
+    try {
+      const mocks = makeMocks({ cliType: 'codex', provider: 'codex', activityLevel: 'active' });
+      const buffer = new TerminalOutputBuffer();
+      buffer.append('s1', 'initial prompt\n');
+      mocks.ptyManager.getTerminalTail = (sid: string, lines: number, mode: 'raw' | 'stripped' | 'both', stripBlankLines?: boolean) =>
+        buffer.tail(sid, lines, mode, stripBlankLines);
+      promptSubmitSignal.observe('s1');
+
+      const pending = deliver('hello', mocks, { verifyDelivery: { delayMs: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.ptyManager.write).not.toHaveBeenCalledWith('s1', '\r', 'system');
+      await vi.advanceTimersByTimeAsync(5000);
+      const result = await pending;
+
+      expect(result?.status).toBe('retry_failed');
+      expect(result?.retryCount).toBe(1);
+      expect(result?.codexBusySubmitRecoverySent).toBe(false);
+      expect(mocks.ptyManager.write).not.toHaveBeenCalledWith('s1', '\r', 'system');
+      expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === '' && call[2]?.submitSuffix === '\r')).toHaveLength(2);
+    } finally {
+      promptSubmitSignal.forget('s1');
       vi.useRealTimers();
     }
   });
@@ -109,6 +135,7 @@ describe('deliverPromptSequenceToSession', () => {
 
       expect(result?.status).toBe('retry_failed');
       expect(result?.retryCount).toBe(1);
+      expect(mocks.ptyManager.write).not.toHaveBeenCalledWith('s1', '\r', 'system');
       expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === '' && call[2]?.submitSuffix === '\r')).toHaveLength(2);
       expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === 'hello')).toHaveLength(1);
     } finally {
@@ -147,6 +174,7 @@ describe('deliverPromptSequenceToSession', () => {
 
       expect(result?.status).toBe('retry_failed');
       expect(result?.retryCount).toBe(1);
+      expect(mocks.ptyManager.write).not.toHaveBeenCalledWith('s1', '\r', 'system');
       expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === '' && call[2]?.submitSuffix === '\r')).toHaveLength(2);
       expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === 'hello')).toHaveLength(1);
     } finally {
@@ -174,7 +202,7 @@ describe('deliverPromptSequenceToSession', () => {
       await vi.advanceTimersByTimeAsync(4000);
       const result = await pending;
 
-      expect(result?.codexBusySubmitRecoverySent).toBe(true);
+      expect(result?.codexBusySubmitRecoverySent).toBe(false);
       expect(result?.status).toBe('retry_failed');
       expect(result?.retryCount).toBe(1);
     } finally {

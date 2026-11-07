@@ -3,8 +3,10 @@
  *
  * Delivery verification reads it to tell a real submit from a composer repaint:
  * terminal activity alone cannot (a pasted message in Codex ticks the tail and
- * still sits unsent). HookTracker is the only writer. In memory only — a session
- * that has not reported a submit since launch simply falls back to tail timing.
+ * still sits unsent). HookTracker is the only writer. In memory only — delivery
+ * callers can require a submit hook for busy targets and fresh Codex spawn
+ * context even before the first hook has been observed; other sessions can fall
+ * back to tail timing.
  */
 export class PromptSubmitSignal {
   private readonly lastSubmitAt = new Map<string, number>();
