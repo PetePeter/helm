@@ -309,8 +309,8 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
     const wrapped = isApiTool ? payload : wrapTelegramEnvelope(payload, from, chatId, instruction !== 'pty');
     // Channel affinity is state, not text — it flips on entry regardless.
     let text = wrapped;
-    if (session.interactionChannel !== 'telegram') {
-      this.sessionManager.updateSession(session.id, { interactionChannel: 'telegram' });
+    if (session.interactionChannel !== 'remote') {
+      this.sessionManager.updateSession(session.id, { interactionChannel: 'remote' });
       const mode = isApiTool ? 'off' : this.reminderDelivery
         ? (await this.reminderDelivery(session, 'telegramModeInstructions')).channel
         : 'pty';
@@ -442,8 +442,8 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
       ].join('\n');
 
       let text = envelope;
-      if (targetSession.interactionChannel !== 'telegram') {
-        this.sessionManager.updateSession(targetSession.id, { interactionChannel: 'telegram' });
+      if (targetSession.interactionChannel !== 'remote') {
+        this.sessionManager.updateSession(targetSession.id, { interactionChannel: 'remote' });
         if (modeChannel === 'pty') text = HELM_TELEGRAM_MODE_INSTRUCTIONS + '\n\n' + envelope;
       }
 

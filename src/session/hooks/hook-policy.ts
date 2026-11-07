@@ -24,7 +24,7 @@ import type { HookEvent } from './hook-normaliser.js';
 export interface HookDenyRule {
   /** Tool names this rule applies to, compared case-insensitively. */
   tools: string[];
-  /** Deny only while the user is away (interactionChannel === 'telegram'). */
+  /** Deny only while the user is away (interactionChannel === 'remote'). */
   onlyWhenAway?: boolean;
   /** Deny only when the shell command matches this regex source. */
   commandPattern?: string;
@@ -108,7 +108,7 @@ export function decideHookPolicy(
     const rule = asDenyRule(candidate);
     if (!rule) continue;
     if (!matchesTool(rule, event.toolName)) continue;
-    if (rule.onlyWhenAway && session?.interactionChannel !== 'telegram') continue;
+    if (rule.onlyWhenAway && session?.interactionChannel !== 'remote') continue;
     if (rule.commandPattern !== undefined && !matchesCommand(rule.commandPattern, event)) continue;
     if (rule.outsideSessionDir && !writesOutsideSessionDir(event, session)) continue;
     return { decision: 'deny', reason: rule.reason };

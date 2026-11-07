@@ -213,7 +213,7 @@ describe('UserPromptSubmit', () => {
   });
 
   it('injects the rules for a [HELM_MSG] envelope', async () => {
-    const { injector } = makeInjector();
+    const { injector } = makeInjector({}, { interactionChannel: 'remote' });
     const result = await injector.respond(
       hookEvent({ event: 'UserPromptSubmit', prompt: '[HELM_MSG]{"type":"inter_llm_message"}do the thing' }),
     );
@@ -223,14 +223,32 @@ describe('UserPromptSubmit', () => {
     expect(context).not.toContain('telegram_chat');
   });
 
-  it('injects the Telegram rules for a [HELM_TELEGRAM] envelope', async () => {
+  it('injects generic remote chat rules for a mobile-origin message', async () => {
+    const { injector } = makeInjector(
+      { getReminderMode: (reminder) => (reminder === 'telegramInstruction' ? 'hook' : undefined) },
+      { interactionChannel: 'remote' },
+    );
+    const result = await injector.respond(hookEvent({
+      event: 'UserPromptSubmit',
+      prompt: '[HELM_MSG]{"fromSessionId":"mobile:device-7"}hello',
+    }));
+
+    const context = contextOf(result!.body);
+    expect(context).toContain('[HELM_REMOTE_RULES]');
+    expect(context).toContain('chat_send');
+    expect(context).not.toContain('telegram_chat');
+    expect(context).not.toContain('[HELM_MSG_RULES]');
+  });
+
+  it('injects generic remote rules for a [HELM_TELEGRAM] envelope', async () => {
     const { injector } = makeInjector();
     const result = await injector.respond(
       hookEvent({ event: 'UserPromptSubmit', prompt: '[HELM_TELEGRAM from:u chat:1]\nhello\n[/HELM_TELEGRAM]' }),
     );
     const context = contextOf(result!.body);
-    expect(context).toContain('[HELM_TELEGRAM_RULES]');
-    expect(context).toContain('telegram_chat');
+    expect(context).toContain('[HELM_REMOTE_RULES]');
+    expect(context).toContain('chat_send');
+    expect(context).not.toContain('telegram_chat');
     expect(context).not.toContain('[HELM_MSG_RULES]');
   });
 
@@ -364,7 +382,7 @@ describe('UserPromptSubmit reminder delivery modes (G9)', () => {
   it('mode pty for one reminder does not silence the other', async () => {
     const { injector } = makeInjector({ getReminderMode: (r) => (r === 'helmMsgRules' ? 'pty' : undefined) });
     const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-    expect(contextOf(result!.body)).toContain('[HELM_TELEGRAM_RULES]');
+    expect(contextOf(result!.body)).toContain('[HELM_REMOTE_RULES]');
   });
 
   it('injects the rules with no mode wired at all — the hook firing is the capability proof', async () => {
@@ -377,7 +395,7 @@ describe('UserPromptSubmit reminder delivery modes (G9)', () => {
     it('mode hook injects the mode block ONCE per telegram-mode entry', async () => {
       const { injector } = makeInjector(
         { getReminderMode: (r) => (r === 'telegramModeInstructions' ? 'hook' : undefined) },
-        { interactionChannel: 'telegram' },
+        { interactionChannel: 'remote' },
       );
       const first = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
       expect(contextOf(first!.body)).toContain('[HELM_TELEGRAM_MODE]');
@@ -386,7 +404,7 @@ describe('UserPromptSubmit reminder delivery modes (G9)', () => {
     });
 
     it('mode pty (the default) never injects the mode block — the prepend owns it', async () => {
-      const { injector } = makeInjector({}, { interactionChannel: 'telegram' });
+      const { injector } = makeInjector({}, { interactionChannel: 'remote' });
       const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
       expect(contextOf(result!.body)).not.toContain('[HELM_TELEGRAM_MODE]');
     });
@@ -399,7 +417,7 @@ describe('UserPromptSubmit reminder delivery modes (G9)', () => {
       await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
       channel = 'desktop';
       await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-      channel = 'telegram';
+      channel = 'remote';
       const again = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
       expect(contextOf(again!.body)).toContain('[HELM_TELEGRAM_MODE]');
     });

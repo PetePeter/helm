@@ -106,7 +106,7 @@ describe('pty IPC handlers — activity marking after the move', () => {
     const stateDetector = new StateDetector();
     const markActive = vi.spyOn(stateDetector, 'markActive');
 
-    const session = { id: 's1', interactionChannel: 'telegram' };
+    const session = { id: 's1', interactionChannel: 'remote' };
     const sessionManager = {
       getSession: vi.fn((id: string) => (id === 's1' ? session : null)),
       updateSession: vi.fn(),

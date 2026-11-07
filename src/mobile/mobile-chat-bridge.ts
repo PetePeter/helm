@@ -100,9 +100,9 @@ export interface MobileCallGate {
 
 /** Minimal session view: a chat record names the session it belongs to. */
 export interface MobileChatSessions {
-  getSession(sessionId: string): { id: string; name: string; interactionChannel?: 'telegram' | 'desktop' } | null;
+  getSession(sessionId: string): { id: string; name: string; interactionChannel?: 'remote' | 'desktop' } | null;
   /** The single mutation this bridge needs: mark where the conversation moved. */
-  updateSession(sessionId: string, patch: { interactionChannel: 'telegram' | 'desktop' }): unknown;
+  updateSession(sessionId: string, patch: { interactionChannel: 'remote' | 'desktop' }): unknown;
 }
 
 export interface MobileChatBridgeDeps {
@@ -448,6 +448,10 @@ export class MobileChatBridge implements ChatBridge {
 
     try {
       logger.info(`[MobileChat] Dispatching ${record.method} id=${record.id} from ${machineId}`);
+      // The first phone prompt's hooks must see away mode while the gate
+      // delivers it. This record has already been decoded from a registered
+      // device; a later gate refusal leaves the channel remote until desktop use.
+      if (record.method === SESSION_SEND_TEXT_METHOD) this.markChannelAffinity(record);
       const result = await gate.handle(device.id, record.method, paramsForDispatch(record));
       logger.info(`[MobileChat] Dispatch completed ${record.method} id=${record.id} from ${machineId}`);
       // A download answers with FILE BYTES, which JSON can only carry as base64.
@@ -478,7 +482,6 @@ export class MobileChatBridge implements ChatBridge {
       // is live-fanned to the other phones, whose own catch-up will pick the
       // echo up; the phone that sent it recognises and drops it by originId.
       if (record.method === SESSION_SEND_TEXT_METHOD) {
-        this.markChannelAffinity(record);
         this.journalPhoneReply(machineId, record);
       }
     } catch (err) {
@@ -522,11 +525,9 @@ export class MobileChatBridge implements ChatBridge {
   }
 
   /**
-   * A message from the phone moves the conversation off the desktop. Set the
-   * SAME channel value the Telegram relay sets — 'telegram', deliberately not
-   * a new enum member — so consumers keying on "not at the desktop" (the G2
-   * phone-deny) see both surfaces alike. Only written on the transition, the
-   * way the relay does; a session already talking to a phone is left alone.
+   * A phone message moves the conversation off the desktop before gate
+   * dispatch so the first prompt's hooks see away-mode rules. Only written on
+   * the transition; a session already remote is left alone.
    */
   private markChannelAffinity(record: MobileCallRecord): void {
     const params = record.params && typeof record.params === 'object' && !Array.isArray(record.params)
@@ -535,8 +536,8 @@ export class MobileChatBridge implements ChatBridge {
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : undefined;
     if (!sessionId) return;
     const session = this.deps.sessions.getSession(sessionId);
-    if (!session || session.interactionChannel === 'telegram') return;
-    this.deps.sessions.updateSession(sessionId, { interactionChannel: 'telegram' });
+    if (!session || session.interactionChannel === 'remote') return;
+    this.deps.sessions.updateSession(sessionId, { interactionChannel: 'remote' });
   }
 
   /**

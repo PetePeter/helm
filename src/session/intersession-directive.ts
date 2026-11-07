@@ -113,6 +113,13 @@ export const HELM_TELEGRAM_HOOK_RULES =
   'ALL responses and ALL questions MUST go through the telegram_chat MCP tool — do NOT use AskUserQuestion.\n' +
   '[/HELM_TELEGRAM_RULES]';
 
+/** Generic away-mode rules shared by remote chat surfaces such as a paired phone or Telegram. */
+export const HELM_REMOTE_HOOK_RULES =
+  '[HELM_REMOTE_RULES]\n' +
+  'This message came from the user through a remote chat surface. The user CANNOT see the terminal.\n' +
+  'ALL responses and ALL questions MUST go through the chat_send MCP tool — do NOT use AskUserQuestion.\n' +
+  '[/HELM_REMOTE_RULES]';
+
 /**
  * The Telegram-mode block, announced once per entry into Telegram mode.
  * ONE source of truth: the relay prepends it (reminder `telegramModeInstructions`

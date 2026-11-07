@@ -55,7 +55,7 @@ describe('HookReceiver', async () => {
   it('denies a PreToolUse the policy rejects, in the CLI-specific shape, and still emits', async () => {
     const receiver = new HookReceiver({
       now: () => NOW,
-      getSession: () => session({ interactionChannel: 'telegram' }),
+      getSession: () => session({ interactionChannel: 'remote' }),
       getDenyRules: () => [AWAY_RULE],
     });
     const seen: unknown[] = [];
@@ -125,7 +125,7 @@ describe('HookReceiver', async () => {
     let rulesAsked = 0;
     const receiver = new HookReceiver({
       now: () => NOW,
-      getSession: () => session({ interactionChannel: 'telegram' }),
+      getSession: () => session({ interactionChannel: 'remote' }),
       getDenyRules: () => {
         rulesAsked += 1;
         return [AWAY_RULE];
@@ -233,7 +233,7 @@ describe('HookReceiver', async () => {
   it('keeps a PreToolUse deny when merging the context alert', async () => {
     const receiver = new HookReceiver({
       now: () => NOW,
-      getSession: () => session({ interactionChannel: 'telegram' }),
+      getSession: () => session({ interactionChannel: 'remote' }),
       getDenyRules: () => [AWAY_RULE],
       respond: async () => ({
         statusCode: 200,

@@ -51,7 +51,7 @@ function setup(onPtyInput = vi.fn(), isHandoverPending = (_id: string) => false)
   handlers.clear();
   const ptyManager = new MockPtyManager();
   const stateDetector = new MockStateDetector();
-  const session = { id: 's1', interactionChannel: 'telegram', frozen: false };
+  const session = { id: 's1', interactionChannel: 'remote', frozen: false };
   const sessionManager = {
     getSession: vi.fn((id: string) => id === 's1' ? session : null),
     updateSession: vi.fn((_id: string, patch: object) => Object.assign(session, patch)),
@@ -89,7 +89,7 @@ describe('pty:write input origin', () => {
     vi.clearAllMocks();
   });
 
-  it('keeps Telegram affinity for programmatic writes', async () => {
+  it('keeps remote affinity for programmatic writes', async () => {
     const { ptyManager, stateDetector, sessionManager, onPtyInput } = setup();
 
     await handlers.get('pty:write')?.({}, 's1', 'hello', { inputOrigin: 'programmatic' });
@@ -120,7 +120,7 @@ describe('pty:write input origin', () => {
     expect(result).toMatchObject({ success: false, error: expect.stringContaining('could not accept') });
   });
 
-  it('switches Telegram affinity back to desktop for user writes', async () => {
+  it('clears remote affinity when the user writes in the terminal', async () => {
     const { sessionManager, onPtyInput } = setup();
 
     await handlers.get('pty:write')?.({}, 's1', 'typed');

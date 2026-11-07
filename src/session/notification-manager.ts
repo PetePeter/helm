@@ -124,9 +124,9 @@ export class NotificationManager {
     // another room is not an alternative to that, it is an addition.
     this.mobileNotifier?.notified(sessionId, title, content);
 
-    // Route via Telegram if session is in Telegram mode (takes priority over everything)
+    // Route via the configured remote notifier when the user is away.
     const session = this.sessionManager.getSession(sessionId);
-    if (session?.interactionChannel === 'telegram' && this.telegramNotifier) {
+    if (session?.interactionChannel === 'remote' && this.telegramNotifier) {
       void this.telegramNotifier(sessionId, title, content);
       return 'telegram';
     }

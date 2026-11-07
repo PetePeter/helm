@@ -915,7 +915,7 @@ describe('TelegramRelayService', () => {
   });
 
   describe('interaction channel affinity', () => {
-    it('sets interactionChannel to telegram and injects first-contact instructions on first text message', async () => {
+    it('sets interactionChannel to remote and injects first-contact instructions on first text message', async () => {
       const { relay, ptyManager, sessionManager } = makeRelay();
 
       await relay.handleIncomingTelegramMessage({
@@ -924,7 +924,7 @@ describe('TelegramRelayService', () => {
         chat: { id: 12345 }, from: { username: 'tguser' },
       } as any);
 
-      expect(sessionManager.updateSession).toHaveBeenCalledWith('s1', { interactionChannel: 'telegram' });
+      expect(sessionManager.updateSession).toHaveBeenCalledWith('s1', { interactionChannel: 'remote' });
       expectUserPromptDelivery(ptyManager, expect.stringContaining('HELM_TELEGRAM_MODE'));
     });
 
@@ -933,7 +933,7 @@ describe('TelegramRelayService', () => {
       // Clear call records from prior tests using the same mock factory
       sessionManager.updateSession.mockClear();
       // Simulate already in telegram mode
-      const telegramSession = { id: 's1', name: 'Claude', cliType: 'claude-code', topicId: 42, interactionChannel: 'telegram' as const };
+      const telegramSession = { id: 's1', name: 'Claude', cliType: 'claude-code', topicId: 42, interactionChannel: 'remote' as const };
       topicManager.findSessionByTopicId.mockReturnValue(telegramSession as any);
       sessionManager.getSession.mockImplementation((id: string) => id === 's1' ? telegramSession : null);
 
@@ -944,7 +944,7 @@ describe('TelegramRelayService', () => {
       } as any);
 
       // Should not call updateSession again
-      expect(sessionManager.updateSession).not.toHaveBeenCalledWith('s1', { interactionChannel: 'telegram' });
+      expect(sessionManager.updateSession).not.toHaveBeenCalledWith('s1', { interactionChannel: 'remote' });
       expectUserPromptDelivery(ptyManager, expect.not.stringContaining('HELM_TELEGRAM_MODE'));
     });
 
@@ -961,7 +961,7 @@ describe('TelegramRelayService', () => {
       } as any);
 
       // Channel affinity is state, not text — it still flips.
-      expect(sessionManager.updateSession).toHaveBeenCalledWith('s1', { interactionChannel: 'telegram' });
+      expect(sessionManager.updateSession).toHaveBeenCalledWith('s1', { interactionChannel: 'remote' });
       const text = ptyManager.deliverText.mock.calls[0][1] as string;
       expect(text).not.toContain('HELM_TELEGRAM_MODE');
       expect(text).toContain('Enter mode quietly');

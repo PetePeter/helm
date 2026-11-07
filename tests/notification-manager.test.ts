@@ -393,10 +393,10 @@ describe('NotificationManager.notifyLlmDirected()', () => {
   });
 
   describe('Session interaction channel affinity', () => {
-    it('routes to telegram when session has interactionChannel=telegram', () => {
+    it('routes to telegram when session has interactionChannel=remote', () => {
       screenLockChecker.mockReturnValue(false);
       (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
-        id: 'sess-tg', interactionChannel: 'telegram',
+        id: 'sess-tg', interactionChannel: 'remote',
       });
 
       const result = notificationManager.notifyLlmDirected('sess-tg', 'Title', 'Content');
@@ -408,7 +408,7 @@ describe('NotificationManager.notifyLlmDirected()', () => {
     it('takes priority over screen-locked routing (still goes telegram)', () => {
       screenLockChecker.mockReturnValue(true);
       (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
-        id: 'sess-tg', interactionChannel: 'telegram',
+        id: 'sess-tg', interactionChannel: 'remote',
       });
 
       const result = notificationManager.notifyLlmDirected('sess-tg', 'Title', 'Content');
@@ -457,7 +457,7 @@ describe('NotificationManager.notifyLlmDirected()', () => {
       expect(result).toBe('bubble');
     });
 
-    it('falls through to normal routing when interactionChannel=telegram but telegramNotifier is not set', () => {
+    it('falls through to normal routing when interactionChannel=remote but telegramNotifier is not set', () => {
       screenLockChecker.mockReturnValue(false);
       notificationManager.setTelegramNotifier(null as any);
       const mockWindow = {
@@ -469,7 +469,7 @@ describe('NotificationManager.notifyLlmDirected()', () => {
       electronMockState.getAllWindowsMock.mockReturnValue([mockWindow]);
       activeSessionIdGetter.mockReturnValue('other-session');
       (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
-        id: 'sess-tg', interactionChannel: 'telegram',
+        id: 'sess-tg', interactionChannel: 'remote',
       });
 
       const result = notificationManager.notifyLlmDirected('sess-tg', 'Title', 'Content');

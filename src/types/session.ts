@@ -89,8 +89,8 @@ export interface SessionInfo {
   activityLevel?: ActivityLevel;
   /** BrowserWindow ID if this session is snapped out to a child window. Undefined/null means main window. */
   windowId?: number;
-  /** Which channel the user last interacted through. Ephemeral — not persisted. */
-  interactionChannel?: 'telegram' | 'desktop';
+  /** Whether the user last interacted remotely or at the desktop. Ephemeral — not persisted. */
+  interactionChannel?: 'remote' | 'desktop';
   /** Id of the remote Fleet peer that created this session, when it was spawned
    *  by an inbound peer proxy call rather than locally. Drives the sidebar's
    *  peer-created card tint. Persists across restarts. */

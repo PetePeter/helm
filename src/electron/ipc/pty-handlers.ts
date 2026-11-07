@@ -143,9 +143,9 @@ export function setupPtyHandlers(
         return { success: false, error: 'PTY could not accept the input' };
       }
       if (inputOrigin === 'user') {
-        // Switch to desktop channel when the user types in terminal.
+        // Return to the desktop channel when the user types in terminal.
         const session = sessionManager.getSession(sessionId);
-        if (session?.interactionChannel === 'telegram') {
+        if (session?.interactionChannel === 'remote') {
           sessionManager.updateSession(sessionId, { interactionChannel: 'desktop' });
         }
         // The user typing into an operator-started session takes it over.

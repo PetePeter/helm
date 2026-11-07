@@ -65,7 +65,7 @@ describe('decideHookPolicy — the away-from-desk deny', () => {
   it('denies AskUserQuestion when the user is on the phone, naming chat_send', () => {
     const decision = decideHookPolicy(
       preToolUse({ toolName: 'AskUserQuestion' }),
-      session({ interactionChannel: 'telegram' }),
+      session({ interactionChannel: 'remote' }),
       DEFAULT_RULES,
     );
 
@@ -103,7 +103,7 @@ describe('decideHookPolicy — the away-from-desk deny', () => {
 
 describe('decideHookPolicy — the native artifact deny', () => {
   it('denies a native Artifact tool regardless of channel, naming session_artifact_create', () => {
-    for (const channel of ['desktop', 'telegram', undefined] as const) {
+    for (const channel of ['desktop', 'remote', undefined] as const) {
       const decision = decideHookPolicy(
         preToolUse({ toolName: 'Artifact' }),
         session({ interactionChannel: channel }),
@@ -225,7 +225,7 @@ describe('decideHookPolicy — fail open, always', () => {
   });
 
   it('allows everything when there are no rules', () => {
-    expect(decideHookPolicy(preToolUse({ toolName: 'AskUserQuestion' }), session({ interactionChannel: 'telegram' }), []).decision).toBe('allow');
+    expect(decideHookPolicy(preToolUse({ toolName: 'AskUserQuestion' }), session({ interactionChannel: 'remote' }), []).decision).toBe('allow');
   });
 
   it('skips malformed rule objects rather than throwing', () => {
@@ -244,7 +244,7 @@ describe('decideHookPolicy — fail open, always', () => {
     for (const event of ['PostToolUse', 'UserPromptSubmit', 'Stop', 'SessionStart'] as const) {
       const decision = decideHookPolicy(
         preToolUse({ event, toolName: 'Artifact' }),
-        session({ interactionChannel: 'telegram' }),
+        session({ interactionChannel: 'remote' }),
         DEFAULT_RULES,
       );
       expect(decision.decision).toBe('allow');
@@ -253,7 +253,7 @@ describe('decideHookPolicy — fail open, always', () => {
 
   it('matches tool names case-insensitively', () => {
     expect(
-      decideHookPolicy(preToolUse({ toolName: 'askuserquestion' }), session({ interactionChannel: 'telegram' }), DEFAULT_RULES)
+      decideHookPolicy(preToolUse({ toolName: 'askuserquestion' }), session({ interactionChannel: 'remote' }), DEFAULT_RULES)
         .decision,
     ).toBe('deny');
   });
@@ -262,7 +262,7 @@ describe('decideHookPolicy — fail open, always', () => {
 describe('decideHookPolicy — purity', () => {
   it('returns the same decision for the same inputs', () => {
     const event = preToolUse({ toolName: 'AskUserQuestion' });
-    const info = session({ interactionChannel: 'telegram' });
+    const info = session({ interactionChannel: 'remote' });
 
     const first = decideHookPolicy(event, info, DEFAULT_RULES);
     const second = decideHookPolicy(event, info, DEFAULT_RULES);
