@@ -918,10 +918,9 @@ export async function callMcpTool(
         return service.getTelegramStatus();
       case 'chat_send':
       case 'telegram_chat': {
-        // One handler, two names: chat_send is the transport-neutral name and
-        // telegram_chat is its long-standing alias. Both fan out through the
-        // ChatBroker to every registered surface. Route replies to the
-        // authenticated caller's own session topic. The only trustworthy
+        // Resolve the caller once for both names. chat_send goes through the
+        // neutral chat service; telegram_chat retains its Telegram policy wrapper.
+        // Both routes address the authenticated caller's own session topic. The only trustworthy
         // identity is the server-derived authContext.sessionId (from the
         // X-Helm-Session-Id header / session token). An explicit args.sessionId UUID
         // is accepted as a fallback for global-token callers, but resolving by NAME is
@@ -939,7 +938,9 @@ export async function callMcpTool(
         }
         const message = asString(args.message, 'message is required');
         const filePath = typeof args.filePath === 'string' ? args.filePath : undefined;
-        return service.sendTelegramChat(sessionRef, message, filePath);
+        return name === 'chat_send'
+          ? service.sendChat(sessionRef, message, filePath)
+          : service.sendTelegramChat(sessionRef, message, filePath);
       }
       case 'telegram_send_voice': {
         // Mirror telegram_chat's identity resolution: route to the authenticated

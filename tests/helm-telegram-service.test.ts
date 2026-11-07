@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HelmTelegramService } from '../src/mcp/services/helm-telegram-service';
+import { HelmChatService } from '../src/mcp/services/helm-chat-service.js';
 import { ChatBroker } from '../src/session/chat/chat-broker.js';
 import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
 import type { TelegramBridge, TelegramSendToUserInput, TelegramSendToUserResult } from '../src/types/telegram-channel.js';
@@ -73,7 +74,8 @@ function makeService(caps: Partial<TelegramCapabilities>, bridge: FakeBridge | n
     ffmpeg: false,
     ...caps,
   }) as any;
-  const svc = new HelmTelegramService(fakeConfigLoader, fakeSessionManager, detector);
+  const chatService = new HelmChatService(fakeConfigLoader, fakeSessionManager);
+  const svc = new HelmTelegramService(fakeConfigLoader, fakeSessionManager, detector, chatService);
   if (bridge) svc.setTelegramBridge(bridge);
   return svc;
 }
@@ -153,7 +155,7 @@ describe('HelmTelegramService.sendTelegramVoice', () => {
   });
 });
 
-describe('HelmTelegramService.sendTelegramChat usage badge', () => {
+describe('HelmChatService.sendChat usage badge', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -176,7 +178,7 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
   }
 
   /** The service over a real broker with one recording chat surface. */
-  function chatService(session: Record<string, unknown>, cliTypes: Record<string, { contextWindow?: number; contextLimits?: { amber: number; red: number } }> = {}) {
+  function makeChatService(session: Record<string, unknown>, cliTypes: Record<string, { contextWindow?: number; contextLimits?: { amber: number; red: number } }> = {}) {
     const sent: ChatOutboundMessage[] = [];
     const broker = new ChatBroker();
     broker.register({
@@ -187,24 +189,23 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
         return { sent: true };
       },
     });
-    const svc = new HelmTelegramService(
+    const service = new HelmChatService(
       { ...fakeConfigLoader, getCliTypeEntry: (id: string) => cliTypes[id] } as any,
       { getSession: (id: string) => (id === session.id ? session : null) } as any,
-      new FakeCapabilityDetector({ available: true, openwhisper: false, piper: false, ffmpeg: false }) as any,
     );
-    svc.setChatBroker(broker);
-    return { svc, sent };
+    service.setChatBroker(broker);
+    return { service, sent };
   }
 
   it('fills a CLI session\'s reply with the context size from its transcript', async () => {
-    const { svc, sent } = chatService(cliSession(60_000));
-    expect(await svc.sendTelegramChat('cli-1', 'done')).toEqual({ sent: true });
+    const { service, sent } = makeChatService(cliSession(60_000));
+    expect(await service.sendChat('cli-1', 'done')).toEqual({ sent: true });
     expect(sent[0].usage).toEqual({ contextTokens: 60_000 });
   });
 
   it('adds the CLI type\'s configured window when the transcript names none', async () => {
-    const { svc, sent } = chatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
-    await svc.sendTelegramChat('cli-1', 'done');
+    const { service, sent } = makeChatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
+    await service.sendChat('cli-1', 'done');
     expect(sent[0].usage).toEqual({ contextTokens: 60_000, contextWindow: 200_000, contextAmber: 150_000, contextRed: 180_000 });
   });
 
@@ -218,38 +219,105 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
         info: { last_token_usage: { total_tokens: 125_000 }, model_context_window: 250_000 },
       },
     }));
-    const { svc, sent } = chatService(
+    const { service, sent } = makeChatService(
       { id: 'cli-1', name: 'Codex', cliType: 'codex', cliTranscriptPath },
       { codex: { contextWindow: 200_000 } },
     );
 
-    await svc.sendTelegramChat('cli-1', 'done');
+    await service.sendChat('cli-1', 'done');
     expect(sent[0].usage).toEqual({ contextTokens: 125_000, contextWindow: 250_000, contextAmber: 187_500, contextRed: 225_000 });
   });
 
   it('keeps the usage an API session passed rather than reading a transcript', async () => {
-    const { svc, sent } = chatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
-    await svc.sendTelegramChat('cli-1', 'done', undefined, { contextTokens: 1234, toolCalls: 2 });
+    const { service, sent } = makeChatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
+    await service.sendChat('cli-1', 'done', undefined, { contextTokens: 1234, toolCalls: 2 });
     expect(sent[0].usage).toEqual({ contextTokens: 1234, toolCalls: 2, contextWindow: 200_000, contextAmber: 150_000, contextRed: 180_000 });
   });
 
   it('preserves API tool-call usage when the reported context count is zero', async () => {
     const apiSession = { id: 'cli-1', name: 'API', cliType: 'api', apiTool: true };
-    const { svc, sent } = chatService(apiSession, { api: { contextWindow: 200_000 } });
+    const { service, sent } = makeChatService(apiSession, { api: { contextWindow: 200_000 } });
 
-    await svc.sendTelegramChat('cli-1', 'done', undefined, { contextTokens: 0, toolCalls: 2 });
+    await service.sendChat('cli-1', 'done', undefined, { contextTokens: 0, toolCalls: 2 });
     expect(sent[0].usage).toEqual({ contextTokens: 0, toolCalls: 2, contextWindow: 200_000, contextAmber: 150_000, contextRed: 180_000 });
   });
 
   it('sends the CLI type’s manual amber/red limits even with no window known', async () => {
-    const { svc, sent } = chatService(cliSession(60_000), { claude: { contextLimits: { amber: 50_000, red: 80_000 } } });
-    await svc.sendTelegramChat('cli-1', 'done');
+    const { service, sent } = makeChatService(cliSession(60_000), { claude: { contextLimits: { amber: 50_000, red: 80_000 } } });
+    await service.sendChat('cli-1', 'done');
     expect(sent[0].usage).toEqual({ contextTokens: 60_000, contextAmber: 50_000, contextRed: 80_000 });
   });
 
   it('still sends, without a badge, when the session has no transcript', async () => {
-    const { svc, sent } = chatService(cliSession(null), { claude: { contextWindow: 200_000 } });
-    expect(await svc.sendTelegramChat('cli-1', 'done')).toEqual({ sent: true });
+    const { service, sent } = makeChatService(cliSession(null), { claude: { contextWindow: 200_000 } });
+    expect(await service.sendChat('cli-1', 'done')).toEqual({ sent: true });
     expect(sent[0]).toEqual({ sessionId: 'cli-1', text: 'done' });
+  });
+});
+
+describe('HelmTelegramService.sendTelegramChat limits and delegation', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'helm-chat-limits-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function makeTelegramChat() {
+    const configLoader = { ...fakeConfigLoader, getCliTypeEntry: () => undefined } as any;
+    const session = { id: 'sess-1', name: 'Alpha', cliType: 'claude' };
+    const sessionManager = {
+      getSession: (id: string) => id === session.id ? session : null,
+      getAllSessions: () => [session],
+    } as any;
+    const chatService = new HelmChatService(configLoader, sessionManager);
+    const sent: ChatOutboundMessage[] = [];
+    const broker = new ChatBroker();
+    broker.register({
+      provider: 'recorder',
+      isAvailable: () => true,
+      sendToSession: async message => { sent.push(message); return { sent: true }; },
+    });
+    chatService.setChatBroker(broker);
+    const telegramService = new HelmTelegramService(
+      configLoader,
+      sessionManager,
+      new FakeCapabilityDetector({ available: true, openwhisper: false, piper: false, ffmpeg: false }),
+      chatService,
+    );
+    return { telegramService, sent };
+  }
+
+  it('delegates an accepted Telegram alias send to the neutral chat service', async () => {
+    const { telegramService, sent } = makeTelegramChat();
+
+    expect(await telegramService.sendTelegramChat('sess-1', 'hello')).toEqual({ sent: true });
+    expect(sent).toEqual([{ sessionId: 'sess-1', text: 'hello' }]);
+  });
+
+  it('keeps the Telegram caption limit in the Telegram wrapper', async () => {
+    const { telegramService, sent } = makeTelegramChat();
+    const filePath = join(dir, 'small.txt');
+    writeFileSync(filePath, 'small');
+
+    const result = await telegramService.sendTelegramChat('sess-1', 'x'.repeat(1025), filePath);
+
+    expect(result).toMatchObject({ sent: false, reason: expect.stringContaining('1024 characters') });
+    expect(sent).toHaveLength(0);
+  });
+
+  it('keeps the Telegram attachment size limit in the Telegram wrapper', async () => {
+    const { telegramService, sent } = makeTelegramChat();
+    const filePath = join(dir, 'large.bin');
+    writeFileSync(filePath, '');
+    truncateSync(filePath, 50 * 1024 * 1024 + 1);
+
+    const result = await telegramService.sendTelegramChat('sess-1', 'see attached', filePath);
+
+    expect(result).toMatchObject({ sent: false, reason: expect.stringContaining('Telegram limit is 50MB') });
+    expect(sent).toHaveLength(0);
   });
 });

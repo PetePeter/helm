@@ -30,6 +30,7 @@ import { HelmPlanService } from './services/helm-plan-service.js';
 import { HelmPlanSequenceService, type PlanSequenceMemberFields } from './services/helm-plan-sequence-service.js';
 import { HelmPlanAttachmentService } from './services/helm-plan-attachment-service.js';
 import { HelmContextService } from './services/helm-context-service.js';
+import { HelmChatService } from './services/helm-chat-service.js';
 import { HelmTelegramService } from './services/helm-telegram-service.js';
 import { HelmSchedulerService } from './services/helm-scheduler-service.js';
 import { HelmProjectService } from './services/helm-project-service.js';
@@ -320,6 +321,7 @@ export class HelmControlService extends EventEmitter {
   private readonly planSequenceService: HelmPlanSequenceService;
   private readonly contextService: HelmContextService;
   private readonly planAttachmentService: HelmPlanAttachmentService;
+  private readonly chatService: HelmChatService;
   private readonly telegramService: HelmTelegramService;
   private phoneRinger: ((sessionId: string, reason: string) => boolean) | null = null;
   private callTransferrer: ((fromSessionId: string, toSessionId: string, line: string) => boolean) | null = null;
@@ -466,7 +468,8 @@ export class HelmControlService extends EventEmitter {
     this.contextService = new HelmContextService(this.contextManager, planManager, configLoader);
     this.planAttachmentService = new HelmPlanAttachmentService(planManager, attachmentManager);
     this.capabilityDetector = new CapabilityDetector(configLoader);
-    this.telegramService = new HelmTelegramService(configLoader, sessionManager, this.capabilityDetector);
+    this.chatService = new HelmChatService(configLoader, sessionManager);
+    this.telegramService = new HelmTelegramService(configLoader, sessionManager, this.capabilityDetector, this.chatService);
     this.schedulerService = schedulerManager
       ? new HelmSchedulerService(schedulerManager, configLoader, projectStore, (sessionId) => {
         const session = sessionManager.getSession(sessionId);
@@ -502,8 +505,9 @@ export class HelmControlService extends EventEmitter {
     this.telegramService.setNotificationManager(nm);
   }
 
-  /** Wire chat fan-out so `telegram_chat` reaches every registered surface. */
+  /** Wire broker fan-out for generic text sends and Telegram voice sends. */
   setChatBroker(broker: import('../session/chat/chat-broker.js').ChatBroker | null): void {
+    this.chatService.setChatBroker(broker);
     this.telegramService.setChatBroker(broker);
   }
 
@@ -1947,6 +1951,15 @@ export class HelmControlService extends EventEmitter {
 
   async closeTelegramChannel(channelId: string): Promise<TelegramChannel> {
     return this.telegramService.closeTelegramChannel(channelId);
+  }
+
+  async sendChat(
+    sessionRef: string,
+    message: string,
+    filePath?: string,
+    usage?: ChatTurnUsage,
+  ): Promise<{ sent: boolean; reason?: string }> {
+    return this.chatService.sendChat(sessionRef, message, filePath, usage);
   }
 
   async sendTelegramChat(

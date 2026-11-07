@@ -509,7 +509,7 @@ export function registerIPCHandlers(
   // Tools dispatch through the MCP server's own path under the session's identity.
   const apiSessionHost = new ApiSessionHost({
     dispatchTool: (name, args, auth) => localhostMcpServer.dispatchForPeer(name, args, auth),
-    postChat: (sessionId, message, usage) => helmControlService.sendTelegramChat(sessionId, message, undefined, usage),
+    postChat: (sessionId, message, usage) => helmControlService.sendChat(sessionId, message, undefined, usage),
     createMemory: (sessionId, input) => helmControlService.createMemory(sessionId, input),
     linkMemory: (sessionId, fromId, toId) => { helmControlService.linkMemory(sessionId, fromId, toId); },
     onPendingSubagents: (sessionId, count) => {

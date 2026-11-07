@@ -14,11 +14,10 @@ import type { ChatBroker } from '../../session/chat/chat-broker.js';
 import type { ChatOutboundMessage, ChatTurnUsage } from '../../session/chat/chat-bridge.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
 import type { CapabilityDetector } from '../../session/capability-detector.js';
-import { resolveSessionContextSize } from '../../session/context-size.js';
 import { validateMobileFriendlyTelegramText } from '../../telegram/utils.js';
 import { PiperTts } from '../../voice/piper-tts.js';
 import { getTempDir } from '../../utils/app-paths.js';
-import { resolveContextLimits } from '../../session/context-limits.js';
+import { inspectChatAttachment, type HelmChatService } from './helm-chat-service.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 
@@ -35,6 +34,7 @@ export class HelmTelegramService {
     private readonly configLoader: ConfigLoader,
     private readonly sessionManager: SessionManager,
     private readonly capabilityDetector: CapabilityDetector,
+    private readonly chatService: HelmChatService,
   ) {}
 
   setTelegramBridge(bridge: TelegramBridge | null): void {
@@ -46,10 +46,8 @@ export class HelmTelegramService {
   }
 
   /**
-   * Wire the fan-out. Once a broker is set, `telegram_chat` and
-   * `telegram_send_voice` reach EVERY registered chat surface, not just
-   * Telegram. The MCP tool names are unchanged on purpose — a CLI keeps calling
-   * what it always called and the extra surfaces appear behind it.
+   * Wire the legacy Telegram voice path to every registered chat surface.
+   * Text sends are delegated to HelmChatService.
    */
   setChatBroker(broker: ChatBroker | null): void {
     this.chatBroker = broker;
@@ -133,21 +131,11 @@ export class HelmTelegramService {
     filePath?: string,
     usage?: ChatTurnUsage,
   ): Promise<{ sent: boolean; reason?: string }> {
-    const unreachable = this.noChatSurface();
-    if (unreachable) return unreachable;
     if (filePath) {
-      if (!path.isAbsolute(filePath)) {
-        return { sent: false, reason: 'File path must be absolute' };
-      }
-      if (!fs.existsSync(filePath)) {
-        return { sent: false, reason: `File not found: ${filePath}` };
-      }
-      const stats = fs.statSync(filePath);
-      if (!stats.isFile()) {
-        return { sent: false, reason: `Not a file: ${filePath}` };
-      }
-      if (stats.size > 50 * 1024 * 1024) {
-        const mb = (stats.size / (1024 * 1024)).toFixed(1);
+      const attachment = inspectChatAttachment(filePath);
+      if (!attachment.valid) return { sent: false, reason: attachment.reason };
+      if (attachment.size > 50 * 1024 * 1024) {
+        const mb = (attachment.size / (1024 * 1024)).toFixed(1);
         return { sent: false, reason: `File too large (${mb}MB). Telegram limit is 50MB.` };
       }
       if (message.length > 1024) {
@@ -156,59 +144,7 @@ export class HelmTelegramService {
     } else {
       validateMobileFriendlyTelegramText(message);
     }
-    // Telegram replies are routed by session ID only — never by name. The dispatcher
-    // guarantees sessionRef is the verified caller's UUID (authContext or explicit
-    // sessionId). Using getSession (id-only) instead of findSession avoids any
-    // name-resolution fallback that could mis-route a reply to the wrong topic.
-    const session = this.sessionManager.getSession(sessionRef);
-    if (!session) return { sent: false, reason: `Session not found by ID: ${sessionRef}` };
-    const badge = this.usageBadge(session, usage);
-    return this.fanOut({ sessionId: session.id, text: message, ...(filePath ? { filePath } : {}), ...(badge ? { usage: badge } : {}) });
-  }
-
-  /**
-   * The context-size badge for a reply. An API tool hands its own usage in; a
-   * CLI cannot, so its is read from the transcript its hooks reported. The
-   * window comes with the usage when the CLI logs one (Codex), else from the
-   * CLI type's `contextWindow`. The amber/red limits ride along for the phone's graph.
-   */
-  private usageBadge(session: SessionInfo, reported: ChatTurnUsage | undefined): ChatTurnUsage | undefined {
-    const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
-    const usage = this.contextUsage(session, reported, cliEntry);
-    const limits = usage && resolveContextLimits(cliEntry, usage.contextWindow);
-    return limits ? { ...usage, contextAmber: limits.amber, contextRed: limits.red } : usage;
-  }
-
-  private contextUsage(
-    session: SessionInfo,
-    reported: ChatTurnUsage | undefined,
-    cliEntry: ReturnType<ConfigLoader['getCliTypeEntry']>,
-  ): ChatTurnUsage | undefined {
-    if (!reported && session.contextUsage?.source === 'statusline') {
-      return {
-        contextTokens: session.contextUsage.tokens,
-        ...(session.contextUsage.window !== undefined ? { contextWindow: session.contextUsage.window } : {}),
-      };
-    }
-    if (reported) {
-      const contextWindow = reported.contextWindow ?? cliEntry?.contextWindow;
-      return contextWindow ? { ...reported, contextWindow } : reported;
-    }
-
-    const context = resolveSessionContextSize({
-      cliTranscriptPath: session.cliTranscriptPath,
-      provider: cliEntry?.provider,
-      apiTool: session.apiTool,
-      comfyUiTool: session.comfyUiTool,
-      remote: session.remote,
-    }, {
-      contextWindow: cliEntry?.contextWindow,
-    });
-    if (!context.known) return undefined;
-    return {
-      contextTokens: context.tokens,
-      ...(context.window !== undefined ? { contextWindow: context.window } : {}),
-    };
+    return this.chatService.sendChat(sessionRef, message, filePath, usage);
   }
 
   /**

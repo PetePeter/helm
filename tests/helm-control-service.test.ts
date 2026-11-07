@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HelmControlService, parseSubmitSuffix } from '../src/mcp/helm-control-service.js';
 import { getAvailableTools } from '../src/mcp/guides/session-info-guide.js';
 import { parseSessionAuthToken } from '../src/mcp/session-auth.js';
+import { ChatBroker } from '../src/session/chat/chat-broker.js';
+import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
 import { SkillManager } from '../src/session/skill-manager.js';
 import { SkillAnalyticsManager } from '../src/session/skill-analytics-manager.js';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
@@ -1278,61 +1280,50 @@ describe('HelmControlService telegram channels', () => {
     expect(JSON.stringify(status)).not.toContain('botToken');
   });
 
-  it('sends mobile-friendly messages through the bridge via sendTelegramChat', async () => {
-    const { service, sessionManager } = makeService();
-    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
-      id: 's1',
-      name: 'Claude',
-      cliType: 'claude-code',
-      workingDir: '/work',
+  it('sends chat through the neutral broker facade', async () => {
+    const { service } = makeService();
+    const sent: ChatOutboundMessage[] = [];
+    const broker = new ChatBroker();
+    broker.register({
+      provider: 'recorder',
+      isAvailable: () => true,
+      sendToSession: async message => { sent.push(message); return { sent: true }; },
     });
-    const bridge = {
-      isRunning: vi.fn(() => true),
-      listChannels: vi.fn(() => []),
-      closeChannel: vi.fn(),
-      sendToUser: vi.fn(async () => ({ sent: true })),
-    };
-    service.setTelegramBridge(bridge);
+    service.setChatBroker(broker);
 
-    const result = await service.sendTelegramChat('s1', 'Need a quick decision?');
+    const result = await service.sendChat('s1', 'Need a quick decision?');
 
-    expect(bridge.sendToUser).toHaveBeenCalledWith({ sessionId: 's1', text: 'Need a quick decision?' });
+    expect(sent).toEqual([{ sessionId: 's1', text: 'Need a quick decision?' }]);
     expect(result.sent).toBe(true);
   });
 
-  it('routes telegram by session ID only, never by name', async () => {
+  it('routes chat by session ID only, never by name', async () => {
     const { service, sessionManager } = makeService();
     // getSession resolves the UUID only; a session name does not resolve to a session.
     (sessionManager.getSession as ReturnType<typeof vi.fn>).mockImplementation((ref: string) =>
       ref === 's1' ? { id: 's1', name: 'dup-name', cliType: 'claude-code', workingDir: '/work' } : undefined,
     );
-    const bridge = {
-      isRunning: vi.fn(() => true),
-      listChannels: vi.fn(() => []),
-      closeChannel: vi.fn(),
-      sendToUser: vi.fn(async () => ({ sent: true })),
-    };
-    service.setTelegramBridge(bridge);
+    const sent: ChatOutboundMessage[] = [];
+    const broker = new ChatBroker();
+    broker.register({
+      provider: 'recorder',
+      isAvailable: () => true,
+      sendToSession: async message => { sent.push(message); return { sent: true }; },
+    });
+    service.setChatBroker(broker);
 
-    const byId = await service.sendTelegramChat('s1', 'by id');
+    const byId = await service.sendChat('s1', 'by id');
     expect(byId.sent).toBe(true);
-    expect(bridge.sendToUser).toHaveBeenCalledWith({ sessionId: 's1', text: 'by id' });
+    expect(sent).toEqual([{ sessionId: 's1', text: 'by id' }]);
 
     // Passing a name must NOT route anywhere — it is rejected, never resolved.
-    const byName = await service.sendTelegramChat('dup-name', 'by name');
+    const byName = await service.sendChat('dup-name', 'by name');
     expect(byName.sent).toBe(false);
     expect(byName.reason).toContain('not found by ID');
   });
 
   it('rejects wide messages in sendTelegramChat', async () => {
     const { service } = makeService();
-
-    service.setTelegramBridge({
-      isRunning: vi.fn(() => true),
-      listChannels: vi.fn(() => []),
-      closeChannel: vi.fn(),
-      sendToUser: vi.fn(),
-    });
 
     await expect(service.sendTelegramChat('s1', 'x'.repeat(141))).rejects.toThrow('140 characters');
   });
@@ -1345,19 +1336,16 @@ describe('HelmControlService telegram channels', () => {
       cliType: 'claude-code',
       workingDir: '/work',
     });
-    const bridge = {
-      isRunning: vi.fn(() => true),
-      listChannels: vi.fn(() => []),
-      closeChannel: vi.fn(),
-      sendToUser: vi.fn(async () => ({ sent: true })),
-    };
-    service.setTelegramBridge(bridge);
+    const bridge = { sendToSession: vi.fn(async () => ({ sent: true })) };
+    const broker = new ChatBroker();
+    broker.register({ provider: 'recorder', isAvailable: () => true, ...bridge });
+    service.setChatBroker(broker);
 
     const result = await service.sendTelegramChat('s1', 'see attached', '/nonexistent/file.txt');
 
     expect(result.sent).toBe(false);
     expect(result.reason).toContain('File not found');
-    expect(bridge.sendToUser).not.toHaveBeenCalled();
+    expect(bridge.sendToSession).not.toHaveBeenCalled();
   });
 
   it('getAvailableTools lists exactly 4 telegram tools and no removed tools', () => {

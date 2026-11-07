@@ -18,19 +18,23 @@ function deps(service: unknown): McpToolDispatcherDeps {
 }
 
 function fakeChatService() {
-  return { sendTelegramChat: vi.fn(async () => ({ ok: true })) };
+  return {
+    sendChat: vi.fn(async () => ({ ok: true })),
+    sendTelegramChat: vi.fn(async () => ({ ok: true })),
+  };
 }
 
 describe('chat_send dispatch', () => {
-  it('reaches the same service method as telegram_chat with the same args', async () => {
+  it('routes chat_send through the neutral service and keeps telegram_chat as an alias', async () => {
     const service = fakeChatService();
 
     await callMcpTool(deps(service), 'chat_send', { message: 'Need a decision?' }, { sessionId: 'caller-session' });
     await callMcpTool(deps(service), 'telegram_chat', { message: 'Need a decision?' }, { sessionId: 'caller-session' });
 
-    expect(service.sendTelegramChat).toHaveBeenCalledTimes(2);
-    expect(service.sendTelegramChat).toHaveBeenNthCalledWith(1, 'caller-session', 'Need a decision?', undefined);
-    expect(service.sendTelegramChat).toHaveBeenNthCalledWith(2, 'caller-session', 'Need a decision?', undefined);
+    expect(service.sendChat).toHaveBeenCalledTimes(1);
+    expect(service.sendChat).toHaveBeenCalledWith('caller-session', 'Need a decision?', undefined);
+    expect(service.sendTelegramChat).toHaveBeenCalledTimes(1);
+    expect(service.sendTelegramChat).toHaveBeenCalledWith('caller-session', 'Need a decision?', undefined);
   });
 
   it('forwards filePath and accepts an explicit sessionId for global-token callers', async () => {
@@ -43,7 +47,7 @@ describe('chat_send dispatch', () => {
       {},
     );
 
-    expect(service.sendTelegramChat).toHaveBeenCalledWith('s7', 'See log', 'X:\\tmp\\log.txt');
+    expect(service.sendChat).toHaveBeenCalledWith('s7', 'See log', 'X:\\tmp\\log.txt');
   });
 
   it('rejects with a chat_send-prefixed error when no session identity exists', async () => {
@@ -52,6 +56,7 @@ describe('chat_send dispatch', () => {
     await expect(
       callMcpTool(deps(service), 'chat_send', { message: 'hi' }, {}),
     ).rejects.toThrow('chat_send could not determine your session');
+    expect(service.sendChat).not.toHaveBeenCalled();
     expect(service.sendTelegramChat).not.toHaveBeenCalled();
   });
 
@@ -61,6 +66,7 @@ describe('chat_send dispatch', () => {
     await expect(
       callMcpTool(deps(service), 'telegram_chat', { message: 'hi' }, {}),
     ).rejects.toThrow('telegram_chat could not determine your session');
+    expect(service.sendTelegramChat).not.toHaveBeenCalled();
   });
 });
 
