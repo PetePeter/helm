@@ -361,6 +361,8 @@ export const PRELOAD_API_DOMAINS = {
     'systemOpenExternalUrl',
   ],
   voice: [
+    'voiceGetConfig',
+    'voiceSetConfig',
     'voiceTranscribe',
     'voiceSpeak',
     'voiceAsk',

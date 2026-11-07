@@ -5,19 +5,22 @@ import { CapabilityDetector } from '../src/session/capability-detector';
 // Fake ConfigLoader for testing
 class FakeConfigLoader {
   private telegramConfig: any;
+  private voiceConfig: any;
 
-  constructor(config: any = {}) {
+  constructor(config: any = {}, voiceConfig: any = {}) {
     this.telegramConfig = {
       enabled: true,
-      openWhisprPath: '',
-      piperPath: '',
-      ffmpegPath: '',
       ...config,
     };
+    this.voiceConfig = voiceConfig;
   }
 
   getTelegramConfig() {
     return this.telegramConfig;
+  }
+
+  getVoiceConfig() {
+    return this.voiceConfig;
   }
 
   setTelegramConfig(updates: any) {
@@ -228,6 +231,7 @@ describe('CapabilityDetector', () => {
       vi.mocked(fs.accessSync).mockReturnValue(undefined);
       fakeConfigLoader = new FakeConfigLoader({
         enabled: false,
+      }, {
         ffmpegPath: '/usr/bin/ffmpeg',
         piperPath: '/usr/bin/piper',
         openWhisprPath: '',

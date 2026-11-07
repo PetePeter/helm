@@ -29,6 +29,7 @@ import { getActiveSessionDir } from './stores/app.js';
 import { onViewChange, type MainView as ViewName } from './main-view/main-view-manager.js';
 import { useToast } from './composables/useToast.js';
 import { useSettingsController } from './composables/useSettingsController.js';
+import { useVoiceSettingsController } from './composables/useVoiceSettingsController.js';
 import { useInputRouter } from './composables/useInputRouter.js';
 import { useSidebarController } from './composables/useSidebarController.js';
 import { useSessionRenameFocusGuard } from './composables/useSessionRenameFocusGuard.js';
@@ -453,6 +454,7 @@ const {
   },
   openBindingEditor: (button, profileId, binding) => onEditBinding(button, profileId, binding),
 });
+const { settingsVoiceConfig, loadVoiceConfig, onVoiceUpdateField } = useVoiceSettingsController();
 const peerSessionPanes = usePeerSessionPanes(dockWorkspace);
 
 const firstRunOnboarding = useFirstRunOnboarding({
@@ -758,6 +760,7 @@ function openSettingsTab(tabId: string): void {
   navStore.openSettings();
   settingsTab.value = resolveSettingsPage(tabId).id;
   void loadSettingsData();
+  void loadVoiceConfig();
 }
 
 watch(settingsTab, () => {
@@ -1226,8 +1229,8 @@ onUnmounted(() => {
               />
               <VoiceTab
                 v-else-if="activeTab === 'voice'"
-                :config="settingsTelegramConfig"
-                @update-field="onTelegramUpdateField"
+                :config="settingsVoiceConfig"
+                @update-field="onVoiceUpdateField"
               />
               <McpTab
                 v-else-if="activeTab === 'mcp'"

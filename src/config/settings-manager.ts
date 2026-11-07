@@ -3,9 +3,10 @@ import * as path from 'path';
 import * as YAML from 'yaml';
 import logger from '../utils/logger.js';
 import { normalizeMcpPort } from './loader-helpers.js';
-import type { FleetConfig, McpConfig, MobileLanConfig, OperatorConfig, SettingsConfig, TelegramConfig } from './loader.js';
+import type { FleetConfig, McpConfig, MobileLanConfig, OperatorConfig, SettingsConfig, TelegramSettingsConfig, VoiceConfig } from './loader.js';
+import { DEFAULT_VOICE_CONFIG, VOICE_CONFIG_FIELDS } from './voice-config-manager.js';
 
-export const DEFAULT_TELEGRAM_CONFIG: TelegramConfig = {
+export const DEFAULT_TELEGRAM_CONFIG: TelegramSettingsConfig = {
   enabled: false,
   autoStart: false,
   botToken: '',
@@ -17,11 +18,6 @@ export const DEFAULT_TELEGRAM_CONFIG: TelegramConfig = {
   notifyOnIdle: true,
   notifyOnError: true,
   notifyOnCrash: true,
-  openWhisprPath: '',
-  openWhisprModelPath: '',
-  piperPath: '',
-  piperVoicePath: '',
-  ffmpegPath: '',
 };
 
 export const DEFAULT_MCP_CONFIG: McpConfig = {
@@ -70,11 +66,14 @@ export class SettingsManager {
       throw new Error('Invalid settings.yaml: could not parse');
     }
     const needsOnboardingMigration = settings.onboardingCompleted === undefined;
+    const legacyTelegram = settings.telegram as (TelegramSettingsConfig & Partial<VoiceConfig>) | undefined;
+    const needsVoiceMigration = VOICE_CONFIG_FIELDS.some(field =>
+      !!legacyTelegram && Object.prototype.hasOwnProperty.call(legacyTelegram, field));
     const normalized = this.normalize(settings);
     // Bundled fresh-install settings explicitly contain false. An older user
     // settings file does not, so migrate it as completed rather than showing a
     // first-run wizard to someone upgrading an established installation.
-    if (needsOnboardingMigration) this.write(normalized);
+    if (needsOnboardingMigration || needsVoiceMigration) this.write(normalized);
     return normalized;
   }
 
@@ -100,10 +99,25 @@ export class SettingsManager {
     if (settings.hapticFeedback === undefined) settings.hapticFeedback = true;
     if (settings.notifications === undefined) settings.notifications = true;
 
-    const savedTelegram = settings.telegram;
+    const savedTelegram = settings.telegram as (TelegramSettingsConfig & Partial<VoiceConfig>) | undefined;
+    const savedVoice = settings.voice as Partial<VoiceConfig> | undefined;
+    const voice = { ...DEFAULT_VOICE_CONFIG };
+    for (const field of VOICE_CONFIG_FIELDS) {
+      const current = savedVoice?.[field];
+      const legacy = savedTelegram?.[field];
+      voice[field] = typeof current === 'string'
+        ? current
+        : typeof legacy === 'string'
+          ? legacy
+          : DEFAULT_VOICE_CONFIG[field];
+    }
+    settings.voice = voice;
+
+    const telegramSettings = { ...(savedTelegram ?? {}) } as Record<string, unknown>;
+    for (const field of VOICE_CONFIG_FIELDS) delete telegramSettings[field];
     settings.telegram = {
       ...DEFAULT_TELEGRAM_CONFIG,
-      ...(savedTelegram ?? {}),
+      ...(telegramSettings as Partial<TelegramSettingsConfig>),
       autoStart: typeof savedTelegram?.autoStart === 'boolean'
         ? savedTelegram.autoStart
         : savedTelegram?.enabled === true,

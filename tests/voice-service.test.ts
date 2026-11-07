@@ -92,6 +92,7 @@ describe('VoiceService.transcribe', () => {
     const result = await service().transcribe(new Uint8Array([1]), 'audio/webm');
 
     expect(result).toEqual({ ok: false, error: expect.stringContaining('OpenWhispr') });
+    expect(result).toMatchObject({ error: expect.stringContaining('Settings → Voice') });
     expect(seenInputs).toEqual([]);
     expect(fs.readdirSync(tempDir)).toEqual([]);
   });

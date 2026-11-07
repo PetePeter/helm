@@ -16,6 +16,7 @@ import type { DreamingConfigResult, DreamingSettings } from '../../types/dreamin
 import type { KeyQueryResult, Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenQueryResult } from '../../session/time-tracker.js';
 import type { EstimateView } from '../../session/eta-stats.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
+import type { VoiceConfig } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry } from '../../mobile/mobile-chat-journal.js';
 import type { ChatUploadedAttachment } from '../../session/chat/chat-bridge.js';
@@ -1780,6 +1781,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
 
   // ---- voice (desktop hold-to-talk to the Helm operator) ---------------------
+
+  /** Read the shared local speech tool paths. */
+  voiceGetConfig: (): Promise<VoiceConfig> =>
+    ipcRenderer.invoke('voice:getConfig'),
+
+  /** Update shared local speech tool paths. */
+  voiceSetConfig: (updates: Partial<VoiceConfig>): Promise<{ ok: boolean; config?: VoiceConfig; error?: string }> =>
+    ipcRenderer.invoke('voice:setConfig', updates),
 
   /** Recorded clip → text via the shared OpenWhispr setup. */
   voiceTranscribe: (audio: Uint8Array, mimeType: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>

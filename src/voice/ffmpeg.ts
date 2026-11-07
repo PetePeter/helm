@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 export interface FfmpegResolveOptions {
-  /** Explicit path from Telegram settings (`ffmpegPath`). Takes precedence. */
+  /** Explicit path from the shared voice settings (`ffmpegPath`). Takes precedence. */
   ffmpegPath?: string;
   /** OpenWhispr install root; its bundled ffmpeg-static is the fallback. */
   openWhisprPath?: string;

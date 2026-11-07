@@ -65,7 +65,7 @@ export class CapabilityDetector {
    * binaries as Telegram but must not require the Telegram bot to be enabled.
    */
   getVoiceTools(): VoiceToolCapabilities {
-    const config = this.configLoader.getTelegramConfig();
+    const config = this.configLoader.getVoiceConfig();
     return {
       openwhisper: this.verifyToolPath(config?.openWhisprPath),
       piper: this.verifyToolPath(config?.piperPath),

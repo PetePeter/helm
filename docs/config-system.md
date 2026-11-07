@@ -109,7 +109,7 @@ profiles:
 
 ### voice-talk
 
-`{ action: 'voice-talk' }` — hold-to-talk to the Helm operator: press starts recording, release transcribes (OpenWhispr) and sends to the operator; replies are spoken (Piper). Needs the operator enabled and the OpenWhispr/Piper/ffmpeg paths set in Settings → Telegram (the Telegram bot itself need not be on). Not to be confused with `voice`, which only simulates a key for an external dictation app. See [voice-operator.md](voice-operator.md#desktop-voice).
+`{ action: 'voice-talk' }` — hold-to-talk to the Helm operator: press starts recording, release transcribes (OpenWhispr) and sends to the operator; replies are spoken (Piper). Needs the operator enabled and the OpenWhispr/Piper/ffmpeg paths set in Settings → Voice (the Telegram bot itself need not be on). Not to be confused with `voice`, which only simulates a key for an external dictation app. See [voice-operator.md](voice-operator.md#desktop-voice).
 
 ### voice-call
 

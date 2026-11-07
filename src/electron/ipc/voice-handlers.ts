@@ -8,9 +8,15 @@
  */
 import { ipcMain } from 'electron';
 import { logger } from '../../utils/logger.js';
+import type { VoiceConfig } from '../../config/loader.js';
 import type { VoiceResult, VoiceService } from '../../voice/voice-service.js';
+import { VOICE_CONFIG_FIELDS } from '../../config/voice-config-manager.js';
 
 export interface VoiceHandlerDeps {
+  config: {
+    getVoiceConfig: () => VoiceConfig;
+    setVoiceConfig: (updates: Partial<VoiceConfig>) => void;
+  };
   voiceService: Pick<VoiceService, 'transcribe' | 'speak'>;
   /** Deliver the user's spoken words to the operator. */
   ask: (text: string) => Promise<VoiceResult>;
@@ -19,6 +25,21 @@ export interface VoiceHandlerDeps {
 }
 
 export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
+  ipcMain.handle('voice:getConfig', () => deps.config.getVoiceConfig());
+
+  ipcMain.handle('voice:setConfig', (_event, updates: unknown) => {
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      return { ok: false, error: 'Invalid voice config' };
+    }
+    const safeUpdates: Partial<VoiceConfig> = {};
+    for (const field of VOICE_CONFIG_FIELDS) {
+      const value = (updates as Record<string, unknown>)[field];
+      if (typeof value === 'string') safeUpdates[field] = value;
+    }
+    deps.config.setVoiceConfig(safeUpdates);
+    return { ok: true, config: deps.config.getVoiceConfig() };
+  });
+
   ipcMain.handle('voice:transcribe', async (_event, audio: unknown, mimeType: unknown) => {
     if (!(audio instanceof Uint8Array) || typeof mimeType !== 'string') {
       return { ok: false, error: 'Invalid audio payload' };

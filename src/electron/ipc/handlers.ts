@@ -1491,8 +1491,9 @@ export function registerIPCHandlers(
     },
   }));
   setupVoiceHandlers({
+    config: configLoader,
     voiceService: new VoiceService({
-      getConfig: () => configLoader.getTelegramConfig(),
+      getConfig: () => configLoader.getVoiceConfig(),
       getTools: () => voiceTools.getVoiceTools(),
       tempDir: getTempDir(dirname ?? process.cwd()),
     }),

@@ -386,8 +386,9 @@ sequenceDiagram
 - **Shared modules.** `openwhispr-transcriber.ts`, `piper-tts.ts` and `ffmpeg.ts`
   moved from `src/telegram/` to `src/voice/`; Telegram imports them from there
   unchanged. Piper keeps its OGG/Opus output — Chromium plays it natively.
-- **Configuration.** The tool paths live in Settings → Voice (shared with
-  Telegram voice notes; still stored under the `telegram` config block).
+- **Configuration.** The tool paths live in the top-level `voice` settings
+  section and are edited in Settings → Voice. Telegram reads temporarily expose
+  the same paths while its consumers are removed in the follow-up plan.
   `CapabilityDetector.getVoiceTools()` checks them without requiring the bot to
   be enabled; a missing tool is a clear error, and nothing is spawned.
 - **Config boundary.** The recorded clip, its transcript and the synthesized

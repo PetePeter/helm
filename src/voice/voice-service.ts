@@ -18,7 +18,7 @@ import { logger } from '../utils/logger.js';
 
 export type VoiceTools = VoiceToolCapabilities;
 
-/** The voice slice of the Telegram settings, where the tool paths are configured. */
+/** The machine-level speech tool paths. */
 export interface VoiceToolConfig {
   openWhisprPath?: string;
   openWhisprModelPath?: string;
@@ -41,7 +41,7 @@ export interface VoiceServiceDeps {
   createTts?: (config: VoiceToolConfig, tmpDir: string) => VoiceSynthesizer;
 }
 
-const CONFIGURE_HINT = 'configure it in Settings → Telegram';
+const CONFIGURE_HINT = 'configure it in Settings → Voice';
 
 const EXTENSION_BY_MIME: Record<string, string> = {
   'audio/webm': '.webm',

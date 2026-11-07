@@ -44,10 +44,6 @@ export interface SettingsTelegramConfig {
   allowedUsers: string;
   notificationsEnabled: boolean;
   autoStart: boolean;
-  openWhisprPath: string;
-  piperPath: string;
-  piperVoicePath: string;
-  ffmpegPath: string;
 }
 
 export interface SettingsMcpConfig {
@@ -140,10 +136,6 @@ export function useSettingsController(options: {
     allowedUsers: '',
     notificationsEnabled: false,
     autoStart: false,
-    openWhisprPath: '',
-    piperPath: '',
-    piperVoicePath: '',
-    ffmpegPath: '',
   });
   const settingsTelegramBotRunning = ref(false);
   const settingsMcpConfig = ref<SettingsMcpConfig>({ enabled: false, port: 47373, authToken: '' });
@@ -322,10 +314,6 @@ export function useSettingsController(options: {
         allowedUsers: (tgConfig?.allowedUserIds || []).join(', '),
         notificationsEnabled: tgConfig?.enabled || false,
         autoStart: tgConfig?.autoStart || false,
-        openWhisprPath: tgConfig?.openWhisprPath || '',
-        piperPath: tgConfig?.piperPath || '',
-        piperVoicePath: tgConfig?.piperVoicePath || '',
-        ffmpegPath: tgConfig?.ffmpegPath || '',
       };
       settingsTelegramBotRunning.value = await telegramClient.telegramIsRunning();
     } catch {
@@ -335,10 +323,6 @@ export function useSettingsController(options: {
         allowedUsers: '',
         notificationsEnabled: false,
         autoStart: false,
-        openWhisprPath: '',
-        piperPath: '',
-        piperVoicePath: '',
-        ffmpegPath: '',
       };
       settingsTelegramBotRunning.value = false;
     }
@@ -676,28 +660,6 @@ export function useSettingsController(options: {
         const ids = String(value).split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
         await telegramClient.telegramSetConfig({ allowedUserIds: ids });
         settingsTelegramConfig.value.allowedUsers = String(value);
-      } else if (field === 'openWhisprPath') {
-        await telegramClient.telegramSetConfig({ openWhisprPath: String(value) });
-        settingsTelegramConfig.value.openWhisprPath = String(value);
-      } else if (field === 'piperPath') {
-        await telegramClient.telegramSetConfig({ piperPath: String(value) });
-        settingsTelegramConfig.value.piperPath = String(value);
-      } else if (field === 'piperVoicePath') {
-        await telegramClient.telegramSetConfig({ piperVoicePath: String(value) });
-        settingsTelegramConfig.value.piperVoicePath = String(value);
-      } else if (field === 'ffmpegPath') {
-        await telegramClient.telegramSetConfig({ ffmpegPath: String(value) });
-        settingsTelegramConfig.value.ffmpegPath = String(value);
-      }
-      // Voice capabilities are detected at MCP-connect time, so a path change here
-      // won't reach already-connected CLI clients until they reconnect.
-      const capabilityFields = ['ffmpegPath', 'piperPath', 'piperVoicePath', 'openWhisprPath', 'openWhisprModelPath'];
-      if (capabilityFields.includes(field)) {
-        useToast().addToast({
-          message: 'Voice capability changed — reconnect MCP clients (or restart Helm) to apply.',
-          type: 'info',
-          key: 'voice-capability-changed',
-        });
       }
     });
   }

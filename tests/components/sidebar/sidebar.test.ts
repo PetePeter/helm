@@ -1197,7 +1197,7 @@ describe('TelegramTab', () => {
 import VoiceTab from '../../../renderer/components/settings/pages/VoiceTab.vue';
 
 describe('VoiceTab', () => {
-  const config = { openWhisprPath: 'C:\ow', piperPath: 'piper.exe', piperVoicePath: 'v.onnx', ffmpegPath: 'ffmpeg.exe' };
+  const config = { openWhisprPath: 'C:\ow', openWhisprModelPath: 'model.bin', piperPath: 'piper.exe', piperVoicePath: 'v.onnx', ffmpegPath: 'ffmpeg.exe' };
 
   it('owns every speech tool path, prefilled from config', () => {
     const w = mount(VoiceTab, { props: { config } });

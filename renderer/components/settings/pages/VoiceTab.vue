@@ -2,18 +2,11 @@
 /**
  * VoiceTab.vue — speech tool paths (OpenWhispr STT, Piper TTS, ffmpeg).
  * Shared by every voice consumer (Telegram voice notes, operator PTT/calls),
- * so it lives in its own tab. The keys are still stored in the telegram
- * config block for backward compatibility.
+ * so it lives in its own settings section.
  */
 import { ref, watch } from 'vue';
 import { dialogClient } from '../../../ipc/clients.js';
-
-export interface VoiceConfig {
-  openWhisprPath: string;
-  piperPath: string;
-  piperVoicePath: string;
-  ffmpegPath: string;
-}
+import type { VoiceConfig } from '../../../../src/config/loader.js';
 
 type VoiceField = keyof VoiceConfig;
 
@@ -45,9 +38,11 @@ function immediateEmit(field: VoiceField): void {
 
 const EXE_FILTERS = [{ name: 'Executables', extensions: ['exe'] }, { name: 'All Files', extensions: ['*'] }];
 const VOICE_FILTERS = [{ name: 'Piper Voices', extensions: ['onnx'] }, { name: 'All Files', extensions: ['*'] }];
+const MODEL_FILTERS = [{ name: 'OpenWhispr Models', extensions: ['bin'] }, { name: 'All Files', extensions: ['*'] }];
 
 const FIELDS: { key: VoiceField; label: string; placeholder: string; filters?: typeof EXE_FILTERS }[] = [
   { key: 'openWhisprPath', label: 'OpenWhispr Path', placeholder: 'C:\\Program Files\\OpenWhispr' },
+  { key: 'openWhisprModelPath', label: 'OpenWhispr Model Path', placeholder: 'C:\\Users\\you\\.cache\\openwhispr\\whisper-models\\ggml-small.bin', filters: MODEL_FILTERS },
   { key: 'piperPath', label: 'Piper Path', placeholder: 'C:\\Users\\you\\AppData\\Local\\Programs\\piper\\piper\\piper.exe', filters: EXE_FILTERS },
   { key: 'piperVoicePath', label: 'Piper Voice Path', placeholder: 'C:\\Users\\you\\AppData\\Local\\Programs\\piper\\voices\\voice.onnx', filters: VOICE_FILTERS },
   { key: 'ffmpegPath', label: 'ffmpeg Path', placeholder: 'C:\\...\\ffmpeg.exe', filters: EXE_FILTERS },

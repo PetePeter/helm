@@ -48,6 +48,7 @@ import {
   SettingsManager,
 } from './settings-manager.js';
 import { TelegramConfigManager } from './telegram-config-manager.js';
+import { VoiceConfigManager } from './voice-config-manager.js';
 import { DEFAULT_SUGGESTION_SCORING, type SuggestionScoringWeights } from '../session/hooks/suggestion-scorer.js';
 import {
   REMINDER_IDS,
@@ -334,7 +335,15 @@ const DEFAULT_PLAN_FILTERS: PlanFilterConfig = {
   auto: 'either',
 };
 
-export interface TelegramConfig {
+export interface VoiceConfig {
+  openWhisprPath: string;
+  openWhisprModelPath: string;
+  piperPath: string;
+  piperVoicePath: string;
+  ffmpegPath: string;
+}
+
+export interface TelegramSettingsConfig {
   enabled: boolean;
   autoStart: boolean;
   botToken: string;
@@ -346,12 +355,10 @@ export interface TelegramConfig {
   notifyOnIdle: boolean;
   notifyOnError: boolean;
   notifyOnCrash: boolean;
-  openWhisprPath: string;
-  openWhisprModelPath: string;
-  piperPath: string;
-  piperVoicePath: string;
-  ffmpegPath: string;
 }
+
+/** Runtime projection retains legacy voice paths for Telegram consumers. */
+export interface TelegramConfig extends TelegramSettingsConfig, VoiceConfig {}
 
 export interface McpConfig {
   enabled: boolean;
@@ -435,7 +442,8 @@ export interface SettingsConfig {
   workspaceLayout?: unknown;
   /** Same contract, for the shared snap-out pop-out profile. */
   popoutWorkspaceLayout?: unknown;
-  telegram?: TelegramConfig;
+  telegram?: TelegramSettingsConfig;
+  voice?: VoiceConfig;
   mcp?: McpConfig;
   fleet?: FleetConfig;
   /**
@@ -590,6 +598,7 @@ export class ConfigLoader {
   private inputConfigStore: InputConfigStore;
   private settingsManager: SettingsManager;
   private telegramConfigManager: TelegramConfigManager;
+  private voiceConfigManager: VoiceConfigManager;
   private settings: SettingsConfig | null = null;
   private projectStore?: ProjectStore;
 
@@ -600,6 +609,10 @@ export class ConfigLoader {
     this.inputConfigStore = new InputConfigStore(configDir);
     this.settingsManager = new SettingsManager(configDir);
     this.telegramConfigManager = new TelegramConfigManager(
+      () => this.settings,
+      () => this.saveSettings(),
+    );
+    this.voiceConfigManager = new VoiceConfigManager(
       () => this.settings,
       () => this.saveSettings(),
     );
@@ -1136,12 +1149,22 @@ export class ConfigLoader {
 
   /** Get the current Telegram configuration. */
   getTelegramConfig(): TelegramConfig {
-    return this.telegramConfigManager.get();
+    return { ...this.telegramConfigManager.get(), ...this.getVoiceConfig() };
   }
 
   /** Update the Telegram configuration (partial merge). */
   setTelegramConfig(updates: Partial<TelegramConfig>): void {
     this.telegramConfigManager.set(updates);
+  }
+
+  /** Get the machine-level speech tool paths. */
+  getVoiceConfig(): VoiceConfig {
+    return this.voiceConfigManager.get();
+  }
+
+  /** Update machine-level speech tool paths. */
+  setVoiceConfig(updates: Partial<VoiceConfig>): void {
+    this.voiceConfigManager.set(updates);
   }
 
   /** Get the current localhost MCP configuration. */
