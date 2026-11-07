@@ -1,6 +1,6 @@
 package com.potatomotato.helm.data
 
-/** One context-size reading from a reply or the latest session row. */
+/** One context-size reading from a reply or a session-list observation. */
 data class ContextSample(val at: Long, val tokens: Long, val level: ContextLevel? = null)
 
 /** Token counts where the graph turns amber and red. */
@@ -24,29 +24,33 @@ data class ContextRing(
 )
 
 /**
- * The token-fill graph's model, built from the stats every reply already
- * carries (tokens, window, amber/red limits), plus the latest session-list
- * reading when available.
+ * The token-fill graph's model, built from reply stats and timestamped
+ * session-list observations inside the rolling row window.
  */
 object ContextGraph {
-    /** The list row's fixed span, so rows share one time scale. Mirrors the desktop row. */
+    /** The list row's rolling span. Mirrors the desktop row. */
     const val ROW_SPAN_MS = 2L * 60 * 60 * 1000
 
     fun fromThread(
         thread: List<ChatMessage>,
         latest: SessionContext? = null,
+        observations: List<ContextSample> = emptyList(),
         now: Long = System.currentTimeMillis(),
     ): ContextHistory? {
         val replies = thread.filter { !it.fromPhone && it.contextTokens != null }.sortedBy { it.at }
         val rowContext = latest?.takeIf { it.tokens > 0 }
-        if (replies.isEmpty() && rowContext == null) return null
+        val cutoff = now - ROW_SPAN_MS
+        val samples = replies
+            .filter { it.at in cutoff..now }
+            .map { ContextSample(it.at, it.contextTokens!!) } +
+            observations.filter { it.at in cutoff..now }
+        val windowedSamples = samples.sortedBy { it.at }
+        if (windowedSamples.isEmpty()) return null
         val window = rowContext?.window?.takeIf { it > 0 }
             ?: replies.lastOrNull { it.contextWindow != null && it.contextWindow > 0 }?.contextWindow
         val sent = replies.lastOrNull { it.contextAmber != null && it.contextRed != null }
-        val samples = replies.map { ContextSample(it.at, it.contextTokens!!) }.toMutableList()
-        rowContext?.let { samples += ContextSample(maxOf(now, samples.lastOrNull()?.at ?: now), it.tokens, it.level) }
         return ContextHistory(
-            samples = samples,
+            samples = windowedSamples,
             window = window,
             limits = sent?.let { ContextLimits(it.contextAmber!!, it.contextRed!!) } ?: autoLimits(window),
         )
@@ -106,16 +110,6 @@ object ContextGraph {
     }
 
     private fun compact(n: Long): String = if (n >= 1_000) "${Math.round(n / 1_000.0)}k" else "$n"
-
-    /** Clip to [from, to]; the prior level enters at the left edge and the latest runs out to [to]. */
-    fun window(samples: List<ContextSample>, from: Long, to: Long): List<ContextSample> {
-        val known = samples.filter { it.at <= to }
-        if (known.isEmpty()) return emptyList()
-        val before = known.lastOrNull { it.at < from }
-        val clipped = listOfNotNull(before?.let { ContextSample(from, it.tokens, it.level) }) + known.filter { it.at >= from }
-        val last = clipped.last()
-        return if (last.at < to) clipped + ContextSample(to, last.tokens, last.level) else clipped
-    }
 
     /** Where red sits on the ring, as a share of the circle (the auto rule's red/window). */
     const val RING_RED_AT = 0.9f

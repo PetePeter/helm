@@ -20,9 +20,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * Ordering is imposed here too, so the list cannot flicker when Helm happens to
  * enumerate sessions in a different order between two fetches.
  */
-class SessionRepository {
+class SessionRepository(
+    private val now: () -> Long = System::currentTimeMillis,
+) {
     private val _sessions = MutableStateFlow<List<HelmSession>>(emptyList())
     val sessions: StateFlow<List<HelmSession>> = _sessions.asStateFlow()
+
+    private val _contextObservations = MutableStateFlow<Map<String, List<ContextSample>>>(emptyMap())
+    val contextObservations: StateFlow<Map<String, List<ContextSample>>> = _contextObservations.asStateFlow()
 
     private val _reach = MutableStateFlow(Reach.Never)
 
@@ -45,10 +50,15 @@ class SessionRepository {
      * list that accumulates sessions the user closed hours ago.
      */
     fun applySnapshot(incoming: List<HelmSession>) {
+        applySnapshot(incoming, now())
+    }
+
+    private fun applySnapshot(incoming: List<HelmSession>, receivedAt: Long) {
         val known = _sessions.value.associateBy { it.id }
         _sessions.value = incoming
             .map { fresh -> known[fresh.id]?.takeIf { it == fresh } ?: fresh }
             .sortedWith(ORDER)
+        recordContextObservations(incoming, _sessions.value.mapTo(HashSet()) { it.id }, receivedAt)
         // An empty snapshot is an ANSWER, and the only thing that earns the
         // right to tell the user no sessions are running.
         _reach.value = Reach.Delivered
@@ -70,13 +80,15 @@ class SessionRepository {
      * is not in the reply at all.
      */
     fun applyChanges(changes: SessionChanges) {
+        val receivedAt = now()
         if (changes.full) {
-            applySnapshot(changes.sessions)
+            applySnapshot(changes.sessions, receivedAt)
         } else {
             val gone = changes.removed.toSet()
             val moved = changes.sessions.associateBy { it.id }
             val kept = _sessions.value.filter { it.id !in gone && it.id !in moved }
             _sessions.value = (kept + changes.sessions).sortedWith(ORDER)
+            recordContextObservations(changes.sessions, _sessions.value.mapTo(HashSet()) { it.id }, receivedAt)
             _reach.value = Reach.Delivered
         }
         cursor = changes.cursor
@@ -105,6 +117,26 @@ class SessionRepository {
 
     /** The thread for one session, or null once it is gone. */
     fun find(sessionId: String): HelmSession? = _sessions.value.firstOrNull { it.id == sessionId }
+
+    /** Keep only feed observations received within the row graph's rolling window. */
+    private fun recordContextObservations(
+        incoming: List<HelmSession>,
+        currentSessionIds: Set<String>,
+        receivedAt: Long,
+    ) {
+        val cutoff = receivedAt - ContextGraph.ROW_SPAN_MS
+        val next = _contextObservations.value
+            .filterKeys { it in currentSessionIds }
+            .mapValues { (_, samples) -> samples.filter { it.at in cutoff..receivedAt } }
+            .toMutableMap()
+
+        incoming.forEach { session ->
+            val context = session.context?.takeIf { it.tokens > 0 } ?: return@forEach
+            next[session.id] = next[session.id].orEmpty() + ContextSample(receivedAt, context.tokens, context.level)
+        }
+
+        _contextObservations.value = next.filterValues { it.isNotEmpty() }
+    }
 
     private companion object {
         /**

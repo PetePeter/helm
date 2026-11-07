@@ -24,7 +24,7 @@ class ContextGraphTest {
             reply(10, 100, 800),
             reply(25, null),
         )
-        val history = ContextGraph.fromThread(thread)!!
+        val history = ContextGraph.fromThread(thread, now = 30)!!
         assertEquals(listOf(ContextSample(10, 100), ContextSample(30, 300)), history.samples)
         assertEquals(1000L, history.window)
     }
@@ -36,15 +36,16 @@ class ContextGraphTest {
     }
 
     @Test
-    fun aSessionRowContextIsTheLatestSampleAndCarriesItsServerLevel() {
+    fun sessionListObservationsKeepTheirArrivalTimestampsAndServerLevels() {
         val history = ContextGraph.fromThread(
             listOf(reply(10, 1_200, 10_000)),
             SessionContext(8_500, 10_000, ContextLevel.Hot),
+            observations = listOf(ContextSample(40, 8_500, ContextLevel.Hot)),
             now = 50,
         )!!
 
         assertEquals(
-            listOf(ContextSample(10, 1_200), ContextSample(50, 8_500, ContextLevel.Hot)),
+            listOf(ContextSample(10, 1_200), ContextSample(40, 8_500, ContextLevel.Hot)),
             history.samples,
         )
         assertEquals(10_000L, history.window)
@@ -52,11 +53,32 @@ class ContextGraphTest {
     }
 
     @Test
-    fun aSessionRowContextCanCreateHistoryBeforeAnyReplyArrives() {
-        val history = ContextGraph.fromThread(emptyList(), SessionContext(1_200, null, null), now = 50)!!
+    fun sessionListObservationsCreateHistoryBeforeAnyReplyArrives() {
+        val history = ContextGraph.fromThread(
+            emptyList(),
+            SessionContext(1_200, null, null),
+            observations = listOf(ContextSample(40, 1_200)),
+            now = 50,
+        )!!
 
-        assertEquals(listOf(ContextSample(50, 1_200)), history.samples)
+        assertEquals(listOf(ContextSample(40, 1_200)), history.samples)
         assertNull(history.window)
+    }
+
+    @Test
+    fun historyContainsOnlyObservedSamplesWithinTheRollingTwoHourGraphWindow() {
+        val now = ContextGraph.ROW_SPAN_MS + 50
+        val history = ContextGraph.fromThread(
+            listOf(reply(49, 490), reply(50, 500), reply(now + 1, 999)),
+            latest = SessionContext(1_000, 10_000, null),
+            observations = listOf(ContextSample(1, 10), ContextSample(75, 750), ContextSample(now + 1, 2_000)),
+            now = now,
+        )!!
+
+        assertEquals(
+            listOf(ContextSample(50, 500), ContextSample(75, 750)),
+            history.samples,
+        )
     }
 
     @Test
@@ -73,21 +95,10 @@ class ContextGraphTest {
     }
 
     @Test
-    fun windowCarriesTheEarlierLevelInAndTheLatestOutToNow() {
-        val samples = listOf(ContextSample(0, 10), ContextSample(50, 20), ContextSample(80, 30))
-        assertEquals(
-            listOf(ContextSample(40, 10), ContextSample(50, 20), ContextSample(80, 30), ContextSample(100, 30)),
-            ContextGraph.window(samples, from = 40, to = 100),
-        )
-        assertEquals(listOf(ContextSample(40, 7), ContextSample(100, 7)), ContextGraph.window(listOf(ContextSample(0, 7)), 40, 100))
-        assertEquals(emptyList<ContextSample>(), ContextGraph.window(listOf(ContextSample(120, 7)), 40, 100))
-    }
-
-    @Test
     fun usesTheLimitsTheDesktopSentElseFallsBackTo75And90PercentOfTheWindow() {
-        assertEquals(ContextLimits(50, 80), ContextGraph.fromThread(listOf(reply(1, 10, 1000, 50, 80), reply(2, 20, 1000)))!!.limits)
-        assertEquals(ContextLimits(750, 900), ContextGraph.fromThread(listOf(reply(1, 10, 1000)))!!.limits)
-        assertNull(ContextGraph.fromThread(listOf(reply(1, 10)))!!.limits)
+        assertEquals(ContextLimits(50, 80), ContextGraph.fromThread(listOf(reply(1, 10, 1000, 50, 80), reply(2, 20, 1000)), now = 2)!!.limits)
+        assertEquals(ContextLimits(750, 900), ContextGraph.fromThread(listOf(reply(1, 10, 1000)), now = 1)!!.limits)
+        assertNull(ContextGraph.fromThread(listOf(reply(1, 10)), now = 1)!!.limits)
     }
 
     @Test

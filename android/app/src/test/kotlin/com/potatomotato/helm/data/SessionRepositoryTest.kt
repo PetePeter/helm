@@ -159,6 +159,74 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun `full and delta feeds capture context observations at arrival`() {
+        var receivedAt = 1_000L
+        val repository = SessionRepository(now = { receivedAt })
+
+        repository.applyChanges(
+            SessionChanges(
+                cursor = null,
+                full = true,
+                sessions = listOf(contextSession("s1", 100), contextSession("s2", 200)),
+            ),
+        )
+        receivedAt = 2_000L
+        repository.applyChanges(
+            SessionChanges(
+                cursor = null,
+                full = false,
+                sessions = listOf(contextSession("s1", 100)),
+            ),
+        )
+
+        assertEquals(
+            listOf(ContextSample(1_000, 100), ContextSample(2_000, 100)),
+            repository.contextObservations.value["s1"],
+        )
+        assertEquals(listOf(ContextSample(1_000, 200)), repository.contextObservations.value["s2"])
+        assertEquals(
+            listOf(ContextSample(1_000, 100), ContextSample(2_000, 100)),
+            ContextGraph.fromThread(
+                thread = emptyList(),
+                latest = repository.find("s1")!!.context,
+                observations = repository.contextObservations.value["s1"].orEmpty(),
+                now = receivedAt,
+            )!!.samples,
+        )
+
+        repository.applyChanges(SessionChanges(cursor = null, full = false, sessions = emptyList(), removed = listOf("s2")))
+        assertNull(repository.contextObservations.value["s2"])
+    }
+
+    @Test
+    fun `context observations older than the rolling graph window are discarded`() {
+        var receivedAt = 1_000L
+        val repository = SessionRepository(now = { receivedAt })
+
+        repository.applyChanges(
+            SessionChanges(cursor = null, full = true, sessions = listOf(contextSession("s1", 100))),
+        )
+        receivedAt += ContextGraph.ROW_SPAN_MS
+        repository.applyChanges(
+            SessionChanges(cursor = null, full = false, sessions = listOf(contextSession("s1", 200))),
+        )
+        assertEquals(
+            listOf(ContextSample(1_000, 100), ContextSample(receivedAt, 200)),
+            repository.contextObservations.value["s1"],
+        )
+
+        receivedAt += 1
+        repository.applyChanges(
+            SessionChanges(cursor = null, full = false, sessions = listOf(contextSession("s1", 300))),
+        )
+
+        assertEquals(
+            listOf(ContextSample(receivedAt - 1, 200), ContextSample(receivedAt, 300)),
+            repository.contextObservations.value["s1"],
+        )
+    }
+
+    @Test
     fun `sessions arriving in a different order produce the same list`() {
         val forwards = SessionRepository()
         val backwards = SessionRepository()
@@ -313,6 +381,16 @@ class SessionRepositoryTest {
             put("cliTypeName", "Claude Code")
             if (activityLevel != null) put("activityLevel", activityLevel)
         },
+    )
+
+    private fun contextSession(id: String, tokens: Long): HelmSession = HelmSession(
+        id = id,
+        name = id,
+        projectPath = "/repo/main",
+        cliType = "claudecode",
+        cliTypeName = "Claude Code",
+        activity = SessionState.Idle,
+        context = SessionContext(tokens, 1_000, null),
     )
 
     @Test

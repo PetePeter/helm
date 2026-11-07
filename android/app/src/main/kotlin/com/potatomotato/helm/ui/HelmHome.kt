@@ -207,14 +207,19 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val context = LocalContext.current
     val linkState by HelmLink.state.collectAsState()
     val sessions by client.sessions.sessions.collectAsState()
+    val contextObservations by client.sessions.contextObservations.collectAsState()
     val reach by client.sessions.reach.collectAsState()
     val threads by client.chats.threads.collectAsState()
     val pulls by client.chats.pulls.collectAsState()
     val excludedComfyReferenceIds by client.chats.excludedComfyReferenceIds.collectAsState()
     val unreadCounts by client.chats.unreadCounts.collectAsState()
-    val contextHistories = remember(threads, sessions) {
+    val contextHistories = remember(threads, sessions, contextObservations) {
         sessions.mapNotNull { session ->
-            ContextGraph.fromThread(threads[session.id].orEmpty(), session.context)?.let { session.id to it }
+            ContextGraph.fromThread(
+                thread = threads[session.id].orEmpty(),
+                latest = session.context,
+                observations = contextObservations[session.id].orEmpty(),
+            )?.let { session.id to it }
         }.toMap()
     }
     val capabilities by client.capabilities.state.collectAsState()
