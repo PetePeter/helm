@@ -1184,7 +1184,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_rename',
     title: 'Rename Session',
-    description: 'Rename a Helm session. Accepts sessionId or session name. Also updates the Telegram topic name if Telegram is running.',
+    description: 'Rename a Helm session. Accepts sessionId or session name.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1329,7 +1329,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_set_locked',
     title: 'Set Session Lock',
-    description: 'Set or clear the durable closure lock for a Helm session. A locked session rejects deliberate close operations from the desktop, MCP, Telegram, group close, and force restart. Accepts sessionId or exact session name.',
+    description: 'Set or clear the durable closure lock for a Helm session. A locked session rejects deliberate close operations from the desktop, MCP, group close, and force restart. Accepts sessionId or exact session name.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1401,7 +1401,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'notify_user',
     title: 'Notify User',
-    description: 'Send an LLM-directed notification with smart delivery routing. Provide sessionId or exact session name. Call on work completion, when blocked waiting for user input, or when an error stops progress. Helm routes to toast, taskbar flash, bubble, or Telegram based on screen/window state. Returns delivered channel.',
+    description: 'Send an LLM-directed notification with smart delivery routing. Provide sessionId or exact session name. Call on work completion, when blocked waiting for user input, or when an error stops progress. Helm routes to desktop toast, taskbar flash, or bubble based on screen/window state and independently sends an alert to the paired phone. Returns the desktop route.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1466,7 +1466,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'chat_send',
     title: 'Send Chat',
-    description: 'Send concise mobile-friendly text to the user over the session\'s bound chat surfaces (a paired phone over BLE; Telegram if configured). Replies always go to YOUR OWN session topic (resolved from the X-Helm-Session-Id header); you do not need to pass sessionId. sessionId is an optional override for global-token callers. Resolving by name is not supported — duplicate names would mis-route. Lines must be short; do not send large wide logs, tables, or code blocks.',
+    description: 'Send concise mobile-friendly text to the user over the session\'s bound chat surfaces (paired phone over BLE or available LAN bridges). Replies go to YOUR OWN chat surfaces (resolved from the X-Helm-Session-Id header); you do not need to pass sessionId. sessionId is an optional override for global-token callers. Resolving by name is not supported — duplicate names would mis-route. Lines must be short; do not send large wide logs, tables, or code blocks.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -30,9 +30,8 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(isContextUsageSnapshot(s.contextUsage) ? { contextUsage: s.contextUsage } : {}),
     ...(s.contextHistory?.length ? { contextHistory: s.contextHistory.filter(isContextUsageSample) } : {}),
     ...(s.currentPlanId ? { currentPlanId: s.currentPlanId } : {}),
-    // Generic per-provider chat bindings REPLACE the old Telegram-only topicId
-    // on disk. serializeChatBindings derives the Telegram entry from topicId and
-    // carries through any provider key this version does not recognise.
+    // Generic per-provider chat bindings carry forward any provider key this
+    // version does not recognise, while the loader drops retired Telegram data.
     ...((): Record<string, unknown> => {
       const chatBindings = serializeChatBindings(s);
       return chatBindings ? { chatBindings } : {};
@@ -163,7 +162,7 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
         if ('loopDriving' in session) {
           delete (session as Record<string, unknown>).loopDriving;
         }
-        // Rehydrate chat bindings, migrating a pre-chatBindings record's topicId.
+        // Rehydrate chat bindings and discard retired Telegram session fields.
         return hydrateChatBindings(session);
       });
   } catch (err) {

@@ -77,7 +77,7 @@ describe('HelmChatService.sendChat', () => {
     expect(sent).toHaveLength(0);
   });
 
-  it('returns a generic failure without a broker instead of falling back to Telegram', async () => {
+  it('returns a generic failure without a broker instead of falling back to another route', async () => {
     const { service, sent } = makeChat();
     service.setChatBroker(null);
 
@@ -87,7 +87,7 @@ describe('HelmChatService.sendChat', () => {
     expect(sent).toHaveLength(0);
   });
 
-  it('does not apply Telegram mobile-text limits to generic chat', async () => {
+  it('does not apply phone text limits to generic chat', async () => {
     const { service, sent } = makeChat();
 
     const result = await service.sendChat('s1', 'x'.repeat(200));

@@ -55,7 +55,7 @@ export function buildSystemPrompt(params: {
     `Platform: ${params.platform ?? process.platform}.`,
     'Work step by step. Use tools to look things up instead of guessing; read a file before editing it.',
     'Keep answers short and direct. When the task is done, reply with the result in plain text.',
-    'Just answer in plain text: Helm delivers your final reply to the user chat (desktop, phone, Telegram) automatically.',
+    'Just answer in plain text: Helm delivers your final reply to the user chat (desktop or paired phone) automatically.',
     'A message starting with [from <session> (<id>)] comes from another Helm session; when it says "awaiting reply",',
     'your final answer is sent back to that session automatically.',
   ];
@@ -119,7 +119,7 @@ export interface ChatHistoryEntry {
 }
 
 /**
- * Always offered: the session's own chat (desktop pane, phone, Telegram) read
+ * Always offered: the session's own chat (desktop pane or paired phone) read
  * back on demand — the user's messages and the replies — so what was said
  * survives forget_turns, rollback and compaction.
  */
@@ -231,7 +231,7 @@ const CHAT_TOOLS = new Set(['chat_send']);
 
 /**
  * Chat tools. An API session's conversation IS its chat (desktop chat pane,
- * phone, Telegram), so Helm posts every final answer there itself — unless the
+ * phone), so Helm posts every final answer there itself — unless the
  * model already replied through one of these. A small model never has to
  * remember the chat_send ritual.
  */

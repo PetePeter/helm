@@ -2,7 +2,6 @@ import { OPERATOR_MANTRA } from '../../mcp/guides/operator-guide.js';
 import {
   HELM_MSG_HOOK_RULES,
   HELM_REMOTE_HOOK_RULES,
-  HELM_TELEGRAM_MODE_INSTRUCTIONS,
 } from '../intersession-directive.js';
 
 export const HOOK_INJECTION_DEFINITIONS = [
@@ -81,18 +80,11 @@ export const HOOK_INJECTION_DEFINITIONS = [
     defaultTemplate: HELM_MSG_HOOK_RULES,
   },
   {
-    id: 'telegramRules',
+    id: 'remoteChatRules',
     label: 'Remote chat reply rules',
     group: 'Prompt',
-    description: 'Reply instructions for remote chat messages; the stored ID remains for settings compatibility.',
+    description: 'Reply instructions for phone and other remote chat messages.',
     defaultTemplate: HELM_REMOTE_HOOK_RULES,
-  },
-  {
-    id: 'telegramMode',
-    label: 'Telegram mode',
-    group: 'Prompt',
-    description: 'One-time instructions when a session enters Telegram mode.',
-    defaultTemplate: HELM_TELEGRAM_MODE_INSTRUCTIONS,
   },
   {
     id: 'missionPromptUnset',

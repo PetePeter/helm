@@ -8,7 +8,7 @@
  *    handover note, out-of-band, directory-scoped, size-capped,
  *    logged. Nothing is preloaded wholesale.
  * B. UserPromptSubmit — the inter-session rules as additionalContext instead
- *    of prompt text (prompt with a [HELM_MSG] / [HELM_TELEGRAM] envelope),
+ *    of prompt text (prompt with a [HELM_MSG] envelope),
  *    plus the hint-only suggester pointer, plus conditional nudges, plus the
  *    [HELM_MISSION] line on EVERY prompt (the deliberate exception to
  *    "silent when nothing to say": the mission must track the work, so the AI
@@ -150,8 +150,6 @@ export class ContextInjector {
   private readonly stopEtaNudged = new Set<string>();
   /** Last context reset (SessionStart compact/clear or PreCompact) per session, epoch ms. */
   private readonly contextResetAt = new Map<string, number>();
-  /** Sessions whose remote-mode entry the injected mode block covered. */
-  private readonly remoteModeAnnounced = new Set<string>();
   /** Per session: the manifesto versions last seen, and prompts since they changed. */
   private readonly manifestoWatch = new Map<string, { stamp: string; prompts: number }>();
 
@@ -170,7 +168,6 @@ export class ContextInjector {
     this.stopTodosNudged.delete(sessionId);
     this.stopEtaNudged.delete(sessionId);
     this.contextResetAt.delete(sessionId);
-    this.remoteModeAnnounced.delete(sessionId);
     this.manifestoWatch.delete(sessionId);
   }
 
@@ -179,11 +176,6 @@ export class ContextInjector {
     if (!event.helmSessionId) return null;
     const session = this.deps.getSession(event.helmSessionId);
     if (!session) return null;
-
-    // Leaving remote mode re-arms the one-shot mode block: the next entry
-    // is a new mode entry and must be announced again, exactly as the
-    // prepended first-contact block would be.
-    if (session.interactionChannel !== 'remote') this.remoteModeAnnounced.delete(session.id);
 
     if (event.event === 'UserPromptSubmit' || event.event === 'UserPromptTransformed') {
       this.stopTodosNudged.delete(session.id);
@@ -332,7 +324,6 @@ export class ContextInjector {
   async promptContext(sessionId: string, prompt: string, tools?: ReadonlySet<string>): Promise<string | null> {
     const session = this.deps.getSession(sessionId);
     if (!session) return null;
-    if (session.interactionChannel !== 'remote') this.remoteModeAnnounced.delete(session.id);
     return this.userPromptContext(session, prompt, tools ? (tool) => tools.has(tool) : () => true, true);
   }
 
@@ -345,9 +336,9 @@ export class ContextInjector {
   ): Promise<string | null> {
     const parts: string[] = [];
 
-    // The user reaching an operator-started session themselves (phone or
-    // Telegram) takes it over: from now on it answers them, not the operator.
-    if (session.reportsTo && (prompt.includes('"fromSessionId":"mobile:') || prompt.includes('[HELM_TELEGRAM'))) {
+    // The user reaching an operator-started session themselves on the phone
+    // takes it over: from now on it answers them, not the operator.
+    if (session.reportsTo && prompt.includes('"fromSessionId":"mobile:')) {
       this.deps.clearReportsTo?.(session.id);
     }
 
@@ -358,27 +349,13 @@ export class ContextInjector {
     const mode = (reminder: ReminderId) => this.deps.getReminderMode?.(reminder);
     if (prompt.includes('[HELM_MSG')) {
       const mobileOrigin = prompt.includes('"fromSessionId":"mobile:');
-      const remoteRulesOnHook = resolveReminderDelivery('telegramInstruction', mode('telegramInstruction'), hookCanCarryStandingRules).channel === 'hook';
+      const remoteRulesOnHook = resolveReminderDelivery('remoteChatInstruction', mode('remoteChatInstruction'), hookCanCarryStandingRules).channel === 'hook';
       if (
         mobileOrigin && session.interactionChannel === 'remote' && can('chat_send') && remoteRulesOnHook
       ) {
-        parts.push(this.injection('telegramRules'));
+        parts.push(this.injection('remoteChatRules'));
       } else if (can('chat_send') && resolveReminderDelivery('helmMsgRules', mode('helmMsgRules'), hookCanCarryStandingRules).channel === 'hook') {
         parts.push(this.injection('helmMsgRules'));
-      }
-    } else if (prompt.includes('[HELM_TELEGRAM')) {
-      if (can('chat_send') && resolveReminderDelivery('telegramInstruction', mode('telegramInstruction'), hookCanCarryStandingRules).channel === 'hook') {
-        parts.push(this.injection('telegramRules'));
-      }
-      // The mode block is announced once per entry into Telegram mode — the
-      // injected twin of the relay's first-contact prepend.
-      if (
-        session.interactionChannel === 'remote' &&
-        !this.remoteModeAnnounced.has(session.id) &&
-        resolveReminderDelivery('telegramModeInstructions', mode('telegramModeInstructions'), hookCanCarryStandingRules).channel === 'hook'
-      ) {
-        this.remoteModeAnnounced.add(session.id);
-        parts.push(this.injection('telegramMode'));
       }
     }
 

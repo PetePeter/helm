@@ -140,7 +140,6 @@ describe('useSettingsController', () => {
     ]);
     expect(controller.settingsDirectories.value).toEqual([{ name: 'Hub', path: 'X:\\coding\\gamepad-cli-hub' }]);
     expect(controller.settingsChipbarActions.value).toEqual([{ label: 'Save', sequence: 'save' }]);
-    expect(controller.settingsTelegramConfig.value.allowedUsers).toBe('');
     expect(controller.settingsMcpConfig.value.port).toBe(47400);
     expect(refreshProjects).toHaveBeenCalled();
   });

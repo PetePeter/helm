@@ -2143,7 +2143,6 @@ kbd {
 /* ── Settings Tab Panels ─────────────────────────────────────────────────── */
 
 .settings-profiles-panel,
-.settings-telegram-panel,
 .settings-directories-panel,
 .settings-chipbar-panel,
 .settings-skills-panel,
@@ -2678,37 +2677,6 @@ kbd {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-}
-
-/* ============================================================================
-   Telegram Settings
-   ============================================================================ */
-
-.tg-section {
-  margin-bottom: var(--spacing-lg);
-}
-
-.tg-section-title {
-  font-size: var(--font-size-md);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: var(--spacing-sm);
-  padding-bottom: var(--spacing-xs);
-  border-bottom: 1px solid var(--border);
-}
-
-.tg-form-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-sm);
-}
-
-.tg-label {
-  min-width: 140px;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  flex-shrink: 0;
 }
 
 .context-menu-item:hover {

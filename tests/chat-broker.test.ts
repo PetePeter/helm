@@ -45,58 +45,58 @@ const MESSAGE: ChatOutboundMessage = { sessionId: 'session-1', text: 'build fini
 describe('ChatBroker fan-out', () => {
   it('delivers a message to every registered bridge', async () => {
     const broker = new ChatBroker();
-    const telegram = new FakeBridge('telegram');
     const mobile = new FakeBridge('mobile');
-    broker.register(telegram);
+    const lan = new FakeBridge('lan');
     broker.register(mobile);
+    broker.register(lan);
 
     const results = await broker.send(MESSAGE);
 
-    expect(telegram.sent).toEqual([MESSAGE]);
     expect(mobile.sent).toEqual([MESSAGE]);
-    expect(results.filter(r => r.sent).map(r => r.provider).sort()).toEqual(['mobile', 'telegram']);
+    expect(lan.sent).toEqual([MESSAGE]);
+    expect(results.filter(r => r.sent).map(r => r.provider).sort()).toEqual(['lan', 'mobile']);
   });
 
-  it('delivers to all THREE bridges — a future LAN surface is not a special case', async () => {
+  it('delivers to every registered surface — LAN is not a special case', async () => {
     const broker = new ChatBroker();
-    const bridges = ['telegram', 'mobile', 'lan'].map(p => new FakeBridge(p));
+    const bridges = ['mobile', 'lan'].map(p => new FakeBridge(p));
     bridges.forEach(bridge => broker.register(bridge));
 
     await broker.send(MESSAGE);
 
-    expect(bridges.map(b => b.sent.length)).toEqual([1, 1, 1]);
+    expect(bridges.map(b => b.sent.length)).toEqual([1, 1]);
   });
 
-  it('keeps delivering when one bridge throws — a Telegram outage must not silence the phone', async () => {
+  it('keeps delivering when one bridge throws — a LAN failure must not silence the phone', async () => {
     const broker = new ChatBroker();
-    const telegram = new FakeBridge('telegram');
-    telegram.throwOnSend = new Error('Telegram API is down');
+    const lan = new FakeBridge('lan');
+    lan.throwOnSend = new Error('LAN bridge is down');
     const mobile = new FakeBridge('mobile');
-    broker.register(telegram);
+    broker.register(lan);
     broker.register(mobile);
 
     const results = await broker.send(MESSAGE);
 
     expect(mobile.sent).toEqual([MESSAGE]);
-    expect(results).toContainEqual({ provider: 'telegram', sent: false, reason: 'Telegram API is down' });
+    expect(results).toContainEqual({ provider: 'lan', sent: false, reason: 'LAN bridge is down' });
   });
 
   it('skips an unavailable bridge without error and still reaches the others', async () => {
     const broker = new ChatBroker();
-    const telegram = new FakeBridge('telegram');
-    telegram.available = false;
+    const lan = new FakeBridge('lan');
+    lan.available = false;
     const mobile = new FakeBridge('mobile');
-    broker.register(telegram);
+    broker.register(lan);
     broker.register(mobile);
 
     const results = await broker.send(MESSAGE);
 
-    expect(telegram.sent).toEqual([]);
+    expect(lan.sent).toEqual([]);
     expect(mobile.sent).toEqual([MESSAGE]);
-    expect(results.find(r => r.provider === 'telegram')).toEqual({
-      provider: 'telegram',
+    expect(results.find(r => r.provider === 'lan')).toEqual({
+      provider: 'lan',
       sent: false,
-      reason: 'telegram is not available',
+      reason: 'lan is not available',
     });
   });
 
@@ -107,13 +107,13 @@ describe('ChatBroker fan-out', () => {
 
   it('stops delivering to a bridge once it is unregistered', async () => {
     const broker = new ChatBroker();
-    const telegram = new FakeBridge('telegram');
-    broker.register(telegram);
-    broker.unregister('telegram');
+    const lan = new FakeBridge('lan');
+    broker.register(lan);
+    broker.unregister('lan');
 
     await broker.send(MESSAGE);
 
-    expect(telegram.sent).toEqual([]);
+    expect(lan.sent).toEqual([]);
   });
 
   it('replaces a bridge registered twice under the same provider', async () => {
@@ -138,17 +138,17 @@ describe('ChatBroker inbound routing', () => {
         delivered.push({ sessionId: message.sessionId, text: message.text, provider: message.provider });
       },
     });
-    const telegram = new FakeBridge('telegram');
+    const lan = new FakeBridge('lan');
     const mobile = new FakeBridge('mobile');
-    broker.register(telegram);
+    broker.register(lan);
     broker.register(mobile);
 
-    telegram.receive({ provider: 'telegram', sessionId: 'session-a', text: 'from the desk phone' });
+    lan.receive({ provider: 'lan', sessionId: 'session-a', text: 'from the local network' });
     mobile.receive({ provider: 'mobile', sessionId: 'session-b', text: 'from the kitchen' });
     await vi.waitFor(() => expect(delivered).toHaveLength(2));
 
     expect(delivered).toEqual([
-      { sessionId: 'session-a', text: 'from the desk phone', provider: 'telegram' },
+      { sessionId: 'session-a', text: 'from the local network', provider: 'lan' },
       { sessionId: 'session-b', text: 'from the kitchen', provider: 'mobile' },
     ]);
   });

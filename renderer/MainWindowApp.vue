@@ -101,7 +101,6 @@ import BindingsTab from './components/settings/pages/BindingsTab.vue';
 import ToolsPage from './components/settings/tools/ToolsPage.vue';
 import SessionListSettings from './components/settings/pages/SessionListSettings.vue';
 import ScheduledTasksTab from './components/settings/pages/ScheduledTasksTab.vue';
-import TelegramTab from './components/settings/pages/TelegramTab.vue';
 import ProjectsTab from './components/settings/pages/ProjectsTab.vue';
 import ChipbarActionsTab from './components/settings/pages/ChipbarActionsTab.vue';
 import McpTab from './components/settings/pages/McpTab.vue';
@@ -396,8 +395,6 @@ const {
   settingsTools,
   settingsProjects,
   settingsChipbarActions,
-  settingsTelegramConfig,
-  settingsTelegramBotRunning,
   settingsMcpConfig,
   settingsSkills,
   settingsSkillDraft,
@@ -422,9 +419,6 @@ const {
   onChipbarActionEdit,
   onChipbarActionDelete,
   onChipbarActionMove,
-  onTelegramUpdateField,
-  onTelegramStartBot,
-  onTelegramStopBot,
   onMcpUpdate,
   onMcpGenerateToken,
   onMcpRunInShell,
@@ -1218,14 +1212,6 @@ onUnmounted(() => {
                 @edit="onChipbarActionEdit"
                 @delete="onChipbarActionDelete"
                 @move="onChipbarActionMove"
-              />
-              <TelegramTab
-                v-else-if="activeTab === 'telegram'"
-                :config="settingsTelegramConfig"
-                :bot-running="settingsTelegramBotRunning"
-                @update-field="onTelegramUpdateField"
-                @start-bot="onTelegramStartBot"
-                @stop-bot="onTelegramStopBot"
               />
               <VoiceTab
                 v-else-if="activeTab === 'voice'"

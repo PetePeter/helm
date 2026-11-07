@@ -55,7 +55,7 @@ export function hydrateChatBindings(session: SessionInfo): SessionInfo {
 
   if (bindings) session.chatBindings = bindings;
   else delete session.chatBindings;
-  delete session.topicId;
+  delete (session as SessionInfo & Record<string, unknown>).topicId;
 
   return session;
 }

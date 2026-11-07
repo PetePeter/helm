@@ -1,20 +1,16 @@
 /**
  * session-alert — what counts as "something happened", stated once.
  *
- * Two surfaces answer this question: Telegram (`src/telegram/notifier.ts`) and
- * the paired phone (`src/mobile/mobile-alert-notifier.ts`). They notify through
- * completely different transports and always both — duplication between them is
- * ratified, because Telegram is the only path that survives being out of BLE
- * range and conditional suppression would make "was I told?" depend on link
- * state. See docs/chat-fan-out.md.
+ * The paired phone (`src/mobile/mobile-alert-notifier.ts`) carries alerts when
+ * the user is away from the desktop. Desktop notification routing is handled
+ * separately by NotificationManager.
  *
  * What must NOT diverge is the DEFINITION: which transitions are worth a buzz.
  * The event is a turn ending — the session's activity leaving 'active'. Hooked
  * CLIs report that exactly (Stop); unhooked ones fall back to output timing.
  * No agent bookkeeping is involved: the model never has to announce it is done.
  *
- * Per-surface PREFERENCES deliberately live elsewhere — `TelegramConfig`'s
- * notifyOnComplete is Telegram's own and is read only by Telegram.
+ * Preferences do not belong in the transition rule.
  */
 
 import type { ActivityLevel } from '../types/session.js';

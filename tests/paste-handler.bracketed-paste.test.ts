@@ -6,7 +6,7 @@
  * they need no terminal, no session state, and no mocks. The imperative
  * delivery path in paste-handler.ts consumes them.
  *
- * Regression origin: background delivery (inter-session MCP + Telegram) was
+ * Regression origin: background delivery (inter-session MCP + remote chat) was
  * excluded from bracketed paste unconditionally, so a multi-line envelope went
  * in as raw PTY input. A TUI line editor reads each embedded newline as Enter,
  * submits line-by-line, and the recipient only ever sees the final fragment —

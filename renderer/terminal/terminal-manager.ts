@@ -202,7 +202,7 @@ export class TerminalManager {
   }
 
   /**
-   * Adopt an externally-spawned PTY session (e.g. from Telegram).
+   * Adopt an externally-spawned PTY session (for example, from a paired phone).
    * Creates xterm.js view and registers in the terminal map WITHOUT calling pty:spawn.
    * PTY data routing works automatically via setupIpcListeners which matches by sessionId.
    */

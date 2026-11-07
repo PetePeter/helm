@@ -19,7 +19,7 @@ const DEFAULT_RULES: HookDenyRule[] = [
   {
     tools: ['AskUserQuestion', 'ask_user', 'askUserQuestion'],
     onlyWhenAway: true,
-    reason: 'The user is away from the desk (phone/Telegram). Ask them with the Helm MCP tool chat_send instead — it reaches their phone.',
+    reason: 'The user is away from the desk (remote chat). Ask them with the Helm MCP tool chat_send instead — it reaches their phone.',
   },
   {
     tools: ['Artifact', 'artifact'],

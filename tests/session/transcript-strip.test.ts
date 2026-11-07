@@ -191,16 +191,10 @@ describe('stripTranscript — Helm plumbing', () => {
     expect(md).not.toMatch(/55e502aa|HELM_SESSION_ID|expectsResponse/);
   });
 
-  it('drops injected rules and mode blocks whole', () => {
-    const md = strip('[HELM_MSG_RULES]\nDo NOT use AskUserQuestion\n[/HELM_MSG_RULES]\n[HELM_TELEGRAM_MODE]\nuse chat_send\n[/HELM_TELEGRAM_MODE]\nreal prompt');
+  it('drops injected rules whole', () => {
+    const md = strip('[HELM_MSG_RULES]\nDo NOT use AskUserQuestion\n[/HELM_MSG_RULES]\nreal prompt');
     expect(md).toContain('real prompt');
     expect(md).not.toMatch(/AskUserQuestion|HELM_/);
-  });
-
-  it('unwraps a Telegram envelope to its body', () => {
-    const md = strip('[HELM_TELEGRAM from:oscar chat:-100123]\nship it\n[/HELM_TELEGRAM]');
-    expect(md).toContain('ship it');
-    expect(md).not.toMatch(/HELM_TELEGRAM|-100123/);
   });
 
   it('drops hook-injected context lines and Stop-hook feedback, keeping the real prompt', () => {

@@ -118,7 +118,7 @@ export async function deliverPromptSequenceToSession(input: {
   impliedSubmit?: boolean;
   deliveryContext?: DeliveryContext;
   writeIntent?: WriteIntent;
-  /** Defaults to 'system'. Set 'user' where the text is a human speaking (phone, Telegram). */
+  /** Defaults to 'system'. Set 'user' where the text is a human speaking (for example, on a phone). */
   origin?: DeliveryOrigin;
   /** Overridable for tests; production uses the process-wide gate. */
   deliveryLock?: DeliveryLock;

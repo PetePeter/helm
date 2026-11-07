@@ -63,10 +63,6 @@ describe('getSessionInfo', () => {
       expect(info).not.toHaveProperty('mcp_token');
     });
 
-    it('does not include telegramCapabilities', () => {
-      expect(getSessionInfo(mgr, authContext)).not.toHaveProperty('telegramCapabilities');
-    });
-
     it('does not include skills or available_projects', () => {
       const info = getSessionInfo(mgr, authContext);
       expect(info).not.toHaveProperty('skills');

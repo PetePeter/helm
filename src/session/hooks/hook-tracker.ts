@@ -7,7 +7,7 @@
  *
  *   working / turn ended  → StateDetector's existing `activity-change` events
  *                           (hooks are a second producer; the dot pipeline,
- *                           flash, Telegram flushing and every other consumer
+ *                           flash and every other consumer
  *                           are untouched)
  *   stall (StopFailure)   → SessionManager.updateSession, the single mutation
  *                           choke point; the record is durable (see

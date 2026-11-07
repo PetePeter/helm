@@ -114,16 +114,16 @@ beforeEach(() => {
 });
 
 describe('MobileChatBridge as a chat surface', () => {
-  it('fans a desktop turn out once to the phone and Telegram and journals one echo', async () => {
+  it('fans a desktop turn out once to the phone and LAN and journals one echo', async () => {
     links.online.add(phone.machineId);
-    const telegram = {
-      provider: 'telegram',
+    const lan = {
+      provider: 'lan',
       isAvailable: () => true,
       sendToSession: vi.fn(async () => ({ sent: true })),
     };
     const broker = new ChatBroker();
     broker.register(bridge);
-    broker.register(telegram);
+    broker.register(lan);
 
     const results = await broker.send({
       sessionId: 's1',
@@ -136,8 +136,8 @@ describe('MobileChatBridge as a chat surface', () => {
     expect(links.records().filter(record => record.t === 'chat')).toHaveLength(1);
     expect(links.records().find(record => record.t === 'chat')).toMatchObject({ text: 'from desktop', originId: 'desktop:turn-1' });
     expect(journal.sessionEntries('s1')).toHaveLength(1);
-    expect(telegram.sendToSession).toHaveBeenCalledTimes(1);
-    expect(telegram.sendToSession).toHaveBeenCalledWith(expect.objectContaining({ source: 'desktop', originId: 'desktop:turn-1' }));
+    expect(lan.sendToSession).toHaveBeenCalledTimes(1);
+    expect(lan.sendToSession).toHaveBeenCalledWith(expect.objectContaining({ source: 'desktop', originId: 'desktop:turn-1' }));
   });
 
   it('journals an inbound external user turn once and pushes it to linked phones', () => {
@@ -145,16 +145,16 @@ describe('MobileChatBridge as a chat surface', () => {
     const incoming = {
       sessionId: 's1',
       sessionName: 'work',
-      text: 'From Telegram',
+      text: 'From LAN',
       at: NOW,
-      originId: 'telegram:12345:77',
+      originId: 'lan:peer-1:77',
     };
 
     bridge.recordExternalTurn(incoming);
     bridge.recordExternalTurn(incoming);
 
     expect(journal.sessionEntries('s1')).toHaveLength(1);
-    expect(journal.sessionEntries('s1')[0].record.originId).toBe('telegram:12345:77');
+    expect(journal.sessionEntries('s1')[0].record.originId).toBe('lan:peer-1:77');
     expect(links.records().filter(record => record.t === 'chat')).toHaveLength(1);
   });
 

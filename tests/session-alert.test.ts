@@ -1,9 +1,8 @@
 /**
  * session-alert — the shared definition of "something happened".
  *
- * These assertions are the contract between two transports that must never
- * diverge: TelegramNotifier and MobileAlertNotifier both gate on this, so a
- * change here is a change to what BOTH surfaces tell the user.
+ * These assertions define the activity transitions that the phone notifier
+ * reports to the user.
  */
 
 import { describe, it, expect } from 'vitest';

@@ -13,7 +13,7 @@ export function buildPiperArgs(voiceModelPath: string, outWavPath: string): stri
 
 /**
  * Build the ffmpeg args to transcode a WAV into OGG/Opus at 96kbps —
- * the format Telegram plays back natively as a voice message.
+ * an audio format that Chromium plays natively.
  */
 export function buildFfmpegArgs(inWavPath: string, outOggPath: string): string[] {
   return ['-y', '-i', inWavPath, '-c:a', 'libopus', '-b:a', '96k', outOggPath];
@@ -28,7 +28,7 @@ export interface PiperTtsOptions {
 
 /**
  * Helm-side text-to-speech: piper synthesizes a WAV, ffmpeg transcodes it to
- * OGG/Opus (Telegram voice notes; Chromium plays it natively for desktop voice). The calling LLM never touches these binaries — it
+ * OGG/Opus (Chromium plays it natively for desktop voice). The calling LLM never touches these binaries — it
  * only supplies text.
  */
 export class PiperTts {

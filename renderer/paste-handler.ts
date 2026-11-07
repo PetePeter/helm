@@ -195,7 +195,7 @@ export async function deliverBulkText(sessionId: string, text: string, options?:
   // Multi-line delivery into a session that hasn't enabled bracketed paste yet
   // (typically just-spawned) — wait briefly for it so the whole block is wrapped
   // instead of submitted line-by-line. Background delivery needs this as much as
-  // interactive: inter-session and Telegram envelopes are multi-line, and an
+  // interactive: inter-session and remote chat envelopes are multi-line, and an
   // unwrapped one is submitted a line at a time, so only its last fragment
   // survives as the recipient's prompt.
   if (shouldWaitForBracketedPaste({ readsBracketed, bracketedPasteEnabled, isMultiline: text.includes('\n') })) {

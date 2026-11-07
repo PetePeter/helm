@@ -18,7 +18,7 @@ import type { ChartModel } from './chart-model.js';
 export const SLOT_MS = 5 * 60_000;
 /**
  * Noise floor: a project needs this much input in a slot to earn it. One
- * keystroke weighs 1; a submit (Enter, a phone/Telegram message, a phone
+ * keystroke weighs 1; a submit (Enter, a phone message, a phone
  * edit) weighs the whole floor, so a single deliberate send always counts
  * and a few stray keys never do.
  */

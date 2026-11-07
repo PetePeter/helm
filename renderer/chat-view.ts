@@ -12,8 +12,8 @@ const TRAILING_PUNCTUATION = /[.,!?;:)\]}]+$/;
 export function chatOriginLabel(record: Pick<ChatRecordInput, 'originId'>): 'Phone' | 'Desktop' | 'Telegram' | null {
   const originId = record.originId?.toLowerCase();
   if (!originId) return null;
-  if (originId.startsWith('desktop:')) return 'Desktop';
   if (originId.startsWith('telegram:') || originId.startsWith('tg:')) return 'Telegram';
+  if (originId.startsWith('desktop:')) return 'Desktop';
   return 'Phone';
 }
 

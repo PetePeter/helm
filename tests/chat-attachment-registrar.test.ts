@@ -189,29 +189,28 @@ describe('ChatBroker attachment registration', () => {
         };
       },
     });
-    const telegram = new RecordingBridge('telegram');
+    const lan = new RecordingBridge('lan');
     const mobile = new RecordingBridge('mobile');
-    broker.register(telegram);
+    broker.register(lan);
     broker.register(mobile);
 
     await broker.send({ sessionId: 's1', text: 'look', filePath: 'C:\\tmp\\a.png' });
 
     expect(calls).toBe(1);
-    expect(telegram.seen[0].attachment?.attachmentId).toBe('att-1');
+    expect(lan.seen[0].attachment?.attachmentId).toBe('att-1');
     expect(mobile.seen[0].attachment?.attachmentId).toBe('att-1');
   });
 
   it('leaves a bridge that carries paths untouched', async () => {
     const broker = new ChatBroker({ registerAttachment: () => undefined });
-    const telegram = new RecordingBridge('telegram');
-    broker.register(telegram);
+    const lan = new RecordingBridge('lan');
+    broker.register(lan);
 
     await broker.send({ sessionId: 's1', text: 'look', filePath: 'C:\\tmp\\a.png' });
 
-    // Telegram uploads the bytes itself; losing the path would break a path
-    // that already works.
-    expect(telegram.seen[0].filePath).toBe('C:\\tmp\\a.png');
-    expect(telegram.seen[0].attachment).toBeUndefined();
+    // Bridges that carry paths directly keep the original path.
+    expect(lan.seen[0].filePath).toBe('C:\\tmp\\a.png');
+    expect(lan.seen[0].attachment).toBeUndefined();
   });
 
   it('still delivers the message when taking the file throws', async () => {

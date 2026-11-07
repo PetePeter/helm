@@ -1,10 +1,8 @@
 /**
  * ChatBridge — one chat surface, whatever the transport underneath it is.
  *
- * Telegram used to BE the chat channel: the concept and the transport were the
- * same object. A phone over BLE is a second surface that runs ALONGSIDE it
- * permanently, and a LAN transport is wanted later still, so the concept is
- * lifted out here and every surface implements exactly this.
+ * A chat surface is a provider of the shared session chat contract. Each
+ * transport implements this shape without coupling the broker to its details.
  *
  * Nothing in this file may assume how many bridges exist. Two-of-a-kind thinking
  * is how a pair-shaped assumption gets baked in and has to be unpicked when the
@@ -26,10 +24,9 @@ export interface ChatOutboundMessage {
    * The SAME file as `filePath`, registered as an artifact attachment so a
    * surface that cannot read the desktop's filesystem can still fetch it.
    *
-   * Two ways to name one file is deliberate, not duplication: Telegram uploads
-   * the bytes and needs a path; a phone has no path it could ever open and
-   * needs an id to ask for. Each bridge takes the half it can carry, which is
-   * the same rule that already lets a text-only bridge skip `filePath`.
+   * Two ways to name one file is deliberate, not duplication: desktop bridges
+   * can use a path; a phone needs an attachment id to fetch it. Each bridge
+   * takes the half it can carry, which also lets text-only bridges skip paths.
    */
   attachment?: ChatAttachmentRef;
   /** Send an audio attachment as a native voice message where supported. */
@@ -98,7 +95,7 @@ export interface ChatBridge {
   sendToSession(message: ChatOutboundMessage): Promise<ChatSendResult>;
   /**
    * Optional inbound stream. A bridge that already delivers its own inbound
-   * traffic (Telegram does) simply omits this; the broker only subscribes when
+   * traffic simply omits this; the broker only subscribes when
    * it is present.
    */
   on?(event: 'inbound', handler: (message: ChatInboundMessage) => void): unknown;

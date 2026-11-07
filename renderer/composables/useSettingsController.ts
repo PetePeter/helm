@@ -38,14 +38,6 @@ export interface SettingsChipbarAction {
   sequence: string;
 }
 
-export interface SettingsTelegramConfig {
-  botToken: string;
-  chatId: string;
-  allowedUsers: string;
-  notificationsEnabled: boolean;
-  autoStart: boolean;
-}
-
 export interface SettingsMcpConfig {
   enabled: boolean;
   port: number;
@@ -130,14 +122,6 @@ export function useSettingsController(options: {
   const settingsDirectories = ref<SettingsDirectoryItem[]>([]);
   const settingsProjects = computed(() => state.projects);
   const settingsChipbarActions = ref<SettingsChipbarAction[]>([]);
-  const settingsTelegramConfig = ref<SettingsTelegramConfig>({
-    botToken: '',
-    chatId: '',
-    allowedUsers: '',
-    notificationsEnabled: false,
-    autoStart: false,
-  });
-  const settingsTelegramBotRunning = ref(false);
   const settingsMcpConfig = ref<SettingsMcpConfig>({ enabled: false, port: 47373, authToken: '' });
   const settingsSkills = ref<SettingsSkillSummary[]>([]);
   const settingsSkillDraft = ref<SettingsSkillDraft>(emptySkillDraft());
@@ -618,13 +602,6 @@ export function useSettingsController(options: {
     }
   }
 
-  // These bindings remain until P-1186 removes the Telegram settings view.
-  async function onTelegramUpdateField(_field: string, _value: string | boolean): Promise<void> {}
-
-  async function onTelegramStartBot(): Promise<void> {}
-
-  async function onTelegramStopBot(): Promise<void> {}
-
   async function onMcpUpdate(updates: Partial<{ enabled: boolean; port: number; authToken: string }>): Promise<void> {
     await trackSave(async () => {
       const result = await configClient.configSetMcpConfig(updates);
@@ -894,8 +871,6 @@ export function useSettingsController(options: {
     settingsDirectories,
     settingsProjects,
     settingsChipbarActions,
-    settingsTelegramConfig,
-    settingsTelegramBotRunning,
     settingsMcpConfig,
     settingsSkills,
     settingsSkillDraft,
@@ -920,9 +895,6 @@ export function useSettingsController(options: {
     onChipbarActionEdit,
     onChipbarActionDelete,
     onChipbarActionMove,
-    onTelegramUpdateField,
-    onTelegramStartBot,
-    onTelegramStopBot,
     onMcpUpdate,
     onMcpGenerateToken,
     onMcpRunInShell,

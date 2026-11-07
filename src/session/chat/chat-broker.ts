@@ -4,16 +4,15 @@
  *
  * FAN-OUT IS UNCONDITIONAL AND RATIFIED. Every registered bridge receives every
  * message, always. There is no provider selection, no "prefer the phone when it
- * is linked", and no de-duplication: Telegram is the only out-of-BLE-range path,
- * so suppressing it when the phone happens to be online would make "was I told?"
- * depend on link state. Duplicate buzzes are the accepted cost.
+ * is linked", and no de-duplication: suppressing one surface when another is
+ * online would make "was I told?" depend on link state. Duplicate buzzes are
+ * the accepted cost.
  *
- * The registry is UNBOUNDED. Telegram + mobile is today's pair, a LAN transport
- * is wanted later, and nothing here may be shaped around there being two.
+ * The registry is UNBOUNDED. Nothing here may be shaped around a fixed number
+ * of transports.
  *
- * One bridge failing must never silence another — a Telegram outage taking the
- * phone down with it is precisely the failure this class exists to prevent — so
- * every send is isolated and a throw is reported as a per-bridge result rather
+ * One bridge failing must never silence another, so every send is isolated and
+ * a throw is reported as a per-bridge result rather
  * than propagated.
  */
 

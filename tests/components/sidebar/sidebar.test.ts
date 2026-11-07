@@ -1119,78 +1119,6 @@ describe('ChipbarActionsTab', () => {
 });
 
 // ============================================================================
-// TelegramTab
-// ============================================================================
-
-import TelegramTab from '../../../renderer/components/settings/pages/TelegramTab.vue';
-
-describe('TelegramTab', () => {
-  const config = {
-    botToken: 'test-token',
-    chatId: '12345',
-    allowedUsers: 'user1, user2',
-    notificationsEnabled: true,
-    autoStart: false,
-  };
-
-  it('renders connection fields', () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: false } });
-    const inputs = w.findAll('input[type="text"], input[type="password"]');
-    expect(inputs.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('shows bot running status', () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: true } });
-    expect(w.find('.bot-running').text()).toContain('Running');
-  });
-
-  it('shows bot stopped status', () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: false } });
-    expect(w.find('.bot-stopped').text()).toContain('Stopped');
-  });
-
-  it('shows start button when stopped', () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: false } });
-    const btns = w.findAll('.bot-status button');
-    expect(btns[0].text()).toBe('Start Bot');
-  });
-
-  it('shows stop button when running', () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: true } });
-    const btns = w.findAll('.bot-status button');
-    expect(btns[0].text()).toBe('Stop Bot');
-  });
-
-  it('emits startBot on start click', async () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: false } });
-    await w.find('.bot-status button').trigger('click');
-    expect(w.emitted('startBot')).toBeTruthy();
-  });
-
-  it('emits stopBot on stop click', async () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: true } });
-    await w.find('.bot-status button').trigger('click');
-    expect(w.emitted('stopBot')).toBeTruthy();
-  });
-
-  it('renders notification checkbox', () => {
-    const w = mount(TelegramTab, { props: { config, botRunning: false } });
-    const checkbox = w.find('.notification-toggle input');
-    expect((checkbox.element as HTMLInputElement).checked).toBe(true);
-  });
-
-  it('renders autostart checkbox and emits updates', async () => {
-    const w = mount(TelegramTab, { props: { config: { ...config, autoStart: true }, botRunning: false } });
-    const checkboxes = w.findAll('.notification-toggle input');
-    expect((checkboxes[1].element as HTMLInputElement).checked).toBe(true);
-
-    await checkboxes[1].setValue(false);
-
-    expect(w.emitted('updateField')).toContainEqual(['autoStart', false]);
-  });
-});
-
-// ============================================================================
 // VoiceTab
 // ============================================================================
 
@@ -1212,13 +1140,6 @@ describe('VoiceTab', () => {
     await input.setValue('D:\piper.exe');
     await input.trigger('blur');
     expect(w.emitted('updateField')).toContainEqual(['piperPath', 'D:\piper.exe']);
-  });
-
-  it('is no longer duplicated on the Telegram tab', () => {
-    const w = mount(TelegramTab, {
-      props: { config: { botToken: '', chatId: '', allowedUsers: '', notificationsEnabled: false, autoStart: false }, botRunning: false },
-    });
-    expect(w.text()).not.toMatch(/OpenWhispr|Piper|ffmpeg/);
   });
 });
 

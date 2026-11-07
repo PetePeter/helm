@@ -25,7 +25,6 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
   { id: 'skills', label: 'Skills', group: 'Knowledge', icon: 'book' },
   { id: 'auto-memory', label: 'Auto memory', group: 'Knowledge', icon: 'database' },
   { id: 'dreaming', label: 'Dreaming', group: 'Knowledge', icon: 'moon' },
-  { id: 'telegram', label: 'Telegram', group: 'Connections', icon: 'send' },
   { id: 'mobile', label: 'Mobile', group: 'Connections', icon: 'phone' },
   { id: 'peers', label: 'Fleet', group: 'Connections', icon: 'link' },
   { id: 'mcp', label: 'MCP server', group: 'Connections', icon: 'plug' },

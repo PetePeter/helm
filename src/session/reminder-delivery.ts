@@ -10,10 +10,8 @@
  *
  * The defaults reproduce today exactly, so an upgrade changes nothing until
  * the user chooses:
- * - `helmMsgRules` / `telegramInstruction` → 'hook' — G4's auto dual-path,
- *   which resolves to inject-when-capable, prepend-otherwise.
- * - `telegramModeInstructions` → 'pty' — the mode block is still
- *   always-prepended until the user opts it onto the hook channel.
+ * - `helmMsgRules` / `remoteChatInstruction` → 'hook' — inject when capable,
+ *   prepend otherwise.
  *
  * A 'hook' mode that cannot be honoured (no hooks installed, or a provider
  * whose UserPromptSubmit output is dropped) falls back to 'pty' AND reports
@@ -25,12 +23,11 @@ import type { SessionInfo } from '../types/session.js';
 import type { RulesViaHooksFn } from './hooks/hook-capability.js';
 
 /** The standing reminders that have a delivery mode (see docs/cli-hooks.md, G9). */
-export type ReminderId = 'helmMsgRules' | 'telegramInstruction' | 'telegramModeInstructions';
+export type ReminderId = 'helmMsgRules' | 'remoteChatInstruction';
 
 export const REMINDER_IDS: readonly ReminderId[] = [
   'helmMsgRules',
-  'telegramInstruction',
-  'telegramModeInstructions',
+  'remoteChatInstruction',
 ] as const;
 
 export type ReminderDeliveryMode = 'hook' | 'pty' | 'off';
@@ -41,8 +38,7 @@ export type ReminderDeliveryMode = 'hook' | 'pty' | 'off';
  */
 export const DEFAULT_REMINDER_MODES: Record<ReminderId, ReminderDeliveryMode> = {
   helmMsgRules: 'hook',
-  telegramInstruction: 'hook',
-  telegramModeInstructions: 'pty',
+  remoteChatInstruction: 'hook',
 };
 
 /** What a reminder's delivery came to, and whether 'hook' had to degrade. */

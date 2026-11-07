@@ -50,7 +50,6 @@ import { buildMessGuide } from './guides/mess-guide.js';
 import { buildMemoriseGuide } from './guides/memorise-guide.js';
 import { buildRecallGuide } from './guides/recall-guide.js';
 import type { ProjectStore } from '../session/project-store.js';
-import { CapabilityDetector } from '../session/capability-detector.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync, copyFileSync, mkdirSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
@@ -341,7 +340,6 @@ export class HelmControlService extends EventEmitter {
   private readonly mobileService: HelmMobileService;
   private readonly skillManager: SkillManager;
   private readonly skillAnalyticsManager: SkillAnalyticsManager;
-  private readonly capabilityDetector: CapabilityDetector;
 
   constructor(
     private readonly planManager: PlanManager,
@@ -446,7 +444,6 @@ export class HelmControlService extends EventEmitter {
     this.planSequenceService = new HelmPlanSequenceService(planManager, configLoader, projectStore);
     this.contextService = new HelmContextService(this.contextManager, planManager, configLoader);
     this.planAttachmentService = new HelmPlanAttachmentService(planManager, attachmentManager);
-    this.capabilityDetector = new CapabilityDetector(configLoader);
     this.chatService = new HelmChatService(configLoader, sessionManager);
     this.schedulerService = schedulerManager
       ? new HelmSchedulerService(schedulerManager, configLoader, projectStore, (sessionId) => {
@@ -1144,10 +1141,6 @@ export class HelmControlService extends EventEmitter {
     mkdirSync(tempDir, { recursive: true });
     copyFileSync(sourcePath, tempPath);
     return { artifactId: artifact.id, attachment, tempPath };
-  }
-
-  invalidateCapabilityCache(): void {
-    this.capabilityDetector.invalidateCache();
   }
 
   /** Wire the handover sink used by session_compact's `handover` argument. */

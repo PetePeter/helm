@@ -146,8 +146,8 @@ flowchart LR
   lookups) and wraps the call in the fail-open catch.
 - **Rules** — per CLI type in `cli-types.yaml` under `hooks.denyRules`
   (`ConfigLoader.getHookDenyRules(provider)`). Shipped defaults:
-  1. `AskUserQuestion` while `interactionChannel === 'telegram'` (phone or
-     Telegram — G1's mobile-bridge affinity feeds this) → use `chat_send`
+  1. `AskUserQuestion` while `interactionChannel === 'remote'` (a paired phone
+     or remote chat — mobile-bridge affinity feeds this) → use `chat_send`
   2. native `Artifact` tool → use `session_artifact_create`
   3. command guardrail: shell tool command text containing `rm` with combined
      `-r` and `-f` flags in either order. This is a coarse text match: it can
@@ -202,7 +202,7 @@ flowchart LR
     R[HookEvent] --> T{HookTracker}
     T -->|SessionStart / UserPromptSubmit / Pre+PostToolUse| W["StateDetector<br/>markHookWorking"]
     T -->|Stop| E["StateDetector<br/>markHookTurnEnded"]
-    W --> A[activity-change events<br/>→ dots, flash timers, Telegram]
+    W --> A[activity-change events<br/>→ dots, flash timers, phone alerts]
     E --> A
     T -->|StopFailure| S["updateSession<br/>hookStall {at, reason} — DURABLE"]
     T -->|Stop / StopFailure| F[flash-attention]
@@ -214,7 +214,7 @@ flowchart LR
 
 - **Activity** — `markHookWorking` / `markHookTurnEnded` emit the same
   `activity-change` events PTY timing does, so dots, question flow and
-  Telegram flushing are untouched. Stop drops the dot out of green
+  phone alerts are updated. Stop drops the dot out of green
   immediately (the agent said it finished) and restarts the idle countdown
   from that moment; trailing PTY output still promotes normally, so hooks
   going silent mid-session cannot stick the dot anywhere.
@@ -304,8 +304,8 @@ nothing) is the common case by design:
   mission, and any pending handover note, out-of-band at startup. Nothing is preloaded
   wholesale; each source is capped at 800 chars, the whole payload at 2500,
   and whole parts are dropped from the end before anything is cut mid-line.
-- **UserPromptSubmit** — for a prompt carrying a `[HELM_MSG]` /
-  `[HELM_TELEGRAM]` envelope, the inter-session rules as additionalContext
+- **UserPromptSubmit** — for a prompt carrying a `[HELM_MSG]` envelope, the
+  inter-session or remote chat rules as additionalContext
   instead of prepended prompt text (dual-path, below); the hint-only
   suggester pointer; conditional one-shot nudges (one
   startable plan); and on EVERY prompt the `[HELM_MISSION]` line (current
@@ -320,7 +320,7 @@ nothing) is the common case by design:
 - **Stop** — the one-shot nudge: a claimed-but-open plan item blocks the
   turn ONCE with a reason naming the alternative (`plan_complete` /
   `session_plan_claim`). Stop is also Helm's "turn ended" signal: the
-  activity dot leaves green, which drives phone/Telegram "Finished" alerts
+  activity dot leaves green, which drives phone "Finished" alerts
   and operator builder checks — the agent never announces it is done.
   The second Stop always passes; the cap is 1 by decision and not
   configurable. `StopFailure` is never blocked or retried — a red alert may
@@ -436,10 +436,8 @@ The inter-session rules reach a session two ways, per recipient:
 
 The choice is ONE capability check (`src/session/hooks/hook-capability.ts`)
 wrapped by the G9 reminder-delivery resolver (`src/session/reminder-delivery.ts`)
-and consulted by EVERY delivery surface — the MCP delivery service
-(`HelmSessionDeliveryService.setReminderDelivery`) and the Telegram relay
-(`TelegramRelayService.setReminderDelivery`, which drops only the envelope's
-trailing instruction line). Hooks block present AND provider injects on
+and consulted by each delivery surface — the MCP delivery service and the
+remote chat path. Hooks block present AND provider injects on
 UserPromptSubmit (claude, codex) AND the block reads back
 `installed`/`outdated` from disk — otherwise false, which means "prepend as
 today". Every failure answers false: a disk error can degrade to the old
@@ -465,8 +463,7 @@ how it reaches the session changed.
 | # | Standing text | Defined in | Delivered by | Classification |
 |---|---------------|-----------|--------------|----------------|
 | R1 | Inter-session rules `[HELM_MSG_RULES]` (prepend builder + injected static) | `src/session/intersession-directive.ts` | `HelmSessionDeliveryService` prepend / `ContextInjector` inject; gated per CLI type by `helmPreambleForInterSession` | **move** — dual-path since G4, now mode `helmMsgRules` |
-| R2 | Telegram reply instruction `"Respond via chat_send MCP tool."` | `ContextInjector` (`HELM_TELEGRAM_HOOK_RULES`); retained relay-source prompts are pending P-1186 cleanup | hook path | **move** — the live hook instruction uses the sole MCP reply tool |
-| R3 | Telegram mode block `[HELM_TELEGRAM_MODE]`, announced once per entry into Telegram mode | `src/session/intersession-directive.ts` (`HELM_TELEGRAM_MODE_INSTRUCTIONS` — ONE constant, both paths) | relay first-contact prepend / `ContextInjector` (once per mode entry, re-armed on leaving) | **move** — default `pty` (today's always-prepend); mode `telegramModeInstructions` opts it onto the hook channel |
+| R2 | Remote chat reply rules for a phone message while the user is away | `src/session/intersession-directive.ts` (`HELM_REMOTE_HOOK_RULES`) | `ContextInjector` injects for mobile-origin `[HELM_MSG]` prompts on the remote channel | **keep** — editable as `remoteChatRules`, delivered by `remoteChatInstruction` |
 | — | `expectsResponse` reply-routing tag on the envelope opening | `helm-session-delivery-service.ts` | prepend only | **keep inline** — per-sender dynamic content, not a standing rule |
 | — | Mess pokes (`[HELM_MESS] N new — call mess_check`, join line) | `src/session/mess-notifier.ts` | `sendSystemReminder` PTY write | **keep inline** — the unread count IS the message (per-event content); the per-CLI-type `messReminders` flag already is its off-switch |
 | — | Spawn init prompt (`Call session_info…`) | `cli-types.yaml` `initialPrompt` | PTY after spawn | **keep inline** — it triggers the CLI's first turn; injection alone would leave nothing to respond to |
@@ -474,13 +471,9 @@ how it reaches the session changed.
 | — | Mission reminder `[HELM_MISSION]` on every prompt | `src/session/hooks/context-injector.ts` | `ContextInjector` inject only | **hook-only, no mode** — no prepend twin, so a G9 mode would offer a `pty` option that does nothing |
 | — | G2 deny reasons | `cli-types.yaml` `hooks.denyRules` | PreToolUse deny response | not injected text — event-driven enforcement, delivered exactly when relevant |
 
-**Deletions: none.** A reminder is deleted only when a PreToolUse deny now
-ENFORCES it, making the please-remember text pure duplication. The nearest
-candidate — the AskUserQuestion prohibition inside R1/R2 — is enforced only
-`onlyWhenAway` (interactionChannel `'telegram'`): between two local sessions
-while the user is at the desk, a blocking prompt is answerable at the
-terminal, so the rule still carries information the deny does not deliver.
-Partial enforcement is not duplication; the text stays.
+The Telegram-only mode reminder was removed with Telegram integration. The
+phone's away-mode rules remain as `remoteChatRules` and use the
+`remoteChatInstruction` delivery setting.
 
 ### Delivery modes
 
@@ -495,9 +488,8 @@ Per reminder, in Settings → CLI integrations → **Reminder delivery**:
 - **off** — suppressed on both paths.
 
 The defaults reproduce today exactly, so an upgrade changes nothing until the
-user chooses: `helmMsgRules`/`telegramInstruction` default to `hook`
-(G4's auto dual-path IS today's behaviour), `telegramModeInstructions`
-defaults to `pty` (always-prepended). Settings live in `settings.yaml` under
+user chooses: `helmMsgRules`/`remoteChatInstruction` default to `hook`
+(G4's auto dual-path IS today's behaviour). Settings live in `settings.yaml` under
 `reminderDelivery`; malformed values are dropped, never misrouted. IPC:
 `config:getReminderDelivery` / `config:setReminderDelivery` via the preload
 `config` domain (invariant 3).
@@ -776,14 +768,12 @@ Below it: the **Reminder delivery** section (G9, above). **Hook injections**
 provides a master/detail editor for every hook-provided text, with autosave and
 reset to shipped defaults.
 
-## Mobile/Telegram channel affinity (G2 enabler)
+## Remote channel affinity (G2 enabler)
 
-A phone message over BLE/LAN now sets the target session's
-`interactionChannel` to `'telegram'` — the SAME value the Telegram relay
-sets, deliberately not a new enum member — in `mobile-chat-bridge.ts`
-(`markChannelAffinity`), only on the transition. G2's planned
-"deny while the user is away from the desk" can therefore key on one value
-for both surfaces.
+A phone message over BLE/LAN sets the target session's `interactionChannel`
+to `'remote'` in `mobile-chat-bridge.ts` (`markChannelAffinity`), only on the
+transition. G2's "deny while the user is away from the desk" policy keys on
+that value.
 
 ## Modules
 

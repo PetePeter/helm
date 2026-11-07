@@ -64,7 +64,7 @@ export const RESERVED_CHAT_CURSOR_METHOD = '__chat_cursor__';
  * WHY NOT `helm_restart`: that tool stays hard-denied. It is gated on a handover
  * artifact owned by the CALLING AI session — a phone proxy owns none and cannot
  * satisfy it honestly — and the same set keeps fleet peers out. A paired phone
- * is the user's own hand, like Telegram's `/restart`, so it gets the user's
+ * is the user's own hand, like the local `/restart` command, so it gets the user's
  * restart (`restartHelm(resume)`), not the AI's. Still gated by the device's
  * allow-list under the `helm_restart` name, so a narrowed phone loses it.
  */

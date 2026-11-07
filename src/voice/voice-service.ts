@@ -1,5 +1,5 @@
 /**
- * VoiceService — desktop hold-to-talk over the SAME local STT/TTS Telegram uses
+ * VoiceService — desktop hold-to-talk over local speech-to-text and text-to-speech
  * (docs/voice-operator.md). It adds no engine of its own: OpenWhispr turns the
  * recorded clip into text, Piper turns the operator's reply into OGG/Opus, which
  * Chromium plays natively.

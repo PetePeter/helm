@@ -3,9 +3,9 @@
  * fanned out to phones, and the thing catch-up replays from.
  *
  * WHY A JOURNAL: fan-out is live-only. A phone that was out of range, or an app
- * whose process died with its in-memory threads, simply missed everything — and
- * Telegram was quietly carrying the whole burden of "was I told?". The journal
- * decouples "was sent" from "was received": every message is appended ONCE,
+ * whose process died with its in-memory threads, simply missed everything.
+ * The journal carries the durable record of "was I told?" for phone delivery,
+ * decoupling "was sent" from "was received": every message is appended ONCE,
  * whether or not any phone took it, and each phone catches up from its own
  * cursor when its link next comes up.
  *

@@ -2,7 +2,7 @@
  * Delivery is a serialized per-session transaction.
  *
  * The transaction is nudge -> payload -> settle -> submit. Two concurrent
- * senders — Telegram and inter-session, or a send and a recovery resend — used
+ * senders — phone chat and inter-session, or a send and a recovery resend — used
  * to each nudge and then write independently, interleaving one message's resize
  * and payload with the other's. A lock inside the write alone would not fix it:
  * both callers can nudge before either writes.

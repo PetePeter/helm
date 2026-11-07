@@ -44,7 +44,7 @@ describe('chatBindings persistence', () => {
     const [restored] = loadSessions(file);
 
     expect(restored.name).toBe('work');
-    expect(restored.topicId).toBeUndefined();
+    expect(restored).not.toHaveProperty('topicId');
     expect(restored.chatBindings).toEqual({ lan: 'room-7' });
 
     saveSessions([restored], file);
@@ -61,7 +61,7 @@ describe('chatBindings persistence', () => {
     const [restored] = loadSessions(file);
 
     expect(restored.name).toBe('work');
-    expect(restored.topicId).toBeUndefined();
+    expect(restored).not.toHaveProperty('topicId');
     expect(restored.chatBindings).toBeUndefined();
   });
 
@@ -69,13 +69,13 @@ describe('chatBindings persistence', () => {
     const [restored] = roundTrip([session({ chatBindings: { lan: 'room-7' } })]);
 
     expect(restored.chatBindings).toEqual({ lan: 'room-7' });
-    expect(restored.topicId).toBeUndefined();
+    expect(restored).not.toHaveProperty('topicId');
   });
 
   it('writes no chatBindings key at all for a session with no chat surfaces', () => {
     const [restored] = roundTrip([session()]);
 
     expect(restored.chatBindings).toBeUndefined();
-    expect(restored.topicId).toBeUndefined();
+    expect(restored).not.toHaveProperty('topicId');
   });
 });

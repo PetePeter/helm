@@ -259,7 +259,6 @@ describe('LocalhostMcpServer', () => {
     const toolsJson = await toolsResponse.json();
     expect(Array.isArray(toolsJson.result.tools)).toBe(true);
     expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name === 'chat_send')).toBe(true);
-    expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name.startsWith('telegram_'))).toBe(false);
     expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name === 'plan_list')).toBe(true);
     const planCreateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_create');
     const planCompleteTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_complete');
@@ -1691,7 +1690,6 @@ describe('LocalhostMcpServer', () => {
       {
         getMcpConfig: vi.fn(() => ({ port: 47373, authToken: 'secret-token-value' })),
         getWorkingDirectories: vi.fn(() => [{ path: 'X:\\coding\\gamepad-cli-hub', name: 'Helm' }]),
-        getTelegramConfig: vi.fn(() => ({ enabled: false })),
         getCliTypeEntry: vi.fn(() => undefined),
       } as any,
       {} as any,

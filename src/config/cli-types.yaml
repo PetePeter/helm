@@ -46,7 +46,7 @@
     denyRules:
       - tools: [AskUserQuestion]
         onlyWhenAway: true
-        reason: 'The user is away from the desk (phone or Telegram). Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
+        reason: 'The user is away from the desk. Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
       - tools: [Artifact]
         reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
       - tools: [Bash, bash, shell, Shell]
@@ -87,7 +87,7 @@
     denyRules:
       - tools: [AskUserQuestion, ask_user]
         onlyWhenAway: true
-        reason: 'The user is away from the desk (phone or Telegram). Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
+        reason: 'The user is away from the desk. Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
       - tools: [Artifact, artifact]
         reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
       - tools: [Bash, bash, shell, Shell, local_shell]
@@ -120,7 +120,7 @@
     denyRules:
       - tools: [AskUserQuestion, askUserQuestion]
         onlyWhenAway: true
-        reason: 'The user is away from the desk (phone or Telegram). Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
+        reason: 'The user is away from the desk. Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
       - tools: [Artifact, artifact]
         reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
       - tools: [Bash, bash, shell, Shell]

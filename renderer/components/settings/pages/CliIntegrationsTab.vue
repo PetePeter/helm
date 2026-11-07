@@ -53,13 +53,9 @@ const REMINDER_META: Record<ReminderId, { label: string; detail: string }> = {
     label: 'Inter-session rules',
     detail: 'The [HELM_MSG_RULES] block on messages from other sessions',
   },
-  telegramInstruction: {
-    label: 'Telegram reply instruction',
-    detail: 'The "Respond via chat_send" line on Telegram messages',
-  },
-  telegramModeInstructions: {
-    label: 'Telegram mode block',
-    detail: 'The one-time announcement when a session enters Telegram mode',
+  remoteChatInstruction: {
+    label: 'Remote chat reply instruction',
+    detail: 'The reply instruction for a phone message while the user is away',
   },
 };
 

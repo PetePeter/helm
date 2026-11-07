@@ -3,7 +3,7 @@
  * phone can fetch.
  *
  * THE PROBLEM. `chat_send` takes an absolute path, and that is exactly right
- * for Telegram: Helm uploads the bytes and Telegram's servers carry them. The
+ * for remote bridges: Helm uploads the bytes and the bridge fetches them. The
  * paired phone has no server in the middle — BLE or LAN direct is the only pipe
  * — so a desktop path reaches it as a string it can never open. The phone needs
  * an ID it can ask for, and Helm needs to still be holding the bytes when it
@@ -55,7 +55,7 @@ export interface ChatAttachmentRegistrarDeps {
  *
  * Returns undefined rather than throwing for every expected failure — a missing
  * file, an oversized one. A message whose file could not be taken is still a
- * message worth delivering, and Telegram's copy of it is unaffected either way.
+ * message worth delivering, and other chat bridges are unaffected either way.
  */
 export function createChatAttachmentRegistrar(deps: ChatAttachmentRegistrarDeps) {
   return (sessionId: string, filePath: string): ChatAttachmentRef | undefined => {

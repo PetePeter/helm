@@ -1,7 +1,7 @@
 /**
  * The G4 rules-via-hooks capability check — the ONE decision behind both
  * delivery paths (HelmSessionDeliveryService's prepended [HELM_MSG] rules and
- * the Telegram relay's trailing instruction line).
+ * the remote chat instruction line).
  *
  * A recipient injects its rules out-of-band only when ALL of these hold:
  * - a provider can be resolved for its CLI type — the top-level `provider`

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * VoiceTab.vue — speech tool paths (OpenWhispr STT, Piper TTS, ffmpeg).
- * Shared by every voice consumer (Telegram voice notes, operator PTT/calls),
+ * Shared by desktop voice features (operator PTT/calls),
  * so it lives in its own settings section.
  */
 import { ref, watch } from 'vue';

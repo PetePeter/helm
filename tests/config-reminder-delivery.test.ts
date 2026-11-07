@@ -45,7 +45,7 @@ describe('reminderDelivery settings', () => {
 
   it('returns valid overrides and drops malformed values', () => {
     const loader = makeLoader({
-      reminderDelivery: { helmMsgRules: 'pty', telegramInstruction: 'nonsense', telegramModeInstructions: 7 },
+      reminderDelivery: { helmMsgRules: 'pty', remoteChatInstruction: 'nonsense', telegramModeInstructions: 7 },
     });
     expect(loader.getReminderDelivery()).toEqual({ helmMsgRules: 'pty' });
   });
@@ -65,18 +65,18 @@ describe('reminderDelivery settings', () => {
     loader.setReminderDelivery({ helmMsgRules: 'off' });
     expect(loader.getReminderDelivery()).toEqual({ helmMsgRules: 'off' });
 
-    loader.setReminderDelivery({ telegramModeInstructions: 'hook' });
-    expect(loader.getReminderDelivery()).toEqual({ helmMsgRules: 'off', telegramModeInstructions: 'hook' });
+    loader.setReminderDelivery({ remoteChatInstruction: 'hook' });
+    expect(loader.getReminderDelivery()).toEqual({ helmMsgRules: 'off', remoteChatInstruction: 'hook' });
 
     // Persisted: a fresh loader over the same dir reads the same overrides.
     const reloaded = makeLoader(readYaml<Record<string, unknown>>('settings.yaml'));
-    expect(reloaded.getReminderDelivery()).toEqual({ helmMsgRules: 'off', telegramModeInstructions: 'hook' });
+    expect(reloaded.getReminderDelivery()).toEqual({ helmMsgRules: 'off', remoteChatInstruction: 'hook' });
   });
 
   it('setReminderDelivery ignores invalid values rather than storing them', () => {
     const loader = makeLoader();
-    loader.setReminderDelivery({ helmMsgRules: 'carrier-pigeon' as never, telegramInstruction: 'hook' });
-    expect(loader.getReminderDelivery()).toEqual({ telegramInstruction: 'hook' });
+    loader.setReminderDelivery({ helmMsgRules: 'carrier-pigeon' as never, remoteChatInstruction: 'hook' });
+    expect(loader.getReminderDelivery()).toEqual({ remoteChatInstruction: 'hook' });
   });
 
   it('the defaults cover exactly the shipped reminder ids', () => {

@@ -225,7 +225,7 @@ describe('UserPromptSubmit', () => {
 
   it('injects generic remote chat rules for a mobile-origin message', async () => {
     const { injector } = makeInjector(
-      { getReminderMode: (reminder) => (reminder === 'telegramInstruction' ? 'hook' : undefined) },
+      { getReminderMode: (reminder) => (reminder === 'remoteChatInstruction' ? 'hook' : undefined) },
       { interactionChannel: 'remote' },
     );
     const result = await injector.respond(hookEvent({
@@ -233,18 +233,6 @@ describe('UserPromptSubmit', () => {
       prompt: '[HELM_MSG]{"fromSessionId":"mobile:device-7"}hello',
     }));
 
-    const context = contextOf(result!.body);
-    expect(context).toContain('[HELM_REMOTE_RULES]');
-    expect(context).toContain('chat_send');
-    expect(context).toContain('ALL responses and ALL questions MUST go through the chat_send MCP tool');
-    expect(context).not.toContain('[HELM_MSG_RULES]');
-  });
-
-  it('injects generic remote rules for a [HELM_TELEGRAM] envelope', async () => {
-    const { injector } = makeInjector();
-    const result = await injector.respond(
-      hookEvent({ event: 'UserPromptSubmit', prompt: '[HELM_TELEGRAM from:u chat:1]\nhello\n[/HELM_TELEGRAM]' }),
-    );
     const context = contextOf(result!.body);
     expect(context).toContain('[HELM_REMOTE_RULES]');
     expect(context).toContain('chat_send');
@@ -364,7 +352,6 @@ describe('UserPromptSubmit', () => {
 
 describe('UserPromptSubmit reminder delivery modes (G9)', () => {
   const msgPrompt = '[HELM_MSG]{"type":"inter_llm_message"}do the thing';
-  const tgPrompt = '[HELM_TELEGRAM from:u chat:1]\nhello\n[/HELM_TELEGRAM]';
 
   it('mode pty skips the injected rules — the prepend carries them instead', async () => {
     const { injector } = makeInjector({ getReminderMode: () => 'pty' });
@@ -376,12 +363,14 @@ describe('UserPromptSubmit reminder delivery modes (G9)', () => {
   it('mode off skips the injected rules too — suppressed means both paths', async () => {
     const { injector } = makeInjector({ getReminderMode: () => 'off' });
     expect(await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: msgPrompt }))).toBeNull();
-    expect(await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }))).toBeNull();
   });
 
   it('mode pty for one reminder does not silence the other', async () => {
-    const { injector } = makeInjector({ getReminderMode: (r) => (r === 'helmMsgRules' ? 'pty' : undefined) });
-    const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+    const { injector } = makeInjector(
+      { getReminderMode: (r) => (r === 'helmMsgRules' ? 'pty' : undefined) },
+      { interactionChannel: 'remote' },
+    );
+    const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: '[HELM_MSG]{"fromSessionId":"mobile:device-7"}hello' }));
     expect(contextOf(result!.body)).toContain('[HELM_REMOTE_RULES]');
   });
 
@@ -391,37 +380,6 @@ describe('UserPromptSubmit reminder delivery modes (G9)', () => {
     expect(contextOf(result!.body)).toContain('[HELM_MSG_RULES]');
   });
 
-  describe('Telegram mode block (telegramModeInstructions)', () => {
-    it('mode hook injects the mode block ONCE per telegram-mode entry', async () => {
-      const { injector } = makeInjector(
-        { getReminderMode: (r) => (r === 'telegramModeInstructions' ? 'hook' : undefined) },
-        { interactionChannel: 'remote' },
-      );
-      const first = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-      expect(contextOf(first!.body)).toContain('[HELM_TELEGRAM_MODE]');
-      const second = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-      expect(contextOf(second!.body)).not.toContain('[HELM_TELEGRAM_MODE]');
-    });
-
-    it('mode pty (the default) never injects the mode block — the prepend owns it', async () => {
-      const { injector } = makeInjector({}, { interactionChannel: 'remote' });
-      const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-      expect(contextOf(result!.body)).not.toContain('[HELM_TELEGRAM_MODE]');
-    });
-
-    it('leaving telegram mode re-arms the block for the next entry', async () => {
-      let channel: string | undefined = 'telegram';
-      const { injector } = makeInjector(
-        { getReminderMode: (r) => (r === 'telegramModeInstructions' ? 'hook' : undefined), getSession: () => session({ interactionChannel: channel as never }) },
-      );
-      await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-      channel = 'desktop';
-      await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-      channel = 'remote';
-      const again = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
-      expect(contextOf(again!.body)).toContain('[HELM_TELEGRAM_MODE]');
-    });
-  });
 });
 
 describe('PostToolUse suggestion injection', () => {

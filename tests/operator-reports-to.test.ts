@@ -100,15 +100,14 @@ describe('ContextInjector and reportsTo', () => {
     expect(reply ? contextOf(reply.body) : '').not.toMatch(/report .*operator/i);
   });
 
-  it('the user messaging it directly (phone or Telegram) hands it over to the user', async () => {
+  it('the phone user messaging it directly hands it over to the user', async () => {
     const cleared: string[] = [];
     const inj = injector(row({ id: 'worker', reportsTo: 'op' }), cleared);
     await inj.promptContext('worker', '[HELM_MSG]{"type":"inter_llm_message","fromSessionId":"op"}do X');
     expect(cleared).toEqual([]);
     await inj.promptContext('worker', '[HELM_MSG]{"type":"inter_llm_message","fromSessionId":"mobile:abc"}hi');
     expect(cleared).toEqual(['worker']);
-    await inj.promptContext('worker', '[HELM_TELEGRAM chat:1]\nhi\n[/HELM_TELEGRAM]');
-    expect(cleared).toEqual(['worker', 'worker']);
+    expect(cleared).toEqual(['worker']);
   });
 });
 

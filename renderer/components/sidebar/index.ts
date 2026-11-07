@@ -6,4 +6,3 @@ export { default as SortBar } from './SortBar.vue';
 export { default as PlansGrid } from './PlansGrid.vue';
 export { default as StatusStrip } from './StatusStrip.vue';
 export { default as BindingsTab } from '../settings/pages/BindingsTab.vue';
-export { default as TelegramTab } from '../settings/pages/TelegramTab.vue';

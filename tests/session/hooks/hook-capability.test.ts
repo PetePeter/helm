@@ -1,6 +1,6 @@
 /**
  * The G4 rules-via-hooks capability check — the ONE decision both delivery
- * paths share (MCP session_send_text and the Telegram relay).
+ * paths share (MCP session_send_text and remote chat delivery).
  *
  * Fake status readers return canned integration states; what is under test is
  * the decision logic: provider must be one that can inject on UserPromptSubmit,

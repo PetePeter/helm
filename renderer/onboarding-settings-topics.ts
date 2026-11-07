@@ -37,7 +37,6 @@ export const ONBOARDING_SETTING_GROUPS: OnboardingSettingGroup[] = [
     topics: [
       { title: 'Phone app', description: 'Pair a phone over Bluetooth or local network', tabId: 'mobile' },
       { title: 'Fleet', description: 'Pair another Helm desktop', tabId: 'peers' },
-      { title: 'Telegram and notifications', description: 'Control sessions and choose which updates to receive', tabId: 'telegram' },
       { title: 'Voice', description: 'Configure speech and audio tools', tabId: 'voice' },
     ],
   },

@@ -6,7 +6,7 @@
 export function buildNotificationGuide(): string {
   return `\
 [notification]
-description = "MANDATORY: call notify_user on key events. Helm routes to toast / taskbar flash / bubble / Telegram automatically based on screen state."
+description = "MANDATORY: call notify_user on key events. Helm routes to desktop toast / taskbar flash / bubble based on screen state and independently sends an alert to the paired phone."
 preferred_tool = "notify_user"
 
 [when_to_notify]
@@ -22,8 +22,8 @@ rule_1 = "Routine progress, intermediate logs, or low-priority updates."
 toast = "Window hidden — Helm shows native OS toast."
 taskbar_flash = "Window visible but not focused — OS toast + taskbar icon flashes."
 bubble = "Window visible, focused, different session — in-app bubble."
-telegram = "Screen locked — Telegram (if configured)."
-none = "No external channel was used."
+phone = "If a paired phone is connected, the alert is pushed independently of desktop routing."
+none = "No desktop channel was used; the paired phone alert is still attempted."
 
 [examples]
 long_task_finished = { tool = "notify_user", title = "Work complete", content = "Migrated auth middleware to JWT. 3 files changed, 12 tests pass." }

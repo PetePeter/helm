@@ -183,8 +183,7 @@ export class HelmSessionDeliveryService {
   private readonly compactsPending = new Set<string>();
 
   /**
-   * Late-bind the G9 reminder-delivery resolver (same fn the Telegram relay
-   * and the ContextInjector use).
+   * Late-bind the G9 reminder-delivery resolver used by the ContextInjector.
    *
    * For the `helmMsgRules` reminder: 'pty' prepends the directive as today;
    * 'hook' skips it — the recipient's hook supplies the same rules

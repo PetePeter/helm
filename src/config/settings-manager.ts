@@ -3,22 +3,8 @@ import * as path from 'path';
 import * as YAML from 'yaml';
 import logger from '../utils/logger.js';
 import { normalizeMcpPort } from './loader-helpers.js';
-import type { FleetConfig, McpConfig, MobileLanConfig, OperatorConfig, SettingsConfig, TelegramSettingsConfig, VoiceConfig } from './loader.js';
+import type { FleetConfig, McpConfig, MobileLanConfig, OperatorConfig, SettingsConfig, VoiceConfig } from './loader.js';
 import { DEFAULT_VOICE_CONFIG, VOICE_CONFIG_FIELDS } from './voice-config-manager.js';
-
-export const DEFAULT_TELEGRAM_CONFIG: TelegramSettingsConfig = {
-  enabled: false,
-  autoStart: false,
-  botToken: '',
-  instanceName: 'Home',
-  chatId: null,
-  allowedUserIds: [],
-  safeModeDefault: true,
-  notifyOnComplete: true,
-  notifyOnIdle: true,
-  notifyOnError: true,
-  notifyOnCrash: true,
-};
 
 export const DEFAULT_MCP_CONFIG: McpConfig = {
   enabled: false,
@@ -51,6 +37,16 @@ export const DEFAULT_OPERATOR_CONFIG: OperatorConfig = {
   rules: '',
 };
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function hasOwn(value: Record<string, unknown> | undefined, key: string): boolean {
+  return !!value && Object.prototype.hasOwnProperty.call(value, key);
+}
+
 export class SettingsManager {
   private pendingSave: ReturnType<typeof setTimeout> | null = null;
 
@@ -66,14 +62,24 @@ export class SettingsManager {
       throw new Error('Invalid settings.yaml: could not parse');
     }
     const needsOnboardingMigration = settings.onboardingCompleted === undefined;
-    const legacyTelegram = settings.telegram as (TelegramSettingsConfig & Partial<VoiceConfig>) | undefined;
+    const rawSettings = settings as unknown as Record<string, unknown>;
+    const hasLegacyTelegramSection = hasOwn(rawSettings, 'telegram');
+    const legacyTelegram = asRecord(rawSettings.telegram);
     const needsVoiceMigration = VOICE_CONFIG_FIELDS.some(field =>
       !!legacyTelegram && Object.prototype.hasOwnProperty.call(legacyTelegram, field));
+    const hookInjections = asRecord(rawSettings.hookInjections);
+    const reminderDelivery = asRecord(rawSettings.reminderDelivery);
+    const needsRemoteChatMigration = hasOwn(hookInjections, 'telegramRules')
+      || hasOwn(hookInjections, 'telegramMode')
+      || hasOwn(reminderDelivery, 'telegramInstruction')
+      || hasOwn(reminderDelivery, 'telegramModeInstructions');
     const normalized = this.normalize(settings);
     // Bundled fresh-install settings explicitly contain false. An older user
     // settings file does not, so migrate it as completed rather than showing a
     // first-run wizard to someone upgrading an established installation.
-    if (needsOnboardingMigration || needsVoiceMigration) this.write(normalized);
+    if (needsOnboardingMigration || needsVoiceMigration || hasLegacyTelegramSection || needsRemoteChatMigration) {
+      this.write(normalized);
+    }
     return normalized;
   }
 
@@ -99,7 +105,8 @@ export class SettingsManager {
     if (settings.hapticFeedback === undefined) settings.hapticFeedback = true;
     if (settings.notifications === undefined) settings.notifications = true;
 
-    const savedTelegram = settings.telegram as (TelegramSettingsConfig & Partial<VoiceConfig>) | undefined;
+    const rawSettings = settings as unknown as Record<string, unknown>;
+    const savedTelegram = asRecord(rawSettings.telegram);
     const savedVoice = settings.voice as Partial<VoiceConfig> | undefined;
     const voice = { ...DEFAULT_VOICE_CONFIG };
     for (const field of VOICE_CONFIG_FIELDS) {
@@ -113,15 +120,29 @@ export class SettingsManager {
     }
     settings.voice = voice;
 
-    const telegramSettings = { ...(savedTelegram ?? {}) } as Record<string, unknown>;
-    for (const field of VOICE_CONFIG_FIELDS) delete telegramSettings[field];
-    settings.telegram = {
-      ...DEFAULT_TELEGRAM_CONFIG,
-      ...(telegramSettings as Partial<TelegramSettingsConfig>),
-      autoStart: typeof savedTelegram?.autoStart === 'boolean'
-        ? savedTelegram.autoStart
-        : savedTelegram?.enabled === true,
-    };
+    delete rawSettings.telegram;
+
+    const hookInjections = asRecord(rawSettings.hookInjections);
+    if (hookInjections) {
+      const migrated = { ...hookInjections };
+      if (!hasOwn(migrated, 'remoteChatRules') && hasOwn(migrated, 'telegramRules')) {
+        migrated.remoteChatRules = migrated.telegramRules;
+      }
+      delete migrated.telegramRules;
+      delete migrated.telegramMode;
+      rawSettings.hookInjections = migrated;
+    }
+
+    const reminderDelivery = asRecord(rawSettings.reminderDelivery);
+    if (reminderDelivery) {
+      const migrated = { ...reminderDelivery };
+      if (!hasOwn(migrated, 'remoteChatInstruction') && hasOwn(migrated, 'telegramInstruction')) {
+        migrated.remoteChatInstruction = migrated.telegramInstruction;
+      }
+      delete migrated.telegramInstruction;
+      delete migrated.telegramModeInstructions;
+      rawSettings.reminderDelivery = migrated;
+    }
 
     settings.mcp = {
       ...DEFAULT_MCP_CONFIG,

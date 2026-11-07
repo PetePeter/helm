@@ -83,8 +83,7 @@ describe('CliIntegrationsTab — Reminder delivery (G9)', () => {
   it('renders one row per standing reminder', async () => {
     const wrapper = await factory();
     expect(wrapper.text()).toContain('Inter-session rules');
-    expect(wrapper.text()).toContain('Telegram reply instruction');
-    expect(wrapper.text()).toContain('Telegram mode block');
+    expect(wrapper.text()).toContain('Remote chat reply instruction');
   });
 
   it('marks unset reminders as default and selects the effective mode', async () => {
@@ -93,7 +92,7 @@ describe('CliIntegrationsTab — Reminder delivery (G9)', () => {
     // Defaults: rules/instruction hook, mode block pty.
     expect(rows[0].find('select').element.value).toBe('hook');
     expect(rows[1].find('select').element.value).toBe('hook');
-    expect(rows[2].find('select').element.value).toBe('pty');
+    expect(rows).toHaveLength(2);
     expect(rows[0].text()).toContain('(default)');
   });
 
@@ -108,20 +107,12 @@ describe('CliIntegrationsTab — Reminder delivery (G9)', () => {
     expect(text).not.toContain('Claude Code (');
   });
 
-  it('shows no fallback line for the pty-default mode block until switched to hook', async () => {
-    const wrapper = await factory();
-    const rows = reminderRows(wrapper);
-    expect(rows[2].text()).not.toContain('Falls back to prepend for:');
-  });
-
   it('round-trips a mode change through the typed IPC channel', async () => {
     const wrapper = await factory();
     const rows = reminderRows(wrapper);
-    await rows[2].find('select').setValue('hook');
+    await rows[1].find('select').setValue('off');
     await flushPromises();
-    expect(setCalls).toEqual([{ telegramModeInstructions: 'hook' }]);
-    // The fallback line appears once the mode asks for hook.
-    expect(reminderRows(wrapper)[2].text()).toContain('Falls back to prepend for:');
+    expect(setCalls).toEqual([{ remoteChatInstruction: 'off' }]);
   });
 });
 

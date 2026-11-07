@@ -25,7 +25,7 @@ describe('buildNotificationGuide', () => {
   });
 
   it('documents all routing outcomes', () => {
-    for (const key of ['toast', 'taskbar_flash', 'bubble', 'telegram', 'none']) {
+    for (const key of ['toast', 'taskbar_flash', 'bubble', 'phone', 'none']) {
       expect(guide).toContain(key);
     }
   });

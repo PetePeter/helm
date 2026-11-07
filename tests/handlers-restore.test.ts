@@ -71,13 +71,6 @@ const mockConfigLoader = {
     getCliTypes: vi.fn().mockReturnValue([]),
     getCliTypeEntry: vi.fn(),
     getBindings: vi.fn(),
-    getTelegramConfig: vi.fn().mockReturnValue({
-      enabled: false,
-      botToken: '',
-      chatId: 0,
-      instanceName: 'test',
-      allowedUserIds: [],
-    }),
     getMcpConfig: vi.fn().mockReturnValue({
       enabled: false,
       port: 5555,

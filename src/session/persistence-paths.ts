@@ -6,7 +6,6 @@ const persistenceDirname = dirname(fileURLToPath(import.meta.url));
 const configDir = getConfigDir(persistenceDirname);
 
 export const SESSIONS_FILE = join(configDir, 'sessions.yaml');
-export const TELEGRAM_TOPICS_FILE = join(configDir, 'telegram-topics.yaml');
 export const PLANS_FILE = join(configDir, 'plans.yaml');
 export const DEFAULT_PLANS_DIR = join(configDir, 'plans');
 export const DEFAULT_PLAN_DEPS_FILE = join(configDir, 'plan-dependencies.json');

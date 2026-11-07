@@ -264,7 +264,7 @@ export class PtyManager extends EventEmitter {
    *
    * Marking lives here rather than in the pty:write IPC handler so every path
    * shares the same intent rule. Only user input moves the dot; system prompts
-   * (including MCP, Telegram automation and pattern-matcher sends) stay inert.
+   * (including MCP and pattern-matcher sends) stay inert.
    * User-origin concerns such as channel affinity remain in the IPC handler.
    */
   write(sessionId: string, data: string, intent: WriteIntent = 'input'): boolean {
@@ -391,7 +391,7 @@ export class PtyManager extends EventEmitter {
    * shell to emit SIGWINCH. Full-screen TUIs (e.g. Copilot CLI) redraw their input
    * region on SIGWINCH; a hidden session that never received a fit/resize keeps a
    * stale size, so text delivered to it lands in a mis-sized buffer. Sent before
-   * inter-session/Telegram text delivery so the recipient redraws first.
+   * inter-session and remote chat delivery so the recipient redraws first.
    * No-op when size is unknown or too small to shrink.
    */
   async nudgeResize(sessionId: string): Promise<void> {

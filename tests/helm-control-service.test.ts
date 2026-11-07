@@ -66,18 +66,6 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
     getAllCliTypes: vi.fn(() => []),
     getCliTypeConfig: vi.fn(() => ({})),
     getMcpConfig: vi.fn(() => ({ enabled: true, port: 47373, authToken: 'helm-token' })),
-    getTelegramConfig: vi.fn(() => ({
-      enabled: true,
-      botToken: 'configured',
-      chatId: 123,
-      allowedUserIds: [456],
-      instanceName: 'Home',
-      safeModeDefault: true,
-      notifyOnComplete: true,
-      notifyOnIdle: true,
-      notifyOnError: true,
-      notifyOnCrash: true,
-    })),
   };
 
   const service = new HelmControlService(
@@ -712,7 +700,6 @@ describe('HelmControlService.getSessionInfo', () => {
     expect(info).not.toHaveProperty('mandatory_rules');
     expect(info).not.toHaveProperty('mcp_url');
     expect(info).not.toHaveProperty('mcp_token');
-    expect(info).not.toHaveProperty('telegramCapabilities');
     expect(info).not.toHaveProperty('available_projects');
     expect(info).not.toHaveProperty('skills');
   });
@@ -753,7 +740,7 @@ describe('HelmControlService.getSessionInfo', () => {
     expect(notificationGuide!.body).toContain('Routine progress');
     expect(notificationGuide!.body).toContain('toast');
     expect(notificationGuide!.body).toContain('bubble');
-    expect(notificationGuide!.body).toContain('telegram');
+    expect(notificationGuide!.body).toContain('phone');
     expect(notificationGuide!.body).toContain('none');
   });
 

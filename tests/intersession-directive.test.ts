@@ -12,7 +12,6 @@ import {
   buildHelmMsgDirective,
   HELM_MSG_HOOK_RULES,
   HELM_REMOTE_HOOK_RULES,
-  HELM_TELEGRAM_HOOK_RULES,
 } from '../src/session/intersession-directive';
 
 describe('buildHelmMsgDirective (prepended form)', () => {
@@ -50,21 +49,14 @@ describe('injected forms', () => {
     expect(HELM_MSG_HOOK_RULES).not.toContain('session_set_aiagent_state');
   });
 
-  it('HELM_TELEGRAM_HOOK_RULES routes replies through chat_send', () => {
-    expect(HELM_TELEGRAM_HOOK_RULES).toContain('chat_send');
-    expect(HELM_TELEGRAM_HOOK_RULES).toContain('CANNOT see the terminal');
-    expect(HELM_TELEGRAM_HOOK_RULES).toContain('do NOT use AskUserQuestion');
-  });
-
   it('HELM_REMOTE_HOOK_RULES gives transport-neutral remote chat guidance', () => {
     expect(HELM_REMOTE_HOOK_RULES).toContain('[HELM_REMOTE_RULES]');
     expect(HELM_REMOTE_HOOK_RULES).toContain('chat_send');
-    expect(HELM_REMOTE_HOOK_RULES).not.toContain('[HELM_TELEGRAM_RULES]');
     expect(HELM_REMOTE_HOOK_RULES).toContain('CANNOT see the terminal');
   });
 
   it('every form is brace-free — the sequence parser would rewrite them', () => {
-    for (const text of [buildHelmMsgDirective('s'), buildHelmMsgDirective('mobile:d'), HELM_MSG_HOOK_RULES, HELM_REMOTE_HOOK_RULES, HELM_TELEGRAM_HOOK_RULES]) {
+    for (const text of [buildHelmMsgDirective('s'), buildHelmMsgDirective('mobile:d'), HELM_MSG_HOOK_RULES, HELM_REMOTE_HOOK_RULES]) {
       expect(text).not.toContain('{');
       expect(text).not.toContain('}');
     }

@@ -70,10 +70,6 @@ export interface SessionInfo {
   contextHistory?: ContextUsageSample[];
   /** Explicit plan item to show on the session row as the current working plan. */
   currentPlanId?: string;
-  /** Telegram forum topic ID for this session's topic thread. The typed view of
-   *  `chatBindings.telegram` — see src/session/chat/chat-bindings.ts, which owns
-   *  the mirroring in both directions. */
-  topicId?: number;
   /** Where this session lives on each chat surface, keyed by provider. Generic
    *  so a third surface is a new key, not a new field; an unrecognised key is
    *  preserved across a load/save round-trip rather than dropped. */
@@ -128,7 +124,7 @@ export interface SessionInfo {
   /** Refuse ALL stdin — desktop keys, other sessions, schedules, chat, Mess
    *  pokes — until the user unfreezes it. Persists. */
   frozen?: boolean;
-  /** Prevent deliberate user, MCP, or Telegram closure until explicitly cleared. */
+  /** Prevent deliberate user or MCP closure until explicitly cleared. */
   locked?: boolean;
   /** Hide from the local Session List while keeping the session alive. */
   hidden?: boolean;

@@ -4,7 +4,7 @@
  * Delivery is not a single write. It is nudge -> payload -> settle -> submit,
  * and any interleaving of two of those corrupts both messages. Moving delivery
  * into the main process gave one writer *location*; it did not give one
- * serialized *operation*. Two concurrent senders — Telegram and inter-session,
+ * serialized *operation*. Two concurrent senders — phone chat and inter-session,
  * or a send and a recovery resend — could each nudge and then write.
  *
  * The gate is per session: delivering to one session must never hold up

@@ -27,7 +27,7 @@ import { isMobileSessionId } from '../mobile/mobile-identity.js';
  * Why: the recipient is driven by another LLM — local or across the fleet — and
  * nobody is watching its terminal. An AskUserQuestion modal there blocks
  * forever, unseen. Questions must travel back over the same wire the work came
- * in on. Mirrors the guarantee Telegram mode already gives (relay-service.ts).
+ * in on.
  */
 export function buildHelmMsgDirective(senderSessionId: string, senderSource?: 'desktop'): string {
   // A phone sender cannot read the recipient's terminal at all. Observed
@@ -68,8 +68,7 @@ function describeSender(senderSessionId: string, senderSource?: 'desktop'): stri
  * `mobile:<deviceId>` proxy identity (docs/mobile-gate.md), which nothing in
  * session_send_text can resolve — a recipient told to reply there got "Session
  * not found" every single time. The phone's surface is chat_send, which routes
- * to the recipient's own bound chat (the phone over BLE, Telegram if
- * configured), exactly as Telegram mode routes replies through chat_send.
+ * to the recipient's own bound chat.
  * Local and fleet senders are real addressable sessions and keep send_text.
  */
 function buildReplyInstruction(senderSessionId: string, senderSource?: 'desktop'): string {
@@ -103,37 +102,12 @@ export const HELM_MSG_HOOK_RULES =
   'Then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +
   '[/HELM_MSG_RULES]';
 
-/**
- * The injected form of the per-message Telegram instruction
- * (the trailing line of relay-service's wrapTelegramEnvelope).
- */
-export const HELM_TELEGRAM_HOOK_RULES =
-  '[HELM_TELEGRAM_RULES]\n' +
-  'This message came from the user on Telegram. The user CANNOT see the terminal.\n' +
-  'ALL responses and ALL questions MUST go through the chat_send MCP tool — do NOT use AskUserQuestion.\n' +
-  '[/HELM_TELEGRAM_RULES]';
-
-/** Generic away-mode rules shared by remote chat surfaces such as a paired phone or Telegram. */
+/** Away-mode rules shared by remote chat surfaces. */
 export const HELM_REMOTE_HOOK_RULES =
   '[HELM_REMOTE_RULES]\n' +
   'This message came from the user through a remote chat surface. The user CANNOT see the terminal.\n' +
   'ALL responses and ALL questions MUST go through the chat_send MCP tool — do NOT use AskUserQuestion.\n' +
   '[/HELM_REMOTE_RULES]';
-
-/**
- * The Telegram-mode block, announced once per entry into Telegram mode.
- * ONE source of truth: the relay prepends it (reminder `telegramModeInstructions`
- * resolving to pty) and the ContextInjector injects it out-of-band (hook).
- * The wording is shared verbatim by both paths — they say the same thing,
- * only the delivery differs.
- */
-export const HELM_TELEGRAM_MODE_INSTRUCTIONS =
-  '[HELM_TELEGRAM_MODE]\n' +
-  'This session is now in Telegram mode. The user is interacting via Telegram and CANNOT see the terminal.\n' +
-  'ALL responses MUST go through the chat_send MCP tool.\n' +
-  'ALL questions and confirmations MUST go through chat_send — do NOT use AskUserQuestion.\n' +
-  'The user will return to their desk when they type in the terminal, which automatically exits Telegram mode.\n' +
-  '[/HELM_TELEGRAM_MODE]';
 
 /**
  * The `[HELM_MSG]{json}` opening of an inter-session message: the provenance a

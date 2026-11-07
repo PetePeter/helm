@@ -326,9 +326,7 @@ export class MobileChatBridge implements ChatBridge {
    *
    * The same record shape as a message, with `kind` set, which is what tells the
    * phone to raise a notification instead of appending to the thread. It goes out
-   * UNCONDITIONALLY, alongside Telegram: a phone that also gets the Telegram
-   * message buzzes twice, and that is ratified rather than tolerated — see
-   * docs/chat-fan-out.md.
+   * UNCONDITIONALLY, alongside other chat surfaces — see docs/chat-fan-out.md.
    *
    * Returns false when nothing carried it; the caller logs, nobody retries. An
    * alert is only true at the moment it happens.

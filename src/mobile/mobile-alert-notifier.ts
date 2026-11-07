@@ -2,7 +2,7 @@
  * MobileAlertNotifier — the reason BLE was chosen over everything else.
  *
  * A session changing state on the desktop buzzes the phone in your pocket with
- * no cloud, no APNs, no Firebase and no Telegram in the path: the alert goes out
+ * no cloud, no APNs or Firebase in the path: the alert goes out
  * over the already-open GATT link, and the phone's foreground service turns it
  * into a lock-screen row.
  *
@@ -16,15 +16,11 @@
  *
  * Three things it deliberately does NOT do:
  *
- * NO DEDUPLICATION. `TelegramNotifier` keeps a per-session suppression window;
- * this does not mirror it. The phone keys its notification on the session id, so
- * ten alerts from one session REPLACE into one row — a better mechanism, and one
- * that does not need the desktop to guess a window. (That is a different thing
- * from the ratified duplication BETWEEN Telegram and the app, which stays.)
+ * NO DUPLICATION WINDOW. The phone keys its notification on the session id, so
+ * ten alerts from one session replace into one row without desktop-side state.
  *
- * NO PREFERENCES. It never reads TelegramConfig. Per-transport notification
- * preferences are a real question and a config-surface plan; borrowing
- * Telegram's would couple two transports that ChatBroker exists to keep apart.
+ * NO PREFERENCES. Per-transport notification preferences are a separate
+ * product decision; this notifier only carries the event it receives.
  *
  * NO RETRY. An alert not carried by the link is dropped. It was only true when
  * it happened, and a queue would deliver "needs input" about something finished
@@ -67,7 +63,7 @@ export class MobileAlertNotifier {
 
   /**
    * One `session:updated`. Pushes only when the session's activity leaves
-   * 'active' (its turn ended) — the same gate Telegram uses.
+   * 'active' (its turn ended).
    */
   observe(session: ObservedSession): void {
     const previous = this.lastState.get(session.id);
