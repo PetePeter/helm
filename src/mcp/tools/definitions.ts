@@ -1464,16 +1464,6 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
-    name: 'telegram_status',
-    title: 'Telegram Status',
-    description: 'Report whether Telegram is enabled, configured, running, and available. Agents should use Telegram only for concise mobile-friendly urgent blockers or after the user has already engaged through Telegram. No bot token is returned.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'chat_send',
     title: 'Send Chat',
     description: 'Send concise mobile-friendly text to the user over the session\'s bound chat surfaces (a paired phone over BLE; Telegram if configured). Replies always go to YOUR OWN session topic (resolved from the X-Helm-Session-Id header); you do not need to pass sessionId. sessionId is an optional override for global-token callers. Resolving by name is not supported — duplicate names would mis-route. Lines must be short; do not send large wide logs, tables, or code blocks.',
@@ -1485,48 +1475,6 @@ export const MCP_TOOLS: McpTool[] = [
         filePath: { type: 'string', description: 'Optional absolute file path to send as attachment. System reads file from disk.' },
       },
       required: ['message'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'telegram_chat',
-    title: 'Send Telegram Chat',
-    description: 'Alias of chat_send. Send concise mobile-friendly text to the user via Telegram. Replies always go to YOUR OWN session topic (resolved from the X-Helm-Session-Id header); you do not need to pass sessionId. sessionId is an optional override for global-token callers. Resolving by name is not supported — duplicate names would mis-route. Lines must be short; do not send large wide logs, tables, or code blocks.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        sessionId: { type: 'string', description: 'Optional override — your own session UUID. Normally omit it; the server uses your authenticated identity.' },
-        message: { type: 'string' },
-        filePath: { type: 'string', description: 'Optional absolute file path to send as attachment. System reads file from disk.' },
-      },
-      required: ['message'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'telegram_send_voice',
-    title: 'Send Telegram Voice Reply',
-    description: 'Helm synthesizes speech (piper→ffmpeg→OGG/Opus) and sends it as a native Telegram voice message to YOUR session topic. TEXT IS THE DEFAULT REPLY CHANNEL — only use voice when the user explicitly asks for a voice reply. Only available when piper+ffmpeg are configured.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        sessionId: { type: 'string', description: 'Optional override — your own session UUID. Normally omit it; the server uses your authenticated identity.' },
-        text: { type: 'string', description: 'The text Helm will speak. Keep it concise and mobile-friendly.' },
-      },
-      required: ['text'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'telegram_channel_close',
-    title: 'Close Telegram Channel',
-    description: 'Close one MCP Telegram communication channel without deleting unrelated session topics.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        channelId: { type: 'string' },
-      },
-      required: ['channelId'],
       additionalProperties: false,
     },
   },

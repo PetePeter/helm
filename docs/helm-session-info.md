@@ -44,12 +44,12 @@ Context lookup is deliberately limited to `session_info` and `session_get`: read
 
 ### Chat Guidance
 
-- **`chat`** (string) — Points agents at `chat_send` as the transport-neutral way to reach the user's bound chat surfaces (a paired phone over BLE; Telegram if configured), with `telegram_chat` documented as its identical-behavior alias.
+- **`chat`** (string) — Points agents at `chat_send` as the transport-neutral way to reach the user's bound chat surfaces (a paired phone over BLE; Telegram if configured).
 
 ### Available Resources
 
 - **`available_projects`** (ProjectInfo[]) — Compact project stubs with `{ id, name, canonicalPath }` fields. Call `projects_list` when full project directory details are needed.
-- **`skills`** — Compact summaries for user and system skills applicable to the current session project. Fields: `id`, `name`, `description`, `aiAmendable`, `allProjects`, `projectIds`, `type`, `source`. Fetch full bodies with `skills_get` only when needed. System skill type identifiers: `session-send-text`, `agent-plan`, `notification`, `telegram`.
+- **`skills`** — Compact summaries for user and system skills applicable to the current session project. Fields: `id`, `name`, `description`, `aiAmendable`, `allProjects`, `projectIds`, `type`, `source`. Fetch full bodies with `skills_get` only when needed. System skill type identifiers: `session-send-text`, `agent-plan`, `notification`.
 
   | Type | Content |
   | --- | --- |

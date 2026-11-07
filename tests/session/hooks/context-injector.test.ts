@@ -220,7 +220,7 @@ describe('UserPromptSubmit', () => {
     const context = contextOf(result!.body);
     expect(context).toContain('[HELM_MSG_RULES]');
     expect(context).toContain('fromSessionId in the envelope');
-    expect(context).not.toContain('telegram_chat');
+    expect(context).toContain('session_send_text');
   });
 
   it('injects generic remote chat rules for a mobile-origin message', async () => {
@@ -236,7 +236,7 @@ describe('UserPromptSubmit', () => {
     const context = contextOf(result!.body);
     expect(context).toContain('[HELM_REMOTE_RULES]');
     expect(context).toContain('chat_send');
-    expect(context).not.toContain('telegram_chat');
+    expect(context).toContain('ALL responses and ALL questions MUST go through the chat_send MCP tool');
     expect(context).not.toContain('[HELM_MSG_RULES]');
   });
 
@@ -248,7 +248,7 @@ describe('UserPromptSubmit', () => {
     const context = contextOf(result!.body);
     expect(context).toContain('[HELM_REMOTE_RULES]');
     expect(context).toContain('chat_send');
-    expect(context).not.toContain('telegram_chat');
+    expect(context).toContain('ALL responses and ALL questions MUST go through the chat_send MCP tool');
     expect(context).not.toContain('[HELM_MSG_RULES]');
   });
 

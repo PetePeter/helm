@@ -1,16 +1,15 @@
 # Chat fan-out — ChatBroker, ChatBridge and the mobile chat surface
 
-Telegram used to **be** the chat channel: `TelegramRelayService` was both the
-concept and the transport. A phone over BLE is a second surface that runs
-**alongside** Telegram permanently, and a LAN surface is wanted later still, so
-the concept is lifted out into a bridge interface and a broker.
+Telegram was the first chat provider. Its runtime was unwired in P-1184, while
+the relay source remains for P-1186 cleanup. The chat service and broker keep the
+transport-neutral path; the mobile bridge is the active registered provider.
 
 | Module | Role |
 |--------|------|
 | `src/session/chat/chat-bridge.ts` | The interface one chat surface implements |
 | `src/session/chat/chat-broker.ts` | Unbounded registry, fan-out, inbound routing |
 | `src/session/chat/chat-bindings.ts` | Per-provider session bindings + `topicId` migration |
-| `src/telegram/relay-service.ts` | `provider: 'telegram'` — the first implementation |
+| `src/telegram/relay-service.ts` | Retained Telegram provider source; currently unwired |
 | `src/mobile/mobile-chat-bridge.ts` | `provider: 'mobile'` — the phone, and the inbound call path |
 | `src/mobile/mobile-chat-journal.ts` | The session-lifetime rolling record used by phones and the desktop Chat pane |
 | `src/mobile/mobile-envelope.ts` | The records that cross the BLE wire |
@@ -21,10 +20,10 @@ the concept is lifted out into a bridge interface and a broker.
 graph TB
     DESK[Desktop Chat pane] -->|chat:send| IPC[chat IPC]
     IPC -->|after target delivery succeeds| BROKER
-    CLI[AI CLI] -->|chat_send MCP tool| SVC[HelmTelegramService]
+    CLI[AI CLI] -->|chat_send MCP tool| SVC[HelmChatService]
     SVC --> BROKER[ChatBroker<br/>unconditional fan-out]
-    BROKER --> TG[TelegramRelayService<br/>provider: telegram]
     BROKER --> MOB[MobileChatBridge<br/>provider: mobile]
+    BROKER -.->|retained, unwired| TG[TelegramRelayService<br/>provider: telegram]
     BROKER -.->|later, no code changes here| LAN[LAN bridge]
     TG --> TOPIC[Telegram forum topic]
     MOB --> LINK[MobileLinkManager] --> PHONE[Paired phone]
@@ -35,28 +34,24 @@ graph TB
 
 ## Fan-out is unconditional
 
-Every registered bridge receives every message, always. No provider selection, no
-"prefer the phone when it is linked", no de-duplication. Telegram is the only
-out-of-BLE-range path, so suppressing it whenever the phone happens to be online
-would make *"was I told?"* depend on link state. **Duplicate buzzes are the
-accepted cost** — the escape hatch is muting the Telegram topic at OS level.
+Every registered bridge receives every message, always. No provider selection,
+no "prefer the phone when it is linked", no de-duplication. If Telegram is
+registered alongside the phone, this keeps delivery independent of link state;
+duplicate alerts are accepted, and the user can mute the Telegram topic.
 
 One bridge failing never silences another: each send is isolated, and a throw
 becomes a `sent: false` row rather than propagating.
 
 The registry is **unbounded**. Adding a surface is one `register()` call and one
 interface implementation — nothing in the broker, the service or the MCP tools
-changes. The MCP tool names (`chat_send` / `telegram_chat`,
-`telegram_send_voice`) are deliberately unchanged in behavior: `chat_send` is
-the transport-neutral name and `telegram_chat` is its long-standing alias, so a
-CLI keeps calling what it always called and the extra surfaces appear behind
-them.
+changes. `chat_send` is the sole MCP reply tool and routes through the
+transport-neutral chat service to every registered surface.
 
 The desktop pane is also a broker source. `chat:send` delivers to the target
 session first; only a successful delivery is sent through `ChatBroker` with
-`source: 'desktop'` and a stable `desktop:` origin id. Telegram renders that
-source with a `[Desktop]` prefix; the phone and journal keep the unprefixed text
-and origin id.
+`source: 'desktop'` and a stable `desktop:` origin id. The retained Telegram
+relay renders that source with a `[Desktop]` prefix; the phone and journal keep
+the unprefixed text and origin id.
 
 ## chatBindings — where a session lives on each surface
 
@@ -478,7 +473,7 @@ desktop.
 ```mermaid
 graph LR
     API[API tool loop<br/>server usage] -->|usage| S
-    CLI[CLI session<br/>chat_send] --> S[HelmTelegramService<br/>usageBadge]
+    CLI[CLI session<br/>chat_send] --> S[HelmChatService<br/>usageBadge]
     T[cliTranscriptPath<br/>from CLI hooks] -->|readTranscriptUsage| S
     C[cli-types.yaml<br/>contextWindow] -->|window fallback| S
     S -->|ChatTurnUsage| B[ChatBroker] --> P[phone badge]

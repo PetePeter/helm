@@ -391,7 +391,7 @@ describe('HelmSessionDeliveryService', () => {
      * identity (docs/mobile-gate.md) that session_send_text cannot resolve, so
      * pointing a recipient at it guaranteed "Session not found" on every reply.
      * The phone's own surface is chat_send, exactly as Telegram mode routes
-     * replies through telegram_chat.
+     * replies through chat_send.
      */
     it('routes a phone sender to chat_send instead of an unresolvable address', async () => {
       const { service, ptyManager, receiver } = makeDeps();

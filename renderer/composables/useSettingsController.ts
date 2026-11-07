@@ -1,6 +1,6 @@
 import { computed, ref, toRaw } from 'vue';
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../../src/session/prompt-staleness.js';
-import { configClient, skillsClient, telegramClient, toolsClient } from '../ipc/clients.js';
+import { configClient, skillsClient, toolsClient } from '../ipc/clients.js';
 import { initConfigCache } from '../bindings.js';
 import { sessionsState } from '../screens/sessions-state.js';
 import { state } from '../state.js';
@@ -160,7 +160,6 @@ export function useSettingsController(options: {
       loadTools(),
       loadDirectories(),
       loadChipbarActions(),
-      loadTelegramConfig(),
       loadMcpConfig(),
       loadSkills(),
       loadBindingSortPrefs(),
@@ -302,29 +301,6 @@ export function useSettingsController(options: {
       settingsChipbarActions.value = chipbarData?.actions || [];
     } catch {
       settingsChipbarActions.value = [];
-    }
-  }
-
-  async function loadTelegramConfig(): Promise<void> {
-    try {
-      const tgConfig = await telegramClient.telegramGetConfig();
-      settingsTelegramConfig.value = {
-        botToken: tgConfig?.botToken || '',
-        chatId: tgConfig?.chatId ? String(tgConfig.chatId) : '',
-        allowedUsers: (tgConfig?.allowedUserIds || []).join(', '),
-        notificationsEnabled: tgConfig?.enabled || false,
-        autoStart: tgConfig?.autoStart || false,
-      };
-      settingsTelegramBotRunning.value = await telegramClient.telegramIsRunning();
-    } catch {
-      settingsTelegramConfig.value = {
-        botToken: '',
-        chatId: '',
-        allowedUsers: '',
-        notificationsEnabled: false,
-        autoStart: false,
-      };
-      settingsTelegramBotRunning.value = false;
     }
   }
 
@@ -642,45 +618,12 @@ export function useSettingsController(options: {
     }
   }
 
-  async function onTelegramUpdateField(field: string, value: string | boolean): Promise<void> {
-    await trackSave(async () => {
-      if (field === 'notificationsEnabled') {
-        await telegramClient.telegramSetConfig({ enabled: Boolean(value) });
-        settingsTelegramConfig.value.notificationsEnabled = Boolean(value);
-      } else if (field === 'autoStart') {
-        await telegramClient.telegramSetConfig({ autoStart: Boolean(value) });
-        settingsTelegramConfig.value.autoStart = Boolean(value);
-      } else if (field === 'botToken') {
-        await telegramClient.telegramSetConfig({ botToken: String(value) });
-        settingsTelegramConfig.value.botToken = String(value);
-      } else if (field === 'chatId') {
-        await telegramClient.telegramSetConfig({ chatId: Number(value) || null });
-        settingsTelegramConfig.value.chatId = String(value);
-      } else if (field === 'allowedUsers') {
-        const ids = String(value).split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
-        await telegramClient.telegramSetConfig({ allowedUserIds: ids });
-        settingsTelegramConfig.value.allowedUsers = String(value);
-      }
-    });
-  }
+  // These bindings remain until P-1186 removes the Telegram settings view.
+  async function onTelegramUpdateField(_field: string, _value: string | boolean): Promise<void> {}
 
-  async function onTelegramStartBot(): Promise<void> {
-    try {
-      await telegramClient.telegramStart();
-      settingsTelegramBotRunning.value = true;
-    } catch (error) {
-      console.error('Failed to start Telegram bot:', error);
-    }
-  }
+  async function onTelegramStartBot(): Promise<void> {}
 
-  async function onTelegramStopBot(): Promise<void> {
-    try {
-      await telegramClient.telegramStop();
-      settingsTelegramBotRunning.value = false;
-    } catch (error) {
-      console.error('Failed to stop Telegram bot:', error);
-    }
-  }
+  async function onTelegramStopBot(): Promise<void> {}
 
   async function onMcpUpdate(updates: Partial<{ enabled: boolean; port: number; authToken: string }>): Promise<void> {
     await trackSave(async () => {

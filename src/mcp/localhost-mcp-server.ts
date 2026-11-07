@@ -7,7 +7,6 @@ import { logger } from '../utils/logger.js';
 import { HelmControlService } from './helm-control-service.js';
 import { parseSessionAuthToken } from './session-auth.js';
 import { MCP_TOOLS, REQUIRED_PLAN_DESCRIPTION_SECTIONS } from './tools/definitions.js';
-import { filterToolsByCapabilities } from './tools/capability-gating.js';
 import type { McpTool } from './tools/types.js';
 import { callMcpTool } from './tools/dispatcher.js';
 import {
@@ -285,8 +284,7 @@ export class LocalhostMcpServer {
           });
           return;
         case 'tools/list': {
-          const caps = this.service.getTelegramStatus().capabilities;
-          this.writeJsonRpcResult(res, id, { tools: filterToolsByCapabilities(TOOLS, caps) });
+          this.writeJsonRpcResult(res, id, { tools: TOOLS });
           return;
         }
         case 'tools/call': {

@@ -82,7 +82,7 @@ function makeConfigLoader(instanceName = 'Home') {
 }
 
 function makeHelmControlService() {
-  return { setTelegramBridge: vi.fn() };
+  return {};
 }
 
 // ---------------------------------------------------------------------------

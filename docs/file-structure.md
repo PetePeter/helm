@@ -17,7 +17,6 @@ src/
 │       ├── keyboard-handlers.ts
 │       ├── pty-handlers.ts
 │       ├── system-handlers.ts  # system:openLogsFolder
-│       ├── telegram-handlers.ts # Telegram bot settings CRUD, bot start/stop IPC
 │       ├── chat-handlers.ts    # Desktop chat history/send IPC; deliver to the target before broker fan-out
 │       ├── draft-handlers.ts # draft:get / draft:set (the user's side of the session draft)
 │       ├── plan-handlers.ts   # 12 IPC channels (plan:list/create/update/delete/addDep/removeDep/apply/complete/startableForDir/doingForSession/deps/getItem) wired to PlanManager; startable/doing names are legacy ready/coding query names

@@ -334,14 +334,6 @@ export const PRELOAD_API_DOMAINS = {
     'toolsRemovePattern',
     'patternCancelSchedule',
   ],
-  telegram: [
-    'telegramGetConfig',
-    'telegramSetConfig',
-    'telegramStart',
-    'telegramStop',
-    'telegramIsRunning',
-    'telegramTestConnection',
-  ],
   keyboard: [
     'keyboardKeyTap',
     'keyboardSendKeyCombo',

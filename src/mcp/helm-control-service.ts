@@ -6,7 +6,7 @@ import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, t
 import type { ConfigLoader } from '../config/loader.js';
 import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
-import type { SessionEta } from '../types/session.js';
+import type { SessionEta, SessionInfo } from '../types/session.js';
 import { SessionChangeFeed, type SessionFeedCursor } from '../session/session-change-feed.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { TerminalReadMode } from '../session/terminal-output-buffer.js';
@@ -16,12 +16,6 @@ import { nextCheckAt } from '../session/operator-tasks.js';
 import type { PlanAttachment, PlanAttachmentTempFile } from '../types/plan-attachment.js';
 import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
 import type { Artifact, ArtifactIntent, ArtifactKind } from '../types/artifact.js';
-import type {
-  TelegramBridge,
-  TelegramChannel,
-  TelegramSendToUserResult,
-  TelegramStatus,
-} from '../types/telegram-channel.js';
 import { PlanAttachmentManager } from '../session/plan-attachment-manager.js';
 import type { NotificationManager } from '../session/notification-manager.js';
 import { HelmSessionDeliveryService, type HandoverArming } from './services/helm-session-delivery-service.js';
@@ -31,7 +25,6 @@ import { HelmPlanSequenceService, type PlanSequenceMemberFields } from './servic
 import { HelmPlanAttachmentService } from './services/helm-plan-attachment-service.js';
 import { HelmContextService } from './services/helm-context-service.js';
 import { HelmChatService } from './services/helm-chat-service.js';
-import { HelmTelegramService } from './services/helm-telegram-service.js';
 import { HelmSchedulerService } from './services/helm-scheduler-service.js';
 import { HelmProjectService } from './services/helm-project-service.js';
 import { HelmDirectoryService } from './services/helm-directory-service.js';
@@ -52,7 +45,6 @@ import { getSessionInfo } from './guides/session-info-guide.js';
 import { buildSessionSendTextGuide } from './guides/session-send-text-guide.js';
 import { buildAgentPlanGuide } from './guides/agent-plan-guide.js';
 import { buildNotificationGuide } from './guides/notification-guide.js';
-import { buildTelegramGuide } from './guides/telegram-guide.js';
 import { buildStartupGuide } from './guides/startup-guide.js';
 import { buildMessGuide } from './guides/mess-guide.js';
 import { buildMemoriseGuide } from './guides/memorise-guide.js';
@@ -322,7 +314,6 @@ export class HelmControlService extends EventEmitter {
   private readonly contextService: HelmContextService;
   private readonly planAttachmentService: HelmPlanAttachmentService;
   private readonly chatService: HelmChatService;
-  private readonly telegramService: HelmTelegramService;
   private phoneRinger: ((sessionId: string, reason: string) => boolean) | null = null;
   private callTransferrer: ((fromSessionId: string, toSessionId: string, line: string) => boolean) | null = null;
   private ringRetry: RingRetry | null = null;
@@ -405,18 +396,6 @@ export class HelmControlService extends EventEmitter {
       source: 'system',
     });
     this.skillManager.registerSystemSkill({
-      id: 'sys-telegram',
-      name: 'Telegram Voice & Attachment Guide',
-      description: 'Telegram capabilities, voice memo workflows (openwhisper/piper/ffmpeg), and attachment format guide. Fetch with skill_get(type: "telegram").',
-      body: buildTelegramGuide(),
-      aiAmendable: false,
-      allProjects: true,
-      projectIds: [],
-      type: 'telegram',
-      source: 'system',
-    });
-
-    this.skillManager.registerSystemSkill({
       id: 'sys-startup',
       name: 'Helm Startup Rules',
       description: 'Mandatory Helm workflow rules for AI agents. Fetch with skill_get(type: "startup").',
@@ -469,7 +448,6 @@ export class HelmControlService extends EventEmitter {
     this.planAttachmentService = new HelmPlanAttachmentService(planManager, attachmentManager);
     this.capabilityDetector = new CapabilityDetector(configLoader);
     this.chatService = new HelmChatService(configLoader, sessionManager);
-    this.telegramService = new HelmTelegramService(configLoader, sessionManager, this.capabilityDetector, this.chatService);
     this.schedulerService = schedulerManager
       ? new HelmSchedulerService(schedulerManager, configLoader, projectStore, (sessionId) => {
         const session = sessionManager.getSession(sessionId);
@@ -493,22 +471,16 @@ export class HelmControlService extends EventEmitter {
   }
 
   // ---------------------------------------------------------------------------
-  // Telegram bridge / notification manager injection (mutates telegramService)
+  // Chat and notification manager injection
   // ---------------------------------------------------------------------------
-
-  setTelegramBridge(bridge: TelegramBridge | null): void {
-    this.telegramService.setTelegramBridge(bridge);
-  }
 
   setNotificationManager(nm: NotificationManager): void {
     this.notificationManager = nm;
-    this.telegramService.setNotificationManager(nm);
   }
 
-  /** Wire broker fan-out for generic text sends and Telegram voice sends. */
+  /** Wire broker fan-out for chat sends. */
   setChatBroker(broker: import('../session/chat/chat-broker.js').ChatBroker | null): void {
     this.chatService.setChatBroker(broker);
-    this.telegramService.setChatBroker(broker);
   }
 
   /**
@@ -1942,16 +1914,8 @@ export class HelmControlService extends EventEmitter {
   }
 
   // ---------------------------------------------------------------------------
-  // Telegram & notifications
+  // Chat & notifications
   // ---------------------------------------------------------------------------
-
-  getTelegramStatus(): TelegramStatus {
-    return this.telegramService.getTelegramStatus();
-  }
-
-  async closeTelegramChannel(channelId: string): Promise<TelegramChannel> {
-    return this.telegramService.closeTelegramChannel(channelId);
-  }
 
   async sendChat(
     sessionRef: string,
@@ -1962,24 +1926,26 @@ export class HelmControlService extends EventEmitter {
     return this.chatService.sendChat(sessionRef, message, filePath, usage);
   }
 
-  async sendTelegramChat(
+  notifyUser(
     sessionRef: string,
-    message: string,
-    filePath?: string,
-    usage?: ChatTurnUsage,
-  ): Promise<{ sent: boolean; reason?: string }> {
-    return this.telegramService.sendTelegramChat(sessionRef, message, filePath, usage);
+    title: string,
+    content: string,
+  ): { delivered: ReturnType<NotificationManager['notifyLlmDirected']> } {
+    if (!this.notificationManager) {
+      throw new Error('Notification manager is not available');
+    }
+    const session = this.findNotificationSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    return { delivered: this.notificationManager.notifyLlmDirected(session.id, title, content) };
   }
 
-  async sendTelegramVoice(
-    sessionRef: string,
-    text: string,
-  ): Promise<{ sent: boolean; reason?: string }> {
-    return this.telegramService.sendTelegramVoice(sessionRef, text);
-  }
-
-  notifyUser(sessionRef: string, title: string, content: string): { delivered: 'toast' | 'bubble' | 'telegram' | 'taskbar_flash' | 'none' } {
-    return this.telegramService.notifyUser(sessionRef, title, content);
+  private findNotificationSession(sessionRef: string): SessionInfo | null {
+    const nameMatches = this.sessionManager.getAllSessions().filter((session) => session.name === sessionRef);
+    if (nameMatches.length > 1) {
+      throw new Error(`Multiple sessions found with name: ${sessionRef}. Use sessionId instead.`);
+    }
+    if (nameMatches.length === 1) return nameMatches[0];
+    return this.sessionManager.getSession(sessionRef) ?? null;
   }
 
   /**
@@ -2050,7 +2016,10 @@ export class HelmControlService extends EventEmitter {
     screenLocked: boolean;
     activeSessionId: string | null;
   } {
-    return this.telegramService.getAppVisibility();
+    if (!this.notificationManager) {
+      throw new Error('Notification manager is not available');
+    }
+    return this.notificationManager.getAppVisibilityDetails();
   }
 
   // ---------------------------------------------------------------------------

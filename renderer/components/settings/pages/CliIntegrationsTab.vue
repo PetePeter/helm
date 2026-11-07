@@ -55,7 +55,7 @@ const REMINDER_META: Record<ReminderId, { label: string; detail: string }> = {
   },
   telegramInstruction: {
     label: 'Telegram reply instruction',
-    detail: 'The "Respond via telegram_chat" line on Telegram messages',
+    detail: 'The "Respond via chat_send" line on Telegram messages',
   },
   telegramModeInstructions: {
     label: 'Telegram mode block',

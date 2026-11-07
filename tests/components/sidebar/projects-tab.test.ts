@@ -45,7 +45,6 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
   schedulerClient: {},
   sessionsClient: {},
   systemClient: {},
-  telegramClient: {},
   terminalClient: {},
   toolsClient: {},
 }));

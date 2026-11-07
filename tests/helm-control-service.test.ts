@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HelmControlService, parseSubmitSuffix } from '../src/mcp/helm-control-service.js';
-import { getAvailableTools } from '../src/mcp/guides/session-info-guide.js';
 import { parseSessionAuthToken } from '../src/mcp/session-auth.js';
 import { ChatBroker } from '../src/session/chat/chat-broker.js';
 import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
@@ -1257,29 +1256,7 @@ describe('HelmControlService plan attachments', () => {
   });
 });
 
-describe('HelmControlService telegram channels', () => {
-  it('reports Telegram availability without exposing secrets', () => {
-    const { service } = makeService();
-    service.setTelegramBridge({
-      isRunning: vi.fn(() => true),
-      listChannels: vi.fn(() => [{ id: 'tc1', sessionId: 's1', sessionName: 'Claude', status: 'open', createdAt: 1, updatedAt: 1 }]),
-      createChannel: vi.fn(),
-      closeChannel: vi.fn(),
-      sendToUser: vi.fn(),
-    });
-
-    const status = service.getTelegramStatus();
-
-    expect(status).toMatchObject({
-      enabled: true,
-      configured: true,
-      running: true,
-      available: true,
-      openChannels: 1,
-    });
-    expect(JSON.stringify(status)).not.toContain('botToken');
-  });
-
+describe('HelmControlService chat', () => {
   it('sends chat through the neutral broker facade', async () => {
     const { service } = makeService();
     const sent: ChatOutboundMessage[] = [];
@@ -1322,48 +1299,6 @@ describe('HelmControlService telegram channels', () => {
     expect(byName.reason).toContain('not found by ID');
   });
 
-  it('rejects wide messages in sendTelegramChat', async () => {
-    const { service } = makeService();
-
-    await expect(service.sendTelegramChat('s1', 'x'.repeat(141))).rejects.toThrow('140 characters');
-  });
-
-  it('rejects non-existent files in sendTelegramChat before bridge delivery', async () => {
-    const { service, sessionManager } = makeService();
-    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
-      id: 's1',
-      name: 'Claude',
-      cliType: 'claude-code',
-      workingDir: '/work',
-    });
-    const bridge = { sendToSession: vi.fn(async () => ({ sent: true })) };
-    const broker = new ChatBroker();
-    broker.register({ provider: 'recorder', isAvailable: () => true, ...bridge });
-    service.setChatBroker(broker);
-
-    const result = await service.sendTelegramChat('s1', 'see attached', '/nonexistent/file.txt');
-
-    expect(result.sent).toBe(false);
-    expect(result.reason).toContain('File not found');
-    expect(bridge.sendToSession).not.toHaveBeenCalled();
-  });
-
-  it('getAvailableTools lists exactly 4 telegram tools and no removed tools', () => {
-    const tools = getAvailableTools() as Array<{ name: string }>;
-    const tgTools = tools.filter((t: { name: string }) => t.name.startsWith('telegram_'));
-
-    expect(tgTools.map((t: { name: string }) => t.name)).toEqual(
-      expect.arrayContaining(['telegram_status', 'telegram_chat', 'telegram_send_voice', 'telegram_channel_close']),
-    );
-    expect(tgTools).toHaveLength(4);
-
-    // Removed tools must NOT be present
-    const removedToolNames = ['telegram_send', 'telegram_set_output_mode', 'telegram_channel_create', 'telegram_channel_list'];
-    const allToolNames = tools.map((t: { name: string }) => t.name);
-    for (const removed of removedToolNames) {
-      expect(allToolNames).not.toContain(removed);
-    }
-  });
 });
 
 describe('HelmControlService LLM notifications', () => {
@@ -1384,6 +1319,26 @@ describe('HelmControlService LLM notifications', () => {
     expect(service.notifyUser('s1', 'Need input', 'Please choose one')).toEqual({ delivered: 'bubble' });
     expect(notificationManager.notifyLlmDirected).toHaveBeenCalledWith('s1', 'Need input', 'Please choose one');
     expect(service.getAppVisibility()).toEqual({ visibility: 'visible-focused', screenLocked: false, activeSessionId: 's2' });
+  });
+
+  it('resolves a unique session name and rejects ambiguous names', () => {
+    const { service, sessionManager } = makeService();
+    const notificationManager = {
+      notifyLlmDirected: vi.fn(() => 'bubble'),
+      getAppVisibilityDetails: vi.fn(() => ({ visibility: 'hidden', screenLocked: false, activeSessionId: null })),
+    };
+    service.setNotificationManager(notificationManager as any);
+
+    expect(service.notifyUser('Claude', 'Done', 'The task is complete.')).toEqual({ delivered: 'bubble' });
+    expect(notificationManager.notifyLlmDirected).toHaveBeenCalledWith('s1', 'Done', 'The task is complete.');
+
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([
+      { id: 's1', name: 'Claude', cliType: 'claude-code' },
+      { id: 's2', name: 'Claude', cliType: 'claude-code' },
+    ]);
+    expect(() => service.notifyUser('Claude', 'Need input', 'Choose one.')).toThrow(
+      'Multiple sessions found with name: Claude. Use sessionId instead.',
+    );
   });
 });
 

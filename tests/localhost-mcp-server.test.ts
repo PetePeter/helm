@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent, createServer as createHttpServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
 import { mintSessionAuthToken } from '../src/mcp/session-auth.js';
@@ -105,6 +102,7 @@ function makeService(): HelmControlService {
     listSessions: vi.fn((dirPath?: string, projectId?: string) => [{ id: 's1', name: 'Claude', cliType: 'claude-code', ...(dirPath ? { workingDir: dirPath } : {}), ...(projectId ? { projectId } : {}) }]),
     getSession: vi.fn((sessionId: string) => ({ id: sessionId, name: 'Claude', cliType: 'claude-code' })),
     sendTextToSession: vi.fn(async (sessionRef: string, text: string, _options?: { submit?: boolean; senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean }) => ({ success: true, sessionId: sessionRef, name: 'Claude' })),
+    sendChat: vi.fn(async () => ({ sent: true })),
     sendInputToSession: vi.fn(async (sessionRef: string, _sequence: string, _options?: { senderSessionId?: string; senderSessionName?: string; impliedSubmit?: boolean; verify?: boolean }) => ({ success: true, sessionId: sessionRef, name: 'Claude' })),
     clearSession: vi.fn(async (sessionRef: string, _options: { senderSessionId: string; senderSessionName: string; context?: string }) => ({ ok: true, contextRelayed: false, usedTempFile: false, sessionId: sessionRef })),
     readSessionTerminal: vi.fn((sessionRef: string, lines = 50, mode = 'both') => ({
@@ -120,21 +118,6 @@ function makeService(): HelmControlService {
       lastOutputAt: 1234,
     })),
     claimSessionPlan: vi.fn((sessionRef: string, planId: string) => ({ sessionId: sessionRef, name: 'Claude', planId, planTitle: 'Task', planStatus: 'coding' })),
-    getTelegramStatus: vi.fn(() => ({
-      enabled: true,
-      configured: true,
-      running: true,
-      available: true,
-      chatConfigured: true,
-      allowedUsersConfigured: true,
-      openChannels: 1,
-      guidance: 'Use Telegram only for mobile-friendly urgent blockers.',
-    })),
-    listTelegramChannels: vi.fn(() => []),
-    closeTelegramChannel: vi.fn(async (channelId: string) => ({ id: channelId, sessionId: 's1', sessionName: 'Claude', topicId: 42, status: 'closed', createdAt: 1, updatedAt: 3 })),
-    sendTelegramChat: vi.fn(async (sessionRef: string, message: string) => ({
-      sent: true,
-    })),
     notifyUser: vi.fn((sessionRef: string, title: string, content: string) => ({ delivered: 'bubble', sessionRef, title, content })),
     getAppVisibility: vi.fn(() => ({ visibility: 'visible-focused', screenLocked: false, activeSessionId: 's1' })),
     restartHelmGated: vi.fn((_callerSessionId: string, _handoverArtifactId: string | undefined, resume = true) => ({ sessionsClosed: resume ? 0 : 2, resume })),
@@ -276,6 +259,7 @@ describe('LocalhostMcpServer', () => {
     const toolsJson = await toolsResponse.json();
     expect(Array.isArray(toolsJson.result.tools)).toBe(true);
     expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name === 'chat_send')).toBe(true);
+    expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name.startsWith('telegram_'))).toBe(false);
     expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name === 'plan_list')).toBe(true);
     const planCreateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_create');
     const planCompleteTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_complete');
@@ -285,8 +269,6 @@ describe('LocalhostMcpServer', () => {
     const readTerminalTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'session_read_terminal');
     const attachmentAddTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_attachment_add');
     const attachmentGetTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_attachment_get');
-    const telegramStatusTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'telegram_status');
-    const telegramChatTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'telegram_chat');
     const schedulerCreateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'scheduler_create');
     const schedulerUpdateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'scheduler_update');
     const schedulerDeleteTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'scheduler_delete');
@@ -323,8 +305,6 @@ describe('LocalhostMcpServer', () => {
     expect(attachmentAddTool.description).toContain('Helm config');
     expect(attachmentGetTool.description).toContain('temp file');
     expect(attachmentGetTool.description).toContain('inline');
-    expect(telegramStatusTool.description).toContain('No bot token');
-    expect(telegramChatTool!.description).toContain('mobile-friendly');
     expect(schedulerCreateTool!.description).toContain('scheduled task');
     expect(schedulerUpdateTool!.inputSchema.properties.scheduleKind.enum).toContain('none');
     expect(schedulerDeleteTool!.description).toContain('Delete');
@@ -363,21 +343,6 @@ describe('LocalhostMcpServer', () => {
     );
     chatService.setChatBroker(broker);
     Object.assign(service, {
-      getTelegramStatus: () => ({
-        enabled: false,
-        configured: false,
-        running: false,
-        available: false,
-        chatConfigured: false,
-        allowedUsersConfigured: false,
-        openChannels: 0,
-        guidance: 'Telegram integration removed',
-        capabilities: {
-          openwhisper: { available: false },
-          piper: { available: false },
-          ffmpeg: { available: false },
-        },
-      }),
       sendChat: chatService.sendChat.bind(chatService),
     });
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
@@ -1151,60 +1116,6 @@ describe('LocalhostMcpServer', () => {
     const deleteJson = await deleteResponse.json();
     expect((service.deletePlanAttachment as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('P-0001', 'a1');
     expect(toolPayload(deleteJson)).toEqual({ deleted: true });
-  });
-
-  it('dispatches telegram tools through the MCP surface', async () => {
-    const service = makeService();
-    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
-    servers.push(server);
-    await server.start();
-    const port = server.getAddress()!.port;
-
-    const statusResponse = await rpc(port, 'secret-token', {
-      jsonrpc: '2.0',
-      id: 70,
-      method: 'tools/call',
-      params: { name: 'telegram_status', arguments: {} },
-    });
-    const statusJson = await statusResponse.json();
-    expect((service.getTelegramStatus as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
-    expect(toolPayload(statusJson).available).toBe(true);
-    expect(JSON.stringify(toolPayload(statusJson))).not.toContain('botToken');
-
-    const chatResponse = await rpc(port, 'secret-token', {
-      jsonrpc: '2.0',
-      id: 71,
-      method: 'tools/call',
-      params: { name: 'telegram_chat', arguments: { sessionId: 's1', message: 'Need a quick decision?' } },
-    });
-    const chatJson = await chatResponse.json();
-    expect((service.sendTelegramChat as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'Need a quick decision?', undefined);
-    expect(toolPayload(chatJson).sent).toBe(true);
-
-    // Create a temporary file for the filePath test
-    const tempDir = mkdtempSync(join(tmpdir(), 'test-'));
-    const tempFile = join(tempDir, 'log.txt');
-    writeFileSync(tempFile, 'hello');
-
-    const filePath = tempFile;
-    await rpc(port, 'secret-token', {
-      jsonrpc: '2.0',
-      id: 711,
-      method: 'tools/call',
-      params: { name: 'telegram_chat', arguments: { sessionId: 's1', message: 'See log', filePath } },
-    });
-    expect((service.sendTelegramChat as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'See log', filePath);
-    rmSync(tempDir, { recursive: true, force: true });
-
-    const closeResponse = await rpc(port, 'secret-token', {
-      jsonrpc: '2.0',
-      id: 72,
-      method: 'tools/call',
-      params: { name: 'telegram_channel_close', arguments: { channelId: 'tc1' } },
-    });
-    const closeJson = await closeResponse.json();
-    expect((service.closeTelegramChannel as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('tc1');
-    expect(toolPayload(closeJson).status).toBe('closed');
   });
 
   it('dispatches LLM notification tools through the MCP surface', async () => {
@@ -2499,7 +2410,7 @@ describe('LocalhostMcpServer', () => {
     });
   });
 
-  describe('telegram_chat caller routing', () => {
+  describe('chat_send caller routing', () => {
     it('routes to the authenticated caller session, ignoring args.name', async () => {
       const service = makeService();
       const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
@@ -2512,12 +2423,12 @@ describe('LocalhostMcpServer', () => {
         id: 90,
         method: 'tools/call',
         // A misleading name must NOT override the verified caller identity.
-        params: { name: 'telegram_chat', arguments: { name: 'some-other-session', message: 'hi' } },
+        params: { name: 'chat_send', arguments: { name: 'some-other-session', message: 'hi' } },
       }, { 'x-helm-session-id': 's1' });
 
       const json = await response.json();
       expect(toolPayload(json)).toEqual({ sent: true });
-      expect(service.sendTelegramChat).toHaveBeenCalledWith('s1', 'hi', undefined);
+      expect(service.sendChat).toHaveBeenCalledWith('s1', 'hi', undefined);
     });
 
     it('rejects name-only calls with no caller identity instead of mis-routing', async () => {
@@ -2532,13 +2443,13 @@ describe('LocalhostMcpServer', () => {
         jsonrpc: '2.0',
         id: 91,
         method: 'tools/call',
-        params: { name: 'telegram_chat', arguments: { name: 'claudecode-opus-low', message: 'hi' } },
+        params: { name: 'chat_send', arguments: { name: 'claudecode-opus-low', message: 'hi' } },
       });
 
       const json = await response.json();
       expect(json.error.message).toContain('could not determine your session');
       expect(json.error.message).toContain('session_info');
-      expect(service.sendTelegramChat).not.toHaveBeenCalled();
+      expect(service.sendChat).not.toHaveBeenCalled();
     });
 
     it('accepts an explicit sessionId override for global-token callers', async () => {
@@ -2552,12 +2463,12 @@ describe('LocalhostMcpServer', () => {
         jsonrpc: '2.0',
         id: 92,
         method: 'tools/call',
-        params: { name: 'telegram_chat', arguments: { sessionId: 's7', message: 'hi' } },
+        params: { name: 'chat_send', arguments: { sessionId: 's7', message: 'hi' } },
       });
 
       const json = await response.json();
       expect(toolPayload(json)).toEqual({ sent: true });
-      expect(service.sendTelegramChat).toHaveBeenCalledWith('s7', 'hi', undefined);
+      expect(service.sendChat).toHaveBeenCalledWith('s7', 'hi', undefined);
     });
   });
 });

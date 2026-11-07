@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { appClient, attachmentsClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient } from '../../ipc/clients.js';
+import { appClient, attachmentsClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, schedulerClient, sessionsClient, systemClient, terminalClient } from '../../ipc/clients.js';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { ScheduledTask } from '../../../src/types/scheduled-task.js';
 

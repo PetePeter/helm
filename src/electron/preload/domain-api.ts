@@ -888,28 +888,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Open a native OS folder picker and return the selected path (or null if cancelled) */
   dialogOpenFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
 
-  // ========================================================================
-  // Telegram Bot
-  // ========================================================================
-
-  /** Get telegram bot configuration */
-  telegramGetConfig: () => ipcRenderer.invoke('telegram:getConfig'),
-
-  /** Update telegram bot configuration (partial merge) */
-  telegramSetConfig: (updates: Record<string, unknown>) => ipcRenderer.invoke('telegram:setConfig', updates),
-
-  /** Start the telegram bot */
-  telegramStart: () => ipcRenderer.invoke('telegram:start'),
-
-  /** Stop the telegram bot */
-  telegramStop: () => ipcRenderer.invoke('telegram:stop'),
-
-  /** Check if telegram bot is running */
-  telegramIsRunning: () => ipcRenderer.invoke('telegram:isRunning'),
-
-  /** Test telegram bot connection (validates token) */
-  telegramTestConnection: () => ipcRenderer.invoke('telegram:testConnection'),
-
   // ─── Directory Plans ────────────────────────────────────
 
   /** Get all plan items for a directory */

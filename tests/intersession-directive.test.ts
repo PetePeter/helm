@@ -50,8 +50,8 @@ describe('injected forms', () => {
     expect(HELM_MSG_HOOK_RULES).not.toContain('session_set_aiagent_state');
   });
 
-  it('HELM_TELEGRAM_HOOK_RULES routes everything through telegram_chat', () => {
-    expect(HELM_TELEGRAM_HOOK_RULES).toContain('telegram_chat');
+  it('HELM_TELEGRAM_HOOK_RULES routes replies through chat_send', () => {
+    expect(HELM_TELEGRAM_HOOK_RULES).toContain('chat_send');
     expect(HELM_TELEGRAM_HOOK_RULES).toContain('CANNOT see the terminal');
     expect(HELM_TELEGRAM_HOOK_RULES).toContain('do NOT use AskUserQuestion');
   });
@@ -59,7 +59,7 @@ describe('injected forms', () => {
   it('HELM_REMOTE_HOOK_RULES gives transport-neutral remote chat guidance', () => {
     expect(HELM_REMOTE_HOOK_RULES).toContain('[HELM_REMOTE_RULES]');
     expect(HELM_REMOTE_HOOK_RULES).toContain('chat_send');
-    expect(HELM_REMOTE_HOOK_RULES).not.toContain('telegram_chat');
+    expect(HELM_REMOTE_HOOK_RULES).not.toContain('[HELM_TELEGRAM_RULES]');
     expect(HELM_REMOTE_HOOK_RULES).toContain('CANNOT see the terminal');
   });
 

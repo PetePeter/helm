@@ -79,7 +79,6 @@ describe('preload API boundary contract', () => {
       'incoming',
       'scheduler',
       'patterns',
-      'telegram',
       'chat',
       'keyboard',
       'dialog',
@@ -108,7 +107,6 @@ describe('preload API boundary contract', () => {
     expect(helmApi.scheduler.scheduledTaskListHistory).toBe(methodImplementations.scheduledTaskListHistory);
     expect(helmApi.scheduler.scheduledTaskClearHistory).toBe(methodImplementations.scheduledTaskClearHistory);
     expect(helmApi.events.onScheduledTaskHistoryChanged).toBe(methodImplementations.onScheduledTaskHistoryChanged);
-    expect(helmApi.telegram.telegramStart).toBe(methodImplementations.telegramStart);
     expect(helmApi.config.configGetFilterPreference).toBe(methodImplementations.configGetFilterPreference);
     expect(helmApi.config.configSetFilterPreference).toBe(methodImplementations.configSetFilterPreference);
     expect(helmApi.config.onFilterPreferenceChanged).toBe(methodImplementations.onFilterPreferenceChanged);

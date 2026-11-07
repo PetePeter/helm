@@ -1,10 +1,13 @@
 # Telegram Integration (session topics, notifications, relay)
 
-Helm can be driven and observed from a phone. A Telegram **forum group** becomes a
-mirror of the app: each hub session gets its own **forum topic**, state changes post
-notifications into that topic, anything the user types in a topic is injected into
-that session's PTY, and an AI can deliberately open a conversation channel with the
-user through the `telegram_chat` MCP tool.
+Historically, a Telegram **forum group** mirrored the app: each hub session had its
+own **forum topic**, state changes posted notifications into that topic, anything
+the user typed in a topic was injected into that session's PTY, and an AI could
+open a conversation through `chat_send`.
+
+> **Current status:** Telegram startup was unwired in P-1184. P-1185 removed
+> Telegram-specific MCP tools and settings preload IPC; P-1186 owns the
+> remaining settings UI and config cleanup. This page records retained source.
 
 > **⚠️ Divergence from CLAUDE.md decision 19.** CLAUDE.md describes an activity-gated
 > `TerminalMirror` class that buffers raw PTY output during green-dot periods and
@@ -12,7 +15,7 @@ user through the `telegram_chat` MCP tool.
 > a 3500-char head+tail truncation and a `📝` prompt echo. **No `TerminalMirror`
 > exists in the codebase** (`grep -rn TerminalMirror` returns nothing). That
 > firehose-mirroring design was replaced by an *explicit* model: the AI decides what
-> reaches Telegram (`telegram_chat`), and the app posts state-change notifications.
+> reaches Telegram (`chat_send`), and the app posts state-change notifications.
 > The output-cleaning machinery that decision 19 described (ANSI strip, spinner /
 > progress-bar / `esc to cancel` / `AIAGENT-*` noise filtering, HTML escaping) **did
 > survive** and now lives in `src/telegram/utils.ts`. This document follows the code.
@@ -34,7 +37,7 @@ user through the `telegram_chat` MCP tool.
 
 ```mermaid
 graph TB
-    subgraph Main["Main process"]
+    subgraph Main["Retained Telegram source (unwired)"]
         BOT["TelegramBotCore<br/>src/telegram/bot.ts"]
         TM["TopicManager<br/>session ↔ forum topic"]
         NOTIF["TelegramNotifier<br/>state-change alerts"]
@@ -48,7 +51,8 @@ graph TB
     end
     SD["StateDetector<br/>state transitions"] --> NOTIF
     NOTIF -->|"sendToTopic"| BOT
-    AI["AI via MCP<br/>telegram_chat / telegram_status"] --> HCS["HelmControlService<br/>setTelegramBridge"] --> RELAY
+    AI["AI via MCP<br/>chat_send"] --> HCS["HelmControlService<br/>sendChat"] --> CHAT["HelmChatService<br/>ChatBroker"]
+    CHAT --> MOB["MobileChatBridge<br/>provider: mobile"] --> PHONE["Paired phone"]
     RELAY --> BOT
     BOT -->|"user message in topic"| TI
     TI -->|"deliverPromptSequenceToSession"| PTY[(Session PTY)]
@@ -77,8 +81,7 @@ graph TB
 | `src/voice/ffmpeg.ts` | Shared ffmpeg resolution (configured path → OpenWhispr bundle) and process runner |
 | `src/telegram/video-frames.ts` | Video → JPEG contact sheet, plus the seek command the agent uses for other timestamps |
 | `src/voice/piper-tts.ts` | Text → voice replies |
-| `src/electron/ipc/telegram-handlers.ts` | Settings/start/stop IPC surface |
-| `src/mcp/services/helm-telegram-service.ts` | MCP tools `telegram_chat`, `telegram_status`, `telegram_channel_close` |
+| `src/mcp/services/helm-chat-service.ts` | Transport-neutral `chat_send` MCP route |
 
 ## Output cleaning (`cleanTerminalOutput`)
 
@@ -210,13 +213,9 @@ hub side stay in sync in **both** directions:
 | Tool | Purpose |
 |---|---|
 | `chat_send` | The transport-neutral name for opening/continuing a conversation channel with the user for its session — every bound surface, not just Telegram |
-| `telegram_chat` | Alias of `chat_send` with identical behavior; kept so existing clients keep working |
-| `telegram_status` | Whether the bridge is running / available |
-| `telegram_channel_close` | Close an open channel |
 
-`HelmControlService.setTelegramBridge(relayService)` installs the bridge at
-orchestration time and clears it on cleanup, so the tools degrade gracefully to
-"not available" when the bot is off.
+Telegram-specific status, voice, and channel-close MCP tools were removed in
+P-1185. The retained Telegram relay source is not wired into `chat_send`.
 
 ## Configuration
 

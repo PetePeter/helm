@@ -15,8 +15,6 @@ const mocks = vi.hoisted(() => ({
   configRemoveBinding: vi.fn(),
   configDeleteBindingProfile: vi.fn(),
   configGetMcpConfig: vi.fn(),
-  telegramGetConfig: vi.fn(),
-  telegramIsRunning: vi.fn(),
   toolsAddCliType: vi.fn(),
   toolsUpdateCliType: vi.fn(),
   toolsReorderCliType: vi.fn(),
@@ -43,10 +41,6 @@ vi.mock('../../renderer/ipc/clients.js', () => ({
     toolsAddCliType: mocks.toolsAddCliType,
     toolsUpdateCliType: mocks.toolsUpdateCliType,
     toolsReorderCliType: mocks.toolsReorderCliType,
-  },
-  telegramClient: {
-    telegramGetConfig: mocks.telegramGetConfig,
-    telegramIsRunning: mocks.telegramIsRunning,
   },
 }));
 
@@ -90,14 +84,6 @@ describe('useSettingsController', () => {
     mocks.configGetSortPrefs.mockResolvedValue({ field: 'button', direction: 'asc' });
     mocks.configGetBindingProfiles.mockResolvedValue([]);
     mocks.configGetMcpConfig.mockResolvedValue({ enabled: true, port: 47400, authToken: 'token' });
-    mocks.telegramGetConfig.mockResolvedValue({
-      botToken: 'bot',
-      chatId: 123,
-      allowedUserIds: [1, 2],
-      enabled: true,
-      autoStart: true,
-    });
-    mocks.telegramIsRunning.mockResolvedValue(true);
   });
 
   it('shows a persistent error when the MCP shell launch fails', async () => {
@@ -154,7 +140,7 @@ describe('useSettingsController', () => {
     ]);
     expect(controller.settingsDirectories.value).toEqual([{ name: 'Hub', path: 'X:\\coding\\gamepad-cli-hub' }]);
     expect(controller.settingsChipbarActions.value).toEqual([{ label: 'Save', sequence: 'save' }]);
-    expect(controller.settingsTelegramConfig.value.allowedUsers).toBe('1, 2');
+    expect(controller.settingsTelegramConfig.value.allowedUsers).toBe('');
     expect(controller.settingsMcpConfig.value.port).toBe(47400);
     expect(refreshProjects).toHaveBeenCalled();
   });
@@ -167,15 +153,13 @@ describe('useSettingsController', () => {
     expect(controller.settingsTab.value).toBe(pageId);
   });
 
-  it('keeps tools loaded when optional Telegram and MCP loading fail', async () => {
-    mocks.telegramGetConfig.mockRejectedValue(new Error('telegram down'));
+  it('keeps tools loaded when MCP config loading fails', async () => {
     mocks.configGetMcpConfig.mockRejectedValue(new Error('mcp down'));
     const controller = useSettingsController({ refreshProjects: vi.fn().mockResolvedValue(undefined) });
 
     await controller.loadSettingsData();
 
     expect(controller.settingsTools.value).toHaveLength(1);
-    expect(controller.settingsTelegramConfig.value).toMatchObject({ botToken: '', chatId: '' });
     expect(controller.settingsMcpConfig.value).toEqual({ enabled: false, port: 47373, authToken: '' });
   });
 

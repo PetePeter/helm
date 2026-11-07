@@ -61,7 +61,6 @@ import { appendSessionTodoContext } from '../../session/todo-context.js';
 /** Skill type whose reviews collect request_tool wishes from API-tool sessions. */
 const API_TOOL_REQUESTS_SKILL_TYPE = 'api-tool-requests';
 import { MCP_TOOLS } from '../../mcp/tools/definitions.js';
-import { filterToolsByCapabilities } from '../../mcp/tools/capability-gating.js';
 
 import { setupSessionHandlers } from './session-handlers.js';
 import { setupConfigHandlers } from './config-handlers.js';
@@ -478,7 +477,7 @@ export function registerIPCHandlers(
     onPendingSubagents: (sessionId, count) => {
       if (sessionManager.hasSession(sessionId)) sessionManager.updateSession(sessionId, { pendingSubagents: count || undefined });
     },
-    mcpTools: () => filterToolsByCapabilities(MCP_TOOLS, helmControlService.getTelegramStatus().capabilities),
+    mcpTools: () => MCP_TOOLS,
     listSkills: (cwd) => helmControlService.listSkills(cwd ? { dirPath: cwd } : undefined),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
     getManifestoContext: (sessionId) => appendSessionTodoContext(

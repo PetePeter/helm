@@ -43,7 +43,6 @@ export function initTelegramModules(
   const instanceName = configLoader.getTelegramConfig().instanceName;
   const dashboard = new PinnedDashboard(bot, sessionManager, instanceName);
   const relayService = new TelegramRelayService(bot, topicManager, sessionManager, ptyManager, configLoader, helmControlService);
-  helmControlService.setTelegramBridge(relayService);
 
   const cleanupCallbacks = setupCallbackHandler(
     bot, topicManager, sessionManager, ptyManager,
@@ -116,7 +115,6 @@ export function initTelegramModules(
       bot.removeListener('message', topicClosedHandler);
       bot.removeListener('message', topicEditedHandler);
       bot.removeListener('message_reaction', reactionHandler);
-      helmControlService.setTelegramBridge(null);
       dashboard.dispose();
       logger.info('[Telegram] All modules cleaned up');
     },

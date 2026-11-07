@@ -61,7 +61,7 @@ function immediateEmit(field: string, value: string): void {
           <li><strong>Get Chat ID</strong> — Add <code>@userinfobot</code> to your group &rarr; it posts the group ID (negative number like <code>-1001234567890</code>)</li>
           <li><strong>Get your User ID</strong> — DM <code>@userinfobot</code> &rarr; copy your ID &rarr; paste into Allowed Users</li>
           <li><strong>Start bot</strong> — Fill in the fields above, click Start Bot &rarr; status turns green</li>
-          <li><strong>Test</strong> — In your group type <code>/start</code>; from a CLI session call <code>telegram_chat</code> MCP tool</li>
+          <li><strong>Test</strong> — In your group type <code>/start</code>; from a CLI session call <code>chat_send</code> MCP tool</li>
         </ol>
       </details>
     </section>

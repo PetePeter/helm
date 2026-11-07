@@ -292,12 +292,12 @@ describe('MobileGate — permitted-tool discovery', () => {
     expect(calls).toMatchObject([{ method: 'session_set_keep_warm', params: { sessionId: 's1', on: true } }]);
   });
 
-  it('answers in-gate with the allowed surface and never dispatches it', async () => {
-    const { gate, deviceId, calls } = build(['session_list', 'session_get']);
+  it('lists allow-listed chat_send without dispatching discovery', async () => {
+    const { gate, deviceId, calls } = build(['session_list', 'session_get', 'chat_send']);
     const result = (await gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})) as {
       tools: Array<{ name: string }>;
     };
-    expect(result.tools.map(t => t.name).sort()).toEqual(['session_get', 'session_list']);
+    expect(result.tools.map(t => t.name).sort()).toEqual(['chat_send', 'session_get', 'session_list']);
     expect(calls).toHaveLength(0);
   });
 

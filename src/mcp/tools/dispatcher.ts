@@ -113,7 +113,7 @@ function artifactFileReceipt(result: ArtifactFileResult) {
 /**
  * Resolve the caller's own session for session-scoped tools (artifacts). The
  * only trustworthy identity is the server-derived authContext.sessionId; throw
- * a clear error when Helm did not inject it, mirroring telegram_chat.
+ * a clear error when Helm did not inject it.
  */
 function requireCallerSession(authContext: AuthContext, tool: string): string {
   if (!authContext.sessionId) {
@@ -914,13 +914,8 @@ export async function callMcpTool(
         return service.flashAttention(asString(args.sessionId ?? args.name, 'sessionId or name is required'));
       case 'get_app_visibility':
         return service.getAppVisibility();
-      case 'telegram_status':
-        return service.getTelegramStatus();
-      case 'chat_send':
-      case 'telegram_chat': {
-        // Resolve the caller once for both names. chat_send goes through the
-        // neutral chat service; telegram_chat retains its Telegram policy wrapper.
-        // Both routes address the authenticated caller's own session topic. The only trustworthy
+      case 'chat_send': {
+        // This routes to the authenticated caller's own session topic. The only trustworthy
         // identity is the server-derived authContext.sessionId (from the
         // X-Helm-Session-Id header / session token). An explicit args.sessionId UUID
         // is accepted as a fallback for global-token callers, but resolving by NAME is
@@ -938,28 +933,8 @@ export async function callMcpTool(
         }
         const message = asString(args.message, 'message is required');
         const filePath = typeof args.filePath === 'string' ? args.filePath : undefined;
-        return name === 'chat_send'
-          ? service.sendChat(sessionRef, message, filePath)
-          : service.sendTelegramChat(sessionRef, message, filePath);
+        return service.sendChat(sessionRef, message, filePath);
       }
-      case 'telegram_send_voice': {
-        // Mirror telegram_chat's identity resolution: route to the authenticated
-        // caller's own session topic. Voice replies must never resolve by name.
-        const sessionRef = authContext.sessionId ?? (typeof args.sessionId === 'string' ? args.sessionId : undefined);
-        if (!sessionRef) {
-          throw new Error(
-            'telegram_send_voice could not determine your session. Call session_info to get ' +
-              'your own sessionId and pass it as sessionId. Ensure Helm injected the ' +
-              'X-Helm-Session-Id header (HELM_SESSION_ID env var) at startup. ' +
-              'Resolving by name is not allowed — duplicate session names route replies ' +
-              'to the wrong Telegram topic.',
-          );
-        }
-        const text = asString(args.text, 'text is required');
-        return service.sendTelegramVoice(sessionRef, text);
-      }
-      case 'telegram_channel_close':
-        return service.closeTelegramChannel(asString(args.channelId, 'channelId is required'));
       case 'scheduler_create': {
         const planIds = (args.planIds as string[] | undefined) ?? [];
         const targetSessionId = args.targetSession === 'caller'

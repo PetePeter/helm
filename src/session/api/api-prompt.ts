@@ -227,7 +227,7 @@ export function buildHandover(params: { parentName: string; mission?: string; de
   ].join('\n');
 }
 
-const CHAT_TOOLS = new Set(['chat_send', 'telegram_chat']);
+const CHAT_TOOLS = new Set(['chat_send']);
 
 /**
  * Chat tools. An API session's conversation IS its chat (desktop chat pane,

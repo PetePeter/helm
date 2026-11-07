@@ -69,7 +69,7 @@ function describeSender(senderSessionId: string, senderSource?: 'desktop'): stri
  * session_send_text can resolve — a recipient told to reply there got "Session
  * not found" every single time. The phone's surface is chat_send, which routes
  * to the recipient's own bound chat (the phone over BLE, Telegram if
- * configured), exactly as Telegram mode routes replies through telegram_chat.
+ * configured), exactly as Telegram mode routes replies through chat_send.
  * Local and fleet senders are real addressable sessions and keep send_text.
  */
 function buildReplyInstruction(senderSessionId: string, senderSource?: 'desktop'): string {
@@ -110,7 +110,7 @@ export const HELM_MSG_HOOK_RULES =
 export const HELM_TELEGRAM_HOOK_RULES =
   '[HELM_TELEGRAM_RULES]\n' +
   'This message came from the user on Telegram. The user CANNOT see the terminal.\n' +
-  'ALL responses and ALL questions MUST go through the telegram_chat MCP tool — do NOT use AskUserQuestion.\n' +
+  'ALL responses and ALL questions MUST go through the chat_send MCP tool — do NOT use AskUserQuestion.\n' +
   '[/HELM_TELEGRAM_RULES]';
 
 /** Generic away-mode rules shared by remote chat surfaces such as a paired phone or Telegram. */
@@ -130,8 +130,8 @@ export const HELM_REMOTE_HOOK_RULES =
 export const HELM_TELEGRAM_MODE_INSTRUCTIONS =
   '[HELM_TELEGRAM_MODE]\n' +
   'This session is now in Telegram mode. The user is interacting via Telegram and CANNOT see the terminal.\n' +
-  'ALL responses MUST go through the telegram_chat MCP tool.\n' +
-  'ALL questions and confirmations MUST go through telegram_chat — do NOT use AskUserQuestion.\n' +
+  'ALL responses MUST go through the chat_send MCP tool.\n' +
+  'ALL questions and confirmations MUST go through chat_send — do NOT use AskUserQuestion.\n' +
   'The user will return to their desk when they type in the terminal, which automatically exits Telegram mode.\n' +
   '[/HELM_TELEGRAM_MODE]';
 
