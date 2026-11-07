@@ -136,6 +136,7 @@ export async function deliverPromptSequenceToSession(input: {
   const session = sessionManager.getSession(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
   let targetWasBusy = false;
+  let busyBeforeTextInCurrentSubmit: boolean | undefined;
   assertSessionWritable(session);
   if (session.comfyUiTool) {
     throw new Error('ComfyUI sessions accept prompts through chat; terminal and automated prompt delivery is disabled.');
@@ -153,11 +154,15 @@ export async function deliverPromptSequenceToSession(input: {
       ...(input.writeIntent || input.origin === 'user' ? { writeIntent } : {}),
     }
     : undefined;
-  const deliverText = (sid: string, chunk: string, options?: TextDeliveryOptions): Promise<void> => (
-    options
-      ? ptyManager.deliverText(sid, chunk, options)
-      : ptyManager.deliverText(sid, chunk)
-  );
+  const deliverText = async (sid: string, chunk: string, options?: TextDeliveryOptions): Promise<void> => {
+    // Input-origin writes mark an idle session active. Keep the state from just
+    // before the payload so that our own write is not mistaken for pre-existing work.
+    if (chunk && busyBeforeTextInCurrentSubmit === undefined) {
+      busyBeforeTextInCurrentSubmit = sessionManager.getSession(sid)?.activityLevel === 'active';
+    }
+    if (options) await ptyManager.deliverText(sid, chunk, options);
+    else await ptyManager.deliverText(sid, chunk);
+  };
 
   const runSequence = () => executeSequenceString({
     sessionId,
@@ -166,11 +171,14 @@ export async function deliverPromptSequenceToSession(input: {
       ptyManager.write(sid, data, writeIntent);
     },
     deliverText: (sid, chunk) => deliverText(sid, chunk, textDeliveryOptions),
-    submit: async (sid, kind) => {
+    submit: async (sid) => {
       await new Promise<void>((resolve) => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
+      const activityLevel = sessionManager.getSession(sid)?.activityLevel;
+      targetWasBusy = activityLevel === 'active'
+        && !(writeIntent === 'input' && busyBeforeTextInCurrentSubmit === false);
+      busyBeforeTextInCurrentSubmit = undefined;
       await deliverText(sid, '', { ...textDeliveryOptions, submitSuffix });
-      if (kind === 'implied' && cliEntry?.provider === 'codex'
-        && targetWasBusy && submitSuffix === '\r') {
+      if (cliEntry?.provider === 'codex' && targetWasBusy && submitSuffix === '\r') {
         await new Promise<void>((resolve) => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
         codexBusySubmitRecoverySent = ptyManager.write(sid, submitSuffix, writeIntent);
         if (codexBusySubmitRecoverySent) {
@@ -199,7 +207,6 @@ export async function deliverPromptSequenceToSession(input: {
   let deliveryStartedAt = 0;
   const runTransaction = () => lock.run(sessionId, async () => {
     deliveryStartedAt = Date.now();
-    targetWasBusy = session.activityLevel === 'active';
     await ptyManager.nudgeResize(sessionId);
     await runSequence();
   });
@@ -235,11 +242,10 @@ export async function deliverPromptSequenceToSession(input: {
     // this resend would be waiting on a gate its own caller still held. Pulling
     // verification inside the lock deadlocks recovery outright.
     resendPayload: () => lock.run(sessionId, runSequence),
-    // A busy target queues the message; its submit hook fires only after the
-    // current turn, so the hook cannot confirm it within the window.
-    ...(targetWasBusy ? {} : {
-      promptSubmit: { since: deliveryStartedAt, lastAt: () => promptSubmitSignal.lastAt(sessionId) },
-    }),
+    promptSubmit: { since: deliveryStartedAt, lastAt: () => promptSubmitSignal.lastAt(sessionId) },
+    // Busy targets can redraw their composer while a turn is running. Require
+    // the submit hook even for a fresh session with no prior hook observation.
+    requirePromptSubmit: targetWasBusy,
   };
 
   if (verifyDelivery.background) {

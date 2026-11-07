@@ -250,9 +250,12 @@ timestamps are not.
 **Hook confirmation.** Timestamps cannot tell a submit from a composer repaint: a message pasted into
 Codex ticks the tail twice and still sits unsent. So once a session has reported a `UserPromptSubmit`
 hook (recorded by `HookTracker` in `PromptSubmitSignal`), a pass confirms only on a submit hook at or
-after the delivery started; otherwise it is `suspected_stuck` and recovery re-sends Enter only. A
-target that was busy at delivery queues the message, so it keeps the timing check. Sessions without
-hooks never record a submit and keep the timing check too.
+after the delivery started; otherwise it is `suspected_stuck` and recovery re-sends Enter only. Busy
+targets always require a submit hook, even when no hook event has been seen yet, because a queued
+message can redraw while the current turn is still running. They never use tail timing to confirm and
+get one submit-only recovery. For non-busy targets with no hook history, tail timing remains the
+fallback. Busy state is checked immediately before each submit, and the settled Codex fallback covers
+explicit Enter submissions as well as implied submits.
 
 **Recovery.** A failed pass is remedied, not just logged. Recovery mode is fixed by the first pass so
 a stuck CLI is never sent the same message twice. Callers delivering raw terminal control input pass

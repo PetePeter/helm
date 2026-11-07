@@ -46,9 +46,11 @@ export interface DeliveryVerificationRequest {
    * The CLI's own "prompt submitted" hook, when the session has one. Tail activity
    * cannot tell a submit from a composer repaint (a pasted message in Codex ticks
    * twice and still sits unsent), so a hook-reporting session is confirmed only by
-   * a submit at or after `since`. `lastAt` undefined = no hook ever seen → timing.
+   * a submit at or after `since`. `lastAt` undefined means no hook has been seen yet.
    */
   promptSubmit?: { since: number; lastAt: () => number | undefined };
+  /** Busy targets must wait for a submit hook even when no hook event has been seen yet. */
+  requirePromptSubmit?: boolean;
   ptyManager: {
     getTerminalTail?: (sessionId: string, lines: number, mode: 'raw' | 'stripped' | 'both', stripBlankLines?: boolean) => { lastOutputAt?: number } | undefined;
     deliverText?: (sessionId: string, text: string, options?: { submitSuffix?: string; deliveryContext?: 'background' | 'interactive' }) => Promise<void>;
@@ -169,7 +171,9 @@ export async function verifyDeliveryAfterDelay(
   // The first pass decides the recovery mode for the whole ladder: a CLI holding
   // the text only needs Enter again, and must never be sent the text twice.
   const resendText = firstPass.status === 'no_signal';
-  const maxAttempts = resendText ? MAX_UNSEEN_RESENDS : MAX_STUCK_RESUBMITS;
+  const maxAttempts = request.requirePromptSubmit
+    ? 1
+    : resendText ? MAX_UNSEEN_RESENDS : MAX_STUCK_RESUBMITS;
   // Fast mode is the test compression; scaling it further would leave no room to observe.
   const recoveryBudgets: Budgets = fastMode
     ? budgets
@@ -262,7 +266,7 @@ async function runVerificationPass(
 }
 
 function hookSubmitApplies(request: DeliveryVerificationRequest): boolean {
-  return request.promptSubmit?.lastAt() !== undefined;
+  return request.requirePromptSubmit === true || request.promptSubmit?.lastAt() !== undefined;
 }
 
 /** Hook pass: the CLI reported a prompt submit for this delivery, or it did not. */

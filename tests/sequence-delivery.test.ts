@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { deliverPromptSequenceToSession, setDeliveryObserver } from '../src/session/sequence-delivery.js';
+import { promptSubmitSignal } from '../src/session/prompt-submit-signal.js';
+import { TerminalOutputBuffer } from '../src/session/terminal-output-buffer.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -66,12 +68,117 @@ describe('deliverPromptSequenceToSession', () => {
       mocks.ptyManager.getTerminalTail = vi.fn(() => ({ lastOutputAt: Date.now() }));
       const pending = deliver('hello', mocks, { origin: 'user', verifyDelivery: { delayMs: 0 } });
 
-      await vi.advanceTimersByTimeAsync(1400);
+      await vi.advanceTimersByTimeAsync(3000);
       const result = await pending;
 
       expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\r', 'input');
       expect(result?.codexBusySubmitRecoverySent).toBe(true);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not confirm a busy hooked Codex delivery from composer redraws and retries Enter once', async () => {
+    vi.useFakeTimers();
+    promptSubmitSignal.forget('s1');
+    try {
+      const mocks = makeMocks({ cliType: 'codex', provider: 'codex', activityLevel: 'active' });
+      const buffer = new TerminalOutputBuffer();
+      buffer.append('s1', 'baseline\n');
+      mocks.ptyManager.getTerminalTail = (sid: string, lines: number, mode: 'raw' | 'stripped' | 'both', stripBlankLines?: boolean) =>
+        buffer.tail(sid, lines, mode, stripBlankLines);
+      let redrawScheduled = false;
+      mocks.ptyManager.deliverText.mockImplementation(async (sid: string, text: string, options?: { submitSuffix?: string }) => {
+        if (text) {
+          buffer.append(sid, 'pasted into composer\n');
+        }
+        if (!text && options?.submitSuffix && !redrawScheduled) {
+          redrawScheduled = true;
+          setTimeout(() => buffer.append(sid, 'composer redraw one\n'), 500);
+          setTimeout(() => buffer.append(sid, 'composer redraw two\n'), 800);
+        }
+      });
+      promptSubmitSignal.observe('s1');
+
+      const pending = deliver('hello', mocks, { verifyDelivery: { delayMs: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(800);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1800);
+      const result = await pending;
+
+      expect(result?.status).toBe('retry_failed');
+      expect(result?.retryCount).toBe(1);
+      expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === '' && call[2]?.submitSuffix === '\r')).toHaveLength(2);
+      expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === 'hello')).toHaveLength(1);
+    } finally {
+      promptSubmitSignal.forget('s1');
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not confirm redraw-only output for a busy fresh Codex session with no prior hook', async () => {
+    vi.useFakeTimers();
+    promptSubmitSignal.forget('s1');
+    try {
+      const mocks = makeMocks({ cliType: 'codex', provider: 'codex', activityLevel: 'active' });
+      const buffer = new TerminalOutputBuffer();
+      buffer.append('s1', 'fresh session prompt\n');
+      mocks.ptyManager.getTerminalTail = (sid: string, lines: number, mode: 'raw' | 'stripped' | 'both', stripBlankLines?: boolean) =>
+        buffer.tail(sid, lines, mode, stripBlankLines);
+      let redrawScheduled = false;
+      mocks.ptyManager.deliverText.mockImplementation(async (sid: string, text: string, options?: { submitSuffix?: string }) => {
+        if (text) {
+          buffer.append(sid, 'pasted into fresh composer\n');
+        }
+        if (!text && options?.submitSuffix && !redrawScheduled) {
+          redrawScheduled = true;
+          setTimeout(() => buffer.append(sid, 'fresh composer redraw one\n'), 500);
+          setTimeout(() => buffer.append(sid, 'fresh composer redraw two\n'), 800);
+        }
+      });
+
+      const pending = deliver('hello', mocks, { verifyDelivery: { delayMs: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(800);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(1800);
+      const result = await pending;
+
+      expect(result?.status).toBe('retry_failed');
+      expect(result?.retryCount).toBe(1);
+      expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === '' && call[2]?.submitSuffix === '\r')).toHaveLength(2);
+      expect(mocks.ptyManager.deliverText.mock.calls.filter(call => call[1] === 'hello')).toHaveLength(1);
+    } finally {
+      promptSubmitSignal.forget('s1');
+      vi.useRealTimers();
+    }
+  });
+
+  it('rechecks busy state before an explicit Enter submit to Codex', async () => {
+    vi.useFakeTimers();
+    promptSubmitSignal.forget('s1');
+    try {
+      const mocks = makeMocks({ cliType: 'codex', provider: 'codex', activityLevel: 'idle' });
+      const buffer = new TerminalOutputBuffer();
+      buffer.append('s1', 'baseline\n');
+      mocks.ptyManager.getTerminalTail = (sid: string, lines: number, mode: 'raw' | 'stripped' | 'both', stripBlankLines?: boolean) =>
+        buffer.tail(sid, lines, mode, stripBlankLines);
+      promptSubmitSignal.observe('s1');
+      setTimeout(() => { mocks.session.activityLevel = 'active'; }, 50);
+
+      const pending = deliver('{Wait 100}hello{Enter}', mocks, { verifyDelivery: { delayMs: 0 } });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(4000);
+      const result = await pending;
+
+      expect(result?.codexBusySubmitRecoverySent).toBe(true);
+      expect(result?.status).toBe('retry_failed');
+      expect(result?.retryCount).toBe(1);
+    } finally {
+      promptSubmitSignal.forget('s1');
       vi.useRealTimers();
     }
   });
@@ -83,8 +190,13 @@ describe('deliverPromptSequenceToSession', () => {
       return Promise.resolve();
     });
 
-    await deliver('hello', mocks, { origin: 'user' });
+    const result = await deliver('hello{Wait 10}world', mocks, {
+      origin: 'user',
+      verifyDelivery: { delayMs: 0 },
+    });
 
+    expect(result?.codexBusySubmitRecoverySent).toBe(false);
+    expect(result?.status).toBe('unverifiable');
     expect(mocks.ptyManager.write).not.toHaveBeenCalled();
   });
 

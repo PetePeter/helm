@@ -306,6 +306,21 @@ describe('verifyDeliveryAfterDelay — prompt-submit hook confirmation', () => {
     expect(deliverText.mock.calls.every(call => call[1] === '')).toBe(true);
   });
 
+  it('limits a busy hook-required delivery to one submit-only recovery', async () => {
+    const buffer = new TerminalOutputBuffer();
+    buffer.append(SESSION_ID, 'baseline\n');
+    const { request, deliverText } = hookRequest(buffer, () => 0);
+    Object.assign(request, { requirePromptSubmit: true });
+    repaintTwice(buffer);
+
+    const result = await verifyDeliveryAfterDelay(request);
+
+    expect(result.status).toBe('retry_failed');
+    expect(result.retryCount).toBe(1);
+    expect(deliverText).toHaveBeenCalledTimes(1);
+    expect(deliverText.mock.calls[0][1]).toBe('');
+  });
+
   it('falls back to tail timing when the session has never reported a submit hook', async () => {
     const buffer = new TerminalOutputBuffer();
     buffer.append(SESSION_ID, 'baseline\n');
