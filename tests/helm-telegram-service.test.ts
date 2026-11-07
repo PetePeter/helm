@@ -97,6 +97,12 @@ describe('HelmTelegramService.getTelegramStatus capabilities', () => {
     expect(caps.piper).toEqual({ available: true, path: 'pp' });
     expect(caps.ffmpeg).toEqual({ available: false });
   });
+
+  it('reports the removed integration when a stale channel-close call has no bridge', async () => {
+    const svc = makeService({}, null);
+
+    await expect(svc.closeTelegramChannel('channel-1')).rejects.toThrow('Telegram integration removed');
+  });
 });
 
 describe('HelmTelegramService.sendTelegramVoice', () => {

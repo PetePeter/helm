@@ -127,8 +127,6 @@ describe('pty IPC handlers — activity marking after the move', () => {
       windowManager as any,
       undefined,
       undefined,
-      undefined,
-      undefined,
       onPtyInput,
     );
 

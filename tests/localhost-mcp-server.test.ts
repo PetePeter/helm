@@ -7,6 +7,9 @@ import { join } from 'path';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
 import { mintSessionAuthToken } from '../src/mcp/session-auth.js';
+import { HelmChatService } from '../src/mcp/services/helm-chat-service.js';
+import { ChatBroker } from '../src/session/chat/chat-broker.js';
+import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
 
 /** The tool payload: compact JSON on the first line of the text content (a reminder may follow). */
 function toolPayload(json: any): any {
@@ -272,6 +275,7 @@ describe('LocalhostMcpServer', () => {
     });
     const toolsJson = await toolsResponse.json();
     expect(Array.isArray(toolsJson.result.tools)).toBe(true);
+    expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name === 'chat_send')).toBe(true);
     expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name === 'plan_list')).toBe(true);
     const planCreateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_create');
     const planCompleteTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'plan_complete');
@@ -339,6 +343,65 @@ describe('LocalhostMcpServer', () => {
     expect(skillsDeleteTool!.inputSchema.required).toEqual(['id']);
     expect(contextBindTool!.description).toContain('plan or sequence');
     expect(contextUnbindTool!.description).toContain('without deleting');
+  });
+
+  it('lists phone chat and call tools and delivers chat when only mobile is registered', async () => {
+    const service = makeService();
+    const delivered: ChatOutboundMessage[] = [];
+    const broker = new ChatBroker();
+    broker.register({
+      provider: 'mobile',
+      isAvailable: () => true,
+      sendToSession: async message => {
+        delivered.push(message);
+        return { sent: true };
+      },
+    });
+    const chatService = new HelmChatService(
+      { getCliTypeEntry: () => undefined } as any,
+      { getSession: (id: string) => id === 's1' ? { id, name: 'Claude', cliType: 'codex' } : null } as any,
+    );
+    chatService.setChatBroker(broker);
+    Object.assign(service, {
+      getTelegramStatus: () => ({
+        enabled: false,
+        configured: false,
+        running: false,
+        available: false,
+        chatConfigured: false,
+        allowedUsersConfigured: false,
+        openChannels: 0,
+        guidance: 'Telegram integration removed',
+        capabilities: {
+          openwhisper: { available: false },
+          piper: { available: false },
+          ffmpeg: { available: false },
+        },
+      }),
+      sendChat: chatService.sendChat.bind(chatService),
+    });
+    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    servers.push(server);
+    await server.start();
+    const port = server.getAddress()!.port;
+
+    const listResponse = await rpc(port, 'secret-token', {
+      jsonrpc: '2.0', id: 500, method: 'tools/list', params: {},
+    });
+    const toolNames = (await listResponse.json()).result.tools.map((tool: { name: string }) => tool.name);
+    expect(toolNames).toContain('chat_send');
+    expect(toolNames).toContain('ring_user');
+    expect(toolNames).toContain('call_transfer');
+
+    const sendResponse = await rpc(port, 'secret-token', {
+      jsonrpc: '2.0',
+      id: 501,
+      method: 'tools/call',
+      params: { name: 'chat_send', arguments: { message: 'Phone only' } },
+    }, { 'x-helm-session-id': 's1' });
+
+    expect(toolPayload(await sendResponse.json())).toEqual({ sent: true });
+    expect(delivered).toEqual([{ sessionId: 's1', text: 'Phone only' }]);
   });
 
   it('dispatches tool calls into the shared service', async () => {

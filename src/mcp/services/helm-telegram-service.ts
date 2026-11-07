@@ -224,7 +224,7 @@ export class HelmTelegramService {
 
   private requireTelegramBridge(): void {
     if (!this.telegramBridge) {
-      throw new Error('Telegram bridge is not available');
+      throw new Error('Telegram integration removed');
     }
   }
 }

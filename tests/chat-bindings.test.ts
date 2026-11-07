@@ -1,6 +1,6 @@
 /**
- * chatBindings — the generic per-provider session binding that replaced the
- * Telegram-only `topicId` on disk.
+ * chatBindings — generic per-provider session bindings with legacy Telegram
+ * state discarded during migration.
  *
  * Two regressions are guarded here, both of which have bitten this project
  * before: a persisted field that never reaches `serializeSession` (invariant 6),
@@ -9,10 +9,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { TELEGRAM_CHAT_PROVIDER } from '../src/session/chat/chat-bindings';
 import { loadSessions, saveSessions } from '../src/session/session-persistence';
 import type { SessionInfo } from '../src/types/session';
 
@@ -38,37 +37,39 @@ function roundTrip(sessions: SessionInfo[]): SessionInfo[] {
 }
 
 describe('chatBindings persistence', () => {
-  it('carries a Telegram topic across a save/load round-trip', () => {
-    const [restored] = roundTrip([session({ topicId: 42 })]);
+  it('loads a legacy Telegram binding and topicId but drops both on the next save', () => {
+    const legacy = `sessions:\n  - id: s1\n    name: work\n    cliType: claudecode\n    processId: 1234\n    topicId: 77\n    chatBindings:\n      telegram: 77\n      lan: room-7\n`;
+    writeFileSync(file, legacy, 'utf8');
 
-    expect(restored.chatBindings).toEqual({ [TELEGRAM_CHAT_PROVIDER]: 42 });
-    expect(restored.topicId).toBe(42);
+    const [restored] = loadSessions(file);
+
+    expect(restored.name).toBe('work');
+    expect(restored.topicId).toBeUndefined();
+    expect(restored.chatBindings).toEqual({ lan: 'room-7' });
+
+    saveSessions([restored], file);
+    const persisted = readFileSync(file, 'utf8');
+    expect(persisted).not.toContain('telegram');
+    expect(persisted).not.toContain('topicId');
+    expect(persisted).toContain('lan: room-7');
   });
 
-  it('preserves a binding for a provider this version has never heard of', () => {
-    const [restored] = roundTrip([
-      session({ topicId: 42, chatBindings: { [TELEGRAM_CHAT_PROVIDER]: 42, lan: 'room-7' } }),
-    ]);
-
-    expect(restored.chatBindings).toEqual({ [TELEGRAM_CHAT_PROVIDER]: 42, lan: 'room-7' });
-  });
-
-  it('migrates a legacy topicId-only record without losing the topic', () => {
-    // A sessions.yaml written before chatBindings existed.
+  it('loads a topicId-only legacy record without retaining the Telegram field', () => {
     const legacy = `sessions:\n  - id: s1\n    name: work\n    cliType: claudecode\n    processId: 1234\n    topicId: 77\n`;
     writeFileSync(file, legacy, 'utf8');
 
     const [restored] = loadSessions(file);
 
-    expect(restored.topicId).toBe(77);
-    expect(restored.chatBindings).toEqual({ [TELEGRAM_CHAT_PROVIDER]: 77 });
+    expect(restored.name).toBe('work');
+    expect(restored.topicId).toBeUndefined();
+    expect(restored.chatBindings).toBeUndefined();
   });
 
-  it('clears the Telegram binding when the topic is gone, rather than resurrecting it', () => {
-    const [restored] = roundTrip([session({ chatBindings: { [TELEGRAM_CHAT_PROVIDER]: 42, lan: 'room-7' } })]);
+  it('preserves bindings for other providers across a save/load round-trip', () => {
+    const [restored] = roundTrip([session({ chatBindings: { lan: 'room-7' } })]);
 
-    expect(restored.topicId).toBeUndefined();
     expect(restored.chatBindings).toEqual({ lan: 'room-7' });
+    expect(restored.topicId).toBeUndefined();
   });
 
   it('writes no chatBindings key at all for a session with no chat surfaces', () => {

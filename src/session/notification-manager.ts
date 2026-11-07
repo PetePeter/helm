@@ -26,8 +26,7 @@ interface NotificationContent {
  * notify_user Helm MCP tool. Auto-activity notifications have been removed.
  *
  * Routing (notifyLlmDirected):
- * - Screen locked + Telegram configured → Telegram
- * - Screen locked, no Telegram → none
+ * - Screen locked → none
  * - Window hidden → OS toast
  * - Window visible, not focused → OS toast + taskbar flash
  * - Window visible, focused, different session → in-app bubble
@@ -35,7 +34,6 @@ interface NotificationContent {
  */
 export class NotificationManager {
   private screenLockChecker: (() => boolean) | null = null;
-  private telegramNotifier: ((sessionId: string, title: string, content: string) => Promise<void>) | null = null;
   private activeSessionIdGetter: (() => string | null) | null = null;
   private mobileNotifier: MobileNotifierHooks | null = null;
 
@@ -46,14 +44,9 @@ export class NotificationManager {
 
   setScreenLockChecker(fn: () => boolean): void { this.screenLockChecker = fn; }
 
-  setTelegramNotifier(fn: (sessionId: string, title: string, content: string) => Promise<void>): void { this.telegramNotifier = fn; }
-
   /**
-   * The paired phone. Fed UNCONDITIONALLY and in addition to every other route —
-   * never instead of one. A phone that also sees the Telegram message buzzes
-   * twice, which is ratified: Telegram is the only path that survives being out
-   * of BLE range, and suppressing one when the other is connected would make
-   * "was I told?" depend on link state. See docs/chat-fan-out.md.
+   * The paired phone receives every LLM-directed notification independently
+   * of the desktop route.
    */
   setMobileNotifier(fn: MobileNotifierHooks): void { this.mobileNotifier = fn; }
 
@@ -111,32 +104,20 @@ export class NotificationManager {
    * Send an LLM-directed notification via the Helm MCP notify_user tool.
    *
    * Routing:
-   * - Screen locked + Telegram → 'telegram'
-   * - Screen locked, no Telegram → 'none'
+   * - Screen locked → 'none'
    * - Window hidden → 'toast'
    * - Window visible, not focused → 'taskbar_flash' (toast + BrowserWindow.flashFrame)
    * - Window visible, focused, different session → 'bubble'
    * - Window visible, focused, same session → 'none'
    */
-  notifyLlmDirected(sessionId: string, title: string, content: string): 'toast' | 'bubble' | 'telegram' | 'taskbar_flash' | 'none' {
+  notifyLlmDirected(sessionId: string, title: string, content: string): 'toast' | 'bubble' | 'taskbar_flash' | 'none' {
     // The phone is fanned out to before any routing, never as one branch of it:
     // the returned route describes where the DESKTOP put it, and a phone in
     // another room is not an alternative to that, it is an addition.
     this.mobileNotifier?.notified(sessionId, title, content);
 
-    // Route via the configured remote notifier when the user is away.
-    const session = this.sessionManager.getSession(sessionId);
-    if (session?.interactionChannel === 'remote' && this.telegramNotifier) {
-      void this.telegramNotifier(sessionId, title, content);
-      return 'telegram';
-    }
-
     const isLocked = this.screenLockChecker?.() ?? false;
     if (isLocked) {
-      if (this.telegramNotifier) {
-        void this.telegramNotifier(sessionId, title, content);
-        return 'telegram';
-      }
       return 'none';
     }
 

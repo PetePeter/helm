@@ -2,12 +2,7 @@
  * Comprehensive unit tests for NotificationManager.notifyLlmDirected().
  *
  * Covers all delivery branches:
- * 1. Screen Locked + Telegram Enabled: calls telegramNotifier, returns 'telegram'
- * 2. Screen Locked + Telegram Disabled: returns 'none'
- * 3. App Hidden/Minimised: calls showNotification(), returns 'toast'
- * 4. App Visible + Not Focused: shows notification + flashes taskbar, returns 'taskbar_flash'
- * 5. App Visible + Active Session: returns 'none' immediately
- * 6. App Visible + Different Session: sends IPC bubble, returns 'bubble'
+ * Covers locked, hidden, background, focused, and remote-session routing.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -69,85 +64,32 @@ describe('NotificationManager.notifyLlmDirected()', () => {
   let windowManager: WindowManager;
   let sessionManager: SessionManager;
   let screenLockChecker: ReturnType<typeof vi.fn>;
-  let telegramNotifier: ReturnType<typeof vi.fn>;
   let activeSessionIdGetter: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     electronMockState.getAllWindowsMock.mockClear();
+    electronMockState.getAllWindowsMock.mockReturnValue([]);
     windowManager = createMockWindowManager();
     sessionManager = createMockSessionManager();
 
     notificationManager = new NotificationManager(windowManager, sessionManager);
 
     screenLockChecker = vi.fn(() => false);
-    telegramNotifier = vi.fn();
     activeSessionIdGetter = vi.fn(() => null);
 
     notificationManager.setScreenLockChecker(screenLockChecker);
-    notificationManager.setTelegramNotifier(telegramNotifier);
     notificationManager.setActiveSessionIdGetter(activeSessionIdGetter);
   });
 
-  describe('2. Screen Locked + Telegram Enabled', () => {
+  describe('Screen locked', () => {
     beforeEach(() => {
       screenLockChecker.mockReturnValue(true);
-      telegramNotifier.mockClear();
     });
 
-    it('calls telegramNotifier with sessionId, title, and content', () => {
-      const result = notificationManager.notifyLlmDirected('sess-1', 'My Title', 'My Content');
-
-      expect(telegramNotifier).toHaveBeenCalledWith('sess-1', 'My Title', 'My Content');
-      expect(result).toBe('telegram');
-    });
-
-    it('returns "telegram" as delivery mechanism', () => {
+    it('returns none without checking desktop windows', () => {
       const result = notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');
-      expect(result).toBe('telegram');
-    });
-
-    it('passes exact sessionId, title, and content to telegramNotifier', () => {
-      const sessionId = 'sess-special-123';
-      const longTitle = 'This is a very long title with special chars: @#$%^&*()';
-      const longContent = 'Multi-line content\nWith newlines\nAnd more text';
-
-      notificationManager.notifyLlmDirected(sessionId, longTitle, longContent);
-
-      expect(telegramNotifier).toHaveBeenCalledWith(sessionId, longTitle, longContent);
-    });
-
-    it('calls telegramNotifier even if sessionId is empty', () => {
-      notificationManager.notifyLlmDirected('', 'Title', 'Content');
-      expect(telegramNotifier).toHaveBeenCalledWith('', 'Title', 'Content');
-    });
-  });
-
-  describe('3. Screen Locked + Telegram Disabled', () => {
-    beforeEach(() => {
-      screenLockChecker.mockReturnValue(true);
-      notificationManager.setTelegramNotifier(null as any);
-    });
-
-    it('returns "none" when telegramNotifier is not set', () => {
-      const result = notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');
-      expect(result).toBe('none');
-    });
-
-    it('does not call any notification method', () => {
-      const showNotificationSpy = vi.spyOn(notificationManager as any, 'showNotification');
-      notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');
-      expect(showNotificationSpy).not.toHaveBeenCalled();
-    });
-
-    it('exits early without checking window state', () => {
-      const showNotificationSpy = vi.spyOn(notificationManager as any, 'showNotification');
-      electronMockState.getAllWindowsMock.mockReturnValue([]);
-
-      const result = notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');
-
       expect(result).toBe('none');
       expect(electronMockState.getAllWindowsMock).not.toHaveBeenCalled();
-      expect(showNotificationSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -349,7 +291,7 @@ describe('NotificationManager.notifyLlmDirected()', () => {
     it('handles empty sessionId', () => {
       screenLockChecker.mockReturnValue(true);
       const result = notificationManager.notifyLlmDirected('', 'Title', 'Content');
-      expect(result).toBe('telegram');
+      expect(result).toBe('none');
     });
 
     it('handles very long content strings', () => {
@@ -393,19 +335,29 @@ describe('NotificationManager.notifyLlmDirected()', () => {
   });
 
   describe('Session interaction channel affinity', () => {
-    it('routes to telegram when session has interactionChannel=remote', () => {
+    it('routes a remote session through the remaining desktop route', () => {
       screenLockChecker.mockReturnValue(false);
+      const mockWindow = {
+        isFocused: vi.fn(() => true),
+        isDestroyed: vi.fn(() => false),
+        isVisible: vi.fn(() => true),
+        webContents: { send: vi.fn() },
+      };
+      electronMockState.getAllWindowsMock.mockReturnValue([mockWindow]);
+      activeSessionIdGetter.mockReturnValue(null);
       (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
         id: 'sess-tg', interactionChannel: 'remote',
       });
 
       const result = notificationManager.notifyLlmDirected('sess-tg', 'Title', 'Content');
 
-      expect(telegramNotifier).toHaveBeenCalledWith('sess-tg', 'Title', 'Content');
-      expect(result).toBe('telegram');
+      expect(result).toBe('bubble');
+      expect(mockWindow.webContents.send).toHaveBeenCalledWith('notification:llmNotify', {
+        sessionId: 'sess-tg', title: 'Title', content: 'Content',
+      });
     });
 
-    it('takes priority over screen-locked routing (still goes telegram)', () => {
+    it('returns none for a locked remote session', () => {
       screenLockChecker.mockReturnValue(true);
       (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
         id: 'sess-tg', interactionChannel: 'remote',
@@ -413,8 +365,7 @@ describe('NotificationManager.notifyLlmDirected()', () => {
 
       const result = notificationManager.notifyLlmDirected('sess-tg', 'Title', 'Content');
 
-      expect(telegramNotifier).toHaveBeenCalledWith('sess-tg', 'Title', 'Content');
-      expect(result).toBe('telegram');
+      expect(result).toBe('none');
     });
 
     it('falls through to normal routing when interactionChannel is desktop', () => {
@@ -433,7 +384,6 @@ describe('NotificationManager.notifyLlmDirected()', () => {
 
       const result = notificationManager.notifyLlmDirected('sess-desktop', 'Title', 'Content');
 
-      expect(telegramNotifier).not.toHaveBeenCalled();
       expect(result).toBe('bubble');
     });
 
@@ -453,13 +403,11 @@ describe('NotificationManager.notifyLlmDirected()', () => {
 
       const result = notificationManager.notifyLlmDirected('sess-none', 'Title', 'Content');
 
-      expect(telegramNotifier).not.toHaveBeenCalled();
       expect(result).toBe('bubble');
     });
 
-    it('falls through to normal routing when interactionChannel=remote but telegramNotifier is not set', () => {
+    it('routes a remote session through normal routing when the app is visible', () => {
       screenLockChecker.mockReturnValue(false);
-      notificationManager.setTelegramNotifier(null as any);
       const mockWindow = {
         isFocused: vi.fn(() => true),
         isDestroyed: vi.fn(() => false),
@@ -474,7 +422,6 @@ describe('NotificationManager.notifyLlmDirected()', () => {
 
       const result = notificationManager.notifyLlmDirected('sess-tg', 'Title', 'Content');
 
-      // Falls through to normal routing since telegramNotifier is not available
       expect(result).toBe('bubble');
     });
   });
@@ -524,9 +471,8 @@ describe('NotificationManager.flashAttention()', () => {
 /**
  * The phone is an ADDITIONAL surface, never an alternative one.
  *
- * The failure this guards against is subtle: routing a notification to the phone
- * "because Telegram is unavailable" would make whether the user was told depend
- * on link state, which is the ambiguity the ratified double-buzz pays to avoid.
+ * Phone delivery remains independent from desktop routing, including when the
+ * desktop is locked or focused on the notified session.
  */
 describe('NotificationManager fan-out to a paired phone', () => {
   let notificationManager: NotificationManager;
@@ -544,18 +490,14 @@ describe('NotificationManager fan-out to a paired phone', () => {
 
   it('tells the phone about a notify_user whatever the desktop did with it', () => {
     notificationManager.setScreenLockChecker(() => true);
-    const telegram = vi.fn();
-    notificationManager.setTelegramNotifier(telegram);
 
     const route = notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');
 
     expect(mobile.notified).toHaveBeenCalledWith('sess-1', 'Title', 'Content');
-    expect(telegram).toHaveBeenCalled();
-    // The route describes where the DESKTOP put it; the phone is not a route.
-    expect(route).toBe('telegram');
+    expect(route).toBe('none');
   });
 
-  it('tells the phone about a notify_user even with no Telegram at all', () => {
+  it('tells the phone about notify_user when it is the only chat surface', () => {
     notificationManager.setScreenLockChecker(() => false);
 
     notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');

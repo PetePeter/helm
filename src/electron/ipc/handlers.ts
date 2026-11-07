@@ -63,11 +63,6 @@ const API_TOOL_REQUESTS_SKILL_TYPE = 'api-tool-requests';
 import { MCP_TOOLS } from '../../mcp/tools/definitions.js';
 import { filterToolsByCapabilities } from '../../mcp/tools/capability-gating.js';
 
-import { TelegramBotCore } from '../../telegram/bot.js';
-import { TopicManager } from '../../telegram/topic-manager.js';
-import { TelegramNotifier } from '../../telegram/notifier.js';
-import { initTelegramModules } from '../../telegram/orchestrator.js';
-
 import { setupSessionHandlers } from './session-handlers.js';
 import { setupConfigHandlers } from './config-handlers.js';
 import { setupAutoMemoryHandlers } from './auto-memory-handlers.js';
@@ -88,7 +83,6 @@ import { RecordingModelRunner, apiSilentBackend } from '../../session/silent-mod
 import { AutoMemoryRecorder, splitTurns } from '../../session/auto-memory-judge.js';
 import { CliAutoMemory } from '../../session/cli-auto-memory.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
-import { setupTelegramHandlers } from './telegram-handlers.js';
 import { setupPlanHandlers } from './plan-handlers.js';
 import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
@@ -185,7 +179,6 @@ import { OperatorTaskWatcher } from '../../session/operator-task-watcher.js';
 import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 
-const TELEGRAM_AUTOSTART_DELAY_MS = 60_000;
 // On restart the previous instance may still be releasing the fixed MCP port.
 // Retry the same port (never a fallback) with backoff until it frees.
 const MCP_BIND_ATTEMPTS = 20;
@@ -291,7 +284,6 @@ export function registerIPCHandlers(
   notificationManager.setScreenLockChecker(powerMonitorResult.isScreenLocked);
   notificationManager.setActiveSessionIdGetter(() => sessionManager.getActiveSession()?.id ?? null);
 
-  // Create HelmControlService before Telegram modules (Telegram relay needs it)
   const helmControlService = new HelmControlService(planManager, sessionManager, ptyManager, configLoader, undefined, contextManager, scheduledTaskManager, projectStore, skillManager, skillAnalyticsManager);
   helmControlService.setNotificationManager(notificationManager);
   helmControlService.setRuntimeGroupManager(runtimeGroupManager);
@@ -311,35 +303,8 @@ export function registerIPCHandlers(
   helmControlService.setArtifactUploadService(artifactUploadService);
   helmControlService.setMemoryManager(memoryManager, memoryAttachmentManager, artifactTempRegistry);
 
-  const telegramBot = new TelegramBotCore();
-  const topicManager = new TopicManager(telegramBot, sessionManager, configLoader.getTelegramConfig().instanceName);
-  const telegramNotifier = new TelegramNotifier(telegramBot, topicManager, sessionManager, () => configLoader.getTelegramConfig());
-
-  // Wire the Telegram notifier to the notification manager for LLM-directed notifications when screen is locked
-  notificationManager.setTelegramNotifier(async (sessionId: string, title: string, content: string) => {
-    if (!telegramBot.isRunning()) return;
-    const session = sessionManager.getSession(sessionId);
-    if (!session) return;
-    const topicId = await topicManager.ensureTopic(session);
-    if (topicId == null) return;
-    const text = `${title}\n\n${content}`;
-    try {
-      await telegramBot.sendToTopic(topicId, text);
-    } catch (error) {
-      logger.error(`[IPC] Failed to send LLM notification via Telegram: ${error}`);
-    }
-  });
-
-  // Initialize all telegram modules (Phase 1+2+3)
-  const telegramModules = initTelegramModules(
-    telegramBot, topicManager, telegramNotifier,
-    sessionManager, ptyManager, configLoader, helmControlService, projectStore,
-  );
-
-  // The chat broker: Telegram and the phone are two registrations in an
-  // UNBOUNDED registry, never a hardcoded pair — a LAN surface is wanted later
-  // and must be one more `register()` call, nothing else. Fan-out through it is
-  // unconditional; see src/session/chat/chat-broker.ts for why.
+  // The chat broker is an unbounded registry; new surfaces add one registration.
+  // Fan-out through it is unconditional; see src/session/chat/chat-broker.ts.
   const chatBroker = new ChatBroker({
     deliver: async (message) => {
       const target = sessionManager.getSession(message.sessionId);
@@ -356,14 +321,12 @@ export function registerIPCHandlers(
       });
     },
     // A file sent over chat is copied into the session's artifact attachments
-    // so a surface with no filesystem access to this machine can still fetch
-    // it. Telegram keeps using the path; see chat-attachment-registrar.ts.
+    // so a surface with no filesystem access to this machine can still fetch it.
     registerAttachment: createChatAttachmentRegistrar({
       artifacts: artifactManager,
       attachments: artifactAttachmentManager,
     }),
   });
-  chatBroker.register(telegramModules.relayService);
   helmControlService.setChatBroker(chatBroker);
 
   // Message-flight gate: every enveloped session_send_text broadcasts a
@@ -450,7 +413,7 @@ export function registerIPCHandlers(
   });
   // G4 dual-path capability: does a recipient session inject its inter-session
   // rules via hooks (so the prepended header can be skipped)? Read live, on
-  // disk, shared by the MCP delivery service and the Telegram relay. A check
+  // disk, shared by the MCP delivery service. A check
   // that fails answers false — prepend as today, never break delivery.
   const rulesViaHooks = createRulesViaHooksFn(
     (cliTypeId) => configLoader.getCliTypeEntry(cliTypeId),
@@ -821,7 +784,7 @@ export function registerIPCHandlers(
       if (!win.isDestroyed()) win.webContents.send('todos:changed', change);
     }
   });
-  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordTerminalInput(sessionId, data), patternMatcher, recycleBinManager, (sessionId) => isHandoverPending(sessionId));
+  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, (sessionId, data) => timeTracker.recordTerminalInput(sessionId, data), patternMatcher, recycleBinManager, (sessionId) => isHandoverPending(sessionId));
   // Freezes sessions past their CLI type's long prompt cache (docs/mess.md).
   const autoFreezer = new AutoFreezer(sessionManager, cliType => configLoader.getCliTypeEntry(cliType));
   autoFreezer.start();
@@ -1002,32 +965,20 @@ export function registerIPCHandlers(
     (reminder) => configLoader.getReminderDelivery()[reminder],
   );
   helmControlService.setReminderDelivery(reminderDelivery);
-  telegramModules.relayService.setReminderDelivery(reminderDelivery);
 
   const cleanupMess = setupMessHandlers(messManager, projectStore, windowManager, sessionManager);
 
-  // Wire events ONCE (no-ops when bot not running — notifier checks isRunning).
   sessionManager.on('session:added', async (event) => {
-    // Push to renderer so it can adopt externally-spawned terminals (e.g. Telegram)
+    // Push to renderer so it can adopt externally-spawned terminals.
     const win = windowManager.getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send('session:spawned-externally', event);
     }
-
-    if (!telegramBot.isRunning()) return;
-    const session = sessionManager.getSession(event.id);
-    if (session) await topicManager.ensureTopic(session);
   });
   sessionManager.on('session:updated', (event) => {
     const win = windowManager.getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send('session:updated', event);
-    }
-
-    if (telegramBot.isRunning()) {
-      topicManager.renameSessionTopic(event).catch(err =>
-        logger.error(`[Telegram] Failed to rename topic for ${event.id}: ${err}`),
-      );
     }
 
     const sessionWindowId = windowManager.getWindowIdForSession(event.id);
@@ -1097,41 +1048,7 @@ export function registerIPCHandlers(
       }
     }
 
-    if (!telegramBot.isRunning()) return;
-    telegramNotifier.removeSession(event.sessionId);
-    if (event.session?.topicId) {
-      topicManager.closeSessionTopic(event.session).catch(err =>
-        logger.error(`[Telegram] Failed to close topic for ${event.sessionId}: ${err}`),
-      );
-    }
   });
-
-  const cleanupTelegram = setupTelegramHandlers(configLoader, telegramBot, topicManager, telegramNotifier, sessionManager, stateDetector, () => helmControlService.invalidateCapabilityCache());
-
-  // Auto-start Telegram bot if configured, but always wait for app startup to settle first.
-  const telegramAutoStartTimer = configLoader.getTelegramConfig().autoStart
-    ? setTimeout(() => {
-        const telegramConfig = configLoader.getTelegramConfig();
-        if (!telegramConfig.autoStart) return;
-        if (telegramBot.isRunning()) return;
-        if (!telegramConfig.botToken || !telegramConfig.chatId) {
-          logger.warn('[IPC] Telegram auto-start skipped: botToken or chatId not configured');
-          return;
-        }
-        if (!telegramConfig.allowedUserIds || telegramConfig.allowedUserIds.length === 0) {
-          logger.warn('[IPC] Telegram auto-start skipped: no allowedUserIds configured');
-          return;
-        }
-        try {
-          telegramBot.start(telegramConfig.botToken, telegramConfig.chatId, telegramConfig.allowedUserIds);
-          topicManager.setInstanceName(telegramConfig.instanceName);
-          topicManager.ensureAllTopics().catch(err => logger.error(`[Telegram] Failed to ensure topics: ${err}`));
-          logger.info('[IPC] Telegram bot auto-started after 60 seconds');
-        } catch (err) {
-          logger.error(`[IPC] Failed to auto-start Telegram bot: ${err}`);
-        }
-      }, TELEGRAM_AUTOSTART_DELAY_MS + startupDelayMs)
-    : null;
 
   logger.info('[IPC] All handlers registered');
 
@@ -1416,13 +1333,11 @@ export function registerIPCHandlers(
           ? { id: session.id, name: session.name, interactionChannel: session.interactionChannel }
           : null;
       },
-      // A phone message moves the conversation off the desktop — same value the
-      // Telegram relay sets, so phone and Telegram are one "not at the desk".
+      // A phone message moves the conversation off the desktop.
       updateSession: (sessionId, patch) => sessionManager.updateSession(sessionId, patch),
     },
     journal: mobileChatJournal,
   });
-  telegramModules.relayService.setIncomingMessageRecorder(record => mobileChatBridge.recordExternalTurn(record));
   const mobileAlertNotifier = new MobileAlertNotifier(mobileChatBridge);
   mobileChatBridge.setChatMessageObserver(sessionId => mobileAlertNotifier.recordChatMessage(sessionId));
 
@@ -1479,7 +1394,7 @@ export function registerIPCHandlers(
   }));
 
   // Desktop voice (docs/voice-operator.md): hold-to-talk to the operator over
-  // the SAME OpenWhispr/Piper tools Telegram uses. The operator's chat_send
+  // the configured OpenWhispr/Piper tools. The operator's chat_send
   // replies reach the desktop as one more broker surface, and the user's words
   // are echoed to the phone, so both show one conversation.
   const voiceTools = new CapabilityDetector(configLoader);
@@ -1559,8 +1474,7 @@ export function registerIPCHandlers(
   mobileAddressAdvertiser.start();
 
   // The phone's notification path: a state change, a notify_user or a flash
-  // reaches a pocketed phone over the already-open BLE link. Fed in ADDITION to
-  // Telegram, never instead of it — see docs/chat-fan-out.md.
+  // reaches a pocketed phone over the already-open BLE link.
   notificationManager.setMobileNotifier(mobileAlertNotifier);
   const observeForAlerts = (session: ObservedSession) => mobileAlertNotifier.observe(session);
   const forgetForAlerts = (event: { sessionId: string }) => mobileAlertNotifier.forget(event.sessionId);
@@ -1587,10 +1501,7 @@ export function registerIPCHandlers(
       // because the app is quitting must not be mistaken for a closed session.
       ptyManager.beginShutdown();
       sessionContextUsageTracker.stop();
-      if (telegramAutoStartTimer) clearTimeout(telegramAutoStartTimer);
       if (mcpStartTimer) clearTimeout(mcpStartTimer);
-      cleanupTelegram();
-      telegramModules.cleanup();
       cleanupSession();
       cancelAllPrompts();
       messNotifier?.dispose();
@@ -1624,7 +1535,6 @@ export function registerIPCHandlers(
       sessionManager.off('session:removed', forgetForAlerts);
       mobileChatBridge.stop();
       chatBroker.unregister(mobileChatBridge.provider);
-      chatBroker.unregister(telegramModules.relayService.provider);
       await mobileLinkManager.stop();
       await fleetController?.stop();
       logger.info('[IPC] Cleanup complete');

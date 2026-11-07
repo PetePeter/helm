@@ -61,7 +61,6 @@ vi.mock('../src/session/notification-manager.js', () => ({
   NotificationManager: vi.fn(function (this: any) {
     this.dispose = vi.fn();
     this.setScreenLockChecker = vi.fn();
-    this.setTelegramNotifier = vi.fn();
     this.setActiveSessionIdGetter = vi.fn();
     this.setMobileNotifier = vi.fn();
   }),
@@ -148,53 +147,6 @@ vi.mock('../src/electron/ipc/pty-handlers.js', () => ({
   setupPtyHandlers: vi.fn(),
   cancelAllPrompts: vi.fn(),
 }));
-vi.mock('../src/electron/ipc/telegram-handlers.js', () => ({
-  setupTelegramHandlers: vi.fn().mockReturnValue(vi.fn()),
-}));
-
-vi.mock('../src/telegram/bot.js', () => ({
-  TelegramBotCore: vi.fn(function (this: any) {
-    this.start = vi.fn();
-    this.stop = vi.fn();
-    this.isRunning = vi.fn().mockReturnValue(false);
-    this.on = vi.fn();
-    this.removeListener = vi.fn();
-    this.emit = vi.fn();
-  }),
-}));
-vi.mock('../src/telegram/topic-manager.js', () => ({
-  TopicManager: vi.fn(function (this: any) {
-    this.ensureTopic = vi.fn();
-    this.ensureAllTopics = vi.fn().mockResolvedValue(undefined);
-    this.setInstanceName = vi.fn();
-    this.renameSessionTopic = vi.fn().mockResolvedValue(undefined);
-  }),
-}));
-vi.mock('../src/telegram/notifier.js', () => ({
-  TelegramNotifier: vi.fn(function (this: any) {
-    this.dispose = vi.fn();
-  }),
-}));
-
-vi.mock('../src/telegram/orchestrator.js', () => ({
-  initTelegramModules: vi.fn().mockReturnValue({
-    textInput: {},
-    outputSummarizer: {},
-    terminalMirror: {},
-    dashboard: { start: vi.fn().mockResolvedValue(undefined), dispose: vi.fn() },
-    // The relay is a ChatBridge now — handler setup registers it with the broker.
-    relayService: {
-      provider: 'telegram',
-      isAvailable: () => false,
-      sendToSession: vi.fn(),
-      setReminderDelivery: vi.fn(),
-      setIncomingMessageRecorder: vi.fn(),
-    },
-    feedPtyOutput: vi.fn(),
-    cleanup: vi.fn(),
-  }),
-}));
-
 vi.mock('../src/session/draft-manager.js', () => ({
   DraftManager: vi.fn(function (this: any) {
     this.on = vi.fn();
@@ -304,8 +256,6 @@ vi.mock('electron', () => ({
 
 import { registerIPCHandlers } from '../src/electron/ipc/handlers.js';
 import { logger } from '../src/utils/logger.js';
-import { TelegramBotCore } from '../src/telegram/bot.js';
-import { TopicManager } from '../src/telegram/topic-manager.js';
 import { SessionManager } from '../src/session/manager.js';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
@@ -358,61 +308,5 @@ describe('registerIPCHandlers ring reminder injection', () => {
 
     expect(body).toContain(ordinary.tldr);
     expect(body).not.toContain(idea.tldr);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Gap 1: session:updated → renameSessionTopic (P-0337)
-// ---------------------------------------------------------------------------
-
-describe('registerIPCHandlers session:updated → renameSessionTopic', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  /** Several modules subscribe to session:updated; fire them all, as the emitter would. */
-  function getSessionUpdatedHandler(): Function | undefined {
-    const smInstance = (SessionManager as any).mock.instances[0];
-    const listeners = ((smInstance?.on as any)?.mock?.calls ?? [])
-      .filter(([e]: [string]) => e === 'session:updated')
-      .map(([, fn]: [string, Function]) => fn);
-    return listeners.length ? (event: unknown) => listeners.forEach((fn: Function) => fn(event)) : undefined;
-  }
-
-  it('calls renameSessionTopic when bot is running and session:updated fires', async () => {
-    const botInstance = Object.create(null);
-    (TelegramBotCore as any).mockImplementationOnce(function (this: any) {
-      Object.assign(this, botInstance);
-      this.start = vi.fn();
-      this.stop = vi.fn();
-      this.isRunning = vi.fn().mockReturnValue(true);
-      this.on = vi.fn();
-      this.removeListener = vi.fn();
-      this.emit = vi.fn();
-    });
-
-    registerIPCHandlers(() => null);
-
-    const handler = getSessionUpdatedHandler();
-    expect(handler).toBeDefined();
-
-    const event = { id: 'sess-1', name: 'renamed', topicId: 42, timestamp: Date.now() };
-    handler!(event);
-
-    const tmInstance = (TopicManager as any).mock.instances[0];
-    expect(tmInstance.renameSessionTopic).toHaveBeenCalledWith(event);
-  });
-
-  it('does not call renameSessionTopic when bot is not running', () => {
-    registerIPCHandlers(() => null);
-
-    const handler = getSessionUpdatedHandler();
-    expect(handler).toBeDefined();
-
-    const event = { id: 'sess-1', name: 'renamed', topicId: 42, timestamp: Date.now() };
-    handler!(event);
-
-    const tmInstance = (TopicManager as any).mock.instances[0];
-    expect(tmInstance.renameSessionTopic).not.toHaveBeenCalled();
   });
 });

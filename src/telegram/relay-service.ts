@@ -31,7 +31,6 @@ import { buildFrameSeekHint, extractVideoFrames } from './video-frames.js';
 import type { SessionInfo } from '../types/session.js';
 import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
 import { HELM_TELEGRAM_MODE_INSTRUCTIONS } from '../session/intersession-directive.js';
-import { TELEGRAM_CHAT_PROVIDER } from '../session/chat/chat-bindings.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
 import type { ChatRecordInput } from '../mobile/mobile-envelope.js';
 import type {
@@ -84,8 +83,8 @@ function detectMimeType(filePath: string): string {
 }
 
 export class TelegramRelayService extends EventEmitter implements TelegramBridge, ChatBridge {
-  /** Telegram's key in the ChatBroker registry and in `chatBindings`. */
-  readonly provider = TELEGRAM_CHAT_PROVIDER;
+  /** Telegram's key in the ChatBroker registry. */
+  readonly provider = 'telegram';
 
   private channels = new Map<string, TelegramChannel>();
   private incomingMessageRecorder?: (record: ChatRecordInput) => void;

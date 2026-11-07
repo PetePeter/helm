@@ -31,8 +31,6 @@ export function setupPtyHandlers(
   windowManager: WindowManager,
   configLoader?: ConfigLoader,
   notificationManager?: NotificationManager,
-  onPtyData?: (sessionId: string, data: string) => void,
-  onActivityChange?: (sessionId: string, level: import('../../types/session.js').ActivityLevel) => void,
   onPtyInput?: (sessionId: string, data: string) => void,
   patternMatcher?: PatternMatcher,
   /** A restored bin entry keeps its session id; its record carries the CLI thread id. */
@@ -122,7 +120,7 @@ export function setupPtyHandlers(
   });
 
   // Activity marking belongs to the write itself, not to this IPC hop: bytes
-  // delivered from the main process (MCP, Telegram, pattern-matcher) must move
+  // delivered from the main process (MCP, chat, pattern-matcher) must move
   // the dots too. See PtyManager.write.
   ptyManager.setActivityMarker(sessionId => stateDetector.markActive(sessionId));
   // Freeze is enforced at the write itself so no path — desktop keys, hooks,
@@ -227,13 +225,6 @@ export function setupPtyHandlers(
       win.webContents.send('pty:data', sessionId, data);
     }
 
-    // Feed optional Telegram modules after renderer delivery. Telegram output
-    // bookkeeping must never sit in front of terminal rendering.
-    try {
-      onPtyData?.(sessionId, data);
-    } catch (error) {
-      logger.error(`[PTY IPC] Telegram PTY hook failed for session=${sessionId}: ${error}`);
-    }
   });
 
   // Forward PTY exit events to renderer
@@ -291,8 +282,6 @@ export function setupPtyHandlers(
       win.webContents.send('pty:activity-change', event);
     }
 
-    // Telegram: flush buffered output when session goes inactive/idle
-    onActivityChange?.(event.sessionId, event.level);
   });
 
   // Pipeline queue management

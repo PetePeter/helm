@@ -73,8 +73,6 @@ function setup(onPtyInput = vi.fn(), isHandoverPending = (_id: string) => false)
     windowManager as any,
     undefined,
     undefined,
-    undefined,
-    undefined,
     onPtyInput,
     undefined,
     undefined,
