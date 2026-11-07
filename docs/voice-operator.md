@@ -45,7 +45,7 @@ call at a time: while a call is live, other chats' phone buttons go dark.
 
 ## The composer's voice button
 
-One round button, Telegram-style, either 🎙 or 📞 (remembered):
+One round button with two remembered modes, either 🎙 or 📞:
 
 - 🎙 **hold** to dictate into the draft; **slide up** while holding to switch mode.
 - 📞 **tap** to call this session; **hold** to switch mode.
@@ -361,8 +361,8 @@ call is never restarted behind the user's back.
 
 Hold a gamepad button bound to `voice-talk` (or press **Ctrl+Shift+Space**,
 press again to send) and talk; the words go to the operator and its reply is
-spoken through the speakers. It reuses the local tools Telegram already has —
-no second STT/TTS stack.
+spoken through the speakers. It uses the app's existing local speech tools, so
+there is one STT/TTS stack.
 
 ```mermaid
 sequenceDiagram
@@ -384,13 +384,11 @@ sequenceDiagram
 ```
 
 - **Shared modules.** `openwhispr-transcriber.ts`, `piper-tts.ts` and `ffmpeg.ts`
-  moved from `src/telegram/` to `src/voice/`; Telegram imports them from there
-  unchanged. Piper keeps its OGG/Opus output — Chromium plays it natively.
+  live in `src/voice/` and provide the local speech tools. Piper keeps its
+  OGG/Opus output — Chromium plays it natively.
 - **Configuration.** The tool paths live in the top-level `voice` settings
-  section and are edited in Settings → Voice. Telegram reads temporarily expose
-  the same paths while its consumers are removed in the follow-up plan.
-  `CapabilityDetector.getVoiceTools()` checks them without requiring the bot to
-  be enabled; a missing tool is a clear error, and nothing is spawned.
+  section and are edited in Settings → Voice. `CapabilityDetector.getVoiceTools()`
+  checks them; a missing tool is a clear error, and nothing is spawned.
 - **Config boundary.** The recorded clip, its transcript and the synthesized
   OGG live in the app-data temp dir and are deleted on success and failure.
 - **Replies.** The operator answers with `chat_send`, as for the phone.
@@ -432,8 +430,7 @@ origin labels.
 
 The pane uses `chat:history` and the journal's `chat:entry` feed. Desktop sends
 go through `chat:send`: target delivery must succeed before `ChatBroker` fans
-the turn out to Telegram and linked phones. Telegram displays desktop turns
-with a `[Desktop]` prefix. Operator replies use the normal `chat_send` broker
+the turn out to linked phones. Operator replies use the normal `chat_send` broker
 path and return to the same journal; voice-call controls remain separate from
 the chat composer.
 
@@ -640,8 +637,8 @@ A session created by the operator gets `reportsTo = <operator id>` (persisted).
 Every SessionStart — so also after each compaction — tells it that it works for
 the operator and must send progress, results and questions there with
 `session_send_text`, not to the user. The user taking it over clears the field:
-a phone or Telegram message to it (seen by the prompt hook), or typing into its
-terminal. From then on it is an ordinary session and answers the user.
+a phone message to it (seen by the prompt hook), or typing into its terminal.
+From then on it is an ordinary session and answers the user.
 
 ## Call transfer — `call_transfer`
 

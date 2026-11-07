@@ -33,7 +33,7 @@ routes through a single ownership chain
 | Terminal scroll | Recycle bin / restore |
 | Two hardcoded spawns (LT, RB) | Runtime group management |
 | Profile switch, window focus | Dock pane focus and layout |
-| | Fleet peers, Telegram surfaces |
+| | Fleet peers |
 
 Roughly a third of the surface. The gap is not evenly spread — it is *exactly*
 the features added after the dock landed, which is the tell that the model, not

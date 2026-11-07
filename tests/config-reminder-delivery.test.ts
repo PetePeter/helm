@@ -45,7 +45,7 @@ describe('reminderDelivery settings', () => {
 
   it('returns valid overrides and drops malformed values', () => {
     const loader = makeLoader({
-      reminderDelivery: { helmMsgRules: 'pty', remoteChatInstruction: 'nonsense', telegramModeInstructions: 7 },
+      reminderDelivery: { helmMsgRules: 'pty', remoteChatInstruction: 'nonsense' },
     });
     expect(loader.getReminderDelivery()).toEqual({ helmMsgRules: 'pty' });
   });

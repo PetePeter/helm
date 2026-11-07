@@ -201,5 +201,3 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Helm MCP wire protocol |
 | [docs/helm-mcp-client-guide.md](docs/helm-mcp-client-guide.md) | Guide for AI clients using the Helm MCP tools |
 | [docs/helm-session-info.md](docs/helm-session-info.md) | `session_info` surface |
-| [docs/telegram-mirror.md](docs/telegram-mirror.md) | Telegram integration — AI-driven relay channels, state-change notifier, topic↔PTY routing |
-| [docs/security-review-telegram.md](docs/security-review-telegram.md) | Telegram integration security review |

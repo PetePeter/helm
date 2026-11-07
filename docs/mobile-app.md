@@ -481,10 +481,8 @@ rather than straight to the port, so the router's record of what is on the shade
 stays true. A row taken down behind its back would leave it spending a cancel on
 a row that had already gone.
 
-A message goes to **both** surfaces — the thread is where it lives, the
-notification is how you learn it arrived while you were elsewhere. That is the
-same shape as the ratified Telegram/app duplication: one message, told once on
-each surface.
+A message appears in the thread and can also raise an Android notification, so
+it is visible when the app is in the background.
 
 Rows are keyed by session and kind, with artifacts also keyed by artifact id.
 Message and Attention rows can coexist; an Idle or Completion row is suppressed
@@ -595,6 +593,9 @@ session finishing on the desk buzzes a phone in your pocket with no cloud, no
 APNs and no Firebase in the path. The cost is stated honestly under
 *Limitations*: the range genuinely does not cross an office.
 
+LAN now preempts BLE when available; pairing still happens over BLE. See
+[mobile-lan-transport.md](mobile-lan-transport.md).
+
 **Why the phone is the peripheral and Helm the central.** This is inverted from
 the original design. `@stoprocent/bleno` cannot serve a GATT server on Windows —
 it routes `win32` to a USB/HCI binding needing a Zadig/WinUSB driver swap, which
@@ -608,8 +609,8 @@ cannot initiate**: recovery is always Helm rescanning, with backoff.
 offers no MITM protection, and terminal control is not something to hand to a
 transport's weakest mode. But the deeper reason is that trust must **outlive the
 transport**: `SecureChannel` rides an abstract `BytePipe`, and a LAN socket is
-just another pipe. When the LAN transport lands the security model does not
-change at all — and **pairing stays over BLE regardless**, because physical
+just another pipe. The LAN transport uses the same security model, and
+**pairing stays over BLE regardless**, because physical
 proximity is what makes comparing six digits mean anything.
 
 **Why Kotlin and Compose, not React Native or Flutter.** There is no iOS target
@@ -635,30 +636,23 @@ vector is a wire break**, and a breaking wire change increments `PROTOCOL_MAX`
 and adds a row to the version history table in
 [mobile-secure-channel.md](mobile-secure-channel.md) in the same commit.
 
-**Why notifications fan out to Telegram and the phone unconditionally.**
-Duplicate buzzes are accepted. Telegram is the only path that survives being out
-of BLE range, so suppressing it whenever the phone is linked would make "was I
-told?" depend on link state — the one property a notification must not have.
+**How session notifications reach the phone.**
+The desktop classifies session transitions once, then the mobile notifier sends
+the resulting chat record over the active phone link. The phone replaces rows
+by session and kind, so a repeated state update does not create another row.
 
 ```mermaid
 graph LR
-    SA[session-alert.ts<br/>what counts as 'something happened'] --> CB[ChatBroker]
-    CB --> TG[Telegram bridge]
-    CB --> MB[MobileChatBridge]
+    SA[session-alert.ts<br/>what counts as 'something happened'] --> MN[MobileAlertNotifier]
+    MN --> MB[MobileChatBridge]
     MB -->|BLE| PH[Phone notification<br/>keyed on session and row kind]
 ```
 
-The **definition** of a worthwhile transition is stated once in
-`session-alert.ts` and read by both surfaces; only the per-transport toggles
-differ. The phone keeps one row per session and kind, so repeats update in place.
-Idle and Completion are omitted when a Message or Attention row already tells
-the user about that session; a short desktop window also omits status immediately
-after a delivered chat row. Telegram and phone delivery remain independent.
-
-> Note: Telegram's own state-change notifications have **never fired** —
-> `TelegramNotifier.handleStateChange` has no production caller. The live signal
-> is `session:updated`, which the mobile notifier consumes. Anyone reviving
-> Telegram's path should feed it the same source, not a second one.
+`session-alert.ts` defines worthwhile transitions and their notification
+classes. The phone keeps one row per session and kind, so repeats update in
+place. Idle and Completion are omitted when a Message or Attention row already
+tells the user about that session; a short desktop window also omits status
+immediately after a delivered chat row.
 
 ## Limitations — stated plainly
 
@@ -700,9 +694,9 @@ decision or a known gap at the time of writing.
   X25519 where the platform does not. Shrinking needs keep rules and must be
   retested on hardware, because a stripped crypto class fails as "pairing just
   never works". Deferred on purpose rather than left unnoticed.
-- **BLE range does not cross an office.** A meeting room on the far side is out
-  of reach; Telegram is the fallback and that is why the fan-out is
-  unconditional.
+- **BLE range does not cross an office.** A meeting room on the far side may be
+  out of reach. LAN is available when both devices can reach the same local
+  network; this companion does not provide remote access over the internet.
 - **The accent green sits close to the active-state green.** `#ccff00` next to
   the mint activity dot was a deliberate call, made with the similarity known.
   It is not a bug to fix.

@@ -12,7 +12,7 @@ Measuring the user's own time means guessing at the gaps between inputs. A fixed
 flowchart LR
     K[Terminal keys / paste / gamepad<br/>user input] -->|user slots| TT[TimeTracker]
     E[Terminal Enter<br/>accepted prompt submit] -->|user slot + arm| TT
-    P[Phone / Telegram prompt<br/>origin user] -->|user slot + arm| TT
+    P[Phone prompt<br/>origin user] -->|user slot + arm| TT
     PA[Planner + Artifacts keys<br/>time:activity] -->|user slots| TT
     S[Watchdog · scheduler<br/>keep-warm · other system pings] -->|do not arm| X[No AI time yet]
     H[Hook PreToolUse<br/>real agent work] -->|arm if needed| TT
@@ -25,7 +25,7 @@ flowchart LR
 ```
 
 - **You** (`user` slots): input the user produced: keystrokes in the terminal, planner or artifacts, and on the phone any message or action that changes something. Read-only phone calls (`*_get`, `*_list`, `*_read_terminal`, …) do not count, and neither does reading a terminal.
-- **Noise floor**: a project needs `SUBMIT_WEIGHT` (20) input in a slot to earn it. A keystroke weighs 1. A submit (Enter, a phone or Telegram message including speech-to-text, a phone edit) weighs the full 20, so one deliberate send always counts and a few stray keys never do.
+- **Noise floor**: a project needs `SUBMIT_WEIGHT` (20) input in a slot to earn it. A keystroke weighs 1. A submit (Enter, a phone message including speech-to-text, a phone edit) weighs the full 20, so one deliberate send always counts and a few stray keys never do.
 - **What never counts:** Programmatic sends (background deliveries, AI-to-AI `session_send_text`, the scheduler, initial prompts) are `system` origin and never count.
 - **One project per user slot.** If the user touches two projects in one slot, the one with more input wins, and a tie goes to the latest. Within that project, the folder with the most input gets the slot.
 - **AI** (`ai` slots): a user-originated prompt arms a turn; real hook-reported work (`PreToolUse`) can arm one after a system prompt. The turn earns AI slots until a hook `Stop`, or until the fallback idle for a session without hooks. Watchdog, scheduler, keep-warm, and other system prompts do not arm time or turn a dot green. If a hook later proves real work, that work counts. TUI repaint output cannot reopen a turn or keep an idle session green. Agents genuinely run in parallel, so AI slots are per project, not exclusive.

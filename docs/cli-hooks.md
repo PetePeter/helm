@@ -471,10 +471,7 @@ how it reaches the session changed.
 | — | Mission reminder `[HELM_MISSION]` on every prompt | `src/session/hooks/context-injector.ts` | `ContextInjector` inject only | **hook-only, no mode** — no prepend twin, so a G9 mode would offer a `pty` option that does nothing |
 | — | G2 deny reasons | `cli-types.yaml` `hooks.denyRules` | PreToolUse deny response | not injected text — event-driven enforcement, delivered exactly when relevant |
 
-The Telegram-only mode reminder was removed with Telegram integration. The
-phone's away-mode rules remain as `remoteChatRules` and use the
-`remoteChatInstruction` delivery setting.
-
+Remote-chat reminders use the configured remote-chat rules and delivery setting.
 ### Delivery modes
 
 Per reminder, in Settings → CLI integrations → **Reminder delivery**:

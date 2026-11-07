@@ -9,8 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * AlertRouter — what the phone does when Helm says something happened.
  *
  * This is the payoff for choosing BLE: a GATT notify reaches the already-running
- * foreground service and becomes a lock-screen row, with no cloud, no APNs and no
- * Telegram in the path.
+ * foreground service and becomes a lock-screen row without a cloud dependency.
  *
  * ```mermaid
  * graph LR
@@ -24,10 +23,9 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * Five decisions live here and nowhere else:
  *
- * A MESSAGE IS ALSO AN ALERT. A kind-LESS record is something an agent said, and
- * it goes to the thread AND the shade — one message told once on each surface,
- * the same shape as the ratified Telegram/app duplication. It is the only kind
- * the user can answer, which is why it alone carries a reply box.
+ * A MESSAGE IS ALSO AN ALERT. A kind-LESS record is something an agent said. It
+ * goes to the thread and the shade, and it is the only kind the user can answer,
+ * which is why it alone carries a reply box.
  *
  * ONE MASTER SWITCH, NOT ONE PER KIND. Android already gives per-channel control
  * in system settings, which is why the channels exist at all; what it does not

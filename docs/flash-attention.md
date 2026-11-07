@@ -142,8 +142,7 @@ grey against the accent.
 ## Distinct from
 
 - **`notify_user`** — routed by `NotificationManager` to toast / bubble / taskbar
-  flash / Telegram depending on visibility and lock state. It *delivers content*;
+  flash depending on visibility and lock state. It *delivers content*;
   flash attention delivers only urgency.
 - **Activity dots** — automatic, derived from PTY I/O timing. Flash is explicitly
   requested by the AI.
-- **Telegram notifications** — off-machine, and never triggered by this tool.

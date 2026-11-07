@@ -66,8 +66,7 @@ one rationale. `session_close` is deliberately *not* in it.
 The raw `helm_restart` tool stays hard-denied: it is gated on a handover
 artifact owned by the calling AI session, which a phone proxy cannot honestly
 satisfy. A paired phone is the user's own hand, so it gets the *user's* restart
-instead — the same `restartHelm(resume)` Telegram's `/restart` and
-`/restart_force` call — through a reserved meta-method answered in-gate.
+instead — through a reserved meta-method answered in-gate, carrying the resume choice.
 
 ```mermaid
 flowchart LR

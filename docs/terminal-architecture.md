@@ -135,13 +135,13 @@ what makes "the next one down the list" resolvable rather than restarting from t
 
 ## Delivery & Recovery
 
-Programmatic text (inter-session `session_send_text`, Telegram, scheduled tasks) is written to the
+Programmatic text (inter-session sends, scheduled tasks) is written to the
 PTY in two parts: the text, then the submit suffix. They are never coalesced.
 
 **One transaction per session.** Delivery is not a single write — it is nudge → payload → settle →
 submit, and any interleaving of two of those corrupts both messages. `DeliveryLock`
 (`src/session/delivery-lock.ts`) serializes the whole sequence per session.
-`deliverPromptSequenceToSession` is the gate for the senders that deliver in this shape — Telegram,
+`deliverPromptSequenceToSession` is the gate for the senders that deliver in this shape —
 scheduled tasks, inter-session sends, MCP. It is not a universal choke point: pattern-matcher
 send-text and spawn-time initial prompts are single atomic writes that bypass the gate, and
 renderer-origin delivery (below) runs outside it entirely. Locking the write alone would not have
@@ -150,12 +150,12 @@ the other's payload and its submit.
 
 ```mermaid
 sequenceDiagram
-    participant T as Telegram
+    participant S as Scheduled task
     participant I as Inter-session
     participant L as DeliveryLock (s1)
     participant P as PTY (s1)
 
-    T->>L: run(s1, transaction)
+    S->>L: run(s1, transaction)
     I->>L: run(s1, transaction)
     Note over L: same session — the second sender queues
     L->>P: resize 120x29 / 120x30 (nudge)
@@ -237,9 +237,9 @@ there is no embedded newline to protect. A CLI that never announces the mode pay
 that is the accepted cost of not silently losing the head of a message to a fresh session.
 
 **Activity marking.** `PtyManager.write` marks the session active, not the `pty:write` IPC handler.
-Bytes that originate in main — MCP, Telegram, pattern-matcher send-text — must move the dots too
+Bytes that originate in main — MCP, pattern-matcher send-text — must move the dots too
 (invariant 8). Scroll writes pass `'scroll'` and are exempt: a scrollback redraw is not new work.
-The IPC handler keeps only the user-origin concerns, the Telegram→desktop `interactionChannel`
+The IPC handler keeps only the user-origin concerns, the `interactionChannel`
 switch and the `onPtyInput` hook.
 
 **Verification.** After delivery, `verifyDeliveryAfterDelay` polls the terminal tail's `lastOutputAt`.

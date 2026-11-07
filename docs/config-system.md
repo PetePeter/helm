@@ -26,7 +26,7 @@ A CLI type has two separate handles, and confusing them is the bug this split ex
 | | What it is | Who sees it |
 |---|---|---|
 | `id` | UUID v4, minted once at creation. Also the map key in `cli-types.yaml`, and the key everything else joins on. | Nobody. Never rendered. |
-| `displayName` | Free-text label the user edits. `name` is a deprecated alias kept in sync for legacy readers. | Everywhere — sidebar, spawn grid, settings, Telegram, session default names. |
+| `displayName` | Free-text label the user edits. `name` is a deprecated alias kept in sync for legacy readers. | Everywhere — sidebar, spawn grid, settings, session default names. |
 
 Renaming writes `displayName` and nothing else. No key changes, so binding-profile refs, live sessions, recycle-bin entries and scheduled tasks all keep resolving.
 
@@ -36,14 +36,14 @@ graph LR
     ID --> S[Session.cliType]
     ID --> RB[recycle bin]
     ID --> ST[scheduled tasks]
-    DN[displayName] --> UI[UI · Telegram · MCP]
+    DN[displayName] --> UI[UI · MCP]
     DN -.resolve.-> ID
     LK[legacyKey · old slug] -.resolve.-> ID
 ```
 
 ### Resolution
 
-`ConfigLoader.resolveCliType(ref)` is the single choke point. Every cliType reference supplied by a human or an agent — MCP `session_create`, scheduled tasks, Telegram, IPC — goes through it. It resolves in order:
+`ConfigLoader.resolveCliType(ref)` is the single choke point. Every cliType reference supplied by a human or an agent — MCP `session_create`, scheduled tasks, IPC — goes through it. It resolves in order:
 
 1. exact `id` (uuid)
 2. `legacyKey` — the pre-UUID slug, e.g. `claude-code`. Kept indefinitely; agents and docs in the wild still use it.
@@ -53,7 +53,7 @@ An ambiguous `displayName` throws `AmbiguousCliTypeError` naming the conflicting
 
 **Resolve when the reference is accepted, not when it is used.** A scheduled task can sit pending for weeks, so `ScheduledTaskManager` resolves `cliType` in `createTask`/`updateTask` and stores the canonical uuid — an unknown or ambiguous reference fails the person or agent setting the schedule up, instead of failing unattended at 3am. Tasks written before this (or before the uuid migration) are healed once in `start()`; one that still will not resolve is left alone rather than blocking startup, and fails loudly when it next fires.
 
-`ConfigLoader.getCliTypeLabel(ref)` is the display counterpart: never throws, never returns a uuid. Telegram gets it via `setCliLabelResolver` (wired once in `initTelegramModules`) because the notifier, topic manager and keyboard builders hold no `ConfigLoader`.
+The display label helper is presentation-only: it never throws or returns a UUID.
 
 ### Migration
 
@@ -109,7 +109,7 @@ profiles:
 
 ### voice-talk
 
-`{ action: 'voice-talk' }` — hold-to-talk to the Helm operator: press starts recording, release transcribes (OpenWhispr) and sends to the operator; replies are spoken (Piper). Needs the operator enabled and the OpenWhispr/Piper/ffmpeg paths set in Settings → Voice (the Telegram bot itself need not be on). Not to be confused with `voice`, which only simulates a key for an external dictation app. See [voice-operator.md](voice-operator.md#desktop-voice).
+`{ action: 'voice-talk' }` — hold-to-talk to the Helm operator: press starts recording, release transcribes (OpenWhispr) and sends to the operator; replies are spoken (Piper). Needs the operator enabled and the OpenWhispr/Piper/ffmpeg paths set in Settings → Voice. Not to be confused with `voice`, which only simulates a key for an external dictation app. See [voice-operator.md](voice-operator.md#desktop-voice).
 
 ### voice-call
 

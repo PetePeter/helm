@@ -1944,10 +1944,8 @@ class HelmClient(
             // EVENT Helm is reporting, not something an agent said: routing it
             // into the thread would grow a conversation the desktop never had,
             // and the drift would be invisible from the desktop side.
-            // A kind-less record goes to BOTH: the thread is where it lives, and
-            // the notification is how the user finds out it arrived while they
-            // were elsewhere. It is one message told once on two surfaces, the
-            // same shape as the ratified Telegram/app duplication.
+            // A kind-less record appears in both the thread and the notification,
+            // so the user can see it while elsewhere.
             // A RING is the operator calling: its own surface, never the shade's
             // ordinary row — a buzz you can swipe away is not a phone call.
             is MobileRecord.Chat ->

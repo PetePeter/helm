@@ -16,11 +16,8 @@ flowchart LR
     IPC -->|on success, fan out original text and desktop origin| Broker[ChatBroker]
     Agent[Agent chat_send] --> Broker
     Broker --> Mobile[MobileChatBridge]
-    Broker --> Telegram[TelegramRelayService]
     Mobile -->|append before push| Journal
     Journal -->|onAppend / chat:entry| Store
-    Telegram -->|incoming turn after delivery| External[recordExternalTurn]
-    External --> Journal
     Phone[Phone session_send_text] --> Mobile
     Mobile -->|accepted call| Gate[MobileGate]
     Gate --> Target
@@ -37,10 +34,8 @@ subsequent incoming messages count until that session's thread is visible in the
 active Chat pane. User-originated turns and typed system records do not count.
 The Sessions pane and Chat pane share the store and its live subscription.
 
-User turns carry an `originId`: `desktop:` renders as **Desktop**, `telegram:`
-as **Telegram**, and phone origins as **Phone**. Agent replies have no origin
-badge. Telegram adds `[Desktop]` to the displayed text of desktop-sourced sends;
-the journal and phone keep the original text. CLI-backed desktop Chat sends use
+User turns carry an `originId`: `desktop:` renders as **Desktop** and phone
+origins as **Phone**. Agent replies have no origin badge. CLI-backed desktop Chat sends use
 the existing `[HELM_MSG]` envelope and reply directive, marked as coming from
 the user through **Desktop Chat**. The directive tells the agent to answer with
 `chat_send`, which returns the reply to this pane. The journal still receives

@@ -1461,7 +1461,7 @@ private fun ComposerVoice(dictation: DictationHandle, onCall: (() -> Unit)?) {
 }
 
 /**
- * The composer's one voice button, Telegram-style: it is either the mic (hold
+ * The composer's one voice button has two modes: it is either the mic (hold
  * to dictate) or the phone (tap to call). Sliding up off a held mic, or holding
  * the phone, offers the other. The choice is remembered.
  */

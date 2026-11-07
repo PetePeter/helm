@@ -347,10 +347,7 @@ host's list, and the gate has already vouched for the caller. The same resolutio
 serves `session_send_input` (the raw, no-preamble path), so remote input keeps
 working too.
 
-Unaffected by design: the Telegram integration (separate PTY path, and its tools
-key on `authContext.sessionId`, never `senderSessionId`), and the peer-created
-session tint (`session_create` reads only the proxy identity).
-
+The peer-created session tint is independent of sender identity: session_create reads the proxy identity.
 ## Remote (driving a peer's session directly)
 
 Fleet delegates tool calls; **Remote** rides the same link to stream a peer's PTY into a local row you drive yourself (`peer_attach`, Peers tab → Attach…). `remote.attach` passes this gate like any call; the stream itself uses PeerLink notifications. See [remote.md](remote.md).

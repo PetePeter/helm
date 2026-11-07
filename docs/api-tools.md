@@ -13,7 +13,7 @@ user ticked, and Helm posts the answer to the chat itself.
 
 ```mermaid
 graph LR
-    IN[Desktop chat pane / phone / Telegram /<br/>session_send_text / typed keys] -->|deliverText| PM[PtyManager]
+    IN[Desktop chat pane / phone /<br/>session_send_text / typed keys] -->|deliverText| PM[PtyManager]
     PM -->|write| ASP[ApiSessionProcess<br/>line editor, adopted like a Remote row]
     ASP -->|runAgentTurn| LOOP[api-agent-loop]
     LOOP -->|chat/completions| LLM[(OpenAI-compatible<br/>endpoint)]
@@ -21,7 +21,7 @@ graph LR
     HOST -->|native| NT[Read · Write · Edit · Glob · Grep · Shell]
     HOST -->|Helm tool| MCP[LocalhostMcpServer.dispatchForPeer<br/>as the session]
     HOST -->|synthetic hook events| HT[HookTracker → dots, flash, plans]
-    HOST -->|final answer| CHAT[chat_send → ChatBroker → phone, Telegram, journal]
+    HOST -->|final answer| CHAT[chat_send → ChatBroker → phone, journal]
     ASP -->|ANSI transcript| PM --> XT[xterm view · read_terminal]
 ```
 
@@ -41,7 +41,7 @@ graph LR
   the phone reads. Every final answer is posted via `chat_send`, unless the
   model already called a chat tool itself that turn.
 - **Bare input, no Helm envelopes.** The model gets plain text instead of the
-  `[HELM_MSG]` / `[HELM_TELEGRAM]` envelopes and their reply rules; replies are
+  `[HELM_MSG]`  envelopes and their reply rules; replies are
   routed by Helm. A message from another Helm session is tagged
   `[from <name> (<id>)]`, plus `, awaiting reply` when `expectsResponse` was
   set. In that case Helm sends the final answer back to that session via

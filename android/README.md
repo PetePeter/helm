@@ -248,9 +248,8 @@ everything trains people to tap through the one that matters.
 ## Notifications
 
 The payoff for choosing BLE: a session needing attention buzzes a phone in your
-pocket with no cloud, no APNs, no Firebase and no Telegram in the path. A GATT
-notify reaches the already-running foreground service, which posts a lock-screen
-row.
+pocket without a cloud service. A GATT notify reaches the already-running
+foreground service, which posts a lock-screen row.
 
 ```mermaid
 graph LR
@@ -268,9 +267,8 @@ The split happens once, at decode. See [docs/chat-fan-out.md](../docs/chat-fan-o
 
 **One row per session.** The notification id is derived from the session id and
 nothing else, so ten buzzes from one session REPLACE nine times. Key it on the
-kind or the timestamp and the phone stacks instead. This is a different thing
-from the ratified duplication between Telegram and the app — that is two surfaces
-telling you once each, which is the point.
+kind or the timestamp and the phone stacks instead. A message appears in the
+thread and may also surface as a notification.
 
 **A channel change cancels first.** Android will not carry a live notification to
 another channel, so a session going Attention → Completion must take the old row

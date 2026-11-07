@@ -1,15 +1,13 @@
 # Chat fan-out — ChatBroker, ChatBridge and the mobile chat surface
 
-Telegram was the first chat provider. Its runtime was unwired in P-1184, while
-the relay source remains for P-1186 cleanup. The chat service and broker keep the
-transport-neutral path; the mobile bridge is the active registered provider.
+The chat service and broker provide a transport-neutral path. The mobile bridge
+is the active registered provider, and the desktop Chat pane shares its journal.
 
 | Module | Role |
 |--------|------|
 | `src/session/chat/chat-bridge.ts` | The interface one chat surface implements |
 | `src/session/chat/chat-broker.ts` | Unbounded registry, fan-out, inbound routing |
-| `src/session/chat/chat-bindings.ts` | Per-provider session bindings + `topicId` migration |
-| `src/telegram/relay-service.ts` | Retained Telegram provider source; currently unwired |
+| `src/session/chat/chat-bindings.ts` | Per-provider session bindings and retired-field cleanup |
 | `src/mobile/mobile-chat-bridge.ts` | `provider: 'mobile'` — the phone, and the inbound call path |
 | `src/mobile/mobile-chat-journal.ts` | The session-lifetime rolling record used by phones and the desktop Chat pane |
 | `src/mobile/mobile-envelope.ts` | The records that cross the BLE wire |
@@ -23,9 +21,6 @@ graph TB
     CLI[AI CLI] -->|chat_send MCP tool| SVC[HelmChatService]
     SVC --> BROKER[ChatBroker<br/>unconditional fan-out]
     BROKER --> MOB[MobileChatBridge<br/>provider: mobile]
-    BROKER -.->|retained, unwired| TG[TelegramRelayService<br/>provider: telegram]
-    BROKER -.->|later, no code changes here| LAN[LAN bridge]
-    TG --> TOPIC[Telegram forum topic]
     MOB --> LINK[MobileLinkManager] --> PHONE[Paired phone]
 
     PHONE -->|call record| LINK --> MOB
@@ -34,40 +29,35 @@ graph TB
 
 ## Fan-out is unconditional
 
-Every registered bridge receives every message, always. No provider selection,
-no "prefer the phone when it is linked", no de-duplication. If Telegram is
-registered alongside the phone, this keeps delivery independent of link state;
-duplicate alerts are accepted, and the user can mute the Telegram topic.
+Every registered bridge receives every outgoing message. Delivery is not
+selected based on link state, and each bridge reports its result independently.
 
 One bridge failing never silences another: each send is isolated, and a throw
 becomes a `sent: false` row rather than propagating.
 
-The registry is **unbounded**. Adding a surface is one `register()` call and one
-interface implementation — nothing in the broker, the service or the MCP tools
-changes. `chat_send` is the sole MCP reply tool and routes through the
-transport-neutral chat service to every registered surface.
+The registry is **unbounded**. A new surface uses one `register()` call and an
+interface implementation; the broker, service and MCP tools stay
+transport-neutral. `chat_send` is the sole MCP reply tool and routes through
+the chat service to every registered surface.
 
 The desktop pane is also a broker source. `chat:send` delivers to the target
 session first; only a successful delivery is sent through `ChatBroker` with
-`source: 'desktop'` and a stable `desktop:` origin id. The retained Telegram
-relay renders that source with a `[Desktop]` prefix; the phone and journal keep
-the unprefixed text and origin id.
+`source: 'desktop'` and a stable `desktop:` origin id. The phone and journal
+keep the original text and origin id.
 
 ## chatBindings — where a session lives on each surface
 
-`SessionInfo.topicId` was a Telegram forum topic id and nothing else. The
-persisted form is now `chatBindings`, a map keyed by provider.
+`SessionInfo.topicId` was a provider-specific session address. Persisted
+bindings now use `chatBindings`, a map keyed by provider.
 
 Two rules, both learned the hard way:
 
 1. **Forward compatible.** An unrecognised provider key survives a load/save
    round-trip untouched. An older Helm must not silently delete a newer one's
    binding — that is exactly how fleet lost `machineId`.
-2. **One source of truth per provider.** `topicId` remains on the in-memory
-   `SessionInfo` as Telegram's typed view of `chatBindings.telegram`, because the
-   whole Telegram stack reads it. The mirroring lives **only** in
-   `chat-bindings.ts`: derived on save, rehydrated on load, legacy `topicId`-only
-   records migrated on the way. Per invariant 6, `chatBindings` is in
+2. **One source of truth per provider.** Retired address fields are discarded
+   on load. `chat-bindings.ts` owns that cleanup. Per invariant 6,
+   `chatBindings` is in
    `serializeSession`'s allow-list; the regression test is
    `tests/chat-bindings.test.ts`.
 
@@ -75,11 +65,7 @@ Mobile deliberately has **no** binding — a phone addresses a session by its id
 
 ## Inbound
 
-Telegram keeps its own inbound path: it already resolves topic → session and
-injects into the PTY itself, so routing it through the broker as well would
-deliver the user's message twice. It therefore does not emit `inbound`.
-
-The phone's inbound path is different and is a **security boundary**: every
+The phone's inbound path is a **security boundary**: every
 record a phone sends is a `call`, and every call goes through
 `MobileGate.handle`. A chat reply from the phone is a `session_send_text` call —
 gated, rate-limited and audited like any other — not a privileged side channel.
@@ -236,9 +222,8 @@ absent.
 ## The journal — why a phone never misses a message
 
 Live fan-out answers "was it sent?", never "was it received". A phone out of
-Bluetooth range, or an app whose process died with its in-memory threads, missed
-everything — and Telegram was quietly carrying the whole burden of *was I
-told?*, which is a heavier job than the duplicate buzz it was ratified for.
+range, or an app whose process died with its in-memory threads, may miss a live
+message. The journal provides catch-up when the phone reconnects.
 
 So every **message** the mobile bridge fans out is appended to ONE global
 journal (`mobile-chat-journal.json`, under the user config dir) before anyone is
@@ -346,12 +331,9 @@ below is unchanged for them.
 
 ## Attachments — one file, two ways to name it
 
-`chat_send` takes a `filePath`, and the two surfaces need opposite things from
-it. Telegram uploads the bytes to **its own servers**, which then carry them to
-the phone's Telegram client; it needs a path. The paired phone has no server in
-the middle — BLE or LAN direct is the only pipe — and a desktop path reaches it
-as a string naming another machine's filesystem. It needs an **id it can ask
-for**.
+`chat_send` takes a `filePath`. The paired phone has no server in the middle —
+BLE or LAN direct is the pipe — and a desktop path reaches it as a string
+naming another machine's filesystem. The phone needs an **id it can ask for**.
 
 So `ChatBroker.send` takes Helm's own copy of the file **once**, before fan-out,
 through the injected `ChatAttachmentRegistrar`
@@ -362,7 +344,6 @@ message beside the path:
 graph LR
     CS["chat_send(filePath)"] --> CB[ChatBroker]
     CB -->|registers once| AA[Artifact attachment<br/>'Chat files' artifact]
-    CB --> TG[Telegram bridge<br/>uses filePath]
     CB --> MB[Mobile bridge<br/>uses attachmentId]
     MB -.->|tap to pull| SAD[session_artifact_download<br/>offset/length slices]
     SAD --> AA
@@ -430,26 +411,22 @@ graph LR
     SM[SessionManager<br/>session:updated] -->|activity leaves active (turn ended)| MAN[MobileAlertNotifier]
     NM[NotificationManager<br/>notify_user · flash_attention] --> MAN
     SA[session-alert.ts<br/>shared transition filter] -.-> MAN
-    SA -.-> TN[TelegramNotifier]
     MAN -->|chat record with a kind| MCB[MobileChatBridge.sendAlert]
     MCB -->|BLE| PH[Phone<br/>AlertRouter → 3 channels]
 ```
 
 `src/session/session-alert.ts` states **once** what counts as "something
 happened": an active (`implementing` / `planning`) → non-active transition, and
-which of the three classes the new state belongs to. Both surfaces gate on it, so
-they can never drift into telling the user different things.
+which of the three classes the new state belongs to. The mobile notifier uses
+this shared filter before sending a chat record to the phone.
 
-Only the **filter** is shared. `TelegramConfig`'s `notifyOnComplete` /
-`notifyOnIdle` / `notifyOnError` stay Telegram's own: reading them from the
-mobile path would couple two transports this whole module exists to keep apart.
-Per-transport notification preferences are an open config-surface question.
+Per-transport notification preferences remain an open config-surface question.
 
 What the mobile path deliberately does **not** do:
 
 | Not done | Why |
 |----------|-----|
-| Deduplication | The phone keys its notification on the session id, so ten alerts from one session replace into one row. Better than the desktop guessing a suppression window — and distinct from the ratified Telegram/app double-buzz, which stays. |
+| Deduplication | The phone keys its notification on the session id, so repeated alerts from one session replace into one row. |
 | Journaling / retry | An alert is only true when it happens, so it is in no journal and is replayed by nothing — a queue would deliver "needs input" about something that finished an hour ago. Catch-up (above) is for **messages** only. |
 | Preferences | See above. |
 

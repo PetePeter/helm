@@ -31,7 +31,7 @@ graph LR
 Nav groups:
 - **Sessions:** Tools, Session list, Bindings, Chip actions.
 - **Knowledge:** Projects, Skills, Auto memory, Dreaming.
-- **Connections:** Telegram, Mobile, Fleet, MCP server, CLI integrations.
+- **Connections:** Mobile, Fleet, MCP server, CLI integrations.
 - **System:** Operator, Voice, Updates, Scheduled tasks.
 
 **Dreaming** is in Knowledge. Its page

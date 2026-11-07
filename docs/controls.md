@@ -36,7 +36,7 @@ are on.
 | 3 | ✕ | close (confirmation) |
 
 A locked session shows 🔒 and its ✕ is disabled; closing is refused in the main
-process too, so MCP, Telegram, group close, and force restart all bounce off it.
+process too, so MCP, group close, and force restart all bounce off it.
 The same flag the `session_set_locked` MCP tool writes.
 
 ## Pointer

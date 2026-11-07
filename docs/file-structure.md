@@ -57,7 +57,7 @@ src/
 │   ├── mess-persistence.ts     # Per-project JSONL log plus atomic cursor metadata, retention pruning, compaction recovery, and corruption diagnostics
 │   ├── mess-notifier.ts        # Best-effort idle reminders with append-while-idle detection, cooldown, retry, and system delivery verification
 │   ├── persistence-paths.ts    # Stable per-user app-data paths, including the UUID-keyed Mess directory and log/cursor files
-│   ├── session-alert.ts        # States ONCE which session transitions are worth a buzz, and the `kind` each maps to. Read by both Telegram and the phone
+│   ├── session-alert.ts        # States ONCE which session transitions are worth a buzz, and the `kind` each maps to. Used by desktop and phone notification paths
 │   ├── hooks/
 │   │   ├── context-injector.ts # Hook context, conditional reminders, mission lines, and amber/red context-pressure alerts
 │   │   └── hook-injections.ts  # Shipped editable hook-injection templates and placeholder renderer
@@ -102,19 +102,7 @@ src/
 │   ├── mobile-chat-journal.ts  # Persisted session-lifetime message sequence for phone catch-up and desktop Chat history
 │   ├── mobile-alert-notifier.ts    # Session state / notify_user / flash_attention → a kind-bearing chat record over the open link. No dedup, deliberately
 │   └── apk-release.ts          # Resolves the GitHub release asset URL for the RUNNING version, never `latest`. Availability is three-valued
-├── telegram/
-│   ├── bot.ts                  # TelegramBotCore — bot lifecycle (start/stop), long-polling, user-ID whitelist, message helpers, deleteForumTopic
-│   ├── callback-handler.ts     # Inline keyboard callback routing — session controls, spawn wizard, close all, text input
-│   ├── command-handler.ts      # Slash command handlers (/help, /peek, /sessions, /spawn, /status, /rename, /close, /restart)
-│   ├── keyboards.ts            # Inline keyboard layout builders (session list, controls, commands, spawn wizard)
-│   ├── notifier.ts             # State change → Telegram notification messages with inline keyboards. NOTE: `handleStateChange` has no production caller — orchestrator.ts takes the notifier as `_notifier`, so Telegram's state-change notifications have never fired. The live path is session-alert.ts → MobileAlertNotifier
-│   ├── orchestrator.ts         # Telegram module factory — wires bot, topic manager, relay service, and dashboard
-│   ├── pinned-dashboard.ts     # Auto-updating pinned message with all-sessions status + Close All button
-│   ├── relay-service.ts        # Telegram topic relay and inbound routing; desktop-sourced sends display a [Desktop] prefix
-│   ├── topic-input.ts          # Routes topic messages to the linked session's PTY or relay service
-│   ├── topic-manager.ts        # Forum topic lifecycle: ensureTopic on session:added, deleteForumTopic on session:removed
-│   └── utils.ts                # Shared Telegram utilities
-├── voice/                       # Local STT/TTS shared by Telegram and desktop voice. See docs/voice-operator.md
+├── voice/                       # Local STT/TTS used by desktop voice. See docs/voice-operator.md
 │   ├── openwhispr-transcriber.ts # OpenWhispr-backed audio → text (whisper-server + ffmpeg WAV conversion)
 │   ├── piper-tts.ts            # Piper text → WAV → OGG/Opus
 │   ├── ffmpeg.ts               # ffmpeg resolution (configured path → OpenWhispr bundle) + the shared process runner
@@ -362,8 +350,6 @@ tests/
 ├── app-paths.test.ts           # Application path resolution tests
 ├── bindings-pty.test.ts        # PTY escape helpers + routing tests
 ├── bindings-target.test.ts     # Voice binding target routing (PTY vs OS)
-├── callback-handler.test.ts    # Telegram callback handler tests (session controls, spawn, close all)
-├── telegram-command-handler.test.ts # Telegram slash command handler tests
 ├── config.test.ts              # Config loading, stick config, haptic, virtual buttons, retired-binding (prompt-tree/new-draft) cleanup
 ├── context-menu.test.ts        # Context menu overlay tests
 ├── draft-manager.test.ts  # DraftManager over its real file store: stale writes, cap, lifecycle
@@ -391,7 +377,6 @@ tests/
 ├── notification-manager.test.ts # NotificationManager tests
 ├── paste-routing.test.ts       # Ctrl+V paste → PTY routing tests
 ├── persistence.test.ts         # Session persistence
-├── pinned-dashboard.test.ts    # Telegram pinned dashboard tests
 ├── pipeline-queue.test.ts      # Auto-handoff queue tests
 ├── power-monitor.test.ts       # Power monitor diagnostics tests
 ├── pty-manager.test.ts         # PTY process management tests
@@ -407,13 +392,7 @@ tests/
 ├── sort-logic.test.ts          # Session sort order tests
 ├── state-detector.test.ts      # activity tracking
 ├── tab-cycling.test.ts         # Terminal tab cycling tests
-├── telegram-bot.test.ts        # TelegramBotCore lifecycle + auth tests
-├── telegram-config.test.ts     # Telegram config loading/saving tests
-├── telegram-keyboards.test.ts  # Telegram inline keyboard layout tests
-├── telegram-notifier.test.ts   # Telegram notification routing tests
-├── telegram-topic-manager.test.ts # Topic manager lifecycle tests (ensure/delete topics)
 ├── terminal-manager.test.ts    # Embedded terminal lifecycle tests (including adoptTerminal)
-├── topic-input.test.ts         # Telegram topic input forwarding tests
 ├── plan-manager.test.ts        # PlanManager CRUD, DAG validation, cycle prevention, ready-state computation (42 tests)
 ├── plan-handlers.test.ts       # Plan IPC handler tests (23 tests)
 ├── plan-layout.test.ts         # Auto-layout algorithm tests — topological sort, layering, barycenter ordering (17 tests)

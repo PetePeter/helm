@@ -21,7 +21,7 @@ issues one small best-effort reminder when a session appears idle.
 
 Mess adds durable project history, offline queueing, batching of reminders, and a
 human-readable observer pane. It does not replace plans, memories, drafts,
-artifacts, Telegram, or session ownership state.
+artifacts or session ownership state.
 
 ## Choosing the channel
 
@@ -35,7 +35,7 @@ artifacts, Telegram, or session ownership state.
 | Find an earlier note about a specific thing | `mess_search(query, before, after)` | Literal text match across the whole retained log, with surrounding context. |
 | Record durable project knowledge worth keeping | a memory | Mess is for passing notes, not for what the project knows. |
 | Track work with a lifecycle | a plan | Mess has no states, ownership, or completion. |
-| Ask the user to inspect a report or make a decision | Artifact or Telegram | Those are user-facing channels, not project coordination. |
+| Ask the user to inspect a report or make a decision | Artifact or chat | Those are user-facing channels, not project coordination. |
 
 Mess is social coordination only. It has no lock, claim, conflict detection, or
 auto-release. A Mess message, unread badge, or idle reminder never implies that

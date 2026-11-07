@@ -105,7 +105,7 @@ sequenceDiagram
 ```
 
 - **It is a PTY, so invariant 2 holds as written.** The CLI runs in an embedded PTY inside `PtyManager` and its command reaches it through PTY stdin. `PtyManager` tracks the process, and kills it with every other one when the app quits.
-- **It is not a session.** `spawn({ headless: true })` never emits `data` or `exit` for the run. Everything that makes a PTY a session hangs off those two events: the renderer's terminal, the state detector, the pattern matcher, the Telegram mirror, the session record, the recycle bin, time tracking. The runner listens on the process it was handed instead.
+- **It is not a session.** `spawn({ headless: true })` never emits `data` or `exit` for the run. Everything that makes a PTY a session hangs off those two events: the renderer's terminal, the state detector, the pattern matcher, the session record, the recycle bin, time tracking. The runner listens on the process it was handed instead.
 - **No hook reaches Helm, so a judge pass cannot start a judge pass.** The CLI's hooks are installed machine-wide and do fire in a headless run. The shim does nothing without `HELM_SESSION_ID`, and the runner blanks it, with the hook URL and the token, in the run's environment. That also covers a Helm that was itself started from inside a Helm session and inherited those variables, and a type whose own `env` sets them.
 - **One pass at a time per CLI type.** Passes of the same type queue, since a second CLI process would only race the first for the same quota. Different types do not wait for each other. A failed pass does not block the queue.
 - **A pass is bounded.** After 120 s the PTY is killed and the pass dropped. An abort does the same at once.

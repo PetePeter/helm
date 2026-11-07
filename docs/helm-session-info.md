@@ -44,7 +44,7 @@ Context lookup is deliberately limited to `session_info` and `session_get`: read
 
 ### Chat Guidance
 
-- **`chat`** (string) — Points agents at `chat_send` as the transport-neutral way to reach the user's bound chat surfaces (a paired phone over BLE; Telegram if configured).
+- **`chat`** (string) — Points agents at `chat_send` as the transport-neutral way to reach the user's bound chat surfaces (a paired phone over BLE or LAN).
 
 ### Available Resources
 
@@ -55,7 +55,7 @@ Context lookup is deliberately limited to `session_info` and `session_get`: read
   | --- | --- |
   | `session-send-text` | Inter-LLM handoff protocol via `session_send_text`. |
   | `agent-plan` | Plan management workflow — creating, claiming, completing, and linking Helm plans. |
-  | `notification` | Notification routing — when and how to call `notify_user`; toast / bubble / Telegram routing. |
+  | `notification` | Notification routing — when and how to call `notify_user`; toast / bubble routing. |
 
   Agents should fetch these only when the task requires the guidance, not on every startup.
 
@@ -94,15 +94,7 @@ Response:
     ],
     "skills": [
       { "id": "sys-agent-plan", "name": "Agent Plan Guide", "type": "agent-plan", "source": "system" }
-    ],
-    "telegramCapabilities": {
-      "available": true,
-      "openwhisper": true,
-      "openwhisperPath": "C:\\openwhispr\\OpenWhispr.exe",
-      "piper": true,
-      "piperPath": "C:\\piper\\piper.exe",
-      "ffmpeg": false
-    }
+    ]
   }
 }
 ```

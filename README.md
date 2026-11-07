@@ -4,7 +4,7 @@
 
 You're running Claude Code in one terminal, Copilot CLI in another, Codex CLI in a third, maybe a fourth session for a side project. Alt-tabbing between them is slow. Finding the right window is annoying. Typing repetitive commands is tedious.
 
-Pick up your controller. One button spawns a new Claude Code session — it opens as an embedded terminal right inside the app. Another fires up Copilot CLI or Codex CLI in its own tab. The D-pad flips between sessions instantly, auto-selecting the terminal so you can start typing right away. Step away from your desk? Use the Android companion over Bluetooth LE or your local network, or control sessions through the Telegram bot.
+Pick up your controller. One button spawns a new Claude Code session — it opens as an embedded terminal right inside the app. Another fires up Copilot CLI or Codex CLI in its own tab. The D-pad flips between sessions instantly, auto-selecting the terminal so you can start typing right away. Step away from your desk? Use the Android companion over Bluetooth LE or your local network.
 
 This is a session manager for people who run multiple AI-assisted terminals at once and got tired of the friction.
 
@@ -29,8 +29,7 @@ The desktop app ships for **Windows** (installer `.exe`) and **macOS** (universa
 - **Pattern matcher** — Auto-fire sequences when PTY output matches regex rules, with per-session cooldown and scheduled sends
 - **Scheduled tasks** — One-time or recurring prompts with spawn or direct-to-session delivery
 - **Drafts + chip bar** — Keep prompt drafts beside the active terminal and trigger reusable quick actions with template expansions
-- **Telegram bot** — Remote session control, activity-gated output monitoring, and spawning from your phone
-- **LLM notifications** — Smart delivery routing: sessions can direct notifications to other sessions, Telegram, or Windows toasts
+- **LLM notifications** — Smart delivery routing: sessions can direct notifications to other sessions or Windows toasts
 - **Voice control ready** — Designed to work with OpenWhisper for voice-to-text input
 - **Session recovery** — Sessions survive app crashes and restarts, with per-CLI resume commands and snapped-out window recovery
 - **Helm MCP server** — Control sessions from Claude Code or other AI agents via MCP tools (send text, read terminal, manage plans)
@@ -80,15 +79,6 @@ Plug in a controller (USB or Bluetooth). The app detects it automatically — Xb
 2. **Left Trigger** (or Back/Start) → spawns a new session in the selected directory
 3. **D-pad** → switch between sessions, start typing immediately
 4. **Right stick** → scroll the terminal buffer
-
-### Remote Control (Telegram)
-
-1. **Settings** → Telegram → follow the setup guide (token + chat ID)
-2. Bot appears with a pinned dashboard of all sessions
-3. `/spawn` to create sessions, `/send` to send prompts, type in topic threads for direct input
-4. Activity-gated output: buffered while sessions are busy, flushed when they go quiet
-
----
 
 ## Controls
 
@@ -227,7 +217,7 @@ The app also watches for `AIAGENT-*` keywords in PTY output to detect CLI state 
 
 **Windows toast notifications** fire when a session goes inactive while implementing or planning — so you know when a long task finishes without staring at the screen.
 
-**LLM-directed notifications** let sessions route notifications to other sessions, Telegram, or Windows toasts with smart delivery — the AI decides where the notification goes based on context and urgency.
+**LLM-directed notifications** let sessions route notifications to other sessions or Windows toasts with smart delivery — the AI decides where the notification goes based on context and urgency.
 
 ---
 
@@ -335,35 +325,6 @@ Skills are reusable instruction templates that can be loaded by AI agents at run
 - **AI-amendable** — Mark skills as editable by agents (when enabled, agents can improve them based on usage feedback)
 - **Analytics** — Track use counts, star ratings (1-5), and written feedback reviews
 - **Cloning** — Duplicate a skill to use as a starting point for a new one
-
----
-
-## Telegram Bot
-
-Control your sessions remotely via a Telegram bot with forum topics. Each session gets its own topic thread that mirrors terminal output and forwards your input directly to the PTY.
-
-### Setup
-
-Settings → Telegram → follow the collapsible setup guide (bot token + chat ID). The bot creates forum topics automatically — one per session.
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `/sessions` | Browse directories → sessions with inline buttons |
-| `/status` | Show all session states at a glance |
-| `/spawn` | 3-step wizard: pick CLI tool → pick directory → session created |
-| `/send <text>` | Send text directly to the active session's PTY |
-| `/close` | Close the current topic's session |
-
-### Features
-
-- **Activity-gated output** — Terminal output streams to Telegram, but batched intelligently: buffers while the session is active, flushes when it goes quiet (>10s silence)
-- **Topic input forwarding** — Type in a session's topic and it goes straight to the PTY
-- **Audio transcription** — Voice/audio attachments are saved with transcript text and a transcript file path when OpenWhispr is configured
-- **Pinned dashboard** — Auto-updating message with all sessions grouped by directory, Talk button for quick access
-- **Topic lifecycle sync** — Closing a session automatically closes its Telegram topic
-- **MCP tool consolidation** — Three MCP tools (`status`, `chat`, `close`) for programmatic bot control
 
 ---
 
@@ -505,7 +466,6 @@ See [docs/mission-statement.md](docs/mission-statement.md), [docs/todos.md](docs
 | MCP Server | Helm MCP server configuration with per-CLI setup instructions |
 | Chipbar / Quick Actions | Reusable prompt templates and workflow shortcuts |
 | Scheduled Tasks | One-time and recurring prompt schedules |
-| Telegram | Bot token, chat ID, and monitoring configuration |
 | Fleet | Cross-machine peers: enable, port, pairing, per-peer allow-lists, audit |
 
 ### Profiles

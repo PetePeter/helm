@@ -40,7 +40,6 @@ Direct `window.gamepadCli` references are allowed only in:
 | `window.helm.drafts` | draft prompt CRUD/count and draft editor history |
 | `window.helm.scheduler` | scheduled task CRUD/list/get/cancel |
 | `window.helm.patterns` | pattern CRUD and pattern schedule cancellation |
-| `window.helm.telegram` | Telegram config, lifecycle, status, and connection test |
 | `window.helm.keyboard` | key tap, combo send/down/up, and typed string |
 | `window.helm.dialog` | folder/file dialogs, external editor, and temporary content files |
 | `window.helm.system` | OS-level utility actions such as opening logs |

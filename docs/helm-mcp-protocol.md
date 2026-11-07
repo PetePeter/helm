@@ -79,7 +79,7 @@ Every enveloped message ends with a `[HELM_MSG_RULES]` block telling the recipie
 **not to block on an interactive prompt**. The recipient is being driven by another
 LLM, so an `AskUserQuestion` modal on its terminal is one nobody will ever see or
 answer — the session hangs silently. Questions must travel back over the same wire
-the work arrived on. This mirrors the guarantee Telegram mode already provides.
+the work arrived on. The reply-routing tag travels on the same wire as the work.
 
 ```mermaid
 graph LR
@@ -378,7 +378,7 @@ Reply to me
 | `sessions_list(dirPath?)` | List active sessions |
 | `session_plan_claim(sessionId, planId)` | Claim a plan: records ownership, transitions ready→coding, shows plan badge |
 | `helm_restart(handoverArtifactId?, resume?)` | Two-phase gated restart — phase 1 (no id) always refuses and teaches the handover ritual: mess_post a pointer, artifact_create the handover, re-call with the id. Phase 2 validates the artifact is owned by the caller; its content becomes the self-resume prompt. Hard-denied for peers and phones |
-| `notify_user(sessionId\|name, title, content)` | LLM-directed notification with smart routing (toast / taskbar flash / bubble / Telegram) |
+| `notify_user(sessionId\|name, title, content)` | LLM-directed notification with smart routing (toast / taskbar flash / bubble) |
 | `flash_attention(sessionId\|name)` | Flash a session in the sidebar for attention — beats card/collapsed-group header between its bg and the Windows accent for 15s, then holds the accent until focused |
 
 ## See Also
