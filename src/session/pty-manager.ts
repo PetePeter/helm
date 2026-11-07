@@ -220,6 +220,7 @@ export class PtyManager extends EventEmitter {
     this.ptys.set(sessionId, ptyProcess);
     this.sizes.set(sessionId, { ...size });
     this.terminalScreenBuffer.attach(sessionId, size);
+    this.emit('spawn', sessionId);
     // Seed the quiet-window clock at spawn: a session that has never spoken
     // counts as busy from birth, not from the epoch — its first paint is
     // still ahead of it and a write landed now would be split by it.

@@ -314,7 +314,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   configSetFilterPreference: (id: string, value: unknown) =>
     ipcRenderer.invoke('config:setFilterPreference', id, value),
   onFilterPreferenceChanged: (callback: (change: { id: string; value: unknown }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, change: { id: string; value: unknown }) => callback(change);
+    const listener = (_event: Electron.IpcRendererEvent, change: { id: string; value: unknown }) => { callback(change); };
     ipcRenderer.on('config:filterPreferenceChanged', listener);
     return () => ipcRenderer.removeListener('config:filterPreferenceChanged', listener);
   },
@@ -412,14 +412,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to PTY output data */
   onPtyData: (callback: (sessionId: string, data: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, sessionId: string, data: string) => callback(sessionId, data);
+    const listener = (_event: Electron.IpcRendererEvent, sessionId: string, data: string) => { callback(sessionId, data); };
     ipcRenderer.on('pty:data', listener);
     return () => ipcRenderer.removeListener('pty:data', listener);
   },
 
   /** Subscribe to PTY exit events */
   onPtyExit: (callback: (sessionId: string, exitCode: number) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, sessionId: string, exitCode: number) => callback(sessionId, exitCode);
+    const listener = (_event: Electron.IpcRendererEvent, sessionId: string, exitCode: number) => { callback(sessionId, exitCode); };
     ipcRenderer.on('pty:exit', listener);
     return () => ipcRenderer.removeListener('pty:exit', listener);
   },
@@ -427,7 +427,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to activity change events */
   onPtyActivityChange: (callback: (event: { sessionId: string; level: string; lastOutputAt?: number }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('pty:activity-change', listener);
     return () => ipcRenderer.removeListener('pty:activity-change', listener);
   },
@@ -450,21 +450,21 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to a handover becoming pending (terminal should lock) */
   onHandoverArmed: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('handover:armed', listener);
     return () => ipcRenderer.removeListener('handover:armed', listener);
   },
 
   /** Subscribe to a handover being pasted back (terminal released) */
   onHandoverDelivered: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('handover:delivered', listener);
     return () => ipcRenderer.removeListener('handover:delivered', listener);
   },
 
   /** Subscribe to a handover being dropped undelivered */
   onHandoverLost: (callback: (event: { sessionId: string; reason: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('handover:lost', listener);
     return () => ipcRenderer.removeListener('handover:lost', listener);
   },
@@ -490,49 +490,49 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to auto-handoff events */
   onPtyHandoff: (callback: (event: { fromSessionId: string; toSessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('pty:handoff', listener);
     return () => ipcRenderer.removeListener('pty:handoff', listener);
   },
 
   /** Subscribe to notification click events (focus + switch to session) */
   onNotificationClick: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('notification:click', listener);
     return () => ipcRenderer.removeListener('notification:click', listener);
   },
 
   /** Subscribe to LLM-directed notification bubbles */
   onLlmNotify: (callback: (data: { sessionId: string; title: string; content: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string; title: string; content: string }) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string; title: string; content: string }) => { callback(data); };
     ipcRenderer.on('notification:llmNotify', listener);
     return () => ipcRenderer.removeListener('notification:llmNotify', listener);
   },
 
   /** Subscribe to flash-attention requests (flash a session/group in the sidebar) */
   onFlashAttention: (callback: (data: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => { callback(data); };
     ipcRenderer.on('session:flashAttention', listener);
     return () => ipcRenderer.removeListener('session:flashAttention', listener);
   },
 
   /** Subscribe to externally-spawned session events (e.g. from Telegram) */
   onSessionSpawned: (callback: (session: { id: string; name: string; cliType: string; processId: number; workingDir?: string; cliSessionName?: string; lastOutputAt?: number }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('session:spawned-externally', listener);
     return () => ipcRenderer.removeListener('session:spawned-externally', listener);
   },
 
   /** Subscribe to session metadata updates such as renames. */
   onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; lastOutputAt?: number; frozen?: boolean; hidden?: boolean }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('session:updated', listener);
     return () => ipcRenderer.removeListener('session:updated', listener);
   },
 
   /** Subscribe to inter-session message flights (Session List envelope animation). */
   onSessionMessageFlight: (callback: (flight: SessionMessageFlight) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: SessionMessageFlight) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: SessionMessageFlight) => { callback(data); };
     ipcRenderer.on('session:message-flight', listener);
     return () => ipcRenderer.removeListener('session:message-flight', listener);
   },
@@ -543,28 +543,28 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to snap-out events */
   onSnapOut: (callback: (sessionId: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, sessionId: string) => callback(sessionId);
+    const listener = (_event: Electron.IpcRendererEvent, sessionId: string) => { callback(sessionId); };
     ipcRenderer.on('session:snapOut', listener);
     return () => ipcRenderer.removeListener('session:snapOut', listener);
   },
 
   /** Subscribe to snap-back events */
   onSnapBack: (callback: (sessionId: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, sessionId: string) => callback(sessionId);
+    const listener = (_event: Electron.IpcRendererEvent, sessionId: string) => { callback(sessionId); };
     ipcRenderer.on('session:snapBack', listener);
     return () => ipcRenderer.removeListener('session:snapBack', listener);
   },
 
   /** Subscribe to Ctrl+<n> focus-slot requests forwarded from popout windows. */
   onFocusSlot: (callback: (slot: number) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, slot: number) => callback(slot);
+    const listener = (_event: Electron.IpcRendererEvent, slot: number) => { callback(slot); };
     ipcRenderer.on('session:focusSlot', listener);
     return () => ipcRenderer.removeListener('session:focusSlot', listener);
   },
 
   /** Subscribe to context-menu actions forwarded from snapped-out windows. */
   onContextMenuAction: (callback: (action: ContextMenuAction) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, action: ContextMenuAction) => callback(action);
+    const listener = (_event: Electron.IpcRendererEvent, action: ContextMenuAction) => { callback(action); };
     ipcRenderer.on('session:contextMenuAction', listener);
     return () => ipcRenderer.removeListener('session:contextMenuAction', listener);
   },
@@ -665,7 +665,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to project-scoped Mess appends. */
   onMessAppended: (callback: (event: { projectId: string; entry: MessEntry }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { projectId: string; entry: MessEntry }) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: { projectId: string; entry: MessEntry }) => { callback(data); };
     ipcRenderer.on('mess:appended', listener);
     return () => ipcRenderer.removeListener('mess:appended', listener);
   },
@@ -1150,60 +1150,60 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to plan change events */
   onPlanChanged: (callback: (dirPath: string) => void) => {
-    const listener = (_event: unknown, dirPath: string) => callback(dirPath);
+    const listener = (_event: unknown, dirPath: string) => { callback(dirPath); };
     ipcRenderer.on('plan:changed', listener);
     return () => ipcRenderer.removeListener('plan:changed', listener);
   },
 
   /** Subscribe to brand-new plans (not edits). */
   onPlanCreated: (callback: (dirPath: string) => void) => {
-    const listener = (_event: unknown, dirPath: string) => callback(dirPath);
+    const listener = (_event: unknown, dirPath: string) => { callback(dirPath); };
     ipcRenderer.on('plan:created', listener);
     return () => ipcRenderer.removeListener('plan:created', listener);
   },
 
   /** Subscribe to successful incoming plan import notifications */
   onPlanIncomingImported: (callback: (event: { filename: string; title: string; dirPath: string }) => void) => {
-    const listener = (_event: unknown, data: { filename: string; title: string; dirPath: string }) => callback(data);
+    const listener = (_event: unknown, data: { filename: string; title: string; dirPath: string }) => { callback(data); };
     ipcRenderer.on('plan:incoming-imported', listener);
     return () => ipcRenderer.removeListener('plan:incoming-imported', listener);
   },
 
   /** Subscribe to incoming plan import error notifications */
   onPlanIncomingError: (callback: (event: { filename: string; error: string; filePath: string }) => void) => {
-    const listener = (_event: unknown, data: { filename: string; error: string; filePath: string }) => callback(data);
+    const listener = (_event: unknown, data: { filename: string; error: string; filePath: string }) => { callback(data); };
     ipcRenderer.on('plan:incoming-error', listener);
     return () => ipcRenderer.removeListener('plan:incoming-error', listener);
   },
 
   /** Subscribe to incoming plan error cleared notifications (file fixed or removed) */
   onPlanIncomingErrorCleared: (callback: (event: { filename: string }) => void) => {
-    const listener = (_event: unknown, data: { filename: string }) => callback(data);
+    const listener = (_event: unknown, data: { filename: string }) => { callback(data); };
     ipcRenderer.on('plan:incoming-error-cleared', listener);
     return () => ipcRenderer.removeListener('plan:incoming-error-cleared', listener);
   },
 
   /** Subscribe to project registry changes. */
   onProjectChanged: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('project:changed', listener);
     return () => ipcRenderer.removeListener('project:changed', listener);
   },
 
   onPatternScheduleCreated: (callback: (event: { sessionId: string; scheduledAt: string; ruleIndex: number }) => void) => {
-    const listener = (_e: unknown, event: { sessionId: string; scheduledAt: string; ruleIndex: number }) => callback(event);
+    const listener = (_e: unknown, event: { sessionId: string; scheduledAt: string; ruleIndex: number }) => { callback(event); };
     ipcRenderer.on('pattern:schedule-created', listener);
     return () => ipcRenderer.removeListener('pattern:schedule-created', listener);
   },
 
   onPatternScheduleFired: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_e: unknown, event: { sessionId: string }) => callback(event);
+    const listener = (_e: unknown, event: { sessionId: string }) => { callback(event); };
     ipcRenderer.on('pattern:schedule-fired', listener);
     return () => ipcRenderer.removeListener('pattern:schedule-fired', listener);
   },
 
   onPatternScheduleCancelled: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_e: unknown, event: { sessionId: string }) => callback(event);
+    const listener = (_e: unknown, event: { sessionId: string }) => { callback(event); };
     ipcRenderer.on('pattern:schedule-cancelled', listener);
     return () => ipcRenderer.removeListener('pattern:schedule-cancelled', listener);
   },
@@ -1273,14 +1273,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to scheduled task change events */
   onScheduledTaskChanged: (callback: (task: { id: string; title: string; status: string }) => void) => {
-    const listener = (_e: unknown, task: { id: string; title: string; status: string }) => callback(task);
+    const listener = (_e: unknown, task: { id: string; title: string; status: string }) => { callback(task); };
     ipcRenderer.on('scheduled-task:changed', listener);
     return () => ipcRenderer.removeListener('scheduled-task:changed', listener);
   },
 
   /** Subscribe to scheduled task history change events */
   onScheduledTaskHistoryChanged: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('scheduled-task-history:changed', listener);
     return () => ipcRenderer.removeListener('scheduled-task-history:changed', listener);
   },
@@ -1306,7 +1306,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to recycle-bin change events */
   onRecycleBinChanged: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('recycle-bin:changed', listener);
     return () => ipcRenderer.removeListener('recycle-bin:changed', listener);
   },
@@ -1417,42 +1417,42 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to artifact mutation events for a session */
   onArtifactChanged: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => { callback(data); };
     ipcRenderer.on('artifact:changed', listener);
     return () => ipcRenderer.removeListener('artifact:changed', listener);
   },
 
   /** Subscribe to brand-new artifacts (not new versions). */
   onArtifactCreated: (callback: (event: { sessionId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => { callback(data); };
     ipcRenderer.on('artifact:created', listener);
     return () => ipcRenderer.removeListener('artifact:created', listener);
   },
 
   /** Subscribe to durable-memory invalidation for the owning session. */
   onMemoryChanged: (callback: (event: { sessionId?: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId?: string }) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId?: string }) => { callback(data); };
     ipcRenderer.on('memory:changed', listener);
     return () => ipcRenderer.removeListener('memory:changed', listener);
   },
 
   /** Subscribe to draft changes; the event carries the whole new pad. */
   onDraftChanged: (callback: (draft: Draft) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: Draft) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: Draft) => { callback(data); };
     ipcRenderer.on('draft:changed', listener);
     return () => ipcRenderer.removeListener('draft:changed', listener);
   },
 
   /** Subscribe to live todo list changes from session_todo_* MCP calls. */
   onTodosChanged: (callback: (change: SessionTodosChanged) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, change: SessionTodosChanged) => callback(change);
+    const listener = (_event: Electron.IpcRendererEvent, change: SessionTodosChanged) => { callback(change); };
     ipcRenderer.on('todos:changed', listener);
     return () => ipcRenderer.removeListener('todos:changed', listener);
   },
 
   /** Subscribe to artifact reveal (bring-forward) events */
   onArtifactReveal: (callback: (event: { sessionId: string; artifactId: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string; artifactId: string }) => callback(data);
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string; artifactId: string }) => { callback(data); };
     ipcRenderer.on('artifact:reveal', listener);
     return () => ipcRenderer.removeListener('artifact:reveal', listener);
   },
@@ -1500,14 +1500,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to runtime-group change events */
   onRuntimeGroupChanged: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('runtime-group:changed', listener);
     return () => ipcRenderer.removeListener('runtime-group:changed', listener);
   },
 
   /** Subscribe to main-process requests to confirm closing the app window. */
   onAppCloseRequest: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('app:close-request', listener);
     return () => ipcRenderer.removeListener('app:close-request', listener);
   },
@@ -1597,70 +1597,70 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to a peer appearing on the LAN */
   onPeerDiscovered: (callback: (peer: { machineId: string; alias: string; address: string }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer:discovered', listener);
     return () => ipcRenderer.removeListener('peer:discovered', listener);
   },
 
   /** Subscribe to a peer leaving the LAN */
   onPeerLost: (callback: (data: { machineId: string }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer:lost', listener);
     return () => ipcRenderer.removeListener('peer:lost', listener);
   },
 
   /** Subscribe to a peer initiating a pairing WITH US (we are the responder) */
   onPeerIncoming: (callback: (data: { sessionId: string; machineId: string; alias: string; address: string }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer:incoming', listener);
     return () => ipcRenderer.removeListener('peer:incoming', listener);
   },
 
   /** Subscribe to the SAS becoming available for the active session */
   onPeerSas: (callback: (data: { sessionId: string; sas: string }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer:sas', listener);
     return () => ipcRenderer.removeListener('peer:sas', listener);
   },
 
   /** Subscribe to a completed pairing */
   onPeerPaired: (callback: (data: { sessionId: string; peerId: string; machineId: string }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer:paired', listener);
     return () => ipcRenderer.removeListener('peer:paired', listener);
   },
 
   /** Subscribe to a failed/aborted pairing */
   onPeerFailed: (callback: (data: { sessionId: string; reason: string }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer:failed', listener);
     return () => ipcRenderer.removeListener('peer:failed', listener);
   },
 
   /** Subscribe to the configured-peer registry changing (add/remove/allow/enable). */
   onPeerConfigChanged: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('peer-config:changed', listener);
     return () => ipcRenderer.removeListener('peer-config:changed', listener);
   },
 
   /** Subscribe to a peer link coming online / going offline. */
   onPeerLinkStatus: (callback: (data: { peerId: string; online: boolean }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer-link:status', listener);
     return () => ipcRenderer.removeListener('peer-link:status', listener);
   },
 
   /** Subscribe to a peer's pushed session snapshot over the existing Fleet link. */
   onPeerSessionsChanged: (callback: (data: { peerId: string; sessions: Array<{ id: string; name: string; cliType: string; state?: string; activityLevel?: 'active' | 'inactive' | 'idle' }> }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('peer:sessions-changed', listener);
     return () => ipcRenderer.removeListener('peer:sessions-changed', listener);
   },
 
   /** Subscribe to the audit log changing. */
   onPeerAuditChanged: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('peer-audit:changed', listener);
     return () => ipcRenderer.removeListener('peer-audit:changed', listener);
   },
@@ -1748,7 +1748,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Subscribe to the paired-device registry changing. */
   onMobileDevicesChanged: (callback: () => void) => {
-    const listener = () => callback();
+    const listener = () => { callback(); };
     ipcRenderer.on('mobile-devices:changed', listener);
     return () => ipcRenderer.removeListener('mobile-devices:changed', listener);
   },
@@ -1760,7 +1760,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     deviceName?: string;
     reason?: string;
   }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('mobile-pairing:state', listener);
     return () => ipcRenderer.removeListener('mobile-pairing:state', listener);
   },
@@ -1773,7 +1773,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     totalBytes?: number;
     error?: string;
   }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => { callback(data); };
     ipcRenderer.on('update:progress', listener);
     return () => ipcRenderer.removeListener('update:progress', listener);
   },
@@ -1799,7 +1799,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Each operator chat_send, once. Returns an unsubscribe. */
   onVoiceOperatorReply: (callback: (reply: { sessionId: string; text: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, reply: { sessionId: string; text: string }) => callback(reply);
+    const listener = (_event: Electron.IpcRendererEvent, reply: { sessionId: string; text: string }) => { callback(reply); };
     ipcRenderer.on('voice:operatorReply', listener);
     return () => ipcRenderer.removeListener('voice:operatorReply', listener);
   },
@@ -1816,7 +1816,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Every appended journal entry across all sessions. Returns an unsubscribe. */
   onChatEntry: (callback: (entry: ChatJournalEntry) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, entry: ChatJournalEntry) => callback(entry);
+    const listener = (_event: Electron.IpcRendererEvent, entry: ChatJournalEntry) => { callback(entry); };
     ipcRenderer.on('chat:entry', listener);
     return () => ipcRenderer.removeListener('chat:entry', listener);
   },

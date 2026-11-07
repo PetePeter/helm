@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
-import { ScheduledTaskManager, MAX_TIMER_DELAY_MS } from '../src/session/scheduled-task-manager.js';
+import { ScheduledTaskManager, MAX_TIMER_DELAY_MS, DIRECT_TASK_PTY_WAIT_MS } from '../src/session/scheduled-task-manager.js';
 import { normalizeProjectPath } from '../src/session/project-identity.js';
 import { saveScheduledTasks } from '../src/session/persistence.js';
 import { DEFAULT_DREAM_PROMPT } from '../src/types/dreaming.js';
@@ -93,6 +93,7 @@ class FakePtyManager extends EventEmitter {
 
   spawn(options: { sessionId: string }): { pid: number } {
     this.activePids.add(options.sessionId);
+    this.emit('spawn', options.sessionId);
     return { pid: 1234 + options.sessionId.length };
   }
 
@@ -1405,7 +1406,7 @@ describe('ScheduledTaskManager', () => {
     it('keeps an interval task alive when one run fails, showing the last error', async () => {
       const { id } = manager.createTask(direct({ scheduleKind: 'interval', intervalMs: 60_000 }));
       manager.start();
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(DIRECT_TASK_PTY_WAIT_MS);
 
       const task = manager.getTask(id)!;
       expect(task.status).toBe('pending');
@@ -1416,15 +1417,28 @@ describe('ScheduledTaskManager', () => {
     it('still fails a one-shot task outright', async () => {
       const { id } = manager.createTask(direct());
       manager.start();
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(DIRECT_TASK_PTY_WAIT_MS);
 
       expect(manager.getTask(id)!.status).toBe('failed');
+    });
+
+    it('delivers an overdue task once the target PTY is respawned after boot', async () => {
+      const { id } = manager.createTask(direct());
+      manager.start();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(manager.getTask(id)!.status).toBe('pending');
+
+      ptyManager.spawn({ sessionId: targetId });
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(manager.getTask(id)!.status).toBe('completed');
+      expect(ptyManager.getWrites(targetId).join('')).toContain('poke');
     });
 
     it('revives a failed task through updateTask', async () => {
       const { id } = manager.createTask(direct());
       manager.start();
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(DIRECT_TASK_PTY_WAIT_MS);
       const at = new Date(Date.now() + 10 * 60_000);
 
       const revived = manager.updateTask(id, { scheduledTime: at, scheduleKind: 'interval', intervalMs: 60_000 });
@@ -1437,7 +1451,7 @@ describe('ScheduledTaskManager', () => {
     it('refuses to revive a failed one-shot task without a future time', async () => {
       const { id } = manager.createTask(direct());
       manager.start();
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(DIRECT_TASK_PTY_WAIT_MS);
 
       expect(() => manager.updateTask(id, { title: 'again' })).toThrow(/future scheduledTime/);
       expect(manager.getTask(id)!.status).toBe('failed');

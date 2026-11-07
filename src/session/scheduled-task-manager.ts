@@ -33,6 +33,12 @@ function assertFrozenPolicy(value: unknown): void {
 }
 const MIN_INTERVAL_MS = 60_000;
 /**
+ * How long a direct task waits for its target's PTY. At boot sessions are
+ * restored before the renderer respawns their PTYs, so an overdue task (e.g.
+ * a restart self-resume) fires into a session that is about to come back.
+ */
+export const DIRECT_TASK_PTY_WAIT_MS = 3 * 60_000;
+/**
  * Node stores a timer delay in a signed 32-bit int; anything larger silently
  * becomes 1ms and the timer fires immediately. Long schedules must therefore
  * sleep in bounded hops and re-check the due date on each wake.
@@ -622,7 +628,7 @@ export class ScheduledTaskManager extends EventEmitter {
       if (!session) {
         throw new Error(`Target session ${targetId} not found`);
       }
-      if (!this.ptyManager.has(targetId)) {
+      if (!(await this.waitForPty(targetId))) {
         throw new Error(`Target session ${targetId} PTY is not running`);
       }
       const frozenPolicy = session.frozen ? task.onFrozen ?? 'skip' : undefined;
@@ -678,6 +684,25 @@ export class ScheduledTaskManager extends EventEmitter {
       this.saveTasks();
       this.emit('task:changed', task);
     }
+  }
+
+  /** Resolve true once the session has a PTY, false if none appears in time. */
+  private waitForPty(sessionId: string): Promise<boolean> {
+    if (this.ptyManager.has(sessionId)) return Promise.resolve(true);
+    logger.info(`[ScheduledTaskManager] Waiting for PTY of session ${sessionId}`);
+    return new Promise((resolve) => {
+      const onSpawn = (spawnedId: string) => {
+        if (spawnedId !== sessionId) return;
+        finish(true);
+      };
+      const timer = setTimeout(() => finish(false), DIRECT_TASK_PTY_WAIT_MS);
+      const finish = (ready: boolean) => {
+        clearTimeout(timer);
+        this.ptyManager.off('spawn', onSpawn);
+        resolve(ready);
+      };
+      this.ptyManager.on('spawn', onSpawn);
+    });
   }
 
   /** Spawn mode: create a new PTY session and deliver prompt. */
