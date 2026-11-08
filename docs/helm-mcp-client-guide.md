@@ -247,6 +247,10 @@ A batch replies `{items, errors}`: one failing entry is reported in `errors`
 and never sinks the rest. Pass one form, not both. `session_mission_set` also
 takes `etaMinutes`, setting mission and ETA in one call.
 
+## Profiles: your tools only see your profile
+
+Helm resolves every call to the profile that owns your session (from your signed session token), so plans, memory, drafts, sessions and projects are your profile's only; another profile's ids are unknown to you. `peer_*`, `mobile_*` and `helm_restart` are admin-profile only and fail with `Admin only` otherwise. Spawns must use a working directory inside one of your profile's project folders. See [user-profiles.md](user-profiles.md).
+
 ## Picking a CLI type: `tool_list`, `tool_get`
 
 ```text

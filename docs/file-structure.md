@@ -332,6 +332,7 @@ android/
 
 ```
 config/
+├── user-profiles.yaml          # Profile registry: names, PIN hashes, active + admin profile ids (machine-wide)
 ├── settings.yaml               # Active profile + hapticFeedback toggle + notifications toggle + sessionGroups prefs (order + collapsed + bookmarked)
 ├── sessions.yaml               # Persisted session state (auto-managed)
 ├── plans/                      # Individual per-plan JSON files (auto-managed, folder-level not per-profile)
@@ -341,6 +342,8 @@ config/
 ├── mobile-secrets.yaml         # Mobile pairing PSKs, base64, mode 0600. Never logged, never sent to the renderer
 └── profiles/
     └── default.yaml            # Self-contained: tools + workingDirectories + bindings + sticks + dpad
+
+<appData>/Helm/profiles/<id>/config/   # Per-user-profile data (sessions, plans, memories, CLI types, …); see user-profiles.md
 ```
 
 ## Tests (`tests/`)

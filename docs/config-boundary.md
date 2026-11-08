@@ -142,6 +142,10 @@ graph TD
     E --> F["Managers load their YAML files"]
 ```
 
+## Per-profile config dirs
+
+`<appData>/Helm/config` is now the **machine-wide** root (settings, bindings, peers, mobile devices, `user-profiles.yaml`). Each user profile's data lives in `<appData>/Helm/profiles/<id>/config`, resolved by `getProfileConfigDir` (the id must be one safe path segment). The boundary rule is unchanged: both roots are under app data in dev and packaged mode, and the first launch after upgrade moves the legacy tree into profile 1 before any seeding. Details: [user-profiles.md](user-profiles.md).
+
 ## Key modules
 
 | File | Role |
@@ -150,7 +154,8 @@ graph TD
 | `src/utils/app-paths.test.ts` | Per-platform base resolution, seeding, migration behaviour |
 | `src/electron/main.ts` | Calls migration → identity → seeding at startup |
 | `src/config/loader.ts` | `DEFAULT_CONFIG_DIR`, seeds on module load, reads profiles/settings |
-| `src/session/persistence-paths.ts` | Per-feature file constants (`DRAFTS_FILE`, …) derived from the config dir |
+| `src/session/persistence-paths.ts` | Per-feature file paths from `getProfilePersistencePaths(profileConfigDir)`; machine-wide ones from `getGlobalPersistencePaths` (`global-persistence-paths.mjs`) |
+| `src/config/profile-config-migration.ts` | One-time, journalled, locked move of the legacy config tree into profile 1 |
 | `src/config/*` | The shipped seed stubs |
 
 ## Consequences to remember

@@ -120,6 +120,10 @@ is bound to that device for every slice and the commit. Denying the pair in a
 device's allow-list makes the phone refuse the share up front ("Helm has not allowed this phone to share files"), read from `__mobile_tools__`.
 See [mobile-app.md](mobile-app.md#share-to-helm--a-file-into-a-sessions-draft).
 
+## Profile binding
+
+Every paired device carries a `userProfileId` (default profile 1). The gate reads it on each request and routes session lookup, timesheets, uploads, live chat, notices and replay to that profile's services; a missing or unknown binding is denied. Restart is admin-profile-only: the gate requires the device's profile to be the admin, on top of the restart grant. Pairing and device management are not reachable from a non-admin profile's phone. See [user-profiles.md](user-profiles.md).
+
 ## Proxy identity
 
 Calls dispatch under `mobile:<deviceId>` (`mobile-identity.ts`), where
