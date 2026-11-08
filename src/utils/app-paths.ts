@@ -111,6 +111,17 @@ export function getConfigDir(_dirname: string, appData?: string): string {
 }
 
 /**
+ * Return a profile's writable config directory: <appData>/Helm/profiles/<id>/config.
+ * IDs are stable path segments supplied by the profile registry, never paths.
+ */
+export function getProfileConfigDir(userProfileId: string, appData?: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(userProfileId)) {
+    throw new Error('User profile id must be a safe path segment');
+  }
+  return path.join(getUserDataDir(appData), 'profiles', userProfileId, 'config');
+}
+
+/**
  * Return the runtime browser/session-data directory used by Electron/Chromium.
  * Always: <appData>/Helm/session-data
  */
@@ -158,16 +169,33 @@ export function getTempDir(_dirname: string, appData?: string): string {
  * Uses readFileSync + writeFileSync instead of copyFileSync because
  * Electron does NOT patch copyFileSync for asar archive reads.
  */
-export function seedConfigIfNeeded(sourceDir: string, targetDir: string): void {
+export interface SeedConfigOptions {
+  /** Restrict copied entries at the config root. */
+  include?: readonly string[];
+  /** Skip entries at the config root. */
+  exclude?: readonly string[];
+}
+
+export function seedConfigIfNeeded(sourceDir: string, targetDir: string, options: SeedConfigOptions = {}): void {
   if (!fs.existsSync(sourceDir)) return;
-  copyDirRecursive(sourceDir, targetDir, false);
+  const include = options.include ? new Set(options.include) : undefined;
+  const exclude = new Set(options.exclude ?? []);
+  copyDirRecursive(sourceDir, targetDir, false, include, exclude);
 }
 
 const SHIPPED_CODE_DIRS = new Set(['hooks']);
 
-function copyDirRecursive(src: string, dest: string, refresh: boolean): void {
+function copyDirRecursive(
+  src: string,
+  dest: string,
+  refresh: boolean,
+  include?: ReadonlySet<string>,
+  exclude: ReadonlySet<string> = new Set(),
+): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (include && !include.has(entry.name)) continue;
+    if (exclude.has(entry.name)) continue;
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {

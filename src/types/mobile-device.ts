@@ -16,6 +16,8 @@
 export interface MobileDevice {
   /** Unique local identifier (UUID v4). */
   id: string;
+  /** User profile that owns this paired device; existing installs migrate to profile 1. */
+  userProfileId?: string;
   /** The phone's stable, app-generated machine identity. The registry key. */
   machineId: string;
   /** Human-facing label taken from the BLE advertisement, e.g. "Pixel 8". */

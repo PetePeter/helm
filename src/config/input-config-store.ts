@@ -2,9 +2,9 @@
  * InputConfigStore — manages sticks, dpad, activity, and chipActions in
  * config/input-config.yaml.
  */
-import * as path from 'path';
 import { loadYaml, saveYaml } from './yaml-store.js';
 import type { ActivityConfig, ChipbarAction, DpadConfig, StickConfig, StickConfigs } from './loader.js';
+import { getGlobalPersistencePaths } from '../session/persistence-paths.js';
 
 const DEFAULT_ACTIVITY: ActivityConfig = { timeoutMs: 5000 };
 const DEFAULT_STICK: StickConfig = { mode: 'disabled', deadzone: 0.25, repeatRate: 50 };
@@ -23,7 +23,7 @@ export class InputConfigStore {
   constructor(private readonly configDir: string) {}
 
   get filePath(): string {
-    return path.join(this.configDir, 'input-config.yaml');
+    return getGlobalPersistencePaths(this.configDir).inputConfigFile;
   }
 
   load(): void {

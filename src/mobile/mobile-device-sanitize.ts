@@ -30,6 +30,7 @@ export function sanitizeMobileDevices(
       typeof d.name === 'string')
     .map((d): MobileDevice => ({
       id: d.id as string,
+      userProfileId: typeof d.userProfileId === 'string' ? d.userProfileId : '1',
       machineId: d.machineId as string,
       name: d.name as string,
       pskRef: typeof d.pskRef === 'string' ? d.pskRef : '',

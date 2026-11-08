@@ -21,10 +21,11 @@ import { migrateUserDataFolder } from './user-data-migration.js';
 import { configureElectronAppIdentity } from './app-identity.js';
 import { ConfigLoader } from '../config/loader.js';
 import { logger } from '../utils/logger.js';
-import { getRendererHtmlPath, isPackaged, seedConfigIfNeeded, getConfigDir, migrateLegacyUserDataIfNeeded } from '../utils/app-paths.js';
+import { getRendererHtmlPath, isPackaged, seedConfigIfNeeded, getConfigDir, getProfileConfigDir, migrateLegacyUserDataIfNeeded } from '../utils/app-paths.js';
 import { registerHelmImgProtocol } from './helm-img-protocol-handler.js';
 import { registerHelmArtifactProtocol } from './helm-artifact-protocol.js';
 import { installComfyUiTools } from './comfyui-tool-installer.js';
+import { migrateProfileConfig } from '../config/profile-config-migration.js';
 
 // Register the custom schemes as privileged BEFORE app is ready.
 // standard+secure makes them behave like https for CSP/CORS; supportFetchAPI
@@ -46,12 +47,13 @@ app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
 // Relocate data written by older builds that used the bare $HOME/Helm fallback
 // (pre platform-aware paths) into the correct per-platform userData dir. Must run
 // before configureElectronAppIdentity/seedConfigIfNeeded create the new dirs.
-const relocated = migrateLegacyUserDataIfNeeded(app.getPath('appData'));
+const appDataDir = app.getPath('appData');
+const relocated = migrateLegacyUserDataIfNeeded(appDataDir);
 if (relocated.length > 0) {
   logger.info(`[Migration] Relocated legacy $HOME/Helm data: ${relocated.join(', ')}`);
 }
 
-configureElectronAppIdentity(app, app.getPath('appData'));
+configureElectronAppIdentity(app, appDataDir);
 
 // Enable crash reporter to capture native crash dumps for diagnosis
 crashReporter.start({
@@ -72,6 +74,8 @@ app.on('child-process-gone', (_event, details) => {
 app.setAppUserModelId('com.helm.desktop');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const globalConfigDir = getConfigDir(__dirname, appDataDir);
+const profileConfigDir = getProfileConfigDir('1', appDataDir);
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
@@ -83,7 +87,7 @@ let windowBounds = { width: 1280, height: 800, x: undefined as number | undefine
 let mainWindowReadyToShow = false;
 let rendererStartupReady = false;
 let startupFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-const configLoader = new ConfigLoader();
+const configLoader = new ConfigLoader({ profileConfigDir, globalConfigDir });
 const RESTART_STARTUP_DELAY_MS = 3000;
 // Upper bound on shutdown cleanup; past this we quit regardless so a wedged
 // resource can never block the restart/relaunch flow.
@@ -351,13 +355,26 @@ app.whenReady().then(async () => {
   // Migrate user data folder from old name to new name (packaged builds only)
   migrateUserDataFolder(process.env.APPDATA || process.env.HOME || '.', app.isPackaged);
 
-  // Belt-and-suspenders: seed config from main.ts in case module-level seed didn't run
+  // Move legacy user state before seeding or loading either config root.
+  try {
+    await migrateProfileConfig({ globalConfigDir, profileConfigDir });
+  } catch (error) {
+    logger.error(`[Main] Profile config migration failed; startup stopped: ${error}`);
+    app.quit();
+    return;
+  }
+
+  // Seed shared and profile defaults independently after migration succeeds.
   const bundled = isPackaged(__dirname)
     ? join(__dirname, '..', 'config')
     : join(process.cwd(), 'src', 'config');
-  const target = getConfigDir(__dirname);
-  seedConfigIfNeeded(bundled, target);
-  migrateLegacyDraftStore(target);
+  seedConfigIfNeeded(bundled, globalConfigDir, {
+    exclude: ['cli-types.yaml', 'scheduled-tasks.yaml', 'sessions.yaml', 'skills.yaml', 'skill-analytics.json'],
+  });
+  seedConfigIfNeeded(bundled, profileConfigDir, {
+    include: ['cli-types.yaml', 'scheduled-tasks.yaml', 'sessions.yaml', 'skills.yaml', 'skill-analytics.json'],
+  });
+  migrateLegacyDraftStore(profileConfigDir);
 
   // Migrate monolithic plans.yaml → individual files if still present
   try {

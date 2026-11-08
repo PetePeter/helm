@@ -1,10 +1,10 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import * as YAML from 'yaml';
 import logger from '../utils/logger.js';
 import { normalizeMcpPort } from './loader-helpers.js';
 import type { FleetConfig, McpConfig, MobileLanConfig, OperatorConfig, SettingsConfig, VoiceConfig } from './loader.js';
 import { DEFAULT_VOICE_CONFIG, VOICE_CONFIG_FIELDS } from './voice-config-manager.js';
+import { getGlobalPersistencePaths } from '../session/persistence-paths.js';
 
 export const DEFAULT_MCP_CONFIG: McpConfig = {
   enabled: false,
@@ -53,7 +53,7 @@ export class SettingsManager {
   constructor(private readonly configDir: string, private readonly debounceMs = 100) {}
 
   get settingsPath(): string {
-    return path.join(this.configDir, 'settings.yaml');
+    return getGlobalPersistencePaths(this.configDir).settingsFile;
   }
 
   load(): SettingsConfig {

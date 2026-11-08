@@ -8,7 +8,7 @@
 import { existsSync, renameSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getConfigDir } from '../utils/app-paths.js';
+import { getProfileConfigDir } from '../utils/app-paths.js';
 import { loadPlans, savePlanFile, saveDependencies } from './persistence.js';
 import { logger } from '../utils/logger.js';
 
@@ -26,7 +26,7 @@ export interface MigrationResult {
  * @param configDir - Override config directory (defaults to production path; injectable for tests)
  */
 export function migrateOldPlans(configDir?: string): MigrationResult {
-  const resolvedConfigDir = configDir ?? getConfigDir(__migration_dirname);
+  const resolvedConfigDir = configDir ?? getProfileConfigDir('1');
   const plansYaml = join(resolvedConfigDir, 'plans.yaml');
   const plansBak = join(resolvedConfigDir, 'plans.yaml.bak');
   const plansDir = join(resolvedConfigDir, 'plans');

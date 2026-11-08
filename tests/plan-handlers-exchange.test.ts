@@ -41,6 +41,7 @@ vi.mock('../src/utils/app-paths.js', () => ({
   getTempDir: () => '/tmp/helm-test',
   getRendererHtmlPath: () => 'about:blank',
   getConfigDir: () => '/tmp/helm-config',
+  getProfileConfigDir: () => '/tmp/helm-config',
 }));
 
 vi.mock('../src/session/persistence.js', () => ({

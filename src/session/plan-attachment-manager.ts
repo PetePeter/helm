@@ -12,7 +12,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PlanAttachment, PlanAttachmentTempFile } from '../types/plan-attachment.js';
 import type { PlanManager } from './plan-manager.js';
-import { getConfigDir, getTempDir } from '../utils/app-paths.js';
+import { getProfileConfigDir, getTempDir } from '../utils/app-paths.js';
 import { logger } from '../utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -40,7 +40,7 @@ export class PlanAttachmentManager {
     configDir?: string,
     tempDir?: string,
   ) {
-    const resolvedConfigDir = configDir ?? getConfigDir(__dirname);
+    const resolvedConfigDir = configDir ?? getProfileConfigDir('1');
     this.rootDir = join(resolvedConfigDir, 'plan-attachments');
     this.tempDir = tempDir ?? getTempDir(__dirname);
     this.indexPath = join(this.rootDir, INDEX_FILE);

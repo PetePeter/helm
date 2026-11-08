@@ -40,6 +40,7 @@ describe('MobileDeviceStore', () => {
 
     expect(device.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(device.createdAt).toBe(clock());
+    expect(device.userProfileId).toBe('1');
     expect(persist).toHaveBeenCalledTimes(1);
     expect(persist.mock.calls[0][0]).toHaveLength(1);
     expect(changed).toHaveBeenCalledTimes(1);
@@ -190,6 +191,7 @@ describe('sanitizeMobileDevices', () => {
     ], clock);
 
     expect(sane[0].createdAt).toBe(clock());
+    expect(sane[0].userProfileId).toBe('1');
   });
 
   it('returns an empty list for anything that is not an array', () => {

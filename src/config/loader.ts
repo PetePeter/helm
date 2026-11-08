@@ -5,8 +5,7 @@ import * as path from 'path';
 import { isValidContextLimits, type ContextLimits } from '../session/context-limits.js';
 import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
-import { getConfigDir, isPackaged, seedConfigIfNeeded } from '../utils/app-paths.js';
-import { fileURLToPath } from 'url';
+import { getConfigDir, getProfileConfigDir } from '../utils/app-paths.js';
 import {
   isCliTypeOptions,
   normalizeMcpPort,
@@ -559,21 +558,20 @@ export function stickVirtualButtonName(stick: 'left' | 'right', direction: Stick
 // ConfigLoader
 // ============================================================================
 
-const __loader_dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CONFIG_DIR = getConfigDir(__loader_dirname);
+const DEFAULT_GLOBAL_CONFIG_DIR = getConfigDir(import.meta.dirname ?? '.');
+const DEFAULT_PROFILE_CONFIG_DIR = getProfileConfigDir('1');
 
-// Seed user-data config from bundled defaults on first launch
-// Source differs (asar vs source tree) but target is always %APPDATA%/Helm/config
-const sourceConfigDir = isPackaged(__loader_dirname)
-  ? path.join(__loader_dirname, '..', 'config')
-  : path.join(process.cwd(), 'src', 'config');
-seedConfigIfNeeded(sourceConfigDir, DEFAULT_CONFIG_DIR);
+export interface ConfigLoaderPaths {
+  profileConfigDir: string;
+  globalConfigDir: string;
+}
 
 /** Well-known id of the profile legacy per-CLI bindings migrate into. */
 export const DEFAULT_BINDING_PROFILE_ID = 'default';
 
 export class ConfigLoader {
-  private configDir: string;
+  private profileConfigDir: string;
+  private globalConfigDir: string;
   private cliTypeStore: CliTypeStore;
   private bindingStore: BindingStore;
   private inputConfigStore: InputConfigStore;
@@ -582,12 +580,19 @@ export class ConfigLoader {
   private settings: SettingsConfig | null = null;
   private projectStore?: ProjectStore;
 
-  constructor(configDir: string = DEFAULT_CONFIG_DIR) {
-    this.configDir = configDir;
-    this.cliTypeStore = new CliTypeStore(configDir);
-    this.bindingStore = new BindingStore(configDir);
-    this.inputConfigStore = new InputConfigStore(configDir);
-    this.settingsManager = new SettingsManager(configDir);
+  constructor(paths: ConfigLoaderPaths | string = {
+    profileConfigDir: DEFAULT_PROFILE_CONFIG_DIR,
+    globalConfigDir: DEFAULT_GLOBAL_CONFIG_DIR,
+  }) {
+    const resolved = typeof paths === 'string'
+      ? { profileConfigDir: paths, globalConfigDir: paths }
+      : paths;
+    this.profileConfigDir = resolved.profileConfigDir;
+    this.globalConfigDir = resolved.globalConfigDir;
+    this.cliTypeStore = new CliTypeStore(this.profileConfigDir);
+    this.bindingStore = new BindingStore(this.globalConfigDir);
+    this.inputConfigStore = new InputConfigStore(this.globalConfigDir);
+    this.settingsManager = new SettingsManager(this.globalConfigDir);
     this.voiceConfigManager = new VoiceConfigManager(
       () => this.settings,
       () => this.saveSettings(),
@@ -606,17 +611,17 @@ export class ConfigLoader {
     this.cliTypeStore.load();
     this.bindingStore.load();
     this.inputConfigStore.load();
-    migrateFromProfile(this.configDir, this.cliTypeStore, this.bindingStore, this.inputConfigStore);
+    migrateFromProfile(this.profileConfigDir, this.cliTypeStore, this.bindingStore, this.inputConfigStore);
     // Re-key slug-based CLI types to UUIDs. Runs after the profile migration so
     // types it just imported are covered too; rewrites the file directly, hence
     // the reload.
-    if (migrateCliTypeIds(defaultCliTypeMigrationFiles(this.configDir))) {
+    if (migrateCliTypeIds(defaultCliTypeMigrationFiles(this.profileConfigDir))) {
       this.cliTypeStore.load();
     }
     // Merge ComfyUI presets only into tools a user already configured. Fresh
     // installs remain free of optional ComfyUI tool entries.
-    if (path.resolve(this.configDir) === path.resolve(DEFAULT_CONFIG_DIR)
-      && migrateComfyUiToolDefaults(defaultComfyUiMigrationFiles(this.configDir))) {
+    if (path.resolve(this.profileConfigDir) === path.resolve(DEFAULT_PROFILE_CONFIG_DIR)
+      && migrateComfyUiToolDefaults(defaultComfyUiMigrationFiles(this.profileConfigDir))) {
       this.cliTypeStore.load();
     }
     this.migrateLegacyBindings();
@@ -810,7 +815,7 @@ export class ConfigLoader {
     this.ensureLoaded();
     return {
       actions: this.inputConfigStore.getChipbarActions(),
-      inboxDir: path.join(this.configDir, 'plans', 'incoming'),
+      inboxDir: path.join(this.profileConfigDir, 'plans', 'incoming'),
     };
   }
 
@@ -820,11 +825,11 @@ export class ConfigLoader {
   }
 
   getSkillsPath(): string {
-    return path.join(this.configDir, 'skills.yaml');
+    return path.join(this.profileConfigDir, 'skills.yaml');
   }
 
   getSkillAnalyticsPath(): string {
-    return path.join(this.configDir, 'skill-analytics.json');
+    return path.join(this.profileConfigDir, 'skill-analytics.json');
   }
 
   /**

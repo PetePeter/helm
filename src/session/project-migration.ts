@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getConfigDir } from '../utils/app-paths.js';
+import { getProfileConfigDir } from '../utils/app-paths.js';
 import { logger } from '../utils/logger.js';
 import { listPlanFiles, loadPlanFile, loadPlanSequences, savePlanFile, savePlanSequences, saveSessions, loadSessions } from './persistence.js';
 import { ProjectStore } from './project-store.js';
@@ -53,7 +53,7 @@ function ensureBackupCopy(sourcePath: string, backupPath: string): void {
  * The migration is idempotent: re-running only re-saves when project linkage changed.
  */
 export function migrateProjects(configDir?: string): ProjectMigrationResult {
-  const resolvedConfigDir = configDir ?? getConfigDir(__migration_dirname);
+  const resolvedConfigDir = configDir ?? getProfileConfigDir('1');
   const plansDir = join(resolvedConfigDir, 'plans');
   const sequencesFile = join(resolvedConfigDir, 'plan-sequences.json');
   const sessionsFile = join(resolvedConfigDir, 'sessions.yaml');

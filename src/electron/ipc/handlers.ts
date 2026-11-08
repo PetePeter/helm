@@ -20,6 +20,7 @@ import { PipelineQueue } from '../../session/pipeline-queue.js';
 import { NotificationManager } from '../../session/notification-manager.js';
 import { PlanManager } from '../../session/plan-manager.js';
 import { ProjectStore } from '../../session/project-store.js';
+import { getGlobalPersistencePaths } from '../../session/persistence-paths.js';
 import { ContextManager } from '../../session/context-manager.js';
 import { SkillManager } from '../../session/skill-manager.js';
 import { SkillAnalyticsManager } from '../../session/skill-analytics-manager.js';
@@ -156,7 +157,7 @@ import { SecretStore } from '../../mcp/peer/secret-store.js';
 import { loadPeerPins, savePeerPins, loadPeerSecrets, savePeerSecrets } from '../../mcp/peer/peer-secret-persistence.js';
 import { asRecord } from '../../mcp/tools/validation.js';
 import { MessNotifier } from '../../session/mess-notifier.js';
-import { getConfigDir, getTempDir } from '../../utils/app-paths.js';
+import { getConfigDir, getProfileConfigDir, getTempDir } from '../../utils/app-paths.js';
 import { HeadlessCliRunner } from '../../session/headless-cli-runner.js';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -398,7 +399,7 @@ export function registerIPCHandlers(
   // the settings handlers (below) and the G4 rules-via-hooks capability check.
   const hookDeps: HookInstallerDeps = {
     homeDir: () => homedir(),
-    shimPath: join(getConfigDir(dirname ?? process.cwd()), 'hooks', 'helm-hook-shim.py'),
+    shimPath: join(getGlobalPersistencePaths(getConfigDir(dirname ?? process.cwd())).hooksDir, 'helm-hook-shim.py'),
   };
   // G1 transport + G2 enforcement: receives CLI lifecycle hooks on POST /hooks,
   // correlates them by session token, logs them, and routes PreToolUse through
@@ -423,7 +424,7 @@ export function registerIPCHandlers(
   // the scorer reorders passers only, so nothing crosses the threshold on
   // signal strength. The store is constructed here (not with the suggester
   // below) because the MCP server's fetch recording feeds it.
-  const suggestionUsage = new SuggestionUsageStore({ configDir: getConfigDir(dirname ?? process.cwd()) });
+  const suggestionUsage = new SuggestionUsageStore({ configDir: getProfileConfigDir('1') });
   const suggestionScorer = new BoostedSuggestionScorer(new Bm25SuggestionScorer(), {
     getMemoryEdges: () => memoryManager.listEdges(),
     getWorkspacePlanIds: (sessionId) => {
@@ -505,7 +506,7 @@ export function registerIPCHandlers(
     chatHistory: (sessionId) => mobileChatJournal.sessionEntries(sessionId).map(({ seq, record }) => ({
       seq, at: record.at, fromUser: record.originId !== undefined, text: record.text,
     })),
-    historyDir: join(getConfigDir(dirname ?? process.cwd()), 'api-sessions'),
+    historyDir: join(getProfileConfigDir('1'), 'api-sessions'),
     // Bound lazily: the recorder needs the silent runner, which needs this host.
     recordTurn: (sessionId, history) => { void autoMemoryRecorder.recordTurns(sessionId, splitTurns(history)); },
   });

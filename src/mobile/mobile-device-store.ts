@@ -45,6 +45,7 @@ export class MobileDeviceStore extends EventEmitter {
   add(input: AddMobileDeviceInput): MobileDevice {
     const device: MobileDevice = {
       id: randomUUID(),
+      userProfileId: '1',
       machineId: input.machineId,
       name: input.name,
       pskRef: input.pskRef,

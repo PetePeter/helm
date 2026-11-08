@@ -1,43 +1,138 @@
-import { join, dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getConfigDir } from '../utils/app-paths.js';
+import { getConfigDir, getProfileConfigDir } from '../utils/app-paths.js';
+import { getGlobalPersistencePaths as getGlobalPersistencePathsFromSharedDefinition } from './global-persistence-paths.mjs';
+
+export interface ProfilePersistencePaths {
+  sessionsFile: string;
+  plansFile: string;
+  plansDir: string;
+  planDependenciesFile: string;
+  planSequencesFile: string;
+  projectsFile: string;
+  planContextsFile: string;
+  planContextBindingsFile: string;
+  scheduledTasksFile: string;
+  scheduledTaskHistoryFile: string;
+  recycleBinFile: string;
+  runtimeGroupsFile: string;
+  artifactsFile: string;
+  draftsDir: string;
+  todosDir: string;
+  cliTypesFile: string;
+  skillsFile: string;
+  skillAnalyticsFile: string;
+  configMigrationsFile: string;
+  suggestionUsageFile: string;
+  apiSessionsDir: string;
+  planAttachmentsDir: string;
+  artifactAttachmentsDir: string;
+  memoriesFile: string;
+  memoryAttachmentsDir: string;
+  messDir: string;
+  timeTrackingDir: string;
+}
+
+export interface GlobalPersistencePaths {
+  settingsFile: string;
+  inputConfigFile: string;
+  bindingsFile: string;
+  peersFile: string;
+  machineIdentityFile: string;
+  selfSignedCertFile: string;
+  peerPinsFile: string;
+  peerSecretsFile: string;
+  peerAuditFile: string;
+  mobileDevicesFile: string;
+  mobileSecretsFile: string;
+  mobileChatJournalFile: string;
+  /** Mobile subsystem audit data remains machine-shared. */
+  mobileAuditFile: string;
+  userProfilesFile: string;
+  restorePointsDir: string;
+  migrationJournalFile: string;
+  hooksDir: string;
+  operatorDir: string;
+}
+
+/** Build every profile-owned persistence path from an explicit profile config directory. */
+export function getProfilePersistencePaths(configDir: string): ProfilePersistencePaths {
+  return {
+    sessionsFile: join(configDir, 'sessions.yaml'),
+    plansFile: join(configDir, 'plans.yaml'),
+    plansDir: join(configDir, 'plans'),
+    planDependenciesFile: join(configDir, 'plan-dependencies.json'),
+    planSequencesFile: join(configDir, 'plan-sequences.json'),
+    projectsFile: join(configDir, 'projects.json'),
+    planContextsFile: join(configDir, 'plan-contexts.json'),
+    planContextBindingsFile: join(configDir, 'plan-context-bindings.json'),
+    scheduledTasksFile: join(configDir, 'scheduled-tasks.yaml'),
+    scheduledTaskHistoryFile: join(configDir, 'scheduled-task-history.yaml'),
+    recycleBinFile: join(configDir, 'recycle-bin.yaml'),
+    runtimeGroupsFile: join(configDir, 'runtime-groups.yaml'),
+    artifactsFile: join(configDir, 'artifacts.yaml'),
+    draftsDir: join(configDir, 'drafts'),
+    todosDir: join(configDir, 'todos'),
+    cliTypesFile: join(configDir, 'cli-types.yaml'),
+    skillsFile: join(configDir, 'skills.yaml'),
+    skillAnalyticsFile: join(configDir, 'skill-analytics.json'),
+    configMigrationsFile: join(configDir, 'config-migrations.yaml'),
+    suggestionUsageFile: join(configDir, 'suggestion-usage.json'),
+    apiSessionsDir: join(configDir, 'api-sessions'),
+    planAttachmentsDir: join(configDir, 'plan-attachments'),
+    artifactAttachmentsDir: join(configDir, 'artifact-attachments'),
+    memoriesFile: join(configDir, 'memories.json'),
+    memoryAttachmentsDir: join(configDir, 'memory-attachments'),
+    messDir: join(configDir, 'mess'),
+    timeTrackingDir: join(configDir, 'time-tracking'),
+  };
+}
+
+/** Build every machine-shared config path from the canonical shared definition. */
+export function getGlobalPersistencePaths(configDir: string): GlobalPersistencePaths {
+  return getGlobalPersistencePathsFromSharedDefinition(configDir) as GlobalPersistencePaths;
+}
 
 const persistenceDirname = dirname(fileURLToPath(import.meta.url));
-const configDir = getConfigDir(persistenceDirname);
+const profilePaths = getProfilePersistencePaths(getProfileConfigDir('1'));
+const globalPaths = getGlobalPersistencePaths(getConfigDir(persistenceDirname));
 
-export const SESSIONS_FILE = join(configDir, 'sessions.yaml');
-export const PLANS_FILE = join(configDir, 'plans.yaml');
-export const DEFAULT_PLANS_DIR = join(configDir, 'plans');
-export const DEFAULT_PLAN_DEPS_FILE = join(configDir, 'plan-dependencies.json');
-export const DEFAULT_PLAN_SEQUENCES_FILE = join(configDir, 'plan-sequences.json');
-export const DEFAULT_PROJECTS_FILE = join(configDir, 'projects.json');
-export const DEFAULT_PLAN_CONTEXTS_FILE = join(configDir, 'plan-contexts.json');
-export const DEFAULT_PLAN_CONTEXT_BINDINGS_FILE = join(configDir, 'plan-context-bindings.json');
-export const SCHEDULED_TASKS_FILE = join(configDir, 'scheduled-tasks.yaml');
-export const SCHEDULED_TASK_HISTORY_FILE = join(configDir, 'scheduled-task-history.yaml');
-export const RECYCLE_BIN_FILE = join(configDir, 'recycle-bin.yaml');
-export const RUNTIME_GROUPS_FILE = join(configDir, 'runtime-groups.yaml');
-export const ARTIFACTS_FILE = join(configDir, 'artifacts.yaml');
-export const DRAFTS_DIR = join(configDir, 'drafts');
-export const TODOS_DIR = join(configDir, 'todos');
-export const PEERS_FILE =join(configDir, 'peers.yaml');
-export const MACHINE_IDENTITY_FILE = join(configDir, 'machine-identity.yaml');
-export const SELF_SIGNED_CERT_FILE = join(configDir, 'self-signed-cert.yaml');
-export const PEER_PINS_FILE = join(configDir, 'peer-pins.yaml');
-export const PEER_SECRETS_FILE = join(configDir, 'peer-secrets.yaml');
-export const PEER_AUDIT_FILE = join(configDir, 'peer-audit.yaml');
-/** Paired phones. No secret material — only pskRef references. */
-export const MOBILE_DEVICES_FILE = join(configDir, 'mobile-devices.yaml');
-/** Mobile pairing PSKs, base64, mode 0600. The ONLY place they are stored. */
-export const MOBILE_SECRETS_FILE = join(configDir, 'mobile-secrets.yaml');
-/** Rolling record of chat messages fanned out to phones; catch-up replays from it. */
-export const MOBILE_CHAT_JOURNAL_FILE = join(configDir, 'mobile-chat-journal.json');
-export const MEMORIES_FILE = join(configDir, 'memories.json');
-export const MEMORY_ATTACHMENTS_DIR = join(configDir, 'memory-attachments');
+// Default-profile aliases keep the existing singleton stores concise. New
+// profile-aware callers should use getProfilePersistencePaths(configDir).
+export const SESSIONS_FILE = profilePaths.sessionsFile;
+export const PLANS_FILE = profilePaths.plansFile;
+export const DEFAULT_PLANS_DIR = profilePaths.plansDir;
+export const DEFAULT_PLAN_DEPS_FILE = profilePaths.planDependenciesFile;
+export const DEFAULT_PLAN_SEQUENCES_FILE = profilePaths.planSequencesFile;
+export const DEFAULT_PROJECTS_FILE = profilePaths.projectsFile;
+export const DEFAULT_PLAN_CONTEXTS_FILE = profilePaths.planContextsFile;
+export const DEFAULT_PLAN_CONTEXT_BINDINGS_FILE = profilePaths.planContextBindingsFile;
+export const SCHEDULED_TASKS_FILE = profilePaths.scheduledTasksFile;
+export const SCHEDULED_TASK_HISTORY_FILE = profilePaths.scheduledTaskHistoryFile;
+export const RECYCLE_BIN_FILE = profilePaths.recycleBinFile;
+export const RUNTIME_GROUPS_FILE = profilePaths.runtimeGroupsFile;
+export const ARTIFACTS_FILE = profilePaths.artifactsFile;
+export const DRAFTS_DIR = profilePaths.draftsDir;
+export const TODOS_DIR = profilePaths.todosDir;
+export const MEMORIES_FILE = profilePaths.memoriesFile;
+export const MEMORY_ATTACHMENTS_DIR = profilePaths.memoryAttachmentsDir;
 /** Mess is stored below per-user app data, never below the repository. */
-export const MESS_DIR = join(configDir, 'mess');
+export const MESS_DIR = profilePaths.messDir;
 /** Time tracking: one append-only JSONL file of 5-minute slots per month. */
-export const TIME_TRACKING_DIR = join(configDir, 'time-tracking');
+export const TIME_TRACKING_DIR = profilePaths.timeTrackingDir;
+
+export const PEERS_FILE = globalPaths.peersFile;
+export const MACHINE_IDENTITY_FILE = globalPaths.machineIdentityFile;
+export const SELF_SIGNED_CERT_FILE = globalPaths.selfSignedCertFile;
+export const PEER_PINS_FILE = globalPaths.peerPinsFile;
+export const PEER_SECRETS_FILE = globalPaths.peerSecretsFile;
+export const PEER_AUDIT_FILE = globalPaths.peerAuditFile;
+/** Paired phones. No secret material — only pskRef references. */
+export const MOBILE_DEVICES_FILE = globalPaths.mobileDevicesFile;
+/** Mobile pairing PSKs, base64, mode 0600. The ONLY place they are stored. */
+export const MOBILE_SECRETS_FILE = globalPaths.mobileSecretsFile;
+/** Rolling record of chat messages fanned out to phones; catch-up replays from it. */
+export const MOBILE_CHAT_JOURNAL_FILE = globalPaths.mobileChatJournalFile;
 
 function assertSafeProjectId(projectId: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(projectId)) {

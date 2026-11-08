@@ -11,10 +11,10 @@
  * `legacy` for ConfigLoader to fold into a profile — the store has no view of
  * CLI types, so it cannot decide which tools the result belongs to.
  */
-import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { loadYaml, saveYaml } from './yaml-store.js';
 import type { Binding, ButtonBindings } from './loader.js';
+import { getGlobalPersistencePaths } from '../session/persistence-paths.js';
 
 export interface BindingProfile {
   name: string;
@@ -55,7 +55,7 @@ export class BindingStore {
   constructor(private readonly configDir: string) {}
 
   get filePath(): string {
-    return path.join(this.configDir, 'bindings.yaml');
+    return getGlobalPersistencePaths(this.configDir).bindingsFile;
   }
 
   load(): void {
