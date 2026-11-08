@@ -111,7 +111,7 @@ const timeActivity = useTimeActivity(() => (planScreenState.currentDir ? { dirPa
     @add-context="onPlanAddContext()"
     @export-dir="onPlanExportDirectory()"
     @open-plan-external="onPlanOpenExternal()"
-    @cleanup="onPlanCleanup($event)"
+    @cleanup="onPlanCleanup()"
     @create-sequence="onPlanCreateSequence"
     @assign-sequence="onPlanAssignSequence"
     @update-sequence="onPlanUpdateSequence"

@@ -1319,9 +1319,9 @@ describe('plan screen bridge', () => {
       return mod;
     }
 
-    it('previews "Clear unused" with the counts it will delete, and deletes nothing yet', async () => {
+    it('previews the one-click cleanup with every count it will delete, and deletes nothing yet', async () => {
       const mod = await openScreen();
-      mod.onPlanCleanup('unused');
+      mod.onPlanCleanup();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockPlanCleanupCounts).toHaveBeenCalledWith('/test/dir');
@@ -1329,41 +1329,44 @@ describe('plan screen bridge', () => {
         visible: true,
         title: 'Clear unused items?',
         dirName: 'dir',
-        lines: [{ count: 1, noun: 'empty sequence' }, { count: 3, noun: 'unreferenced context' }],
+        lines: [
+          { count: 2, noun: 'completed plan' },
+          { count: 1, noun: 'empty sequence' },
+          { count: 3, noun: 'unreferenced context' },
+        ],
       });
+      expect(mockPlanClearCompleted).not.toHaveBeenCalled();
       expect(mockPlanClearEmptySequences).not.toHaveBeenCalled();
       expect(mockPlanClearUnreferencedContexts).not.toHaveBeenCalled();
     });
 
-    it('on confirm, "Clear unused" clears sequences before contexts and never done plans', async () => {
+    it('on confirm, clears completed plans, then sequences, then contexts', async () => {
       const mod = await openScreen();
       const order: string[] = [];
+      mockPlanClearCompleted.mockImplementation(async () => { order.push('plans'); return 2; });
       mockPlanClearEmptySequences.mockImplementation(async () => { order.push('sequences'); return 1; });
       mockPlanClearUnreferencedContexts.mockImplementation(async () => { order.push('contexts'); return 3; });
-      mod.onPlanCleanup('unused');
+      mod.onPlanCleanup();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       await cleanupCallback!();
 
-      expect(order).toEqual(['sequences', 'contexts']);
-      expect(mockPlanClearCompleted).not.toHaveBeenCalled();
+      expect(order).toEqual(['plans', 'sequences', 'contexts']);
     });
 
-    it('keeps "Clear done plans" an individual action', async () => {
+    it('omits zero-count lines from the preview', async () => {
       const mod = await openScreen();
-      mod.onPlanCleanup('done');
+      mockPlanCleanupCounts.mockResolvedValue({ donePlans: 0, emptySequences: 0, unreferencedContexts: 0, unusedContexts: 3 });
+      mod.onPlanCleanup();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(bulkCleanup.lines).toEqual([{ count: 2, noun: 'completed plan' }]);
-      await cleanupCallback!();
-      expect(mockPlanClearCompleted).toHaveBeenCalledWith('/test/dir');
-      expect(mockPlanClearEmptySequences).not.toHaveBeenCalled();
-      expect(mockPlanClearUnreferencedContexts).not.toHaveBeenCalled();
+      expect(bulkCleanup.lines).toEqual([{ count: 3, noun: 'unreferenced context' }]);
     });
 
     it('shows a notice instead of a dialog when there is nothing to clear', async () => {
       const mod = await openScreen();
-      mod.onPlanCleanup('contexts');
+      mockPlanCleanupCounts.mockResolvedValue({ donePlans: 0, emptySequences: 0, unreferencedContexts: 0, unusedContexts: 0 });
+      mod.onPlanCleanup();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(bulkCleanup.visible).toBe(false);

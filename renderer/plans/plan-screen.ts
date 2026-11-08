@@ -948,41 +948,33 @@ async function handleExportDirectory(): Promise<void> {
   }
 }
 
-/** The Plans screen's bulk cleanups. "unused" is empty sequences, then unreferenced contexts. */
-export type PlanCleanupKind = 'unused' | 'done' | 'sequences' | 'contexts';
-
-const CLEANUP_TITLES: Record<PlanCleanupKind, string> = {
-  unused: 'Clear unused items?',
-  done: 'Clear done plans?',
-  sequences: 'Clear empty sequences?',
-  contexts: 'Clear unreferenced contexts?',
-};
-
-async function handleCleanup(kind: PlanCleanupKind): Promise<void> {
+/**
+ * One-click "Clear unused": completed plans, then empty sequences, then
+ * unreferenced contexts. The order matters — deleting a sequence releases its
+ * context bindings, which is what makes those contexts unreferenced.
+ */
+async function handleCleanup(): Promise<void> {
   const dirPath = planScreenState.currentDir;
   try {
     const counts = await plansClient.planCleanupCounts(dirPath);
-    const sequences = { count: counts.emptySequences, noun: 'empty sequence' };
-    const lines = {
-      done: [{ count: counts.donePlans, noun: 'completed plan' }],
-      sequences: [sequences],
-      contexts: [{ count: counts.unreferencedContexts, noun: 'unreferenced context' }],
-      // Clearing the sequences first frees contexts bound only to them.
-      unused: [sequences, { count: counts.unusedContexts, noun: 'unreferenced context' }],
-    }[kind].filter((line) => line.count > 0);
+    const lines = [
+      { count: counts.donePlans, noun: 'completed plan' },
+      { count: counts.emptySequences, noun: 'empty sequence' },
+      { count: counts.unusedContexts, noun: 'unreferenced context' },
+    ].filter((line) => line.count > 0);
     if (lines.length === 0) {
       showBriefNotice('Nothing to clear');
       return;
     }
     const parts = dirPath.replace(/\\/g, '/').split('/');
-    bulkCleanup.title = CLEANUP_TITLES[kind];
+    bulkCleanup.title = 'Clear unused items?';
     bulkCleanup.lines = lines;
     bulkCleanup.dirName = parts[parts.length - 1] || dirPath;
     bulkCleanup.visible = true;
     setBulkCleanupCallback(async () => {
-      if (kind === 'done') await plansClient.planClearCompleted(dirPath);
-      if (kind === 'sequences' || kind === 'unused') await plansClient.planClearEmptySequences(dirPath);
-      if (kind === 'contexts' || kind === 'unused') await plansClient.planClearUnreferencedContexts(dirPath);
+      await plansClient.planClearCompleted(dirPath);
+      await plansClient.planClearEmptySequences(dirPath);
+      await plansClient.planClearUnreferencedContexts(dirPath);
       await refreshCanvas();
     });
   } catch (err) {
@@ -1069,8 +1061,8 @@ export function onPlanOpenExternal(): void {
   void handleOpenPlanExternal();
 }
 
-export function onPlanCleanup(kind: PlanCleanupKind): void {
-  void handleCleanup(kind);
+export function onPlanCleanup(): void {
+  void handleCleanup();
 }
 
 export async function onPlanCreateSequence(title: string, missionStatement: string, sharedMemory: string): Promise<void> {

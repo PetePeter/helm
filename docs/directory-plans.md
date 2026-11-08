@@ -239,16 +239,16 @@ interface LayoutResult {
 
 ### Bulk Cleanup
 
-The header's **Clear unused** split button deletes stale records in the current project, always behind a confirmation that lists what will go:
+The header's **Clear unused** button deletes stale records in the current project in one click, always behind a confirmation that lists what will go (completed plans, empty sequences, unreferenced contexts; zero counts are omitted):
 
-- **Primary — Clear unused:** empty sequences first, then unreferenced contexts. Order matters: deleting a sequence releases its context bindings, so a context bound only to empty sequences is counted and cleared in the same pass.
-- **▾ menu:** *Clear done plans*, *Clear empty sequences*, *Clear unreferenced contexts* — each on its own.
+- **Order:** completed plans, then empty sequences, then unreferenced contexts. Deleting a sequence releases its context bindings, so a context bound only to empty sequences is counted and cleared in the same pass.
+- The preview counts are taken before anything is deleted, so sequences or contexts freed only by removing completed plans are cleared but not yet in the count.
 
 ```mermaid
 flowchart LR
     A[Clear unused] --> B[plan:cleanup-counts] --> C{anything?}
     C -- no --> N[Nothing to clear notice]
-    C -- yes --> D[BulkCleanupModal] -- Clear --> E[clear-empty-sequences] --> F[clear-unreferenced-contexts] --> G[refresh canvas]
+    C -- yes --> D[BulkCleanupModal] -- Clear --> P[clear-completed] --> E[clear-empty-sequences] --> F[clear-unreferenced-contexts] --> G[refresh canvas]
 ```
 
 ### Canvas Features
