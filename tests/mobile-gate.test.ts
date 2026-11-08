@@ -38,6 +38,7 @@ interface Built {
   store: MobileDeviceStore;
   calls: Array<{ method: string; params: unknown; ctx: AuthContext }>;
   restarts: boolean[];
+  restartProfiles: string[];
   /** Local record id of the device registered from `allow`. */
   deviceId: string;
 }
@@ -51,15 +52,23 @@ function build(
     dispatchImpl?: (method: string, params: unknown, ctx: AuthContext) => Promise<unknown>;
     restartImpl?: (resume: boolean) => unknown;
     noRestart?: boolean;
+    userProfileId?: string;
+    profileExists?: (userProfileId: string) => boolean;
+    unbound?: boolean;
     sessionLookup?: {
       getSession(id: string): { createdByMobileDeviceId?: string } | null;
       findByName(name: string): { createdByMobileDeviceId?: string } | undefined;
     };
+    sessionLookupForProfile?: (profileId: string) => {
+      getSession(id: string): { createdByMobileDeviceId?: string } | null;
+      findByName(name: string): { createdByMobileDeviceId?: string } | undefined;
+    } | undefined;
   } = {},
 ): Built {
   const now = opts.now ?? (() => 0);
   const calls: Built['calls'] = [];
   const restarts: boolean[] = [];
+  const restartProfiles: string[] = [];
   const answeredRings: Array<string | undefined> = [];
   const store = new MobileDeviceStore(undefined, now);
   const device = store.add({
@@ -67,27 +76,38 @@ function build(
     name: 'Pixel 8',
     pskRef: 'psk-ref',
     allow,
+    ...(opts.userProfileId !== undefined ? { userProfileId: opts.userProfileId } : {}),
     ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
   });
   const gate = new MobileGate({
-    deviceStore: store,
+    deviceStore: {
+      get: id => {
+        const found = store.get(id);
+        return opts.unbound && found ? { ...found, userProfileId: undefined } : found;
+      },
+      isToolAllowed: store.isToolAllowed.bind(store),
+    },
     dispatch: async (method, params, ctx) => {
       calls.push({ method, params, ctx });
       if (opts.dispatchImpl) return opts.dispatchImpl(method, params, ctx);
       return { ok: true };
     },
     rateLimiter: new PeerRateLimiter({ capacity: opts.capacity ?? 100, refillPerMs: 100 / 60000, now }),
+    ...(opts.profileExists ? { profileExists: opts.profileExists } : {}),
     ...(opts.sessionLookup ? { sessionLookup: opts.sessionLookup } : {}),
+    ...(opts.sessionLookupForProfile ? { sessionLookupForProfile: opts.sessionLookupForProfile } : {}),
     ringAnswered: (sessionId?: string) => { answeredRings.push(sessionId); },
     timesheet: (params: unknown) => ({ asked: params }),
     ...(opts.noRestart ? {} : {
-      restartHelm: (resume: boolean) => {
+      restartHelm: (resume: boolean, profileId: string) => {
         restarts.push(resume);
+        restartProfiles.push(profileId);
+        if (profileId !== '1') throw new Error('only through profile 1');
         return opts.restartImpl ? opts.restartImpl(resume) : { sessionsClosed: 0, resume };
       },
     }),
   });
-  return { gate, store, calls, restarts, deviceId: device.id, answered: () => answeredRings };
+  return { gate, store, calls, restarts, restartProfiles, deviceId: device.id, answered: () => answeredRings };
 }
 
 describe('MobileGate — default-deny', () => {
@@ -115,6 +135,23 @@ describe('MobileGate — default-deny', () => {
   it('denies an explicitly disabled device', async () => {
     const { gate, deviceId } = build(['*'], { enabled: false });
     await expect(gate.handle(deviceId, 'session_list', {})).rejects.toThrow(MOBILE_DENY_MESSAGE);
+  });
+
+  it('denies an unbound or unknown-profile device before discovery or dispatch', async () => {
+    const unbound = build(['*'], { unbound: true, profileExists: () => true });
+    const unknown = build(['*'], { userProfileId: 'missing', profileExists: id => id === '1' || id === '2' });
+
+    await expect(unbound.gate.handle(unbound.deviceId, RESERVED_MOBILE_TOOLS_METHOD, {}))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+    await expect(unknown.gate.handle(unknown.deviceId, 'session_list', {}))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+    await expect(unbound.gate.handle(unbound.deviceId, RESERVED_TIMESHEET_METHOD, {}))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+    await expect(unbound.gate.handle(unbound.deviceId, RESERVED_RESTART_HELM_METHOD, {}))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+    expect(unbound.calls).toHaveLength(0);
+    expect(unknown.calls).toHaveLength(0);
+    expect(unbound.restarts).toEqual([]);
   });
 });
 
@@ -226,6 +263,27 @@ describe('MobileGate — session ownership', () => {
     );
     expect(calls).toHaveLength(0);
   });
+
+  it('checks phone-created session ownership in the device profile runtime', async () => {
+    const profileLookups: string[] = [];
+    let targetDeviceId = '';
+    const ownSession = { getSession: () => ({ createdByMobileDeviceId: targetDeviceId }), findByName: () => undefined };
+    const otherSession = { getSession: () => ({ createdByMobileDeviceId: 'device-one' }), findByName: () => undefined };
+    const { gate, deviceId, calls } = build(['session_close'], {
+      userProfileId: '2',
+      profileExists: id => id === '1' || id === '2',
+      sessionLookupForProfile: id => {
+        profileLookups.push(id);
+        return id === '2' ? ownSession : otherSession;
+      },
+    });
+    targetDeviceId = deviceId;
+
+    await expect(gate.handle(deviceId, 'session_close', { sessionId: 'session-two' })).resolves.toEqual({ ok: true });
+    expect(profileLookups).toContain('2');
+    expect(calls).toHaveLength(1);
+  });
+
 });
 
 describe('MobileGate — rate limiting', () => {
@@ -413,6 +471,14 @@ describe('MobileGate — restart Helm', () => {
     await expect(gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: true }))
       .rejects.toThrow(MOBILE_DENY_MESSAGE);
     expect(restarts).toHaveLength(0);
+  });
+
+  it('routes restart through the device profile and denies profile two', async () => {
+    const profileTwo = build(['*'], { userProfileId: '2' });
+    await expect(profileTwo.gate.handle(profileTwo.deviceId, RESERVED_RESTART_HELM_METHOD, {}))
+      .rejects.toThrow(/only through profile 1/);
+    expect(profileTwo.restarts).toEqual([true]);
+    expect(profileTwo.restartProfiles).toEqual(['2']);
   });
 
   it('denies when no restart capability is wired', async () => {

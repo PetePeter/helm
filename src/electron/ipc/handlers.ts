@@ -18,7 +18,7 @@ import { getGlobalPersistencePaths } from '../../session/persistence-paths.js';
 import { HandoverDelivery } from '../../session/handover-delivery.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
 import { ChatBroker } from '../../session/chat/chat-broker.js';
-import { createChatAttachmentRegistrar } from '../../session/chat/chat-attachment-registrar.js';
+import { createProfileChatBrokerOptions } from '../../session/chat/profile-chat-broker-options.js';
 import { setupHandoverHandlers } from './handover-handlers.js';
 import { RuntimeGroupManager } from '../../session/runtime-group-manager.js';
 import { saveRuntimeGroups, loadRuntimeGroups } from '../../session/runtime-group-persistence.js';
@@ -81,10 +81,11 @@ import { SuggestedPlanService } from '../../session/suggested-plan-service.js';
 import { WindowManager } from '../window-manager.js';
 import { HelmControlService } from '../../mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
+import { ProfileMcpRouter } from '../../mcp/profile-mcp-router.js';
+import { ProfileMcpServiceFactory, createProfileRemoteService, createProfileRuntimeMcpServiceSet, bindProfileMcpServicesToMobile } from '../../mcp/profile-mcp-service-factory.js';
 import { InboundCallGate } from '../../mcp/peer/inbound-call-gate.js';
 import { peerIdFromProxySessionId } from '../../mcp/peer/proxy-identity.js';
 import { FleetAccessSync } from '../../mcp/peer/fleet-access-sync.js';
-import { RemoteService } from '../../session/remote/remote-service.js';
 import { FLEET_SESSIONS_METHOD } from '../../mcp/peer/fleet-sessions.js';
 import { isRemoteMethod } from '../../session/remote/remote-protocol.js';
 import { createDefaultPeerRateLimiter } from '../../mcp/peer/rate-limiter.js';
@@ -109,7 +110,6 @@ import { MobileAddressAdvertiser } from '../../mobile/mobile-address-advertiser.
 import { PrimaryLanAddressResolver } from '../../mobile/primary-lan-address.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
 import { MobileArtifactNotifier } from '../../mobile/mobile-artifact-notifier.js';
-import type { ObservedSession } from '../../mobile/mobile-alert-notifier.js';
 
 /**
  * The ONE MobileGate instance, built during handler setup. Exposed so whoever
@@ -141,7 +141,6 @@ import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-inj
 import { getRingMemoryRequests } from '../../session/memory-idea-policy.js';
 import { resolveContextLimits } from '../../session/context-limits.js';
 import { openTaskLines } from '../../session/operator-tasks.js';
-import { RingRetry } from '../../session/ring-retry.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
 import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { OperatorTaskWatcher } from '../../session/operator-task-watcher.js';
@@ -183,6 +182,9 @@ export function registerIPCHandlers(
 
   const ptyManager = new PtyManager();
   let helmControlService!: HelmControlService;
+  let profileMcpRouter!: ProfileMcpRouter;
+  let profileMcpServiceFactory!: ProfileMcpServiceFactory;
+  let messageFlightSink!: (flight: SessionMessageFlight) => Promise<void> | void;
   const profileComposition = new ProfileRuntimeComposition({
     configLoader,
     userProfileStore: new UserProfileStore(configLoader.getGlobalConfigDir()),
@@ -250,28 +252,7 @@ export function registerIPCHandlers(
 
   // The chat broker is an unbounded registry; new surfaces add one registration.
   // Fan-out through it is unconditional; see src/session/chat/chat-broker.ts.
-  const chatBroker = new ChatBroker({
-    deliver: async (message) => {
-      const target = sessionManager.getSession(message.sessionId);
-      if (!target) {
-        logger.warn(`[chat] Dropped an inbound ${message.provider} message for unknown session ${message.sessionId}`);
-        return;
-      }
-      await deliverPromptSequenceToSession({
-        sessionId: target.id,
-        text: message.text,
-        ptyManager,
-        sessionManager,
-        configLoader,
-      });
-    },
-    // A file sent over chat is copied into the session's artifact attachments
-    // so a surface with no filesystem access to this machine can still fetch it.
-    registerAttachment: createChatAttachmentRegistrar({
-      artifacts: artifactManager,
-      attachments: artifactAttachmentManager,
-    }),
-  });
+  const chatBroker = new ChatBroker(createProfileChatBrokerOptions(registry, ptyManager));
   helmControlService.setChatBroker(chatBroker);
 
   // Message-flight gate: every enveloped session_send_text broadcasts a
@@ -288,7 +269,7 @@ export function registerIPCHandlers(
     }
     return { ok: true };
   });
-  helmControlService.setMessageFlightSink(flight => new Promise<void>(resolve => {
+  messageFlightSink = flight => new Promise<void>(resolve => {
     noteOperatorFlight(flight);
     pendingFlightAcks.set(flight.flightId, resolve);
     for (const window of windowManager.getAllWindows()) {
@@ -299,7 +280,8 @@ export function registerIPCHandlers(
     setTimeout(() => {
       if (pendingFlightAcks.get(flight.flightId) === resolve) pendingFlightAcks.delete(flight.flightId);
     }, getMessageFlightTimeoutMs() + 5000).unref?.();
-  }));
+  });
+  helmControlService.setMessageFlightSink(messageFlightSink);
 
   // Restore sessions persisted from previous run
   const restoredCount = registry.all().reduce((total, runtime) => total + runtime.sessionManager.restoreSessions().length, 0);
@@ -367,13 +349,16 @@ export function registerIPCHandlers(
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
     token: configLoader.getMcpConfig().authToken,
+    resolveCallerServices: auth => profileMcpServiceFactory.forCaller(auth),
+    resolveSessionIdentity: id => profileMcpRouter.resolveSessionIdentity(id),
     // G5 usage feedback: correlate a fetch with a recent suggestion. Only
     // identifiable sessions land here; anonymous peers learn nothing.
     onItemFetched: (sessionId, type, id) => {
-      const owner = registry.findSessionOwner(sessionId);
-      const workingDir = owner?.sessionManager.getSession(sessionId)?.workingDir;
-      const projectId = workingDir && owner ? owner.planManager.getProjectIdForDirectory(workingDir) : null;
-      (owner ? suggestionUsageByProfile.get(owner.userProfileId) : suggestionUsage)?.recordFetch(sessionId, `${type}/${id}`, projectId);
+      let runtime;
+      try { runtime = profileMcpRouter.runtimeForCaller({ sessionId }); } catch { return; }
+      const workingDir = runtime.sessionManager.getSession(sessionId)?.workingDir;
+      const projectId = workingDir ? runtime.planManager.getProjectIdForDirectory(workingDir) : null;
+      suggestionUsageByProfile.get(runtime.userProfileId)?.recordFetch(sessionId, `${type}/${id}`, projectId);
     },
     onClaudeStatuslineUsage: (sessionId, cliSessionId, usage) =>
       profileComposition.includeStatuslineUsage(sessionId, cliSessionId, usage),
@@ -822,7 +807,7 @@ export function registerIPCHandlers(
       profileComposition.getCliAutoMemory(runtime.userProfileId)?.forget(sessionId);
     },
     closeComfyUiSession: sessionId => getComfyUiSessionHost().closeSession(sessionId),
-    pruneProfileOneJournal: sessionId => mobileChatJournal.pruneSession(sessionId),
+    pruneMobileJournal: sessionId => mobileChatJournal.pruneSession(sessionId),
   });
   // Dual-path rules delivery (G9): every surface resolves each standing
   // reminder from the same settings + capability — the delivery services
@@ -897,42 +882,32 @@ export function registerIPCHandlers(
     : null;
   if (!mcpStartTimer) startMcpServer();
 
-  // Cross-machine fleet (P-0646) — SEPARATE listener from the 127.0.0.1 MCP
-  // server, OFF by default. When disabled this binds nothing. The inbound-call
-  // sink is the InboundCallGate (P-0647): allow-list + hard-deny + rate-limit,
-  // then dispatch through the EXISTING callMcpTool under a synthetic PROXY
-  // identity (never a real local session). We build it here because this scope
-  // has the deps (LocalhostMcpServer.dispatchForPeer + the peer registry).
+  // Cross-machine fleet (P-0646) is a separate, opt-in listener. Inbound calls
+  // pass the InboundCallGate before dispatch under a synthetic proxy identity.
   const peerConfigManager = new PeerConfigManager((peers) => savePeers(peers));
   peerConfigManager.importAll(loadPeers());
 
-  // Shared trust stores — one instance used by pairing (writes pins/secrets),
-  // the transport (reads them), and peer-management/unpair (removes them).
+  // Shared trust stores connect pairing, transport, and peer management.
   const pinnedCertStore = new PinnedCertStore((pins) => savePeerPins(pins));
   pinnedCertStore.importAll(loadPeerPins());
   const secretStore = new SecretStore((secrets) => savePeerSecrets(secrets));
   secretStore.importAll(loadPeerSecrets());
 
-  // Single audit log instance, reachable by both the inbound gate (appends) and
-  // the peer-management handlers (reads for the Audit sub-view).
+  // Shared audit log for inbound calls and peer-management views.
   const peerAuditLog = new PeerAuditLog();
-  // Remote (talk to a peer's sessions): owner + viewer over the fleet link. Its
-  // `remote.*` requests pass the SAME gate (access, rate limit, audit) and are
-  // routed here instead of the MCP dispatcher; the proxy identity names the peer.
-  const remoteService = new RemoteService({
+  // Remote session access uses the same trust gate and proxy identity.
+  const createRemoteServiceForRuntime = (runtime: typeof activeRuntime) => createProfileRemoteService(runtime, {
     pty: ptyManager,
-    sessions: sessionManager,
-    canSendSessionsToPeer: (peerId) => peerConfigManager.get(peerId)?.enabled !== false
+    canSendSessionsToPeer: peerId => peerConfigManager.get(peerId)?.enabled !== false
       && peerConfigManager.isInboundAllowed(peerId),
-    cliTypeName: (ref) => {
-      // Local ids resolve to the display name the peer can match; unknown refs
-      // (including a peer-owned id) are already in the right namespace.
+    cliTypeName: ref => {
       try {
-        const config = configLoader.resolveCliType(ref)?.config;
+        const config = runtime.configLoader.resolveCliType(ref)?.config;
         return config?.displayName || config?.name || undefined;
       } catch { return undefined; }
     },
   });
+  const remoteService = createRemoteServiceForRuntime(activeRuntime);
   helmControlService.setRemoteService(remoteService);
   // Reports this machine's per-peer grant so each peer can show the direction.
   const fleetAccessSync = new FleetAccessSync(peerConfigManager);
@@ -953,12 +928,8 @@ export function registerIPCHandlers(
     sessionLookup: sessionManager,
   });
 
-  // In-app fleet toggle (P-0658): ONE controller owns the LIVE transport +
-  // discovery and starts/stops them on config change — no app restart, mirroring
-  // LocalhostMcpServer.applyConfig. The shared trust stores are reused across every
-  // toggle so pins/secrets/peers persist. The IPC handlers below register EXACTLY
-  // ONCE (ipcMain.handle throws on a double-register) and read live state through
-  // closures; only the controller ever starts/stops the transport + discovery.
+  // FleetController owns live transport and discovery; IPC handlers register
+  // once and read its current state through closures.
   const broadcastToRenderers = (channel: string, payload: unknown): void => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(channel, payload);
@@ -975,6 +946,7 @@ export function registerIPCHandlers(
     setLinkManager: (mgr) => {
       helmControlService.setPeerLinkManager(mgr);
       remoteService.setLinks(mgr);
+      profileMcpServiceFactory?.setPeerLinkManager(mgr);
       fleetAccessSync.setLinks(mgr);
     },
     // The machine's own hostname — two Helms both advertising "Helm" is useless
@@ -983,8 +955,7 @@ export function registerIPCHandlers(
     broadcast: broadcastToRenderers,
   });
 
-  // Pairing IPC (4 channels) — registered once, delegating to the controller's live
-  // pairing runtime; returns an inert result when fleet is off.
+  // Pairing IPC delegates to the live controller and is inert while fleet is off.
   const disposePairing = setupPairingHandlers({
     getPairingRuntime: () => fleetController!.currentPairingRuntime(),
   });
@@ -1000,12 +971,10 @@ export function registerIPCHandlers(
     spawn: (peerId, args) => remoteService.spawn(peerId, args),
     remoteService,
   });
-  // Mobile (BLE) device registry + pairing coordinator. Its own registry and its
-  // own secret store, kept separate from the fleet's: a revoked phone must never
-  // be able to take a peer's trust with it, and the two files have different
-  // lifetimes.
+  // Mobile pairing has separate device and secret stores from fleet trust.
   const mobileDeviceStore = new MobileDeviceStore((devices) => saveMobileDevices(devices));
   mobileDeviceStore.importAll(loadMobileDevices());
+  profileMcpRouter = new ProfileMcpRouter(profileComposition, mobileDeviceStore);
   const mobileSecretStore = new SecretStore((secrets) => saveMobileSecrets(secrets));
   mobileSecretStore.importAll(loadMobileSecrets());
   const mobilePairing = new MobilePairing({
@@ -1013,19 +982,14 @@ export function registerIPCHandlers(
     secretStore: mobileSecretStore,
     machineId: hostname(),
   });
-  // The owner of the phone transports: they scan, it identifies a phone by its
-  // machineId over a PSK handshake, and it is the only thing that can say whether
-  // a device is genuinely online. The radio itself is loaded lazily, and only
-  // once there is a paired phone to reach or a pairing under way.
-  // The LAN half. Held in a variable because settings changes hot-apply to it;
-  // the manager owns its lifecycle and never learns which transport is which.
+  // The manager owns BLE/LAN transport lifetimes and device presence. BLE loads
+  // lazily; LAN settings are hot-applied through the retained transport.
   const mobileLanTransport = new SocketLinkTransport({
     ...configLoader.getMobileLanConfig(),
     logger: (message, error) =>
       error ? logger.warn(`[mobile-lan] ${message}: ${error}`) : logger.info(`[mobile-lan] ${message}`),
   });
-  // First pairings over LAN, for a desktop whose radio cannot hear the phone.
-  // Bound by the manager only while pairing is armed.
+  // LAN pairing supports desktops without reachable Bluetooth.
   const pairingLanConfig = () => {
     const lan = configLoader.getMobileLanConfig();
     return { ...lan, port: mobilePairingPort(lan.port) };
@@ -1049,9 +1013,7 @@ export function registerIPCHandlers(
   });
   void mobileLinkManager.start()
     .catch((err) => logger.error(`[mobile] Failed to start the BLE link manager: ${err}`));
-  // Give the mobile_* tools the SAME coordinator the renderer drives, so a local
-  // AI can pair a phone and grant it tools without a human at the UI. Wired here
-  // because the control service is built long before the BLE stack exists.
+  // mobile_* tools share the renderer's coordinator for headless pairing.
   helmControlService.setMobileDeps({
     pairing: mobilePairing,
     deviceStore: mobileDeviceStore,
@@ -1066,59 +1028,76 @@ export function registerIPCHandlers(
     dropLink: (machineId) => mobileLinkManager.dropLink(machineId),
     links: mobileLinkManager,
     getAppVersion: () => app.getVersion(),
-    // Electron's net follows the redirect GitHub issues for a release asset and
-    // honours the system proxy. A failure here means "could not ask", which the
-    // handler deliberately does not report as "no APK was published".
+    // Electron net follows release redirects and the system proxy.
     checkApkAsset: async (url) => {
       const response = await net.fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
       return response.ok;
     },
-    // Persist, then hot-apply to the live transport. Both, in that order: a
-    // setting that took effect but was not saved is the worse of the two lies.
+    // Persist before hot-applying settings to the live transports.
     lan: {
       get: () => configLoader.getMobileLanConfig(),
       set: async (config) => {
         configLoader.setMobileLanConfig(config);
         await mobileLanTransport.configure(configLoader.getMobileLanConfig());
         await mobilePairingTransport.configure(pairingLanConfig());
-        // The new port — or the fact that LAN is now off — has to reach a phone
-        // that is connected RIGHT NOW, not at its next reconnect.
+        // Notify connected phones of the new port or disabled LAN state now.
         mobileAddressAdvertiser.advertiseAll();
       },
       boundPort: () => mobileLanTransport.boundPort,
       addresses: (port) => primaryLanAddress.addresses(port),
     },
   });
-  // The security boundary in front of every inbound phone call (P-0737). Built
-  // here because this scope owns the registry, the session manager and the
-  // dispatchForPeer seam. It is deliberately the ONLY way a mobile frame may
-  // reach a tool — whoever wires the BLE call path (P-0748) must route through
-  // `mobileGate.handle`, never through callMcpTool directly.
+  const remoteServiceForRuntime = (runtime: typeof activeRuntime) => runtime.userProfileId === '1'
+    ? remoteService
+    : createRemoteServiceForRuntime(runtime);
+  profileMcpServiceFactory = new ProfileMcpServiceFactory(
+    profileMcpRouter,
+    { service: helmControlService, loopDriver, uploads: artifactUploadService, remoteService },
+    runtime => createProfileRuntimeMcpServiceSet(runtime, {
+      composition: profileComposition,
+      ptyManager,
+      notificationManager,
+      chatBroker,
+      messageFlightSink,
+      apiContextSizeLookup: sessionId => apiSessionHost.getContextSize(sessionId),
+      reminderDelivery,
+      tempDir: getTempDir(dirname ?? process.cwd()),
+      remoteServiceForRuntime,
+      currentPeerLinkManager: () => fleetController?.currentLinkManager() ?? null,
+    }),
+  );
+  for (const runtime of registry.all()) profileMcpServiceFactory.forRuntime(runtime);
   activeMobileGate = new MobileGate({
     deviceStore: mobileDeviceStore,
+    profileExists: id => {
+      try { profileMcpRouter.runtimeForProfile(id); return true; } catch { return false; }
+    },
     dispatch: async (method, params, ctx) => {
       const result = await localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx);
       // A phone action that changed something is the user working (docs/time-tracking.md).
-      const target = phoneActivityTarget(method, params, id => planManager.getItem(id)?.dirPath ?? null, result);
-      if (target && 'sessionId' in target) timeTracker.recordUser(SUBMIT_WEIGHT, target.sessionId);
-      else if (target) timeTracker.recordUserAt(SUBMIT_WEIGHT, whereIsDir(target.dirPath));
+      const runtime = profileMcpRouter.runtimeForCaller(ctx);
+      const target = phoneActivityTarget(method, params, id => runtime.planManager.getItem(id)?.dirPath ?? null, result);
+      if (target && 'sessionId' in target) runtime.timeTracker.recordUser(SUBMIT_WEIGHT, target.sessionId);
+      else if (target) runtime.timeTracker.recordUserAt(SUBMIT_WEIGHT, whereIsDir(target.dirPath));
       return result;
     },
     rateLimiter: createDefaultMobileRateLimiter(),
     sessionLookup: sessionManager,
-    restartHelm: (resume) => helmControlService.restartHelm(resume),
-    ringAnswered: (sessionId) => helmControlService.ringAnswered(sessionId),
-    timesheet: (params) => statisticsQuery(timeTracker, params, configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id), etaTracker),
+    sessionLookupForProfile: id => profileComposition.getRequiredRuntime(id).sessionManager,
+    restartHelm: (resume, profileId) => profileMcpServiceFactory.forProfile(profileId).service.restartHelm(resume),
+    ringAnswered: (sessionId, deviceId) => {
+      const profileId = deviceId ? mobileDeviceStore.get(deviceId)?.userProfileId : undefined;
+      if (profileId) profileMcpServiceFactory.forProfile(profileId).service.ringAnswered(sessionId);
+      else profileMcpServiceFactory.all().forEach(set => set.service.ringAnswered(sessionId));
+    },
+    timesheet: (params, profileId) => {
+      const runtime = profileComposition.getRequiredRuntime(profileId ?? '1');
+      return statisticsQuery(runtime.timeTracker, params, runtime.configLoader.getCliTypes(),
+        id => runtime.configLoader.getCliTypeLabel(id), runtime.etaTracker);
+    },
   });
 
-  // The rolling record of chat messages fanned out to phones, so a phone that
-  // was offline — or an app whose process lost its in-memory threads — refetches
-  // what it missed when its link next comes up. Created near the recycle bin
-  // wiring above (its purge paths own the journal's session-lifetime pruning).
-
-  // The phone as a chat surface, and the ONE path an inbound phone call takes to
-  // a tool. The gate is resolved through getMobileGate() rather than captured, so
-  // there is a single instance and no way for a second one to appear.
+  // The bridge is the phone chat surface; all inbound tool calls use the gate.
   const mobileChatBridge = new MobileChatBridge({
     links: mobileLinkManager,
     // A deleted bubble of an API session also leaves the model's history.
@@ -1129,22 +1108,31 @@ export function registerIPCHandlers(
     deviceStore: mobileDeviceStore,
     gate: () => getMobileGate(),
     uploads: artifactUploadService,
+    uploadsForDevice: deviceId => {
+      const profileId = mobileDeviceStore.get(deviceId)?.userProfileId;
+      return profileId ? profileMcpServiceFactory.forProfile(profileId).uploads : undefined;
+    },
     negotiatedProtocol: (machineId) => mobileLinkManager.negotiatedProtocol(machineId),
-    // The same feed `session_list` answers deltas from: a phone that fetched
-    // one is told once when the list next moves, instead of polling for it.
-    sessionFeed: helmControlService.sessionChangeFeed,
+    sessionFeeds: () => profileMcpServiceFactory.sessionFeeds(),
+    sessionFeedForProfile: profileId => profileMcpServiceFactory.forProfile(profileId).service.sessionChangeFeed,
+    profileForSession: sessionId => profileMcpRouter.profileForSession(sessionId),
     sessions: {
       getSession: (sessionId) => {
-        const session = sessionManager.getSession(sessionId);
+        const owner = registry.findSessionOwner(sessionId);
+        const session = owner?.sessionManager.getSession(sessionId);
         return session
           ? { id: session.id, name: session.name, interactionChannel: session.interactionChannel }
           : null;
       },
       // A phone message moves the conversation off the desktop.
-      updateSession: (sessionId, patch) => sessionManager.updateSession(sessionId, patch),
+      updateSession: (sessionId, patch) => {
+        const owner = registry.findSessionOwner(sessionId);
+        return owner?.sessionManager.updateSession(sessionId, patch);
+      },
     },
     journal: mobileChatJournal,
   });
+  bindProfileMcpServicesToMobile(profileMcpServiceFactory.all(), mobileChatBridge);
   const mobileAlertNotifier = new MobileAlertNotifier(mobileChatBridge);
   mobileChatBridge.setChatMessageObserver(sessionId => mobileAlertNotifier.recordChatMessage(sessionId));
 
@@ -1169,41 +1157,13 @@ export function registerIPCHandlers(
         senderSessionName: senderOwner?.sessionManager.getSession(comfySessionId)?.name ?? 'ComfyUI',
       };
       await profileComposition.sendTextToSession(requesterSessionId, text, sender);
-      // A Codex composer can swallow the submit that follows a multi-line paste
-      // and still verify as delivered. A session sender is told to follow up
-      // with Enter; this sender is Helm, so it does that itself. On a composer
-      // that already submitted, a bare Enter is a no-op.
+      // Follow up with Enter if the composer swallowed the atomic paste submit.
       await profileComposition.sendInputToSession(requesterSessionId, '{Enter}', { ...sender, verify: false });
     },
   }));
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
-  helmControlService.setArtifactAttachmentDeletedHandler((sessionId, artifactId, attachmentId) => {
-    mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId);
-  });
-  helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
-  helmControlService.setCallTransferrer((from, to, line) => mobileChatBridge.sendTransfer(from, to, line));
-  helmControlService.setRingRetry(new RingRetry({
-    ring: (sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason),
-    // Missed calls leave a note in the ringing session's chat, where the phone shows it.
-    missedOnce: (sessionId, reason, retryAt) => {
-      const at = new Date(retryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      mobileChatBridge.sendAlert(sessionId, 'attention', `Missed call: ${reason}. I'll call back ~${at}`);
-    },
-    missedTwice: (sessionId, reason) => {
-      const text = `Missed call again: ${reason}. No more retries, read me here`;
-      // No phone linked right now: the alert is not queued, so fall back to
-      // Helm's own notification path rather than drop the only notice.
-      if (!mobileChatBridge.sendAlert(sessionId, 'attention', text)) {
-        helmControlService.notifyUser(sessionId, 'Missed call from Helm', reason);
-      }
-    },
-  }));
-
-  // Desktop voice (docs/voice-operator.md): hold-to-talk to the operator over
-  // the configured OpenWhispr/Piper tools. The operator's chat_send
-  // replies reach the desktop as one more broker surface, and the user's words
-  // are echoed to the phone, so both show one conversation.
+  // Desktop voice uses configured OpenWhispr/Piper tools and shares chat replies.
   const voiceTools = new CapabilityDetector(configLoader);
   chatBroker.register(new DesktopVoiceBridge({
     getOperatorId: () => operatorSessionManager.getOperatorId(),
@@ -1259,19 +1219,14 @@ export function registerIPCHandlers(
     fanOut: async message => { await chatBroker.send(message); },
   });
 
-  // Where to dial this desktop, pushed down the authenticated link (P-0752).
-  // Without it the phone's address is a typed string that dies silently the day
-  // the DHCP lease moves — and mDNS, which is how the fleet lane repairs that,
-  // cannot cross a VPN.
-  // Only the default-route address: virtual adapters (WSL, VirtualBox, VPN)
-  // each cost the phone a dial timeout. See src/mobile/primary-lan-address.ts.
+  // Advertise the default-route address so phones avoid virtual adapters and
+  // retain a reachable endpoint when DHCP changes (P-0752).
   const mobileAddressAdvertiser = new MobileAddressAdvertiser({
     links: mobileLinkManager,
     refresh: () => primaryLanAddress.refresh(),
     addresses: () => {
       const boundPort = mobileLanTransport.boundPort;
-      // Nothing bound means an EMPTY list, which is itself the instruction to
-      // stop dialling — not a reason to stay silent.
+      // An empty address list tells phones to stop dialing.
       return boundPort === null ? [] : primaryLanAddress.addresses(boundPort);
     },
     linkedMachines: () => mobileDeviceStore.list()
@@ -1280,23 +1235,21 @@ export function registerIPCHandlers(
   });
   mobileAddressAdvertiser.start();
 
-  // The phone's notification path: a state change, a notify_user or a flash
-  // reaches a pocketed phone over the already-open BLE link.
+  // State changes and notify_user alerts reach phones over the open link.
   notificationManager.setMobileNotifier(mobileAlertNotifier);
-  const observeForAlerts = (session: ObservedSession) => mobileAlertNotifier.observe(session);
-  const forgetForAlerts = (event: { sessionId: string }) => mobileAlertNotifier.forget(event.sessionId);
-  sessionManager.on('session:updated', observeForAlerts);
-  sessionManager.on('session:removed', forgetForAlerts);
+  const disposeAlertObservers = mobileAlertNotifier.observeProfiles(registry.all());
 
-  // An artifact an agent just wrote reaches the pocketed phone too, over the
-  // same link and with the same fire-and-forget rules as a state alert.
-  const mobileArtifactNotifier = new MobileArtifactNotifier(mobileChatBridge, artifactManager);
-  const observeArtifactChange = (sessionId: string, artifactIds: string[]) =>
-    mobileArtifactNotifier.changed(sessionId, artifactIds);
-  const observeArtifactReveal = (sessionId: string, artifactId: string) =>
-    mobileArtifactNotifier.revealed(sessionId, artifactId);
-  artifactManager.on('artifact:changed', observeArtifactChange);
-  artifactManager.on('artifact:reveal', observeArtifactReveal);
+  const disposeArtifactNotifiers = registry.all().map(runtime => {
+    const notifier = new MobileArtifactNotifier(mobileChatBridge, runtime.artifactManager);
+    const changed = (sessionId: string, artifactIds: string[]) => notifier.changed(sessionId, artifactIds);
+    const revealed = (sessionId: string, artifactId: string) => notifier.revealed(sessionId, artifactId);
+    runtime.artifactManager.on('artifact:changed', changed);
+    runtime.artifactManager.on('artifact:reveal', revealed);
+    return () => {
+      runtime.artifactManager.off('artifact:changed', changed);
+      runtime.artifactManager.off('artifact:reveal', revealed);
+    };
+  });
 
   // Apply the persisted config now (starts the stack iff enabled).
   void fleetController.start()
@@ -1304,8 +1257,7 @@ export function registerIPCHandlers(
 
   return {
     cleanup: async () => {
-      // Latch shutdown first: everything below can kill PTYs, and a PTY dying
-      // because the app is quitting must not be mistaken for a closed session.
+      // Latch shutdown before PTY cleanup so exits are not treated as closed sessions.
       ptyManager.beginShutdown();
       if (mcpStartTimer) clearTimeout(mcpStartTimer);
       cleanupSession();
@@ -1319,6 +1271,10 @@ export function registerIPCHandlers(
       cleanupTimeTracking();
       cleanupHandover();
       operatorSessionManager.dispose();
+      mobileChatBridge.stop();
+      chatBroker.unregister(mobileChatBridge.provider);
+      profileMcpServiceFactory.dispose();
+      disposeArtifactNotifiers.forEach(dispose => dispose());
       profileComposition.dispose();
       stateDetector.dispose();
       notificationManager.dispose();
@@ -1330,10 +1286,7 @@ export function registerIPCHandlers(
       disposePeerManagement();
       disposeMobile();
       mobileAddressAdvertiser.dispose();
-      sessionManager.off('session:updated', observeForAlerts);
-      sessionManager.off('session:removed', forgetForAlerts);
-      mobileChatBridge.stop();
-      chatBroker.unregister(mobileChatBridge.provider);
+      disposeAlertObservers();
       await mobileLinkManager.stop();
       await fleetController?.stop();
       logger.info('[IPC] Cleanup complete');

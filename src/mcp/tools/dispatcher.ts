@@ -269,6 +269,8 @@ export interface McpToolDispatcherDeps {
   onPlanRead?: (planId: string) => void;
   /** G5 usage feedback: a skill/memory was actually FETCHED by this session. */
   onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
+  /** Resolve caller-owned services once, before tool and batch dispatch. */
+  resolveForCaller?: (authContext: AuthContext) => McpToolDispatcherDeps;
 }
 
 /** Where a `session_send_text` target lives when it is not on this machine; null when it is local. */
@@ -288,6 +290,9 @@ export async function callMcpTool(
   args: Record<string, unknown>,
   authContext: AuthContext,
 ): Promise<unknown> {
+  if (deps.resolveForCaller) {
+    return callMcpTool(deps.resolveForCaller(authContext), name, args, authContext);
+  }
   const { service, setPlanStateWithValidation, completePlanWithValidation } = deps;
 
   const batch = BATCH_ARGS[name];

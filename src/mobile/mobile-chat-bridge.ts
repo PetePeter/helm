@@ -111,6 +111,8 @@ export interface MobileChatBridgeDeps {
   /** MUST resolve to the ONE MobileGate. Returning undefined denies everything. */
   gate: () => MobileCallGate | undefined;
   sessions: MobileChatSessions;
+  /** Profile that owns a session. Missing ownership is treated as unroutable. */
+  profileForSession?: (sessionId: string) => string | undefined;
   /** Every journaled message is appended here once, delivered or not. */
   journal: MobileChatJournal;
   /**
@@ -119,6 +121,8 @@ export interface MobileChatBridgeDeps {
    * record — a missing feature must never become an open door.
    */
   uploads?: MobileArtifactUploadService;
+  /** Resolve the profile-owned upload reassembler for a paired device. */
+  uploadsForDevice?: (deviceId: string) => MobileArtifactUploadService | undefined;
   /**
    * The protocol version the link to a machineId negotiated. Absent means 0:
    * nothing was negotiated, so no upload may be accepted. The slot itself was
@@ -131,6 +135,9 @@ export interface MobileChatBridgeDeps {
    * list moved — the delta fetch still works, it is just never prompted.
    */
   sessionFeed?: MobileSessionFeed;
+  /** All profile feeds, used to notify each phone about only its own session list. */
+  sessionFeeds?: () => Iterable<MobileSessionFeed>;
+  sessionFeedForProfile?: (profileId: string) => MobileSessionFeed | undefined;
   /** Told which journaled messages a user deleted — an API tool drops them from its history. */
   onMessagesDeleted?: (sessionId: string, removed: ChatJournalEntry[]) => void;
   now?: () => number;
@@ -155,7 +162,7 @@ export class MobileChatBridge implements ChatBridge {
    * Phones owed a session-list notice, with the seq each one already holds.
    * A phone is here from its delta fetch until its one notice goes out.
    */
-  private readonly sessionNoticeOwed = new Map<string, number>();
+  private readonly sessionNoticeOwed = new Map<string, { profileId: string; seq: number }>();
   /** Notices waiting out the gap, so a burst of moves schedules one send. */
   private readonly sessionNoticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly sessionNoticeSentAt = new Map<string, number>();
@@ -178,7 +185,7 @@ export class MobileChatBridge implements ChatBridge {
     if (this.listening) return;
     this.listening = true;
     this.deps.links.on('message', this.onMessage);
-    this.deps.sessionFeed?.on('moved', this.onSessionsMoved);
+    for (const feed of this.sessionFeeds()) feed.on('moved', this.onSessionsMoved);
   }
 
   /** Stop accepting inbound records. Idempotent. */
@@ -186,7 +193,7 @@ export class MobileChatBridge implements ChatBridge {
     if (!this.listening) return;
     this.listening = false;
     this.deps.links.off?.('message', this.onMessage);
-    this.deps.sessionFeed?.off('moved', this.onSessionsMoved);
+    for (const feed of this.sessionFeeds()) feed.off('moved', this.onSessionsMoved);
     for (const timer of this.sessionNoticeTimers.values()) clearTimeout(timer);
     this.sessionNoticeTimers.clear();
     this.sessionNoticeOwed.clear();
@@ -272,7 +279,8 @@ export class MobileChatBridge implements ChatBridge {
    * journaled, so offline phones catch up). Unknown items are skipped — the
    * phone already removed its bubble, and a lost message is not an error.
    */
-  deleteMessages(sessionId: string, items: readonly ChatDeleteItem[]): number {
+  deleteMessages(sessionId: string, items: readonly ChatDeleteItem[], allowedProfileId?: string): number {
+    if (allowedProfileId !== undefined && this.profileForSession(sessionId) !== allowedProfileId) return 0;
     const session = this.deps.sessions.getSession(sessionId);
     const removed: ChatJournalEntry[] = [];
     for (const item of items) {
@@ -309,7 +317,8 @@ export class MobileChatBridge implements ChatBridge {
     // Checked AFTER the append, not before: a message no phone was online to
     // take is precisely the one the journal exists to keep. The row below stays
     // as honest as it ever was — not-sent with today's reason.
-    const machines = this.linkedMachines();
+    const profileId = this.profileForSession(input.sessionId);
+    const machines = profileId ? this.linkedMachines(profileId) : [];
     if (machines.length === 0) return { sent: false, reason: 'No phone is linked' };
 
     // Every linked phone gets it; one refusing does not cancel the others.
@@ -358,7 +367,8 @@ export class MobileChatBridge implements ChatBridge {
     const session = this.deps.sessions.getSession(sessionId);
     if (!session) return false;
 
-    const machines = this.linkedMachines();
+    const profileId = this.profileForSession(sessionId);
+    const machines = profileId ? this.linkedMachines(profileId) : [];
     if (machines.length === 0) return false;
 
     const payload = encodeChat({
@@ -384,7 +394,8 @@ export class MobileChatBridge implements ChatBridge {
     const session = this.deps.sessions.getSession(sessionId);
     if (!session) return false;
 
-    const machines = this.linkedMachines();
+    const profileId = this.profileForSession(sessionId);
+    const machines = profileId ? this.linkedMachines(profileId) : [];
     if (machines.length === 0) return false;
 
     const payload = encodeChat({
@@ -401,11 +412,22 @@ export class MobileChatBridge implements ChatBridge {
   }
 
   /** Enabled, registered devices this hub currently holds a link to. */
-  private linkedMachines(): string[] {
+  private linkedMachines(profileId = '1'): string[] {
     return this.deps.deviceStore
       .list()
-      .filter(device => device.enabled !== false && this.deps.links.isOnline(device.machineId))
+      .filter(device => device.enabled !== false && device.userProfileId === profileId
+        && this.deps.links.isOnline(device.machineId))
       .map(device => device.machineId);
+  }
+
+  private profileForSession(sessionId: string): string | undefined {
+    return this.deps.profileForSession ? this.deps.profileForSession(sessionId) : '1';
+  }
+
+  private sessionFeeds(): MobileSessionFeed[] {
+    const feeds = [...(this.deps.sessionFeeds?.() ?? [])];
+    if (this.deps.sessionFeed) feeds.push(this.deps.sessionFeed);
+    return [...new Set(feeds)];
   }
 
   /**
@@ -426,7 +448,7 @@ export class MobileChatBridge implements ChatBridge {
     // commit call does. Refused silently, like any other record this side does
     // not understand, when the link or this hub never agreed to uploads.
     if (isBlobPayload(payload)) {
-      this.takeUploadSlice(machineId, device.id, payload);
+      this.takeUploadSlice(machineId, device.id, payload, device.userProfileId);
       return;
     }
 
@@ -449,7 +471,7 @@ export class MobileChatBridge implements ChatBridge {
       // The first phone prompt's hooks must see away mode while the gate
       // delivers it. This record has already been decoded from a registered
       // device; a later gate refusal leaves the channel remote until desktop use.
-      if (record.method === SESSION_SEND_TEXT_METHOD) this.markChannelAffinity(record);
+      if (record.method === SESSION_SEND_TEXT_METHOD) this.markChannelAffinity(record, device.userProfileId);
       const result = await gate.handle(device.id, record.method, paramsForDispatch(record));
       logger.info(`[MobileChat] Dispatch completed ${record.method} id=${record.id} from ${machineId}`);
       // A download answers with FILE BYTES, which JSON can only carry as base64.
@@ -468,7 +490,7 @@ export class MobileChatBridge implements ChatBridge {
       }
       if (record.method === RESERVED_CHAT_DELETE_METHOD) {
         const request = chatDeleteIn(record.params);
-        if (request) this.deleteMessages(request.sessionId, request.items);
+        if (request) this.deleteMessages(request.sessionId, request.items, device.userProfileId);
       }
       // A delta fetch the gate ALLOWED is the phone saying "tell me when this
       // moves". Armed only here, after the gate, so a device that may not list
@@ -495,14 +517,16 @@ export class MobileChatBridge implements ChatBridge {
    * never agreed to carry uploads, whatever slots exist), then the reassembler,
    * then the record itself.
    */
-  private takeUploadSlice(machineId: string, deviceId: string, payload: Buffer): void {
+  private takeUploadSlice(machineId: string, deviceId: string, payload: Buffer, profileId?: string): void {
     const negotiated = this.deps.negotiatedProtocol?.(machineId) ?? 0;
     if (negotiated < BLOB_UPLOAD_MIN_PROTOCOL) {
       logger.warn(`[MobileChat] Dropped an upload slice from ${deviceId}: the link negotiated ${negotiated}`);
       return;
     }
-    const uploads = this.deps.uploads;
-    if (!uploads) {
+    const uploadService = this.deps.uploadsForDevice
+      ? (profileId ? this.deps.uploadsForDevice(deviceId) : undefined)
+      : this.deps.uploads;
+    if (!uploadService) {
       logger.warn(`[MobileChat] Dropped an upload slice from ${deviceId}: no upload service is wired`);
       return;
     }
@@ -511,7 +535,7 @@ export class MobileChatBridge implements ChatBridge {
       logger.warn(`[MobileChat] Dropped an unreadable upload slice from ${deviceId}`);
       return;
     }
-    const outcome = uploads.acceptSlice(deviceId, blob);
+    const outcome = uploadService.acceptSlice(deviceId, blob);
     if (!outcome.ok) {
       logger.warn(`[MobileChat] Refused an upload slice from ${deviceId}: ${outcome.reason}`);
       return;
@@ -527,12 +551,12 @@ export class MobileChatBridge implements ChatBridge {
    * dispatch so the first prompt's hooks see away-mode rules. Only written on
    * the transition; a session already remote is left alone.
    */
-  private markChannelAffinity(record: MobileCallRecord): void {
+  private markChannelAffinity(record: MobileCallRecord, profileId?: string): void {
     const params = record.params && typeof record.params === 'object' && !Array.isArray(record.params)
       ? record.params as Record<string, unknown>
       : {};
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : undefined;
-    if (!sessionId) return;
+    if (!sessionId || !profileId || this.profileForSession(sessionId) !== profileId) return;
     const session = this.deps.sessions.getSession(sessionId);
     if (!session || session.interactionChannel === 'remote') return;
     this.deps.sessions.updateSession(sessionId, { interactionChannel: 'remote' });
@@ -576,10 +600,12 @@ export class MobileChatBridge implements ChatBridge {
    * already happened.
    */
   private armSessionNotice(machineId: string, result: unknown): void {
-    const feed = this.deps.sessionFeed;
+    const device = this.deps.deviceStore.getByMachineId(machineId);
+    const profileId = device?.userProfileId;
+    const feed = profileId ? this.feedForProfile(profileId) : undefined;
     const heldSeq = result && typeof result === 'object' ? (result as { seq?: unknown }).seq : undefined;
-    if (!feed || typeof heldSeq !== 'number') return;
-    this.sessionNoticeOwed.set(machineId, heldSeq);
+    if (!profileId || !feed || typeof heldSeq !== 'number') return;
+    this.sessionNoticeOwed.set(machineId, { profileId, seq: heldSeq });
     if (feed.seq > heldSeq) this.scheduleSessionNotice(machineId);
   }
 
@@ -602,15 +628,20 @@ export class MobileChatBridge implements ChatBridge {
    * retried for the same reason.
    */
   private sendSessionNotice(machineId: string): void {
-    const feed = this.deps.sessionFeed;
-    const heldSeq = this.sessionNoticeOwed.get(machineId);
-    if (!feed || heldSeq === undefined || feed.seq <= heldSeq) return;
+    const owed = this.sessionNoticeOwed.get(machineId);
+    const feed = owed ? this.feedForProfile(owed.profileId) : undefined;
+    if (!owed || !feed || feed.seq <= owed.seq) return;
     this.sessionNoticeOwed.delete(machineId);
-    if (!this.linkedMachines().includes(machineId)) return;
+    if (!this.linkedMachines(owed.profileId).includes(machineId)) return;
     this.sessionNoticeSentAt.set(machineId, this.now());
     if (!this.deps.links.send(machineId, encodeChanges(SESSIONS_CHANGE_KIND, feed.seq))) {
       logger.warn(`[MobileChat] Could not tell ${machineId} the session list moved; the link is gone`);
     }
+  }
+
+  private feedForProfile(profileId: string): MobileSessionFeed | undefined {
+    if (this.deps.sessionFeedForProfile) return this.deps.sessionFeedForProfile(profileId);
+    return profileId === '1' ? this.deps.sessionFeed : undefined;
   }
 
   private answer(machineId: string, payload: Buffer): void {
@@ -631,7 +662,11 @@ export class MobileChatBridge implements ChatBridge {
    * cursor's read and this stream) are the phone's to dedupe by seq.
    */
   private replayAfter(machineId: string, cursor: number): void {
-    const entries = this.deps.journal.since(cursor);
+    const device = this.deps.deviceStore.getByMachineId(machineId);
+    const profileId = device?.userProfileId;
+    if (!profileId) return;
+    const entries = this.deps.journal.since(cursor)
+      .filter(entry => this.profileForSession(entry.record.sessionId) === profileId);
     if (entries.length === 0) return;
     logger.info(`[MobileChat] Replaying ${entries.length} journaled message(s) after seq ${cursor} to ${machineId}`);
     for (const entry of entries) {

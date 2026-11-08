@@ -1,6 +1,6 @@
 /**
- * RemoteService — "talk to another PC's sessions". One per Helm, playing both
- * Remote roles over the fleet link:
+ * RemoteService — "talk to another PC's sessions". One per profile runtime;
+ * profile 1 plays both roles, while other profiles can remain viewer-only:
  *
  *  - OWNER: a RemotePtyHost streams local PTYs to attached peers.
  *  - VIEWER: `open()` attaches to a peer's session and adopts it into the local
@@ -45,6 +45,8 @@ export interface RemoteServiceDeps {
   pty: PtyManager;
   sessions: Pick<SessionManager, 'addSession' | 'getSession' | 'getAllSessions' | 'on' | 'off'>;
   coalesceMs?: number;
+  /** Only profile 1 can own sessions or publish them to fleet peers. Defaults to true. */
+  fleetOwnerEnabled?: boolean;
   /** True only when this peer has an enabled inbound grant from this machine. */
   canSendSessionsToPeer?: (peerId: string) => boolean;
   /** Resolve a CLI type id owned by THIS machine to its peer-facing display name. */
@@ -66,7 +68,8 @@ interface ViewedSession { localId: string; process: RemotePtyProcess; name: stri
 
 export class RemoteService extends EventEmitter {
   private links: RemoteLinks | null = null;
-  private readonly host: RemotePtyHost;
+  private readonly host: RemotePtyHost | null;
+  private readonly fleetOwnerEnabled: boolean;
   /** Viewer side: `${peerId}\n${remoteSessionId}` → the adopted local session. */
   private readonly viewed = new Map<string, ViewedSession>();
   private readonly sessionPushTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -74,13 +77,13 @@ export class RemoteService extends EventEmitter {
 
   private readonly onNotification = ({ peerId, method, params }: PeerNotification): void => {
     if (method === RemoteMethod.data || method === RemoteMethod.exit) this.onOwnerFrame(peerId, method, params);
-    else if (isRemoteMethod(method)) this.host.handleNotification(peerId, method, params);
+    else if (this.fleetOwnerEnabled && isRemoteMethod(method)) this.host?.handleNotification(peerId, method, params);
   };
 
   private readonly onOffline = ({ peerId }: { peerId: string }): void => {
     this.clearSessionPush(peerId);
     this.lastSessionSnapshots.delete(peerId);
-    this.host.detachPeer(peerId);
+    this.host?.detachPeer(peerId);
     for (const view of this.viewsOf(peerId)) view.process.linkLost();
   };
 
@@ -119,18 +122,19 @@ export class RemoteService extends EventEmitter {
 
   constructor(private readonly deps: RemoteServiceDeps) {
     super();
+    this.fleetOwnerEnabled = deps.fleetOwnerEnabled ?? true;
     deps.sessions.on('session:added', this.onSessionAdded);
     deps.sessions.on('session:removed', this.onSessionRemoved);
     deps.sessions.on('session:updated', this.onSessionUpdated);
-    this.host = new RemotePtyHost({
+    this.host = this.fleetOwnerEnabled ? new RemotePtyHost({
       pty: deps.pty,
       send: (peerId, method, params) => this.links?.notify(peerId, method, params) ?? false,
-      describe: (sessionId) => {
+      describe: sessionId => {
         const s = deps.sessions.getSession(sessionId);
         return s ? { name: s.name, cliType: s.cliType, ...(s.workingDir ? { workingDir: s.workingDir } : {}) } : undefined;
       },
       coalesceMs: deps.coalesceMs,
-    });
+    }) : null;
   }
 
   /** Bind to the live fleet link manager (null when fleet is off). */
@@ -153,6 +157,7 @@ export class RemoteService extends EventEmitter {
 
   /** OWNER: a gated `remote.*` request from a peer (routed here by the gate's dispatch). */
   handleCall(peerId: string, method: string, params: unknown): RemoteAttachResult {
+    if (!this.host) throw new Error('Remote session ownership is profile 1 only');
     // A Remote row is itself a view — re-exporting it would chain machines.
     // Answer exactly like a missing session so it can't be probed apart.
     const sessionId = (params as { sessionId?: unknown } | null)?.sessionId;
@@ -262,7 +267,7 @@ export class RemoteService extends EventEmitter {
     this.deps.sessions.off('session:removed', this.onSessionRemoved);
     this.deps.sessions.off('session:updated', this.onSessionUpdated);
     this.setLinks(null);
-    this.host.dispose();
+    this.host?.dispose();
   }
 
   private onOwnerFrame(peerId: string, method: string, params: unknown): void {
@@ -284,6 +289,7 @@ export class RemoteService extends EventEmitter {
   }
 
   private pushSessions(peerId?: string): void {
+    if (!this.fleetOwnerEnabled) return;
     const links = this.links;
     if (!links) return;
     const targets = peerId ? [peerId] : links.onlinePeerIds();

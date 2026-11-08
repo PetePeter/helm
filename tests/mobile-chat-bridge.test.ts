@@ -65,6 +65,7 @@ let phone: MobileDevice;
 
 const SESSIONS = new Map<string, { id: string; name: string; interactionChannel: 'remote' | 'desktop' }>([
   ['s1', { id: 's1', name: 'work', interactionChannel: 'desktop' }],
+  ['s2', { id: 's2', name: 'profile two', interactionChannel: 'desktop' }],
   ['operator', { id: 'operator', name: 'Helm', interactionChannel: 'desktop' }],
 ]);
 const sessionUpdates: Array<{ sessionId: string; patch: Record<string, unknown> }> = [];
@@ -107,6 +108,7 @@ beforeEach(() => {
         if (session) session.interactionChannel = patch.interactionChannel;
       },
     },
+    profileForSession: id => id === 's2' ? '2' : '1',
     journal,
     now: () => NOW,
   });
@@ -178,6 +180,23 @@ describe('MobileChatBridge as a chat surface', () => {
       v: 1, t: 'chat', sessionId: 's1', sessionName: 'work', text: 'the build is green',
       at: 1700000000000, seq: 1,
     });
+  });
+
+  it('fans live chat only to phones bound to the session profile', async () => {
+    const profileTwoPhone = deviceStore.add({
+      name: 'Tablet', machineId: 'tablet-machine', pskRef: 'secret-2', allow: [], userProfileId: '2',
+    });
+    links.online.add(phone.machineId);
+    links.online.add(profileTwoPhone.machineId);
+
+    await bridge.sendToSession({ sessionId: 's1', text: 'profile one' });
+    await bridge.sendToSession({ sessionId: 's2', text: 'profile two' });
+
+    expect(links.sent.map(entry => [entry.machineId, decodeRecord(entry.payload)?.t, decodeRecord(entry.payload)?.t === 'chat' ? (decodeRecord(entry.payload) as { text: string }).text : '']))
+      .toEqual([
+        [phone.machineId, 'chat', 'profile one'],
+        [profileTwoPhone.machineId, 'chat', 'profile two'],
+      ]);
   });
 
   it('reports delivered chat messages to the alert notifier, but not alerts or offline messages', async () => {
@@ -406,6 +425,20 @@ describe('MobileChatBridge catch-up from a phone cursor', () => {
     expect(decodeRecord(forTablet[0].payload)).toMatchObject({ t: 'result', id: 'k5' });
     expect(forTablet.slice(1).map(entry => (decodeRecord(entry.payload) as { text?: string }).text))
       .toEqual(['one', 'two', 'three']);
+  });
+
+  it('replays only entries owned by the requesting phone profile', async () => {
+    const profileTwoPhone = deviceStore.add({
+      name: 'Tablet', machineId: 'tablet-machine', pskRef: 'secret-2', allow: [], userProfileId: '2',
+    });
+    journal.append({ sessionId: 's1', sessionName: 'work', text: 'profile one secret', at: NOW });
+    journal.append({ sessionId: 's2', sessionName: 'profile two', text: 'profile two only', at: NOW });
+    links.online.add(profileTwoPhone.machineId);
+
+    links.receive(profileTwoPhone.machineId, encodeCall('k-two', '__chat_cursor__', { seq: 0 }));
+    await vi.waitFor(() => expect(links.sent.length).toBe(2));
+
+    expect(links.records().slice(1).map(record => (record as { text?: string }).text)).toEqual(['profile two only']);
   });
 
   it('a link that refuses a send mid-stream stops there, and the cursor story resumes it', async () => {
@@ -922,7 +955,17 @@ describe('deleting chat messages', () => {
     const { seq } = journal.append({ sessionId: 's2', sessionName: 'other', text: 'keep me', at: NOW });
     expect(bridge.deleteMessages('s1', [{ seq }])).toBe(0);
     expect(journal.since(0).map((e) => e.record.text)).toEqual(['keep me']);
-    SESSIONS.delete('s2');
+    SESSIONS.set('s2', { id: 's2', name: 'profile two', interactionChannel: 'desktop' });
+  });
+
+  it('does not let a phone delete another profile\'s journal entry', () => {
+    const profileTwoPhone = deviceStore.add({
+      name: 'Tablet', machineId: 'tablet-machine', pskRef: 'secret-2', allow: [], userProfileId: '2',
+    });
+    const { seq } = journal.append({ sessionId: 's1', sessionName: 'work', text: 'private to one', at: NOW });
+
+    expect(bridge.deleteMessages('s1', [{ seq }], profileTwoPhone.userProfileId)).toBe(0);
+    expect(journal.sessionEntries('s1').map(entry => entry.record.text)).toEqual(['private to one']);
   });
 
   it('reports the removed entries so an API session can drop them from its history', () => {

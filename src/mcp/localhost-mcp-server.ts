@@ -23,6 +23,8 @@ import { PlanReadTracker } from '../session/plan-read-tracker.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { HookReceiver } from '../session/hooks/hook-receiver.js';
 import type { LoopDriver } from '../session/hooks/loop-driver.js';
+import type { ProfileMcpServiceSet } from './profile-mcp-service-factory.js';
+import type { McpToolDispatcherDeps } from './tools/dispatcher.js';
 import { parseClaudeStatuslineUsage, type ClaudeStatuslineUsage } from '../session/claude-statusline-usage.js';
 
 type JsonRpcId = string | number | null;
@@ -64,6 +66,10 @@ export interface LocalhostMcpServerOptions {
     cliSessionId: string,
     usage: ClaudeStatuslineUsage | null,
   ) => boolean | void;
+  /** Caller-specific runtime services shared by HTTP and API/peer dispatch. */
+  resolveCallerServices?: (authContext: AuthContext) => ProfileMcpServiceSet;
+  /** Resolve the optional base-token session header across all profiles. */
+  resolveSessionIdentity?: (sessionId: string) => { id: string; name: string } | null;
 }
 
 export interface McpStartRetryOptions {
@@ -102,6 +108,8 @@ export class LocalhostMcpServer {
   private readonly planReadTracker = new PlanReadTracker();
   private readonly onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
   private readonly onClaudeStatuslineUsage?: LocalhostMcpServerOptions['onClaudeStatuslineUsage'];
+  private readonly resolveCallerServices?: LocalhostMcpServerOptions['resolveCallerServices'];
+  private readonly resolveSessionIdentity?: LocalhostMcpServerOptions['resolveSessionIdentity'];
   private ptyManager?: PtyManager;
   private hookReceiver?: HookReceiver;
   /** G8 loop driving — late-bound like the receiver: the LoopDriver needs
@@ -118,6 +126,8 @@ export class LocalhostMcpServer {
     this.hookReceiver = hookReceiver;
     this.onItemFetched = options.onItemFetched;
     this.onClaudeStatuslineUsage = options.onClaudeStatuslineUsage;
+    this.resolveCallerServices = options.resolveCallerServices;
+    this.resolveSessionIdentity = options.resolveSessionIdentity;
     const env = options.env ?? process.env;
     this.host = options.host ?? env.HELM_MCP_HOST ?? DEFAULT_HOST;
     this.port = options.port ?? parsePort(env.HELM_MCP_PORT) ?? DEFAULT_PORT;
@@ -291,17 +301,7 @@ export class LocalhostMcpServer {
           const params = payload.params ?? {};
           const name = asString(params.name, 'Tool name is required');
           const args = asRecord(params.arguments);
-          const deps = {
-            service: this.service,
-            setPlanStateWithValidation: this.setPlanStateWithValidation.bind(this),
-            completePlanWithValidation: this.completePlanWithValidation.bind(this, authContext),
-            onPlanRead: (planId: string) => {
-              if (authContext.sessionId) {
-                this.planReadTracker.recordRead(planId, authContext.sessionId);
-              }
-            },
-            onItemFetched: (sessionId: string, type: 'skill' | 'memory', id: string) => this.onItemFetched?.(sessionId, type, id),
-          };
+          const deps = this.dispatcherDeps(authContext);
           const result = await callMcpTool(deps, name, args, authContext);
           // One copy, compact: clients (Codex) keep both content and structuredContent in context.
           const reply = normalizeStructuredContent(result);
@@ -428,33 +428,44 @@ export class LocalhostMcpServer {
    * result (no JSON-RPC framing — the peer link frames it).
    */
   async dispatchForPeer(name: string, args: Record<string, unknown>, authContext: AuthContext): Promise<unknown> {
-    const deps = {
-      service: this.service,
-      setPlanStateWithValidation: this.setPlanStateWithValidation.bind(this),
-      completePlanWithValidation: this.completePlanWithValidation.bind(this, authContext),
-      onPlanRead: (planId: string) => {
-        if (authContext.sessionId) {
-          this.planReadTracker.recordRead(planId, authContext.sessionId);
-        }
+    return callMcpTool(this.dispatcherDeps(authContext), name, args, authContext);
+  }
+
+  private dispatcherDeps(
+    authContext: AuthContext,
+    service = this.service,
+    callerLoopDriver = this.loopDriver,
+    includeResolver = true,
+  ): McpToolDispatcherDeps {
+    return {
+      service,
+      setPlanStateWithValidation: (id, status, stateInfo) => service.setPlanState(id, status, stateInfo),
+      completePlanWithValidation: (id, documentation) =>
+        this.completePlanWithValidation(authContext, service, callerLoopDriver, id, documentation),
+      onPlanRead: planId => {
+        if (authContext.sessionId) this.planReadTracker.recordRead(planId, authContext.sessionId);
       },
-      onItemFetched: (sessionId: string, type: 'skill' | 'memory', id: string) => this.onItemFetched?.(sessionId, type, id),
+      onItemFetched: (sessionId, type, id) => this.onItemFetched?.(sessionId, type, id),
+      ...(includeResolver && this.resolveCallerServices ? {
+        resolveForCaller: caller => {
+          const set = this.resolveCallerServices!(caller);
+          return this.dispatcherDeps(caller, set.service, set.loopDriver, false);
+        },
+      } : {}),
     };
-    return callMcpTool(deps, name, args, authContext);
   }
 
-  private setPlanStateWithValidation(
+  private completePlanWithValidation(
+    authContext: AuthContext,
+    service: HelmControlService,
+    callerLoopDriver: Pick<LoopDriver, 'noteCompletion'> | undefined,
     id: string,
-    status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked',
-    stateInfo?: string,
+    documentation: string,
   ): unknown {
-    return this.service.setPlanState(id, status, stateInfo);
-  }
-
-  private completePlanWithValidation(authContext: AuthContext, id: string, documentation: string): unknown {
     if (documentation.trim().length < 10) {
       throw new Error('documentation must be at least 10 characters');
     }
-    const current = requireResult(this.service.getPlan(id), `Plan not found: ${id}`);
+    const current = requireResult(service.getPlan(id), `Plan not found: ${id}`);
 
     // Completion recap gate — runs when plan has completionRecap: true
     if (current.completionRecap) {
@@ -476,10 +487,10 @@ export class LocalhostMcpServer {
     }
 
     const completed = requireResult(
-      this.service.completePlan(id, documentation),
+      service.completePlan(id, documentation),
       `Plan ${id} could not be completed from its current state`,
     );
-    const exported = this.service.exportDirectory(current.dirPath);
+    const exported = service.exportDirectory(current.dirPath);
     const followUpPlans = (exported?.dependencies ?? [])
       .filter((dependency) => dependency.fromId === completed.id)
       .map((dependency) => exported?.items.find((item) => item.id === dependency.toId) ?? null)
@@ -498,7 +509,7 @@ export class LocalhostMcpServer {
     // caller just means no loop driving for this completion.
     if (authContext.sessionId) {
       try {
-        this.loopDriver?.noteCompletion(authContext.sessionId, {
+        (callerLoopDriver ?? this.loopDriver)?.noteCompletion(authContext.sessionId, {
           planId: completed.id,
           humanId: completed.humanId,
           title: completed.title,
@@ -512,7 +523,7 @@ export class LocalhostMcpServer {
 
     if (authContext.sessionId) {
       try {
-        this.service.notifyUser(authContext.sessionId, `Plan completed — ${completed.title}`, documentation);
+        service.notifyUser(authContext.sessionId, `Plan completed — ${completed.title}`, documentation);
       } catch {
         // Notification mode may not be 'llm'; ignore rather than fail the completion
       }
@@ -535,7 +546,9 @@ export class LocalhostMcpServer {
         // later when senderSessionId is missing.
         return {};
       }
-      const session = this.service.getSession(sessionId);
+      const session = this.resolveSessionIdentity
+        ? this.resolveSessionIdentity(sessionId)
+        : this.service.getSession(sessionId);
       if (!session) return null;
       return {
         sessionId: session.id,

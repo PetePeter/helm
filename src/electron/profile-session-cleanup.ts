@@ -9,8 +9,8 @@ export interface ProfileSessionCleanupEffects {
   forgetSessionState?: (runtime: ProfileRuntime, sessionId: string) => void;
   /** Close a process-wide ComfyUI session while its owning runtime is known. */
   closeComfyUiSession?: (sessionId: string) => void;
-  /** The mobile chat journal is intentionally global and profile-1 anchored. */
-  pruneProfileOneJournal?: (sessionId: string) => void;
+  /** Prune the shared journal once any profile's session is permanently gone. */
+  pruneMobileJournal?: (sessionId: string) => void;
 }
 
 /** Attach one owner-bound teardown path to every profile runtime. */
@@ -67,11 +67,9 @@ export function cleanupRemovedProfileSession(
   runtime.artifactManager.clearSession(sessionId);
   runtime.draftManager.clearSession(sessionId);
   runtime.todoManager.clearSession(sessionId);
-  if (runtime.userProfileId === '1') {
-    try {
-      effects.pruneProfileOneJournal?.(sessionId);
-    } catch (error) {
-      logger.error(`[IPC] Failed to prune the chat journal for removed session ${sessionId}: ${error}`);
-    }
+  try {
+    effects.pruneMobileJournal?.(sessionId);
+  } catch (error) {
+    logger.error(`[IPC] Failed to prune the chat journal for removed session ${sessionId}: ${error}`);
   }
 }

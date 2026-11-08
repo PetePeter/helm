@@ -348,7 +348,7 @@ describe('profile-owned process services', () => {
     const sideEffects = {
       forgetRuntimeSessionState: () => undefined,
       closeComfyUiSession: () => undefined,
-      pruneProfileOneJournal: sessionId => mobilePrunes.push(sessionId),
+      pruneMobileJournal: sessionId => mobilePrunes.push(sessionId),
     };
     registerProfileSessionCleanup(composition, sideEffects);
 
@@ -392,7 +392,7 @@ describe('profile-owned process services', () => {
       expect(two.memoryManager.getRecord(ephemeralMemory.id)).toBeNull();
       expect(one.artifactManager.count(profileOne.id)).toBe(0);
       expect(one.memoryManager.getRecord(oneMemory.id)).toBeNull();
-      expect(mobilePrunes).toEqual([profileOne.id]);
+      expect(mobilePrunes).toEqual([ephemeral.id, profileOne.id]);
     } finally {
       composition.dispose();
     }

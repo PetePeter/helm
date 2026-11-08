@@ -77,6 +77,20 @@ describe('MobileDeviceStore', () => {
     expect(repaired.allow).toEqual(['session_*']);
   });
 
+  it('preserves a profile binding on re-pair and allows an explicit reassignment', () => {
+    const store = makeStore();
+    const first = store.add({
+      machineId: 'phone-machine-1', name: 'Pixel 8', pskRef: 'mobile-phone-machine-1', userProfileId: '2',
+    });
+    const repaired = store.upsertByMachineId({
+      machineId: 'phone-machine-1', name: 'Pixel 8', pskRef: 'mobile-phone-machine-1',
+    });
+
+    expect(repaired.id).toBe(first.id);
+    expect(repaired.userProfileId).toBe('2');
+    expect(store.update(first.id, { userProfileId: '1' })?.userProfileId).toBe('1');
+  });
+
   it('hands out copies, so a caller cannot mutate the registry through one', () => {
     const store = makeStore();
     const device = addPixel(store);
@@ -131,6 +145,7 @@ describe('MobileDeviceStore', () => {
       pskRef: 'mobile-phone-machine-1',
       allow: ['session_*', 'artifact_get'],
       enabled: false,
+      userProfileId: '2',
     });
     store.update(device.id, { lastSeenAt: 1_700_000_123_456 });
 
@@ -147,6 +162,7 @@ describe('MobileDeviceStore', () => {
     expect(restored?.enabled).toBe(false);
     expect(restored?.lastSeenAt).toBe(1_700_000_123_456);
     expect(restored?.deviceId).toBe('aa:bb:cc:dd:ee:ff');
+    expect(restored?.userProfileId).toBe('2');
   });
 
   it('never writes secret material into the registry snapshot', () => {

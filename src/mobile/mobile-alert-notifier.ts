@@ -34,6 +34,7 @@
 import { logger } from '../utils/logger.js';
 import { alertKindForTransition, alertText } from '../session/session-alert.js';
 import type { SessionAlertKind } from '../session/session-alert.js';
+import type { ProfileRuntime } from '../session/profile-runtime.js';
 import type { ActivityLevel } from '../types/session.js';
 
 /** The slice of MobileChatBridge this drives. Narrow by design: no gate, no BLE. */
@@ -60,6 +61,23 @@ export class MobileAlertNotifier {
     private readonly sink: MobileAlertSink,
     private readonly now: () => number = Date.now,
   ) {}
+
+  /** Observe state transitions and removals across every active profile. */
+  observeProfiles(runtimes: Iterable<Pick<ProfileRuntime, 'sessionManager'>>): () => void {
+    const managers = [...runtimes].map(runtime => runtime.sessionManager);
+    const observe = (session: ObservedSession) => this.observe(session);
+    const forget = (event: { sessionId: string }) => this.forget(event.sessionId);
+    for (const manager of managers) {
+      manager.on('session:updated', observe);
+      manager.on('session:removed', forget);
+    }
+    return () => {
+      for (const manager of managers) {
+        manager.off('session:updated', observe);
+        manager.off('session:removed', forget);
+      }
+    };
+  }
 
   /**
    * One `session:updated`. Pushes only when the session's activity leaves

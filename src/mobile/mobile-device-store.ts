@@ -29,6 +29,7 @@ export interface AddMobileDeviceInput {
   deviceId?: string;
   allow?: string[];
   enabled?: boolean;
+  userProfileId?: string;
 }
 
 export class MobileDeviceStore extends EventEmitter {
@@ -45,7 +46,7 @@ export class MobileDeviceStore extends EventEmitter {
   add(input: AddMobileDeviceInput): MobileDevice {
     const device: MobileDevice = {
       id: randomUUID(),
-      userProfileId: '1',
+      userProfileId: input.userProfileId ?? '1',
       machineId: input.machineId,
       name: input.name,
       pskRef: input.pskRef,
@@ -75,6 +76,7 @@ export class MobileDeviceStore extends EventEmitter {
     if (input.deviceId !== undefined) existing.deviceId = input.deviceId;
     if (input.allow !== undefined) existing.allow = [...input.allow];
     if (input.enabled !== undefined) existing.enabled = input.enabled;
+    if (input.userProfileId !== undefined) existing.userProfileId = input.userProfileId;
     this.markChanged();
     logger.info(`[MobileDeviceStore] Re-paired device "${existing.name}" (${existing.id})`);
     return this.copy(existing);
@@ -113,6 +115,7 @@ export class MobileDeviceStore extends EventEmitter {
     if (patch.allow !== undefined) device.allow = [...patch.allow];
     if (patch.lastSeenAt !== undefined) device.lastSeenAt = patch.lastSeenAt;
     if (patch.enabled !== undefined) device.enabled = patch.enabled;
+    if (patch.userProfileId !== undefined) device.userProfileId = patch.userProfileId;
     this.markChanged();
     return this.copy(device);
   }

@@ -141,4 +141,13 @@ describe('SessionChangeFeed following a SessionManager', () => {
 
     expect(feed.since(cursor)).toEqual({ full: false, changed: [], removed: [] });
   });
+
+  it('detaches from its runtime when disposed', () => {
+    const { manager, feed } = managed();
+    feed.dispose();
+
+    manager.addSession(session('after-dispose'), true);
+
+    expect(feed.seq).toBe(0);
+  });
 });

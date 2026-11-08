@@ -230,6 +230,8 @@ function ownsTargetSession(
 export interface MobileGateDeps {
   /** The paired-phone registry. Owns the allow-list and the enabled flag. */
   deviceStore: Pick<MobileDeviceStore, 'isToolAllowed' | 'get'>;
+  /** Confirms the paired device still points at a configured runtime. */
+  profileExists?: (userProfileId: string) => boolean;
   /**
    * The dispatch closure. Real wiring passes a closure over the existing
    * callMcpTool seam; injecting it keeps the dispatcher signature untouched and
@@ -242,15 +244,17 @@ export interface MobileGateDeps {
    * are denied outright — the safe default.
    */
   sessionLookup?: MobileSessionLookup;
+  /** Profile-aware lookup for ownership-gated session operations. */
+  sessionLookupForProfile?: (userProfileId: string) => MobileSessionLookup | undefined;
   /**
    * The user's restart (HelmControlService.restartHelm). Absent means the
    * restart meta-method is denied — the safe default.
    */
-  restartHelm?: (resume: boolean) => unknown;
+  restartHelm?: (resume: boolean, userProfileId: string) => unknown;
   /** A linked phone picked up a session's ring; undefined = an older phone that names none. */
-  ringAnswered?: (sessionId?: string) => void;
+  ringAnswered?: (sessionId?: string, deviceId?: string) => void;
   /** The phone's Time tab. Absent means the method is denied — the safe default. */
-  timesheet?: (params: unknown) => unknown;
+  timesheet?: (params: unknown, userProfileId?: string) => unknown;
 }
 
 export class MobileGate {
@@ -258,18 +262,22 @@ export class MobileGate {
   private readonly dispatch: MobileGateDeps['dispatch'];
   private readonly rateLimiter: PeerRateLimiter;
   private readonly sessionLookup: MobileSessionLookup | undefined;
+  private readonly sessionLookupForProfile: MobileGateDeps['sessionLookupForProfile'];
   private readonly restartHelm: MobileGateDeps['restartHelm'];
   private readonly ringAnswered: MobileGateDeps['ringAnswered'];
   private readonly timesheet: MobileGateDeps['timesheet'];
+  private readonly profileExists: MobileGateDeps['profileExists'];
 
   constructor(deps: MobileGateDeps) {
     this.deviceStore = deps.deviceStore;
     this.dispatch = deps.dispatch;
     this.rateLimiter = deps.rateLimiter;
     this.sessionLookup = deps.sessionLookup;
+    this.sessionLookupForProfile = deps.sessionLookupForProfile;
     this.restartHelm = deps.restartHelm;
     this.ringAnswered = deps.ringAnswered;
     this.timesheet = deps.timesheet;
+    this.profileExists = deps.profileExists;
   }
 
   /** Gate + dispatch one inbound phone call. */
@@ -278,7 +286,9 @@ export class MobileGate {
     // enumerate the permitted surface. Same uniform message as any other deny so
     // "Off" cannot be told apart from "not permitted". An UNKNOWN device is not
     // handled here; it falls through to the allow-list, which denies by default.
-    if (this.isDeviceDisabled(deviceId)) {
+    const device = this.deviceStore.get(deviceId);
+    if (!device || device.enabled === false || !device.userProfileId
+      || (this.profileExists && !this.profileExists(device.userProfileId))) {
       return this.denied(deviceId, method);
     }
 
@@ -317,7 +327,7 @@ export class MobileGate {
     if (method === RESERVED_RING_ANSWERED_METHOD) {
       this.consumeOrThrow(deviceId, method);
       const sessionId = (params as { sessionId?: unknown } | null)?.sessionId;
-      this.ringAnswered?.(typeof sessionId === 'string' ? sessionId : undefined);
+      this.ringAnswered?.(typeof sessionId === 'string' ? sessionId : undefined, deviceId);
       this.logOutcome(deviceId, method, 'ok');
       return { ok: true };
     }
@@ -327,7 +337,7 @@ export class MobileGate {
       if (!this.timesheet) return this.denied(deviceId, method);
       this.consumeOrThrow(deviceId, method);
       try {
-        const result = this.timesheet(params);
+        const result = this.timesheet(params, device.userProfileId);
         this.logOutcome(deviceId, method, 'ok');
         return result;
       } catch (err) {
@@ -345,7 +355,7 @@ export class MobileGate {
       this.consumeOrThrow(deviceId, method);
       const resume = (params as { resume?: unknown } | null)?.resume !== false;
       try {
-        const result = this.restartHelm(resume);
+        const result = this.restartHelm(resume, device.userProfileId);
         this.logOutcome(deviceId, method, 'ok');
         return result;
       } catch (err) {
@@ -362,7 +372,10 @@ export class MobileGate {
     }
 
     // 4. Ownership gate — a phone may only act on sessions it created itself.
-    if (OWNERSHIP_GATED_TOOLS.has(method) && !ownsTargetSession(params, deviceId, this.sessionLookup)) {
+    const sessionLookup = this.sessionLookupForProfile
+      ? this.sessionLookupForProfile(device.userProfileId)
+      : this.sessionLookup;
+    if (OWNERSHIP_GATED_TOOLS.has(method) && !ownsTargetSession(params, deviceId, sessionLookup)) {
       return this.denied(deviceId, method);
     }
 
@@ -391,15 +404,6 @@ export class MobileGate {
       this.logOutcome(deviceId, method, 'error', errorType);
       throw new GateError(JSONRPC_SERVER_ERROR, message);
     }
-  }
-
-  /**
-   * Whether `deviceId` is an EXPLICITLY disabled registered device. Default-true:
-   * a missing record or an undefined `enabled` is not "disabled" here — an
-   * unknown device is denied one step later by the allow-list instead.
-   */
-  private isDeviceDisabled(deviceId: string): boolean {
-    return this.deviceStore.get(deviceId)?.enabled === false;
   }
 
   /** Upload cancellation inherits the share-open grant: it can only reduce upload access. */

@@ -317,6 +317,7 @@ export class HelmControlService extends EventEmitter {
   private phoneRinger: ((sessionId: string, reason: string) => boolean) | null = null;
   private callTransferrer: ((fromSessionId: string, toSessionId: string, line: string) => boolean) | null = null;
   private ringRetry: RingRetry | null = null;
+  private restartAllowed = true;
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
   private draftManager?: DraftManager;
@@ -465,6 +466,12 @@ export class HelmControlService extends EventEmitter {
     this.directoryService = new HelmDirectoryService(configLoader, sessionManager, planManager, projectStore);
     this.peerService = new HelmPeerService(() => this.peerLinkManager ?? undefined);
     this.mobileService = new HelmMobileService(() => this.mobileDeps ?? undefined);
+  }
+
+  /** Release runtime-owned feed listeners and pending ring retries. */
+  dispose(): void {
+    this.sessionChangeFeed.dispose();
+    this.ringRetry?.dispose();
   }
 
   // ---------------------------------------------------------------------------
@@ -1736,6 +1743,7 @@ export class HelmControlService extends EventEmitter {
    * that asked for it — the caller hands over its next step as the prompt.
    */
   restartHelm(resume = true, options?: { callerSessionId?: string; resumePrompt?: string }): { sessionsClosed: number; resume: boolean; resumeTaskId?: string } {
+    if (!this.restartAllowed) throw new Error('Helm restart is available only through profile 1');
     if (options?.resumePrompt) {
       if (!resume) {
         throw new Error('resumePrompt requires resume:true (the default) — with resume:false the calling session is closed and cannot be re-prompted');
@@ -1805,6 +1813,7 @@ export class HelmControlService extends EventEmitter {
     handoverArtifactId: string | undefined,
     resume = true,
   ): { sessionsClosed: number; resume: boolean; resumeTaskId?: string } {
+    if (!this.restartAllowed) throw new Error('Helm restart is available only through profile 1');
     if (!handoverArtifactId) {
       throw new Error(
         'helm_restart refused — this is phase 1 of 2, and a restart destroys your own context. ' +
@@ -1974,6 +1983,11 @@ export class HelmControlService extends EventEmitter {
   /** Retries a ring nobody answered (src/session/ring-retry.ts); absent = no retry. */
   setRingRetry(retry: RingRetry | null): void {
     this.ringRetry = retry;
+  }
+
+  /** Keep the process-wide restart control on the designated profile. */
+  setRestartAllowed(allowed: boolean): void {
+    this.restartAllowed = allowed;
   }
 
   /** A linked phone picked up `sessionId`'s ring (unnamed: an older phone): no retry. */

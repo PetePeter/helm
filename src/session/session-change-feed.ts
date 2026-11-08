@@ -36,6 +36,8 @@ export type SessionFeedDelta =
 export interface SessionFeedSource {
   on(event: 'session:added' | 'session:updated', handler: (event: { id: string }) => void): unknown;
   on(event: 'session:removed', handler: (event: { sessionId: string }) => void): unknown;
+  off?(event: 'session:added' | 'session:updated', handler: (event: { id: string }) => void): unknown;
+  off?(event: 'session:removed', handler: (event: { sessionId: string }) => void): unknown;
 }
 
 export interface SessionChangeFeedOptions {
@@ -59,6 +61,11 @@ export class SessionChangeFeed extends EventEmitter {
    * have missed a removal this feed can no longer name, so it gets everything.
    */
   private tombstoneFloor = 0;
+  private readonly sources = new Map<SessionFeedSource, {
+    added: (event: { id: string }) => void;
+    updated: (event: { id: string }) => void;
+    removed: (event: { sessionId: string }) => void;
+  }>();
 
   constructor(options: SessionChangeFeedOptions = {}) {
     super();
@@ -68,9 +75,36 @@ export class SessionChangeFeed extends EventEmitter {
 
   /** Follow a session manager. Every row it adds, updates or removes moves the feed. */
   attach(source: SessionFeedSource): void {
-    source.on('session:added', (event) => this.touch(event.id));
-    source.on('session:updated', (event) => this.touch(event.id));
-    source.on('session:removed', (event) => this.remove(event.sessionId));
+    this.detach(source);
+    const handlers = {
+      added: (event: { id: string }) => this.touch(event.id),
+      updated: (event: { id: string }) => this.touch(event.id),
+      removed: (event: { sessionId: string }) => this.remove(event.sessionId),
+    };
+    source.on('session:added', handlers.added);
+    source.on('session:updated', handlers.updated);
+    source.on('session:removed', handlers.removed);
+    this.sources.set(source, handlers);
+  }
+
+  /** Stop following a source and release its session listeners. */
+  detach(source: SessionFeedSource): void {
+    const handlers = this.sources.get(source);
+    if (!handlers) return;
+    source.off?.('session:added', handlers.added);
+    source.off?.('session:updated', handlers.updated);
+    source.off?.('session:removed', handlers.removed);
+    this.sources.delete(source);
+  }
+
+  /** Release every source and listener when the owning runtime is disposed. */
+  dispose(): void {
+    for (const source of this.sources.keys()) this.detach(source);
+    this.removeAllListeners();
+    this.changedAt.clear();
+    this.removedAt.clear();
+    this.currentSeq = 0;
+    this.tombstoneFloor = 0;
   }
 
   /** The newest number handed out — the cursor a fully caught-up reader holds. */
