@@ -15,8 +15,6 @@ import { StateDetector } from '../../session/state-detector.js';
 import { PipelineQueue } from '../../session/pipeline-queue.js';
 import { NotificationManager } from '../../session/notification-manager.js';
 import { getGlobalPersistencePaths } from '../../session/persistence-paths.js';
-import { HandoverDelivery } from '../../session/handover-delivery.js';
-import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
 import { ChatBroker } from '../../session/chat/chat-broker.js';
 import { createProfileChatBrokerOptions } from '../../session/chat/profile-chat-broker-options.js';
 import { setupHandoverHandlers } from './handover-handlers.js';
@@ -50,12 +48,8 @@ import { setupToolsHandlers } from './tools-handlers.js';
 import { setupKeyboardHandlers } from './keyboard-handlers.js';
 import { setupSystemHandlers, cleanupWorkTempFiles } from './system-handlers.js';
 import { setupUpdateHandlers } from './update-handlers.js';
-import { setupOperatorHandlers } from './operator-handlers.js';
-import { setupVoiceHandlers } from './voice-handlers.js';
+import { setupProfileOneVoiceSurface } from './voice-handlers.js';
 import { setupChatHandlers } from './chat-handlers.js';
-import { VoiceService } from '../../voice/voice-service.js';
-import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
-import { CapabilityDetector } from '../../session/capability-detector.js';
 import { OperatorSessionManager } from '../../session/operator-session-manager.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
@@ -82,7 +76,7 @@ import { WindowManager } from '../window-manager.js';
 import { HelmControlService } from '../../mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
 import { ProfileMcpRouter } from '../../mcp/profile-mcp-router.js';
-import { ProfileMcpServiceFactory, createProfileRemoteService, createProfileRuntimeMcpServiceSet, bindProfileMcpServicesToMobile } from '../../mcp/profile-mcp-service-factory.js';
+import { ProfileMcpServiceFactory, createProfileRemoteService, createProfileRuntimeMcpServiceSet } from '../../mcp/profile-mcp-service-factory.js';
 import { InboundCallGate } from '../../mcp/peer/inbound-call-gate.js';
 import { peerIdFromProxySessionId } from '../../mcp/peer/proxy-identity.js';
 import { FleetAccessSync } from '../../mcp/peer/fleet-access-sync.js';
@@ -110,6 +104,8 @@ import { MobileAddressAdvertiser } from '../../mobile/mobile-address-advertiser.
 import { PrimaryLanAddressResolver } from '../../mobile/primary-lan-address.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
 import { MobileArtifactNotifier } from '../../mobile/mobile-artifact-notifier.js';
+import { setupProfileRuntimeDomain } from './profile-handlers.js';
+import { createProfileOneHandoverDelivery, createProfileOneOperatorTaskWatcher, sendDesktopChatToSessionOwner } from './profile-runtime-routing.js';
 
 /**
  * The ONE MobileGate instance, built during handler setup. Exposed so whoever
@@ -143,11 +139,11 @@ import { resolveContextLimits } from '../../session/context-limits.js';
 import { openTaskLines } from '../../session/operator-tasks.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
 import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
-import { OperatorTaskWatcher } from '../../session/operator-task-watcher.js';
 import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 import { ProfileRuntimeComposition } from '../profile-runtime-composition.js';
 import { UserProfileStore } from '../../config/user-profile-store.js';
+import { ActiveProfileRuntimeView, createActiveServiceProxy } from '../active-profile-runtime.js';
 
 // On restart the previous instance may still be releasing the fixed MCP port.
 // Retry the same port (never a fallback) with backoff until it frees.
@@ -185,13 +181,13 @@ export function registerIPCHandlers(
   let profileMcpRouter!: ProfileMcpRouter;
   let profileMcpServiceFactory!: ProfileMcpServiceFactory;
   let messageFlightSink!: (flight: SessionMessageFlight) => Promise<void> | void;
-  const profileComposition = new ProfileRuntimeComposition({
-    configLoader,
-    userProfileStore: new UserProfileStore(configLoader.getGlobalConfigDir()),
-    ptyManager,
-  });
+  const userProfileStore = new UserProfileStore(configLoader.getGlobalConfigDir());
+  const profileComposition = new ProfileRuntimeComposition({ configLoader, userProfileStore, ptyManager });
   const registry = profileComposition.registry;
-  const activeRuntime = registry.getRequiredRuntime('1');
+  const activeRuntimeView = new ActiveProfileRuntimeView(registry.getRequiredRuntime(userProfileStore.getActiveProfileId()));
+  const activeRuntime = activeRuntimeView.runtime;
+  const activeHelmControlService = createActiveServiceProxy(() =>
+    profileMcpServiceFactory?.forProfile(userProfileStore.getActiveProfileId()).service ?? helmControlService);
   const {
     configLoader: activeConfigLoader,
     projectStore,
@@ -217,8 +213,8 @@ export function registerIPCHandlers(
     etaTracker,
     patternMatcher,
   } = activeRuntime;
-  // IPC remains pinned to profile 1 until the profile selector ships.
   configLoader = activeConfigLoader;
+  const profileOneRuntime = profileComposition.getRequiredRuntime('1');
   const stateDetector = new StateDetector();
   const pipelineQueue = new PipelineQueue();
   const notificationManager = new NotificationManager(windowManager, sessionManager, registry);
@@ -228,27 +224,31 @@ export function registerIPCHandlers(
   notificationManager.setScreenLockChecker(powerMonitorResult.isScreenLocked);
   notificationManager.setActiveSessionIdGetter(() => sessionManager.getActiveSession()?.id ?? null);
 
-  helmControlService = new HelmControlService(planManager, sessionManager, ptyManager, configLoader, activeRuntime.planAttachmentManager, contextManager, scheduledTaskManager, projectStore, skillManager, skillAnalyticsManager);
+  helmControlService = new HelmControlService(
+    profileOneRuntime.planManager, profileOneRuntime.sessionManager, ptyManager, profileOneRuntime.configLoader,
+    profileOneRuntime.planAttachmentManager, profileOneRuntime.contextManager, profileOneRuntime.scheduledTaskManager,
+    profileOneRuntime.projectStore, profileOneRuntime.skillManager, profileOneRuntime.skillAnalyticsManager,
+  );
   profileComposition.bindQuickCompactHandler('1', async (sessionId, prompt) => {
     await helmControlService.quickCompactSession(sessionId, { handover: prompt });
   });
   helmControlService.setNotificationManager(notificationManager);
-  helmControlService.setRuntimeGroupManager(runtimeGroupManager);
-  helmControlService.sessionChangeFeed.attach(sessionManager);
-  helmControlService.setArtifactManager(artifactManager, artifactAttachmentManager);
-  helmControlService.setDraftManager(draftManager);
-  helmControlService.setTodoManager(todoManager);
+  helmControlService.setRuntimeGroupManager(profileOneRuntime.runtimeGroupManager);
+  helmControlService.sessionChangeFeed.attach(profileOneRuntime.sessionManager);
+  helmControlService.setArtifactManager(profileOneRuntime.artifactManager, profileOneRuntime.artifactAttachmentManager);
+  helmControlService.setDraftManager(profileOneRuntime.draftManager);
+  helmControlService.setTodoManager(profileOneRuntime.todoManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
   // by session_artifact_attachment_commit into the SAME managed storage the
   // desktop's own imports use.
   const artifactUploadService = new MobileArtifactUploadService({
-    attachments: artifactAttachmentManager,
+    attachments: profileOneRuntime.artifactAttachmentManager,
     // Share-to-Helm: shared files land in the per-user tmp inbox; the path is typed into the session.
     shares: new MobileShareInbox(join(getTempDir(dirname ?? process.cwd()), 'inbox')),
   });
   helmControlService.setArtifactUploadService(artifactUploadService);
-  helmControlService.setMemoryManager(memoryManager, memoryAttachmentManager, artifactTempRegistry);
+  helmControlService.setMemoryManager(profileOneRuntime.memoryManager, profileOneRuntime.memoryAttachmentManager, profileOneRuntime.artifactTempRegistry);
 
   // The chat broker is an unbounded registry; new surfaces add one registration.
   // Fan-out through it is unconditional; see src/session/chat/chat-broker.ts.
@@ -344,7 +344,7 @@ export function registerIPCHandlers(
   );
   const suggestionUsageByProfile = profileComposition.suggestionUsageByProfile;
   const suggestionServices = profileComposition.suggestionServices;
-  const suggestionUsage = suggestionUsageByProfile.get('1')!;
+  const suggestionUsage = createActiveServiceProxy(() => suggestionUsageByProfile.get(userProfileStore.getActiveProfileId())!);
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
@@ -430,9 +430,9 @@ export function registerIPCHandlers(
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
   const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, {
     // The user asked for it outright: never second-guessed as redundant.
-    quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, {}),
-    switchCli: (sessionId, cliType) => helmControlService.switchSessionCli(sessionId, cliType),
-    clone: (sessionId, cliType) => helmControlService.cloneSession(sessionId, cliType === undefined ? {} : { cliType }),
+    quickCompact: (sessionId) => activeHelmControlService.quickCompactSession(sessionId, {}),
+    switchCli: (sessionId, cliType) => activeHelmControlService.switchSessionCli(sessionId, cliType),
+    clone: (sessionId, cliType) => activeHelmControlService.cloneSession(sessionId, cliType === undefined ? {} : { cliType }),
   });
   // Forward-declared so config:setFleetConfig can hot-apply the live fleet
   // stack (constructed below, ~line 460). The closure is only invoked at runtime on
@@ -462,7 +462,8 @@ export function registerIPCHandlers(
       return memory ? { name: memory.tldr, body: memory.content } : null;
     },
   );
-  setupAutoMemoryHandlers(configLoader, profileComposition.getRecordingModelRunner('1')!);
+  setupAutoMemoryHandlers(configLoader, createActiveServiceProxy(() =>
+    profileComposition.getRecordingModelRunner(userProfileStore.getActiveProfileId())!));
   setupDreamingHandlers(configLoader);
   setupToolsHandlers(configLoader);
   setupKeyboardHandlers(keyboard);
@@ -475,12 +476,12 @@ export function registerIPCHandlers(
   // Rebound once HandoverDelivery exists further down; until then nothing is pending.
   let isHandoverPending: (sessionId: string) => boolean = () => false;
   const operatorSessionManager = new OperatorSessionManager({
-    sessionManager,
-    getConfig: () => configLoader.getOperatorConfig(),
+    sessionManager: profileOneRuntime.sessionManager,
+    getConfig: () => profileOneRuntime.configLoader.getOperatorConfig(),
     spawn: ({ cliType, cwd, sessionName, contextText, role, locked }) => spawnConfiguredSession({
       ptyManager,
-      sessionManager,
-      configLoader,
+      sessionManager: profileOneRuntime.sessionManager,
+      configLoader: profileOneRuntime.configLoader,
       cliType,
       cwd,
       sessionName,
@@ -491,10 +492,9 @@ export function registerIPCHandlers(
     }),
     clear: (sessionId, context) => helmControlService.clearSession(sessionId, { context }),
     isHandoverPending: (sessionId) => isHandoverPending(sessionId),
-    homeDir: () => ensureOperatorHome(getConfigDir(dirname ?? process.cwd()), projectStore),
+    homeDir: () => ensureOperatorHome(getConfigDir(dirname ?? process.cwd()), profileOneRuntime.projectStore),
   });
   noteOperatorFlight = (flight) => operatorSessionManager.noteFlight(flight);
-  setupOperatorHandlers(configLoader, operatorSessionManager);
   try {
     operatorSessionManager.ensure();
   } catch (error) {
@@ -502,7 +502,7 @@ export function registerIPCHandlers(
   }
   setupProjectHandlers(projectStore, planManager, contextManager, windowManager, activeRuntime.planAttachmentManager);
   setupSkillHandlers(skillManager, skillAnalyticsManager);
-  setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname, helmControlService.getSuggestedPlanService() ?? undefined, activeRuntime.planAttachmentManager);
+  setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname, () => activeHelmControlService.getSuggestedPlanService(), activeRuntime.planAttachmentManager);
   setupScheduledTaskHandlers(scheduledTaskManager, scheduledTaskHistoryManager, windowManager);
   // Time tracking: the session's Helm project, else its directory, gets the credit.
   const whereIsDir = (dir: string, projectId?: string) => {
@@ -658,39 +658,15 @@ export function registerIPCHandlers(
   // Carries a session's handover note across its own compaction: session_compact
   // arms the text while the context still exists, and it is pasted back once
   // the terminal falls silent after the compact command.
-  const handoverDelivery = new HandoverDelivery(
-    ptyManager,
-    sessionManager,
-    async (sessionId, text) => { await deliverPromptSequenceToSession({
-      sessionId,
-      text,
-      ptyManager,
-      sessionManager,
-      configLoader,
-      verifyDelivery: { label: 'handover', delayMs: 4000, retrySubmit: true },
-    }); },
-    (sessionId, reason) => {
-      // The session's whole working state was riding on this note, and the
-      // context that produced it is already gone — silence would be worse.
-      const name = sessionManager.getSession(sessionId)?.name ?? sessionId;
-      notificationManager.notifyLlmDirected(
-        sessionId,
-        'Handover lost',
-        reason === 'cancelled'
-          ? `The pending handover for "${name}" was cancelled and will not be delivered.`
-          : reason === 'session-closed'
-            ? `"${name}" closed before its handover could be delivered.`
-            : `The handover for "${name}" could not be written to its terminal.`,
-      );
-    },
-    { nudge: sessionId => { ptyManager.write(sessionId, '\x1b\x1b\x1b', 'system'); } },
-  );
+  const handoverDelivery = createProfileOneHandoverDelivery(profileOneRuntime, ptyManager, notificationManager);
   helmControlService.setHandoverDelivery(handoverDelivery);
   isHandoverPending = (sessionId) => {
     const owner = registry.findSessionOwner(sessionId);
     return owner ? profileComposition.handoverDeliveries.get(owner.userProfileId)?.isPending(sessionId) ?? false : false;
   };
-  const cleanupHandover = setupHandoverHandlers(handoverDelivery, windowManager);
+  const activeHandoverDelivery = createActiveServiceProxy(() =>
+    profileComposition.handoverDeliveries.get(userProfileStore.getActiveProfileId()) ?? handoverDelivery);
+  const cleanupHandover = setupHandoverHandlers(activeHandoverDelivery, windowManager);
 
   profileComposition.registerProfileServices({
     stateDetector,
@@ -847,17 +823,7 @@ export function registerIPCHandlers(
   // Restore and schedule profile-local timers; the operator watcher remains on profile 1.
   profileComposition.startScheduledTasks();
   // After start(): the watcher's startup sweep reads the loaded timers.
-  new OperatorTaskWatcher({
-    onSessionUpdated: (fn) => { sessionManager.on('session:updated', fn); },
-    onSessionRemoved: (fn) => { sessionManager.on('session:removed', fn); },
-    onTimerChanged: (fn) => { scheduledTaskManager.on('task:changed', fn); },
-    getSession: (id) => sessionManager.getSession(id),
-    getPlan: (id) => planManager.getItem(id),
-    patchPlanTask: (id, patch) => { planManager.updateWithType(id, { task: patch }); },
-    listScheduledTasks: () => scheduledTaskManager.listTasks(),
-    runTaskNow: (id) => scheduledTaskManager.runTaskNow(id),
-    deleteTask: (id) => scheduledTaskManager.deleteTask(id),
-  }).start();
+  createProfileOneOperatorTaskWatcher(profileOneRuntime).start();
 
   const startMcpServer = () => {
     void localhostMcpServer.start({ attempts: MCP_BIND_ATTEMPTS, delayMs: MCP_BIND_RETRY_DELAY_MS }).catch((error) => {
@@ -907,7 +873,7 @@ export function registerIPCHandlers(
       } catch { return undefined; }
     },
   });
-  const remoteService = createRemoteServiceForRuntime(activeRuntime);
+  const remoteService = createRemoteServiceForRuntime(profileOneRuntime);
   helmControlService.setRemoteService(remoteService);
   // Reports this machine's per-peer grant so each peer can show the direction.
   const fleetAccessSync = new FleetAccessSync(peerConfigManager);
@@ -925,7 +891,7 @@ export function registerIPCHandlers(
     },
     rateLimiter: createDefaultPeerRateLimiter(),
     audit: peerAuditLog,
-    sessionLookup: sessionManager,
+    sessionLookup: profileOneRuntime.sessionManager,
   });
 
   // FleetController owns live transport and discovery; IPC handlers register
@@ -1050,10 +1016,16 @@ export function registerIPCHandlers(
   const remoteServiceForRuntime = (runtime: typeof activeRuntime) => runtime.userProfileId === '1'
     ? remoteService
     : createRemoteServiceForRuntime(runtime);
-  profileMcpServiceFactory = new ProfileMcpServiceFactory(
-    profileMcpRouter,
-    { service: helmControlService, loopDriver, uploads: artifactUploadService, remoteService },
-    runtime => createProfileRuntimeMcpServiceSet(runtime, {
+  const profileDomain = setupProfileRuntimeDomain({
+    profileStore: userProfileStore,
+    composition: profileComposition,
+    runtimeView: activeRuntimeView,
+    devices: mobileDeviceStore,
+    windowManager,
+    incomingWatcher,
+    router: profileMcpRouter,
+    baseServices: { service: helmControlService, loopDriver, uploads: artifactUploadService, remoteService },
+    createServices: runtime => createProfileRuntimeMcpServiceSet(runtime, {
       composition: profileComposition,
       ptyManager,
       notificationManager,
@@ -1065,8 +1037,9 @@ export function registerIPCHandlers(
       remoteServiceForRuntime,
       currentPeerLinkManager: () => fleetController?.currentLinkManager() ?? null,
     }),
-  );
-  for (const runtime of registry.all()) profileMcpServiceFactory.forRuntime(runtime);
+  });
+  profileMcpServiceFactory = profileDomain.serviceFactory;
+  const cleanupProfiles = profileDomain.cleanup;
   activeMobileGate = new MobileGate({
     deviceStore: mobileDeviceStore,
     profileExists: id => {
@@ -1132,7 +1105,7 @@ export function registerIPCHandlers(
     },
     journal: mobileChatJournal,
   });
-  bindProfileMcpServicesToMobile(profileMcpServiceFactory.all(), mobileChatBridge);
+  profileDomain.bindMobileChatBridge(mobileChatBridge);
   const mobileAlertNotifier = new MobileAlertNotifier(mobileChatBridge);
   mobileChatBridge.setChatMessageObserver(sessionId => mobileAlertNotifier.recordChatMessage(sessionId));
 
@@ -1164,32 +1137,15 @@ export function registerIPCHandlers(
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
   // Desktop voice uses configured OpenWhispr/Piper tools and shares chat replies.
-  const voiceTools = new CapabilityDetector(configLoader);
-  chatBroker.register(new DesktopVoiceBridge({
-    getOperatorId: () => operatorSessionManager.getOperatorId(),
-    emitReply: (reply) => {
-      const win = windowManager.getMainWindow();
-      if (win && !win.isDestroyed()) win.webContents.send('voice:operatorReply', reply);
-    },
-  }));
-  setupVoiceHandlers({
-    config: configLoader,
-    voiceService: new VoiceService({
-      getConfig: () => configLoader.getVoiceConfig(),
-      getTools: () => voiceTools.getVoiceTools(),
-      tempDir: getTempDir(dirname ?? process.cwd()),
-    }),
-    lastReply: () => {
-      const operatorId = operatorSessionManager.getOperatorId();
-      return operatorId ? mobileChatJournal.lastSessionMessage(operatorId) : null;
-    },
-    ask: async (text) => {
-      const operatorId = operatorSessionManager.getOperatorId();
-      if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
-      await deliverPromptSequenceToSession({ sessionId: operatorId, text, ptyManager, sessionManager, configLoader });
-      mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
-      return { ok: true };
-    },
+  setupProfileOneVoiceSurface({
+    profileOneRuntime,
+    ptyManager,
+    operatorSessionManager,
+    chatBroker,
+    mobileChatBridge,
+    mobileChatJournal,
+    windowManager,
+    tempDir: getTempDir(dirname ?? process.cwd()),
   });
   setupChatHandlers({
     history: sessionId => sessionManager.getSession(sessionId)
@@ -1214,7 +1170,12 @@ export function registerIPCHandlers(
         return;
       }
       const prompt = filePath ? `${text}\r\n\r\n[Attached file: ${filePath}]` : text;
-      await helmControlService.sendDesktopChatTextToSession(target.id, prompt);
+      await sendDesktopChatToSessionOwner({
+        registry,
+        serviceForProfile: id => profileMcpServiceFactory.forProfile(id).service,
+        sessionId: target.id,
+        text: prompt,
+      });
     },
     fanOut: async message => { await chatBroker.send(message); },
   });
@@ -1261,6 +1222,7 @@ export function registerIPCHandlers(
       ptyManager.beginShutdown();
       if (mcpStartTimer) clearTimeout(mcpStartTimer);
       cleanupSession();
+      cleanupProfiles();
       cancelAllPrompts();
       cleanupMess();
       clearInterval(timeTrackerTimer);

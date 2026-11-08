@@ -33,6 +33,30 @@ afterEach(() => {
 });
 
 describe('ProfileRuntimeComposition', () => {
+  it('creates and registers a new profile runtime after startup without restarting', () => {
+    const appData = root();
+    const globalConfigDir = join(appData, 'Helm', 'config');
+    const profileOneDir = getProfileConfigDir('1', appData);
+    write(globalConfigDir, 'settings.yaml', '{}\n');
+    write(profileOneDir, 'cli-types.yaml', 'test:\n  name: Test\n  displayName: Test\n');
+    const profiles = new UserProfileStore(globalConfigDir);
+    const configLoader = new ConfigLoader({ userProfileId: '1', profileConfigDir: profileOneDir, globalConfigDir });
+    const composition = new ProfileRuntimeComposition({ configLoader, userProfileStore: profiles, ptyManager: new PtyManager() });
+
+    try {
+      const profile = composition.createProfile('Three');
+      const runtime = composition.getRequiredRuntime(profile.id);
+
+      expect(runtime.userProfileId).toBe(profile.id);
+      expect(runtime.configDir).toBe(getProfileConfigDir(profile.id, appData));
+      expect(composition.suggestionUsageByProfile.has(profile.id)).toBe(true);
+      expect(composition.subagentIngestors.has(profile.id)).toBe(true);
+      expect(profiles.list().some(item => item.id === profile.id)).toBe(true);
+    } finally {
+      composition.dispose();
+    }
+  });
+
   it('starts every profile scheduler, routes quick compact by owner, and loads shared config once', async () => {
     vi.useFakeTimers();
     const appData = root();

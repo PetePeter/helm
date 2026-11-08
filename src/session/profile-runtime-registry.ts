@@ -15,6 +15,13 @@ export class ProfileRuntimeRegistry {
     this.runtimes.set(runtime.userProfileId, runtime);
   }
 
+  unregister(userProfileId: string): ProfileRuntime | undefined {
+    const runtime = this.runtimes.get(userProfileId);
+    if (!runtime) return undefined;
+    this.runtimes.delete(userProfileId);
+    return runtime;
+  }
+
   getRequiredRuntime(userProfileId: string): ProfileRuntime {
     const runtime = this.runtimes.get(userProfileId);
     if (!runtime) throw new Error(`Unknown user profile: ${userProfileId}`);

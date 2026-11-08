@@ -15,6 +15,7 @@ import { mobileClient, eventsClient } from '../ipc/clients.js';
 export interface MobileDeviceItem {
   id: string;
   machineId: string;
+  userProfileId: string;
   name: string;
   allow: string[];
   enabled: boolean;

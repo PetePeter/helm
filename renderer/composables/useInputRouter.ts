@@ -37,6 +37,7 @@ export interface InputRouterDeps {
   focusedPaneId?: Ref<PaneId | null>;
   /** Last focusable item identity recorded inside a pane. */
   getFocusedItemId?: (paneId: PaneId) => string | null;
+  openProfileSwitcher?: () => void;
 }
 
 export function useInputRouter(deps: InputRouterDeps) {
@@ -107,6 +108,11 @@ export function useInputRouter(deps: InputRouterDeps) {
         deps.settingsVisible.value = false;
         deps.navStore.closeSettings();
       }
+      return;
+    }
+
+    if (button === 'Back' && deps.openProfileSwitcher) {
+      deps.openProfileSwitcher();
       return;
     }
 

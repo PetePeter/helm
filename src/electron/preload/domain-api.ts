@@ -1646,9 +1646,48 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   // ---- mobile (paired phones over BLE) --------------------------------------
 
+  profileList: (): Promise<Array<{
+    id: string; name: string; hasPin: boolean; isActive: boolean;
+    sessionCount: number; recoverableSessionCount: number; deviceCount: number; canDelete: boolean;
+  }>> => ipcRenderer.invoke('profile:list'),
+
+  profileActive: (): Promise<{ id: string; name: string; hasPin: boolean }> => ipcRenderer.invoke('profile:active'),
+
+  profileCreate: (name: string): Promise<{ id: string; name: string; hasPin: boolean }> =>
+    ipcRenderer.invoke('profile:create', name),
+
+  profileRename: (id: string, name: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('profile:rename', id, name),
+
+  profileSetPin: (id: string, pin: string | null): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('profile:setPin', id, pin),
+
+  profileSwitch: (id: string, pin?: string): Promise<{
+    ok: boolean; error?: string; pinRequired?: boolean; retryAfterMs?: number;
+  }> => ipcRenderer.invoke('profile:switch', id, pin),
+
+  profileDelete: (id: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('profile:delete', id),
+
+  profileBindDevice: (deviceId: string, profileId: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('profile:bindDevice', deviceId, profileId),
+
+  profileOnChanged: (callback: (profile: { id: string; name: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, profile: { id: string; name: string }) => callback(profile);
+    ipcRenderer.on('profile:changed', listener);
+    return () => ipcRenderer.removeListener('profile:changed', listener);
+  },
+
+  profileOnRegistryChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('profile:registryChanged', listener);
+    return () => ipcRenderer.removeListener('profile:registryChanged', listener);
+  },
+
   /** Paired phones with live online status + enable flag. Never carries a PSK. */
   mobileList: (): Promise<Array<{
     id: string;
+    userProfileId: string;
     machineId: string;
     name: string;
     allow: string[];

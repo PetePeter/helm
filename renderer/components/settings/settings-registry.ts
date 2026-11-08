@@ -29,6 +29,7 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
   { id: 'peers', label: 'Fleet', group: 'Connections', icon: 'link' },
   { id: 'mcp', label: 'MCP server', group: 'Connections', icon: 'plug' },
   { id: 'cli-integrations', label: 'CLI integrations', group: 'Connections', icon: 'hook' },
+  { id: 'user-profiles', label: 'Profiles', group: 'System', icon: 'users' },
   { id: 'operator', label: 'Operator', group: 'System', icon: 'mic' },
   { id: 'voice', label: 'Voice', group: 'System', icon: 'speaker' },
   { id: 'updates', label: 'Updates', group: 'System', icon: 'download' },
@@ -77,5 +78,6 @@ export const SETTINGS_ICONS: Record<string, string> = {
   speaker: 'M11 5L6 9H2v6h4l5 4zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+  users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 8v6M23 11h-6',
   moon: 'M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13z',
 };

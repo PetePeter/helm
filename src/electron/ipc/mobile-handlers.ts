@@ -91,6 +91,7 @@ export interface MobileLanStatus {
 /** A paired phone as the settings tab renders it. */
 export interface MobileDeviceListItem {
   id: string;
+  userProfileId: string;
   machineId: string;
   name: string;
   allow: string[];
@@ -111,6 +112,7 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
   ipcMain.handle('mobile:list', (): MobileDeviceListItem[] =>
     deps.deviceStore.list().map((device) => ({
       id: device.id,
+      userProfileId: device.userProfileId ?? '1',
       machineId: device.machineId,
       name: device.name,
       allow: device.allow,

@@ -7,10 +7,22 @@
  * back the other way on `voice:operatorReply` (see DesktopVoiceBridge).
  */
 import { ipcMain } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { logger } from '../../utils/logger.js';
 import type { VoiceConfig } from '../../config/loader.js';
-import type { VoiceResult, VoiceService } from '../../voice/voice-service.js';
+import { VoiceService as DefaultVoiceService, type VoiceResult, type VoiceService } from '../../voice/voice-service.js';
 import { VOICE_CONFIG_FIELDS } from '../../config/voice-config-manager.js';
+import { CapabilityDetector } from '../../session/capability-detector.js';
+import type { ProfileRuntime } from '../../session/profile-runtime.js';
+import type { PtyManager } from '../../session/pty-manager.js';
+import type { OperatorSessionManager } from '../../session/operator-session-manager.js';
+import type { ChatBroker } from '../../session/chat/chat-broker.js';
+import type { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
+import type { MobileChatJournal } from '../../mobile/mobile-chat-journal.js';
+import type { WindowManager } from '../window-manager.js';
+import { setupOperatorHandlers } from './operator-handlers.js';
+import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
+import { createProfileOnePromptDelivery } from './profile-runtime-routing.js';
 
 export interface VoiceHandlerDeps {
   config: {
@@ -62,5 +74,48 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
       logger.error(`[IPC] voice:ask failed: ${error}`);
       return { ok: false, error: String(error) };
     }
+  });
+}
+
+export function setupProfileOneVoiceSurface(options: {
+  profileOneRuntime: ProfileRuntime;
+  ptyManager: PtyManager;
+  operatorSessionManager: OperatorSessionManager;
+  chatBroker: ChatBroker;
+  mobileChatBridge: MobileChatBridge;
+  mobileChatJournal: MobileChatJournal;
+  windowManager: WindowManager;
+  tempDir: string;
+}): void {
+  const { profileOneRuntime, operatorSessionManager, chatBroker, mobileChatBridge, mobileChatJournal } = options;
+  if (profileOneRuntime.userProfileId !== '1') throw new Error('Voice operator requires profileOneRuntime');
+  setupOperatorHandlers(profileOneRuntime.configLoader, operatorSessionManager);
+  const voiceTools = new CapabilityDetector(profileOneRuntime.configLoader);
+  chatBroker.register(new DesktopVoiceBridge({
+    getOperatorId: () => operatorSessionManager.getOperatorId(),
+    emitReply: reply => {
+      const win = options.windowManager.getMainWindow();
+      if (win && !win.isDestroyed()) win.webContents.send('voice:operatorReply', reply);
+    },
+  }));
+  const deliverPrompt = createProfileOnePromptDelivery(profileOneRuntime, options.ptyManager);
+  setupVoiceHandlers({
+    config: profileOneRuntime.configLoader,
+    voiceService: new DefaultVoiceService({
+      getConfig: () => profileOneRuntime.configLoader.getVoiceConfig(),
+      getTools: () => voiceTools.getVoiceTools(),
+      tempDir: options.tempDir,
+    }),
+    lastReply: () => {
+      const operatorId = operatorSessionManager.getOperatorId();
+      return operatorId ? mobileChatJournal.lastSessionMessage(operatorId) : null;
+    },
+    ask: async text => {
+      const operatorId = operatorSessionManager.getOperatorId();
+      if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
+      await deliverPrompt(operatorId, text);
+      mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
+      return { ok: true };
+    },
   });
 }

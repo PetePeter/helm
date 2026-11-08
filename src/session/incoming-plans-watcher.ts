@@ -42,12 +42,12 @@ export interface IncomingErrorClearedEvent {
 
 export class IncomingPlansWatcher extends EventEmitter {
   private watcher: FSWatcher | null = null;
-  private readonly incomingDir: string;
+  private incomingDir: string;
   private readonly failedFiles = new Map<string, string>();
 
   constructor(
-    private readonly planManager: PlanManager,
-    private readonly suggestedPlanService: SuggestedPlanService,
+    private planManager: PlanManager,
+    private suggestedPlanService: SuggestedPlanService,
     configDir: string,
   ) {
     super();
@@ -101,6 +101,17 @@ export class IncomingPlansWatcher extends EventEmitter {
       this.failedFiles.clear();
       logger.info('[IncomingPlansWatcher] Stopped');
     }
+  }
+
+  /** Rebind the single desktop watcher after its active profile changes. */
+  async switchTo(planManager: PlanManager, suggestedPlanService: SuggestedPlanService, configDir: string): Promise<void> {
+    const shouldRestart = this.watcher !== null;
+    await this.close();
+    this.planManager = planManager;
+    this.suggestedPlanService = suggestedPlanService;
+    this.incomingDir = join(configDir, 'plans', 'incoming');
+    this.failedFiles.clear();
+    if (shouldRestart) this.start();
   }
 
   /** List full paths of JSON files currently in the incoming directory. */

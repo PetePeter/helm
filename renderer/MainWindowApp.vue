@@ -116,6 +116,8 @@ import CliIntegrationsTab from './components/settings/pages/CliIntegrationsTab.v
 import MobilePairingDialog from './components/modals/MobilePairingDialog.vue';
 import { usePeers } from './composables/usePeers.js';
 import SkillsTab from './components/settings/pages/SkillsTab.vue';
+import ProfilesTab from './components/settings/pages/ProfilesTab.vue';
+import ProfileSwitcher from './components/profiles/ProfileSwitcher.vue';
 
 import { loadSessions } from './screens/sessions.js';
 
@@ -146,6 +148,7 @@ import type { DockMode, DockSide, DropTarget, PaneId } from './dock-types.js';
 
 const activeView = ref<'terminal' | 'plan'>('terminal');
 const settingsVisible = ref(false);
+const profileSwitcherRef = ref<{ open: () => void } | null>(null);
 const terminalContainerRef = ref<HTMLElement | null>(null);
 const chipBarStore = useChipBarStore();
 const navStore = useNavigationStore();
@@ -562,6 +565,7 @@ const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRoute
   itemEditorRef,
   settingsPanelRef,
   navStore: inputNavigation,
+  openProfileSwitcher: () => profileSwitcherRef.value?.open(),
   focusedPaneId: dockWorkspace.focusedPaneId,
   getFocusedItemId: dockWorkspace.getFocusedItemId,
 });
@@ -1103,6 +1107,7 @@ onUnmounted(() => {
         <span class="sidebar-tagline">steer your fleet of agents</span>
       </span>
       <div class="sidebar-actions">
+        <ProfileSwitcher ref="profileSwitcherRef" @manage="openSettingsTab('user-profiles')" />
         <DockViewMenu
           :open="dockViewMenuOpen"
           :items="dockViewItems"
@@ -1246,6 +1251,9 @@ onUnmounted(() => {
               />
               <MobileTab
                 v-else-if="activeTab === 'mobile'"
+              />
+              <ProfilesTab
+                v-else-if="activeTab === 'user-profiles'"
               />
               <CliIntegrationsTab
                 v-else-if="activeTab === 'cli-integrations'"

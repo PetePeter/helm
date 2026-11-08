@@ -135,6 +135,18 @@ export const PRELOAD_API_DOMAINS = {
     'toolsSetCliTypeProvider',
     'toolsReorderCliType',
   ],
+  profiles: [
+    'profileList',
+    'profileActive',
+    'profileCreate',
+    'profileRename',
+    'profileSetPin',
+    'profileSwitch',
+    'profileDelete',
+    'profileBindDevice',
+    'profileOnChanged',
+    'profileOnRegistryChanged',
+  ],
   projects: [
     'projectList',
     'projectGet',

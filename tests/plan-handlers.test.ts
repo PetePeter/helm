@@ -78,7 +78,7 @@ describe('plan IPC handlers', () => {
       accept: vi.fn(() => ({ ok: true })),
       reject: vi.fn(() => ({ ok: true, deleted: false })),
     };
-    setupPlanHandlers(planManager, undefined, undefined, undefined, undefined, suggestionService as never);
+    setupPlanHandlers(planManager, undefined, undefined, undefined, undefined, () => suggestionService as never);
   });
 
   // ─── Registration ─────────────────────────────────────

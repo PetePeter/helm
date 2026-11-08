@@ -24,6 +24,7 @@ export const terminalClient = domainClient('terminal');
 export const deliveryClient = domainClient('delivery');
 export const configClient = domainClient('config');
 export const toolsClient = domainClient('tools');
+export const profileClient = domainClient('profiles');
 export const projectsClient = domainClient('projects');
 export const messClient = domainClient('mess');
 export const timeClient = domainClient('time');

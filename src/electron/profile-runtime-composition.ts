@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path';
 import { statSync } from 'node:fs';
 import type { ConfigLoader } from '../config/loader.js';
-import type { UserProfileStore } from '../config/user-profile-store.js';
+import type { UserProfileRecord, UserProfileStore } from '../config/user-profile-store.js';
 import { HandoverDelivery } from '../session/handover-delivery.js';
 import type { NotificationManager } from '../session/notification-manager.js';
 import type { PtyManager } from '../session/pty-manager.js';
@@ -73,71 +73,100 @@ export class ProfileRuntimeComposition {
 
   private readonly deliveryServices = new Map<string, HelmSessionDeliveryService>();
   private readonly quickCompactHandlers = new Map<string, QuickCompactHandler>();
-  private readonly sessionListenerCleanup: Array<() => void> = [];
+  private readonly sessionListenerCleanup = new Map<string, Array<() => void>>();
+  private readonly sessionRemovedProfiles = new Set<string>();
   private readonly ptyManager: PtyManager;
+  private readonly rootConfigLoader: ConfigLoader;
+  private readonly userProfileStore: UserProfileStore;
+  private readonly appDataBase: string;
+  private profileServices?: RegisterProfileServicesOptions;
+  private autoMemoryHost?: ApiSessionHost;
+  private sessionRemovedHandler?: (runtime: ProfileRuntime, event: SessionRemovedEvent) => void;
   private scheduledTasksStarted = false;
   private disposed = false;
 
   constructor(options: ProfileRuntimeCompositionOptions) {
     const { configLoader, userProfileStore, ptyManager } = options;
     this.ptyManager = ptyManager;
+    this.rootConfigLoader = configLoader;
+    this.userProfileStore = userProfileStore;
     userProfileStore.ensureDefaultProfile();
-    const appDataBase = dirname(dirname(configLoader.getGlobalConfigDir()));
+    this.appDataBase = dirname(dirname(configLoader.getGlobalConfigDir()));
 
-    for (const profile of userProfileStore.list()) {
-      const configDir = profile.id === configLoader.getUserProfileId()
-        ? configLoader.getProfileConfigDir()
-        : getProfileConfigDir(profile.id, appDataBase);
-      const profileLoader = profile.id === configLoader.getUserProfileId()
-        ? configLoader
-        : configLoader.createProfileView(profile.id, configDir);
-      const runtime = createProfileRuntime({
-        userProfileId: profile.id,
-        configDir,
-        configLoader: profileLoader,
-        ptyManager,
-        scheduledTaskOptions: {
-          quickCompact: (sessionId, prompt) => this.quickCompactSession(sessionId, prompt),
-        },
-      });
-      this.registry.register(runtime);
+    for (const profile of userProfileStore.list()) this.addRuntime(profile);
+  }
 
-      const delivery = new HelmSessionDeliveryService(runtime.sessionManager, ptyManager, profileLoader);
-      this.deliveryServices.set(profile.id, delivery);
-      this.quickCompactHandlers.set(profile.id, async (sessionId, prompt) => {
-        await delivery.quickCompactSession(sessionId, { handover: prompt });
-      });
-      this.autoFreezers.set(profile.id, new AutoFreezer(
-        runtime.sessionManager,
-        cliType => runtime.configLoader.getCliTypeEntry(cliType),
-      ));
-      this.keepWarmers.set(profile.id, new KeepWarmer(
-        runtime.sessionManager,
-        async (sessionId, text) => {
-          await deliverPromptSequenceToSession({
-            sessionId,
-            text,
-            ptyManager,
-            sessionManager: runtime.sessionManager,
-            configLoader: runtime.configLoader,
-          });
-        },
-        cliType => runtime.configLoader.getCliTypeEntry(cliType),
-      ));
-    }
-    for (const runtime of this.registry.all()) {
-      this.registerSuggestions(runtime);
-      this.subagentIngestors.set(runtime.userProfileId, new SubagentTokenIngest(
-        runtime.timeTracker,
-        !runtime.timeTracker.hasSavedBaselines,
-      ));
+  createProfile(name: string): UserProfileRecord {
+    const profile = this.userProfileStore.create(name);
+    try {
+      this.addRuntime(profile);
+      return profile;
+    } catch (error) {
+      if (this.registry.all().some(runtime => runtime.userProfileId === profile.id)) {
+        this.removeProfileRuntime(profile.id);
+      }
+      this.userProfileStore.remove(profile.id);
+      throw error;
     }
   }
 
+  removeProfileRuntime(userProfileId: string): ProfileRuntime {
+    if (userProfileId === '1') throw new Error('The default profile runtime cannot be removed');
+    const runtime = this.registry.getRequiredRuntime(userProfileId);
+    if (runtime.sessionManager.getAllSessions().length || runtime.recycleBinManager.list().length) {
+      throw new Error('Close or remove this profile’s sessions before deleting it');
+    }
+    this.disposeRuntime(userProfileId);
+    return this.registry.unregister(userProfileId)!;
+  }
+
+  private addRuntime(profile: UserProfileRecord): ProfileRuntime {
+    const configDir = profile.id === this.rootConfigLoader.getUserProfileId()
+      ? this.rootConfigLoader.getProfileConfigDir()
+      : getProfileConfigDir(profile.id, this.appDataBase);
+    const configLoader = profile.id === this.rootConfigLoader.getUserProfileId()
+      ? this.rootConfigLoader
+      : this.rootConfigLoader.createProfileView(profile.id, configDir);
+    const runtime = createProfileRuntime({
+      userProfileId: profile.id, configDir, configLoader, ptyManager: this.ptyManager,
+      scheduledTaskOptions: { quickCompact: (id, prompt) => this.quickCompactSession(id, prompt) },
+    });
+    this.registry.register(runtime);
+
+    const delivery = new HelmSessionDeliveryService(runtime.sessionManager, this.ptyManager, configLoader);
+    this.deliveryServices.set(profile.id, delivery);
+    this.quickCompactHandlers.set(profile.id, async (id, prompt) => {
+      await delivery.quickCompactSession(id, { handover: prompt });
+    });
+    this.autoFreezers.set(profile.id, new AutoFreezer(runtime.sessionManager, cli => configLoader.getCliTypeEntry(cli)));
+    this.keepWarmers.set(profile.id, new KeepWarmer(
+      runtime.sessionManager,
+      async (id, text) => {
+        await deliverPromptSequenceToSession({
+        sessionId: id, text, ptyManager: this.ptyManager, sessionManager: runtime.sessionManager, configLoader,
+        });
+      },
+      cli => configLoader.getCliTypeEntry(cli),
+    ));
+    this.registerSuggestions(runtime);
+    this.subagentIngestors.set(profile.id, new SubagentTokenIngest(runtime.timeTracker, !runtime.timeTracker.hasSavedBaselines));
+    if (this.profileServices) this.registerProfileServices(this.profileServices);
+    if (this.autoMemoryHost) this.registerAutoMemoryServices(this.autoMemoryHost);
+    if (this.sessionRemovedHandler) this.registerSessionRemovedHandler(this.sessionRemovedHandler);
+    if (this.scheduledTasksStarted) {
+      runtime.scheduledTaskManager.start();
+      this.autoFreezers.get(profile.id)?.start();
+      this.keepWarmers.get(profile.id)?.start();
+    }
+    return runtime;
+  }
+
   registerAutoMemoryServices(apiSessionHost: ApiSessionHost): void {
-    if (this.recordingModelRunners.size > 0) throw new Error('Auto-memory services are already registered');
+    if (this.autoMemoryHost && this.autoMemoryHost !== apiSessionHost) throw new Error('Auto-memory services already use another API host');
+    this.autoMemoryHost = apiSessionHost;
 
     for (const runtime of this.registry.all()) {
+      if (this.recordingModelRunners.has(runtime.userProfileId)) continue;
       const configLoader = runtime.configLoader;
       const runner = new RecordingModelRunner({
         getRecordingModel: () => configLoader.getAutoMemoryConfig().recordingModel,
@@ -221,10 +250,12 @@ export class ProfileRuntimeComposition {
 
   registerProfileServices(options: RegisterProfileServicesOptions): void {
     const { stateDetector, notificationManager, hookReceiver, profileOneHandover, chatBroker, apiContextSize, onTurnEnded } = options;
-    if (this.hookTrackers.size > 0) throw new Error('Profile services are already registered');
+    if (this.profileServices && this.profileServices !== options) throw new Error('Profile services already use another dependency set');
+    this.profileServices = options;
 
     for (const runtime of this.registry.all()) {
       const userProfileId = runtime.userProfileId;
+      if (this.hookTrackers.has(userProfileId)) continue;
       const handover = userProfileId === '1'
         ? profileOneHandover
         : this.createHandoverDelivery(runtime, notificationManager);
@@ -279,7 +310,7 @@ export class ProfileRuntimeComposition {
       };
       runtime.sessionManager.on('session:added', syncSessionFreeze);
       runtime.sessionManager.on('session:updated', syncSessionFreeze);
-      this.sessionListenerCleanup.push(() => {
+      this.trackSessionCleanup(userProfileId, () => {
         runtime.sessionManager.off('session:added', syncSessionFreeze);
         runtime.sessionManager.off('session:updated', syncSessionFreeze);
       });
@@ -316,10 +347,14 @@ export class ProfileRuntimeComposition {
   }
 
   registerSessionRemovedHandler(handler: (runtime: ProfileRuntime, event: SessionRemovedEvent) => void): void {
+    if (this.sessionRemovedHandler && this.sessionRemovedHandler !== handler) throw new Error('A session removal handler is already registered');
+    this.sessionRemovedHandler = handler;
     for (const runtime of this.registry.all()) {
+      if (this.sessionRemovedProfiles.has(runtime.userProfileId)) continue;
       const onRemoved = (event: SessionRemovedEvent) => handler(runtime, event);
       runtime.sessionManager.on('session:removed', onRemoved);
-      this.sessionListenerCleanup.push(() => runtime.sessionManager.off('session:removed', onRemoved));
+      this.trackSessionCleanup(runtime.userProfileId, () => runtime.sessionManager.off('session:removed', onRemoved));
+      this.sessionRemovedProfiles.add(runtime.userProfileId);
     }
   }
 
@@ -401,7 +436,8 @@ export class ProfileRuntimeComposition {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const cleanup of this.sessionListenerCleanup.splice(0)) cleanup();
+    for (const cleanups of this.sessionListenerCleanup.values()) for (const cleanup of cleanups) cleanup();
+    this.sessionListenerCleanup.clear();
     for (const tracker of this.hookTrackers.values()) tracker.dispose();
     for (const driver of this.loopDrivers.values()) driver.dispose();
     for (const tracker of this.contextUsageTrackers.values()) tracker.stop();
@@ -414,6 +450,43 @@ export class ProfileRuntimeComposition {
     this.cliAutoMemories.clear();
     this.subagentIngestors.clear();
     for (const runtime of this.registry.all()) runtime.dispose();
+  }
+
+  private trackSessionCleanup(userProfileId: string, cleanup: () => void): void {
+    const cleanups = this.sessionListenerCleanup.get(userProfileId) ?? [];
+    cleanups.push(cleanup);
+    this.sessionListenerCleanup.set(userProfileId, cleanups);
+  }
+
+  private disposeRuntime(userProfileId: string): void {
+    for (const cleanup of this.sessionListenerCleanup.get(userProfileId) ?? []) cleanup();
+    this.sessionListenerCleanup.delete(userProfileId);
+    this.sessionRemovedProfiles.delete(userProfileId);
+    this.hookTrackers.get(userProfileId)?.dispose();
+    this.loopDrivers.get(userProfileId)?.dispose();
+    this.contextUsageTrackers.get(userProfileId)?.stop();
+    this.autoFreezers.get(userProfileId)?.dispose();
+    this.keepWarmers.get(userProfileId)?.dispose();
+    this.messNotifiers.get(userProfileId)?.dispose();
+    this.handoverDeliveries.get(userProfileId)?.dispose();
+    const runtime = this.registry.getRequiredRuntime(userProfileId);
+    runtime.dispose();
+    this.hookTrackers.delete(userProfileId);
+    this.loopDrivers.delete(userProfileId);
+    this.contextUsageTrackers.delete(userProfileId);
+    this.autoFreezers.delete(userProfileId);
+    this.keepWarmers.delete(userProfileId);
+    this.messNotifiers.delete(userProfileId);
+    this.handoverDeliveries.delete(userProfileId);
+    this.chatServices.delete(userProfileId);
+    this.recordingModelRunners.delete(userProfileId);
+    this.autoMemoryRecorders.delete(userProfileId);
+    this.cliAutoMemories.delete(userProfileId);
+    this.subagentIngestors.delete(userProfileId);
+    this.suggestionUsageByProfile.delete(userProfileId);
+    this.suggestionServices.delete(userProfileId);
+    this.deliveryServices.delete(userProfileId);
+    this.quickCompactHandlers.delete(userProfileId);
   }
 
   private registerSuggestions(runtime: ProfileRuntime): void {

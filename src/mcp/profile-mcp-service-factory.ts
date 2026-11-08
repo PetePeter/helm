@@ -185,6 +185,16 @@ export class ProfileMcpServiceFactory {
     for (const set of this.services.values()) set.setPeerLinkManager?.(manager);
   }
 
+  removeProfile(userProfileId: string): void {
+    if (userProfileId === '1') throw new Error('The default profile service cannot be removed');
+    const set = this.services.get(userProfileId);
+    if (!set) return;
+    set.dispose?.();
+    set.service.dispose();
+    set.remoteService?.dispose();
+    this.services.delete(userProfileId);
+  }
+
   dispose(): void {
     for (const set of this.services.values()) {
       set.dispose?.();

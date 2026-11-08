@@ -18,7 +18,7 @@ Gamepad button and keyboard shortcut mappings.
 | Left Trigger | Spawn Claude Code |
 | Right Bumper | Spawn Copilot CLI |
 | Left / Right Bumper (Quick Spawn focused) | Previous / next machine tab; wraps |
-| Back/Start | Switch profile (previous/next) |
+| Back | Open the profile switcher; use D-Pad Up/Down, A to select, and B to close |
 | Sandwich/Guide | Focus hub window + show sessions screen |
 | Any button bound to `voice-talk` | Hold to talk to Helm (the operator); release sends. The release is honoured from any pane |
 | Any button bound to `voice-call` | Start / hang up a hands-free call with Helm (voice-activity detection sends each pause). A press while the mic is still opening cancels. Starting a call brings the Sessions pane (and its Helm section) into view |

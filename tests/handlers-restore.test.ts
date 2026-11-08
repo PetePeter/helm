@@ -131,7 +131,18 @@ vi.mock('../src/electron/ipc/config-handlers.js', () => ({
   setupConfigHandlers: vi.fn(),
 }));
 vi.mock('../src/electron/ipc/profile-handlers.js', () => ({
-  setupProfileHandlers: vi.fn(),
+  setupProfileRuntimeDomain: vi.fn(({ baseServices }: any) => ({
+    serviceFactory: {
+      forProfile: vi.fn(() => baseServices),
+      forCaller: vi.fn(() => baseServices),
+      all: vi.fn(() => [baseServices]),
+      sessionFeeds: vi.fn(() => []),
+      dispose: vi.fn(),
+      setPeerLinkManager: vi.fn(),
+    },
+    cleanup: vi.fn(),
+    bindMobileChatBridge: vi.fn(),
+  })),
 }));
 vi.mock('../src/electron/ipc/tools-handlers.js', () => ({
   setupToolsHandlers: vi.fn(),
@@ -261,6 +272,7 @@ import { logger } from '../src/utils/logger.js';
 import { SessionManager } from '../src/session/manager.js';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
+import { setupPlanHandlers } from '../src/electron/ipc/plan-handlers.js';
 
 describe('registerIPCHandlers restore wiring', () => {
   beforeEach(() => {
@@ -270,6 +282,13 @@ describe('registerIPCHandlers restore wiring', () => {
   it('calls restoreSessions() on startup', () => {
     registerIPCHandlers(undefined, new ConfigLoader() as any);
     expect(mockRestoreSessions).toHaveBeenCalledOnce();
+  });
+
+  it('defers suggested-plan service lookup until an IPC action runs', () => {
+    registerIPCHandlers(undefined, new ConfigLoader() as any);
+
+    const setupArgs = (setupPlanHandlers as any).mock.calls.at(-1);
+    expect(typeof setupArgs[5]).toBe('function');
   });
 
 });

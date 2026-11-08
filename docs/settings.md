@@ -32,7 +32,11 @@ Nav groups:
 - **Sessions:** Tools, Session list, Bindings, Chip actions.
 - **Knowledge:** Projects, Skills, Auto memory, Dreaming.
 - **Connections:** Mobile, Fleet, MCP server, CLI integrations.
-- **System:** Operator, Voice, Updates, Scheduled tasks.
+- **System:** Profiles, Operator, Voice, Updates, Scheduled tasks.
+
+**Profiles** creates and renames user profiles, changes the active profile's optional PIN, and deletes an inactive profile only when it has no sessions, recoverable sessions, or paired devices. The active desktop profile is also visible in the main window header; its switcher supports mouse, keyboard, and gamepad input. See [user-profiles.md](user-profiles.md) for profile ownership and switch behavior.
+
+The **Mobile** page assigns each paired phone or tablet to a profile. The mobile gate applies that assignment to each request, so moving a device changes which profile's tools and sessions it can reach.
 
 **Dreaming** is in Knowledge. Its page
 keeps the shared dream prompt and the project-specific schedule controls

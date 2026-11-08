@@ -13,8 +13,9 @@
  * (it advertises) and Helm scans for it. The copy has to say so, or the user
  * sits waiting for a button that does not exist on this side.
  */
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { useMobileDevices, type MobileDeviceItem } from '../../../composables/useMobileDevices.js';
+import { profileClient } from '../../../ipc/clients.js';
 import { useCopiedFlash } from '../../../composables/useCopiedFlash.js';
 import { ALLOW_PRESETS } from '../../../lib/mobile-allow-presets.js';
 import { getPeerStatusColor } from '../../../state-colors.js';
@@ -23,6 +24,7 @@ import QrCode from './QrCode.vue';
 const {
   devices,
   ensureSubscribed,
+  refresh: refreshDevices,
   startPairing,
   setAllowList,
   setEnabled,
@@ -43,11 +45,34 @@ const copiedUrl = ref(false);
 const { copied: copiedAddress, copy: copyAddress } = useCopiedFlash();
 /** The port box is a draft until committed, so typing "4" is not port 4. */
 const portDraft = ref('');
+type UserProfile = Awaited<ReturnType<typeof profileClient.profileList>>[number];
+const profiles = ref<UserProfile[]>([]);
+const profileError = ref('');
+let stopProfileRegistryChanged: (() => void) | undefined;
 
 onMounted(() => {
   ensureSubscribed();
   void loadApkRelease();
+  void loadProfiles();
+  stopProfileRegistryChanged = profileClient.profileOnRegistryChanged(() => { void loadProfiles(); });
 });
+onUnmounted(() => stopProfileRegistryChanged?.());
+
+async function loadProfiles(): Promise<void> {
+  profiles.value = await profileClient.profileList();
+}
+
+async function onProfileChange(device: MobileDeviceItem, event: Event): Promise<void> {
+  const profileId = (event.target as HTMLSelectElement).value;
+  profileError.value = '';
+  const result = await profileClient.profileBindDevice(device.id, profileId);
+  if (!result.ok) {
+    profileError.value = result.error ?? `Could not assign ${device.name}`;
+    await refreshDevices();
+    return;
+  }
+  await refreshDevices();
+}
 
 /**
  * Toggling LAN is instant; a port change is committed on blur or Enter.
@@ -240,7 +265,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
 
     <section class="mobile-section settings-span">
       <div class="mobile-section-head">
-        <h3 class="mobile-section-title">Paired phones</h3>
+        <h3 class="mobile-section-title">Paired phones and tablets</h3>
         <button class="btn btn-primary mobile-pair-btn" @click="startPairing()">
           Pair a phone
         </button>
@@ -256,6 +281,17 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
           <span class="mobile-dot" :style="{ background: dotColor(device) }"></span>
           <span class="mobile-name">{{ device.name }}</span>
           <span class="mobile-seen">{{ lastSeenLabel(device) }}</span>
+
+          <label class="mobile-profile-label">
+            <span>Profile</span>
+            <select
+              :value="device.userProfileId"
+              :aria-label="`Profile for ${device.name}`"
+              @change="onProfileChange(device, $event)"
+            >
+              <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+            </select>
+          </label>
 
           <span class="mobile-spacer"></span>
 
@@ -321,6 +357,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
           </div>
         </div>
       </div>
+      <p v-if="profileError" class="mobile-error" role="alert">{{ profileError }}</p>
     </section>
   </div>
 </template>
@@ -396,10 +433,13 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
   flex-direction: column;
   gap: 6px;
 }
-.mobile-row-main { display: flex; align-items: center; gap: 8px; }
+.mobile-row-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mobile-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .mobile-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
 .mobile-seen { font-size: 0.76rem; color: var(--text-secondary); }
+.mobile-profile-label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 0.76rem; }
+.mobile-profile-label select { max-width: 150px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.76rem; }
+.mobile-error { margin: 0; color: var(--danger); font-size: 0.78rem; }
 .mobile-spacer { margin-left: auto; }
 .mobile-revoke-armed { font-weight: 600; }
 

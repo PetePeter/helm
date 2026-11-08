@@ -23,7 +23,7 @@ export function setupPlanHandlers(
   windowManagerOrWatcher?: WindowManager | IncomingPlansWatcher,
   incomingWatcherArg?: IncomingPlansWatcher,
   moduleDirname?: string,
-  suggestedPlanService?: SuggestedPlanService,
+  getSuggestedPlanService?: () => SuggestedPlanService | null | undefined,
   attachmentManager?: PlanAttachmentManager,
 ): void {
   const windowManager = isWindowManagerLike(windowManagerOrWatcher) ? windowManagerOrWatcher : undefined;
@@ -32,6 +32,11 @@ export function setupPlanHandlers(
     : incomingWatcherArg;
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
   const plannerWindowIds = new Map<string, number>();
+  const requireSuggestedPlanService = () => {
+    const service = getSuggestedPlanService?.();
+    if (!service) throw new Error('Suggested plan support is unavailable');
+    return service;
+  };
 
   const getFolderLabel = (dirPath: string): string => {
     const parts = dirPath.split(/[\\/]+/).filter(Boolean);
@@ -103,8 +108,7 @@ export function setupPlanHandlers(
     const item = planManager.getItem(id);
     let result: boolean;
     if (item?.status === 'suggested') {
-      if (!suggestedPlanService) throw new Error('Suggested plan support is unavailable');
-      result = suggestedPlanService.reject(item.id).deleted;
+      result = requireSuggestedPlanService().reject(item.id).deleted;
     } else {
       result = planManager.delete(id);
     }
@@ -162,10 +166,10 @@ export function setupPlanHandlers(
     },
   );
 
-  if (suggestedPlanService) {
-    ipcMain.handle('plan:acceptSuggestion', (_event, id: string) => suggestedPlanService.accept(id));
+  if (getSuggestedPlanService) {
+    ipcMain.handle('plan:acceptSuggestion', (_event, id: string) => requireSuggestedPlanService().accept(id));
     ipcMain.handle('plan:rejectSuggestion', (_event, id: string) => {
-      const result = suggestedPlanService.reject(id);
+      const result = requireSuggestedPlanService().reject(id);
       if (result.deleted) {
         attachmentManager?.deletePlanAttachments(id);
         contextManager?.removeBindingsForTarget('plan', id);

@@ -18,6 +18,9 @@ const DOCUMENTED_DYNAMIC_RENDERER_EVENT_SENDERS = new Set([
   'peer:sas',
   'peer:paired',
   'peer:failed',
+  // Profile IPC forwards active-profile and registry changes through a typed channel union.
+  'profile:changed',
+  'profile:registryChanged',
 ]);
 
 function readSources(relativeRoots: string[]): string {

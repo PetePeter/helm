@@ -164,6 +164,22 @@ describe('MobileGate — allow-list matching', () => {
     );
     expect(calls.map(c => c.method)).toEqual(['session_list']);
   });
+
+  it('uses the newly bound profile for each mobile request', async () => {
+    const lookedUpProfiles: string[] = [];
+    const { gate, store, deviceId } = build(['session_list'], {
+      sessionLookupForProfile: profileId => {
+        lookedUpProfiles.push(profileId);
+        return { getSession: () => null, findByName: () => undefined };
+      },
+    });
+
+    await gate.handle(deviceId, 'session_list', {});
+    store.update(deviceId, { userProfileId: '2' });
+    await gate.handle(deviceId, 'session_list', {});
+
+    expect(lookedUpProfiles).toEqual(['1', '2']);
+  });
 });
 
 describe('MobileGate — hard deny', () => {
