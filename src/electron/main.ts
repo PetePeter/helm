@@ -378,7 +378,7 @@ app.whenReady().then(async () => {
 
   // Migrate monolithic plans.yaml → individual files if still present
   try {
-    const r = migrateOldPlans();
+    const r = migrateOldPlans(profileConfigDir);
     if (r.migratedPlans > 0 || r.migratedDeps > 0) {
       logger.info(`[Main] Plan migration: ${r.migratedPlans} plan(s), ${r.migratedDeps} dep(s)`);
     }
@@ -387,7 +387,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    const r = migrateProjects();
+    const r = migrateProjects(profileConfigDir);
     if (r.migratedProjects > 0 || r.updatedPlans > 0 || r.updatedSequences > 0 || r.updatedSessions > 0) {
       logger.info(`[Main] Project migration: ${r.migratedProjects} project(s), ${r.updatedPlans} plan(s), ${r.updatedSequences} sequence(s), ${r.updatedSessions} session(s)`);
     }

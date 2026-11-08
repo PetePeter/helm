@@ -7,10 +7,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { dormantAfterMs } from '../../session/prompt-staleness.js';
-import { AutoFreezer } from '../../session/auto-freezer.js';
-import { KeepWarmer } from '../../session/keep-warmer.js';
-import { SessionContextUsageTracker } from '../../session/session-context-usage-tracker.js';
 import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
 import { getMessageFlightTimeoutMs, type SessionMessageFlight } from '../../session/message-flight.js';
 import { SessionManager } from '../../session/manager.js';
@@ -18,39 +14,22 @@ import { PtyManager } from '../../session/pty-manager.js';
 import { StateDetector } from '../../session/state-detector.js';
 import { PipelineQueue } from '../../session/pipeline-queue.js';
 import { NotificationManager } from '../../session/notification-manager.js';
-import { PlanManager } from '../../session/plan-manager.js';
-import { ProjectStore } from '../../session/project-store.js';
 import { getGlobalPersistencePaths } from '../../session/persistence-paths.js';
-import { ContextManager } from '../../session/context-manager.js';
-import { SkillManager } from '../../session/skill-manager.js';
-import { SkillAnalyticsManager } from '../../session/skill-analytics-manager.js';
-import { PatternMatcher } from '../../session/pattern-matcher.js';
 import { HandoverDelivery } from '../../session/handover-delivery.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
 import { ChatBroker } from '../../session/chat/chat-broker.js';
 import { createChatAttachmentRegistrar } from '../../session/chat/chat-attachment-registrar.js';
 import { setupHandoverHandlers } from './handover-handlers.js';
-import { ScheduledTaskManager } from '../../session/scheduled-task-manager.js';
-import { ScheduledTaskHistoryManager } from '../../session/scheduled-task-history-manager.js';
-import { RecycleBinManager, recordRemovedSession } from '../../session/recycle-bin-manager.js';
 import { RuntimeGroupManager } from '../../session/runtime-group-manager.js';
 import { saveRuntimeGroups, loadRuntimeGroups } from '../../session/runtime-group-persistence.js';
-import { ArtifactManager } from '../../session/artifact-manager.js';
-import { ArtifactAttachmentManager } from '../../session/artifact-attachment-manager.js';
 import { saveArtifacts, loadArtifacts } from '../../session/artifact-persistence.js';
 import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
-import { DraftManager } from '../../session/draft-manager.js';
 import type { Draft } from '../../types/draft.js';
-import { SubagentTokenIngest } from '../../session/subagent-token-ingest.js';
 import type { SessionInfo, SessionUpdatedEvent } from '../../types/session.js';
 import { createDraftStore } from '../../session/draft-persistence.js';
-import { TodoManager } from '../../session/todo-manager.js';
 import { createTodoStore } from '../../session/todo-persistence.js';
 import type { SessionTodosChanged } from '../../types/todo.js';
 import { ArtifactTempRegistry, attachSessionTempCleanup } from '../../session/artifact-temp-registry.js';
-import { MemoryPersistence } from '../../session/memory-persistence.js';
-import { MemoryAttachmentManager } from '../../session/memory-attachment-manager.js';
-import { MemoryManager } from '../../session/memory-manager.js';
 import { setupPowerMonitor } from '../../session/power-monitor.js';
 import { ConfigLoader } from '../../config/loader.js';
 import { keyboard } from '../../output/keyboard.js';
@@ -78,10 +57,7 @@ import { VoiceService } from '../../voice/voice-service.js';
 import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
 import { CapabilityDetector } from '../../session/capability-detector.js';
 import { OperatorSessionManager } from '../../session/operator-session-manager.js';
-import { resolveConfiguredSpawnEnv, spawnConfiguredSession } from '../../session/configured-session-spawn.js';
-import { RecordingModelRunner, apiSilentBackend } from '../../session/silent-model-runner.js';
-import { AutoMemoryRecorder, splitTurns } from '../../session/auto-memory-judge.js';
-import { CliAutoMemory } from '../../session/cli-auto-memory.js';
+import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupPlanHandlers } from './plan-handlers.js';
 import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
@@ -97,7 +73,6 @@ import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT } from '../../session/time-tracker.
 import { TimePersistence } from '../../session/time-persistence.js';
 import { EtaTracker, etaWhereOf, sweepOverdueEtas } from '../../session/eta-tracker.js';
 import { EtaPersistence } from '../../session/eta-persistence.js';
-import { TIME_TRACKING_DIR } from '../../session/persistence-paths.js';
 import { setDeliveryObserver } from '../../session/sequence-delivery.js';
 import { setupProjectHandlers } from './project-handlers.js';
 import { setupSkillHandlers } from './skill-handlers.js';
@@ -152,32 +127,28 @@ import {
 } from '../../mobile/mobile-device-persistence.js';
 import { FleetController } from '../../mcp/peer/fleet-controller.js';
 import type { FleetConfig } from '../../config/loader.js';
+import { registerProfileSessionCleanup } from '../profile-session-cleanup.js';
 import { PinnedCertStore } from '../../mcp/peer/pinned-cert-store.js';
 import { SecretStore } from '../../mcp/peer/secret-store.js';
 import { loadPeerPins, savePeerPins, loadPeerSecrets, savePeerSecrets } from '../../mcp/peer/peer-secret-persistence.js';
 import { asRecord } from '../../mcp/tools/validation.js';
-import { MessNotifier } from '../../session/mess-notifier.js';
-import { getConfigDir, getProfileConfigDir, getTempDir } from '../../utils/app-paths.js';
-import { HeadlessCliRunner } from '../../session/headless-cli-runner.js';
+import { getConfigDir, getTempDir } from '../../utils/app-paths.js';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
-import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { ensureOperatorHome } from '../../session/operator-home.js';
 import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-injector.js';
 import { getRingMemoryRequests } from '../../session/memory-idea-policy.js';
 import { resolveContextLimits } from '../../session/context-limits.js';
 import { openTaskLines } from '../../session/operator-tasks.js';
 import { RingRetry } from '../../session/ring-retry.js';
-import { LoopDriver } from '../../session/hooks/loop-driver.js';
-import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
-import { createSuggestionCandidateSource } from '../../session/hooks/suggestion-candidates.js';
-import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
 import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { OperatorTaskWatcher } from '../../session/operator-task-watcher.js';
 import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
+import { ProfileRuntimeComposition } from '../profile-runtime-composition.js';
+import { UserProfileStore } from '../../config/user-profile-store.js';
 
 // On restart the previous instance may still be releasing the fixed MCP port.
 // Retry the same port (never a fallback) with backoff until it frees.
@@ -196,8 +167,8 @@ export interface IpcStartupOptions {
  * so handler files never import singletons directly.
  */
 export function registerIPCHandlers(
-  dirname?: string,
-  configLoader: ConfigLoader = new ConfigLoader(),
+  dirname: string | undefined,
+  configLoader: ConfigLoader,
   options: IpcStartupOptions = {},
 ): { cleanup: () => Promise<void>; sessionManager: SessionManager; ptyManager: PtyManager; incomingWatcher: IncomingPlansWatcher; windowManager: WindowManager; helmControlService: HelmControlService; runtimeGroupManager: RuntimeGroupManager } {
   logger.info('[IPC] Registering handlers');
@@ -210,81 +181,55 @@ export function registerIPCHandlers(
     cleanupWorkTempFiles(dirname);
   }
 
-  // Load config eagerly so individual handlers don't need to call load()
-  try {
-    configLoader.load();
-    logger.info(`[IPC] Config loaded: ${configLoader.getCliTypes()}`);
-  } catch (error) {
-    logger.error(`[IPC] Failed to load config: ${error}`);
-  }
-
-  // SessionManager is created here and shared via dependency injection.
-  // Projects are the single source of truth for working directories, so the
-  // ConfigLoader derives them from the project store.
-  const projectStore = new ProjectStore();
-  configLoader.setProjectStore(projectStore);
-
-  const sessionManager = new SessionManager(projectStore);
-  // Temp copies handed to external apps are attributed to their session so a
-  // close reaps them, whether or not the session is still recoverable.
-  const artifactTempRegistry = new ArtifactTempRegistry();
-  attachSessionTempCleanup(sessionManager, artifactTempRegistry);
   const ptyManager = new PtyManager();
+  let helmControlService!: HelmControlService;
+  const profileComposition = new ProfileRuntimeComposition({
+    configLoader,
+    userProfileStore: new UserProfileStore(configLoader.getGlobalConfigDir()),
+    ptyManager,
+  });
+  const registry = profileComposition.registry;
+  const activeRuntime = registry.getRequiredRuntime('1');
+  const {
+    configLoader: activeConfigLoader,
+    projectStore,
+    sessionManager,
+    planManager,
+    contextManager,
+    artifactAttachmentManager,
+    artifactManager,
+    artifactTempRegistry,
+    draftManager,
+    todoManager,
+    memoryPersistence,
+    memoryAttachmentManager,
+    memoryManager,
+    scheduledTaskHistoryManager,
+    scheduledTaskManager,
+    recycleBinManager,
+    runtimeGroupManager,
+    skillManager,
+    skillAnalyticsManager,
+    messManager: activeMessManager,
+    timeTracker,
+    etaTracker,
+    patternMatcher,
+  } = activeRuntime;
+  // IPC remains pinned to profile 1 until the profile selector ships.
+  configLoader = activeConfigLoader;
   const stateDetector = new StateDetector();
-  const syncSessionFreeze = (session: Pick<SessionInfo, 'id' | 'frozen'>) => {
-    stateDetector.setSessionFrozen(session.id, session.frozen === true);
-  };
-  sessionManager.on('session:added', syncSessionFreeze);
-  sessionManager.on('session:updated', syncSessionFreeze);
   const pipelineQueue = new PipelineQueue();
-  const artifactAttachmentManager = new ArtifactAttachmentManager();
-  const artifactManager = new ArtifactManager(
-    (all) => saveArtifacts(all),
-    Date.now,
-    (artifactId) => artifactAttachmentManager.deleteForArtifact(artifactId),
-  );
-  artifactManager.importAll(loadArtifacts());
-  const draftManager = new DraftManager(createDraftStore());
-  const todoManager = new TodoManager(createTodoStore());
-  const memoryPersistence = new MemoryPersistence();
-  const memoryAttachmentManager = new MemoryAttachmentManager();
-  // PlanManager is constructed before MemoryManager so provenance can be
-  // stamped at write time. It cannot be reconstructed afterwards: a plan's
-  // sessionId is overwritten by whoever claims it next.
-  const planManager = new PlanManager(projectStore);
-  const memoryManager = new MemoryManager({
-    persistence: memoryPersistence,
-    attachmentManager: memoryAttachmentManager,
-    resolveSessionProject: (id) => sessionManager.getSession(id)?.projectId ?? null,
-    canReadAll: (id) => sessionManager.getSession(id)?.role === 'operator',
-    isProjectShared: (projectId) => projectStore.getById(projectId)?.memoryPrivate !== true,
-    resolveSessionPlan: (id) => planManager.claimedPlanFor(id)?.id ?? null,
-    isDreamSession: (id) => scheduledTaskManager.isDreamSession(id),
-    resolveSessionMission: (id) => sessionManager.getSession(id)?.mission?.text ?? null,
-  });
-  const contextManager = new ContextManager(planManager);
-  const getSkillsPath = (configLoader as ConfigLoader & { getSkillsPath?: () => string }).getSkillsPath;
-  const getSkillAnalyticsPath = (configLoader as ConfigLoader & { getSkillAnalyticsPath?: () => string }).getSkillAnalyticsPath;
-  const skillManager = new SkillManager(getSkillsPath ? getSkillsPath.call(configLoader) : 'src/config/skills.yaml');
-  const skillAnalyticsManager = new SkillAnalyticsManager(getSkillAnalyticsPath ? getSkillAnalyticsPath.call(configLoader) : 'src/config/skill-analytics.json');
-  const scheduledTaskHistoryManager = new ScheduledTaskHistoryManager();
-  const recycleBinManager = new RecycleBinManager();
-  const runtimeGroupManager = new RuntimeGroupManager(saveRuntimeGroups);
-  runtimeGroupManager.importAll(loadRuntimeGroups());
-  const scheduledTaskManager = new ScheduledTaskManager(sessionManager, ptyManager, planManager, configLoader, scheduledTaskHistoryManager, projectStore, {
-    // A timer's own choice, not a model's second thought: never skipped as redundant.
-    quickCompact: async (sessionId, prompt) => {
-      await helmControlService.quickCompactSession(sessionId, prompt ? { handover: prompt } : {});
-    },
-  });
-  const notificationManager = new NotificationManager(windowManager, sessionManager);
+  const notificationManager = new NotificationManager(windowManager, sessionManager, registry);
 
   // Power monitor with full session/PTY diagnostics and screen lock tracking
   const powerMonitorResult = setupPowerMonitor(powerMonitor, { sessionManager, ptyManager });
   notificationManager.setScreenLockChecker(powerMonitorResult.isScreenLocked);
   notificationManager.setActiveSessionIdGetter(() => sessionManager.getActiveSession()?.id ?? null);
 
-  const helmControlService = new HelmControlService(planManager, sessionManager, ptyManager, configLoader, undefined, contextManager, scheduledTaskManager, projectStore, skillManager, skillAnalyticsManager);
+  helmControlService = new HelmControlService(planManager, sessionManager, ptyManager, configLoader, activeRuntime.planAttachmentManager, contextManager, scheduledTaskManager, projectStore, skillManager, skillAnalyticsManager);
+  profileComposition.bindQuickCompactHandler('1', async (sessionId, prompt) => {
+    await helmControlService.quickCompactSession(sessionId, { handover: prompt });
+  });
   helmControlService.setNotificationManager(notificationManager);
   helmControlService.setRuntimeGroupManager(runtimeGroupManager);
   helmControlService.sessionChangeFeed.attach(sessionManager);
@@ -357,42 +302,38 @@ export function registerIPCHandlers(
   }));
 
   // Restore sessions persisted from previous run
-  const restored = sessionManager.restoreSessions();
-  logger.info(`[IPC] Restored ${restored.length} session(s) from previous run`);
+  const restoredCount = registry.all().reduce((total, runtime) => total + runtime.sessionManager.restoreSessions().length, 0);
+  logger.info(`[IPC] Restored ${restoredCount} session(s) from previous run`);
 
-  // Reclaim orphaned artifacts left by a crash (which bypasses the session:removed
-  // cleanup). Keep artifacts for any live restored session OR any recycle-bin entry
-  // (a recoverable session awaiting restore, which reuses its original id); drop the
-  // rest. A bin entry that later expires (30d) has its artifacts reclaimed here on a
-  // subsequent startup.
-  const liveSessionIds = new Set(sessionManager.getAllSessions().map(s => s.id));
-  const binSessionIds = new Set(recycleBinManager.list().map(e => e.sessionId));
-  try {
-    memoryManager.pruneOrphanedSessions(new Set([...liveSessionIds, ...binSessionIds]));
-  } catch (error) {
-    logger.error(`[IPC] Failed to prune orphaned memories: ${error}`);
+  // Reclaim profile-local data that lost its owning live or recoverable session.
+  for (const runtime of registry.all()) {
+    const liveSessionIds = new Set(runtime.sessionManager.getAllSessions().map(s => s.id));
+    const binSessionIds = new Set(runtime.recycleBinManager.list().map(e => e.sessionId));
+    try {
+      runtime.memoryManager.pruneOrphanedSessions(new Set([...liveSessionIds, ...binSessionIds]));
+    } catch (error) {
+      logger.error(`[IPC] Failed to prune orphaned memories for profile ${runtime.userProfileId}: ${error}`);
+    }
+    pruneOrphanArtifacts(
+      Object.keys(runtime.artifactManager.exportAll()),
+      liveSessionIds,
+      binSessionIds,
+      id => runtime.artifactManager.clearSession(id),
+    );
+    runtime.draftManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
+    runtime.todoManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
+    const allArtifactIds = new Set(
+      Object.values(runtime.artifactManager.exportAll()).flat().map(a => a.id),
+    );
+    runtime.artifactAttachmentManager.pruneOrphans(allArtifactIds);
   }
-  pruneOrphanArtifacts(
-    Object.keys(artifactManager.exportAll()),
-    liveSessionIds,
-    binSessionIds,
-    id => artifactManager.clearSession(id),
-  );
-  // Drafts follow the same rule: kept for a live or binned session, dropped otherwise.
-  draftManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
-  todoManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
-
-  // Prune orphan attachment directories (artifacts deleted in a previous crash)
-  const allArtifactIds = new Set(
-    Object.values(artifactManager.exportAll()).flat().map(a => a.id),
-  );
-  artifactAttachmentManager.pruneOrphans(allArtifactIds);
 
   // PlanManager loads from disk in its constructor — no explicit importAll needed
 
   const incomingWatcher = new IncomingPlansWatcher(
     planManager,
     new SuggestedPlanService(planManager, memoryManager),
+    activeRuntime.configDir,
   );
   // The shim is seeded into the user config dir alongside the other shipped
   // defaults; the installer writes CLI configs that point HERE at it. Shared by
@@ -408,7 +349,7 @@ export function registerIPCHandlers(
   // responder (ContextInjector) is bound after construction below — it needs
   // managers built later in this setup.
   const hookReceiver = new HookReceiver({
-    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    getSession: (sessionId) => registry.findSessionOwner(sessionId)?.sessionManager.getSession(sessionId) ?? null,
     getDenyRules: (provider) => configLoader.getHookDenyRules(provider),
   });
   // G4 dual-path capability: does a recipient session inject its inter-session
@@ -419,35 +360,9 @@ export function registerIPCHandlers(
     (cliTypeId) => configLoader.getCliTypeEntry(cliTypeId),
     (hooks) => readHookIntegrationStatus(hooks, hookDeps),
   );
-  // G5: ranking signals behind the same scorer interface. The usage store is
-  // ids + term co-occurrence ONLY — never prompt text (docs/cli-hooks.md, G5);
-  // the scorer reorders passers only, so nothing crosses the threshold on
-  // signal strength. The store is constructed here (not with the suggester
-  // below) because the MCP server's fetch recording feeds it.
-  const suggestionUsage = new SuggestionUsageStore({ configDir: getProfileConfigDir('1') });
-  const suggestionScorer = new BoostedSuggestionScorer(new Bm25SuggestionScorer(), {
-    getMemoryEdges: () => memoryManager.listEdges(),
-    getWorkspacePlanIds: (sessionId) => {
-      const claimed = planManager.claimedPlanFor(sessionId);
-      if (!claimed) return new Set<string>();
-      const ids = new Set<string>([claimed.id]);
-      if (claimed.projectId && claimed.sequenceId) {
-        for (const item of planManager.getForProject(claimed.projectId)) {
-          if (item.sequenceId === claimed.sequenceId) ids.add(item.id);
-        }
-      }
-      const boundContexts = [
-        ...contextManager.getContextsForPlan(claimed.id),
-        ...(claimed.sequenceId ? contextManager.getContextsForSequence(claimed.sequenceId) : []),
-      ];
-      for (const context of boundContexts) {
-        for (const planId of contextManager.getPlanIdsForContext(context.id)) ids.add(planId);
-      }
-      return ids;
-    },
-    usageBoost: (key, terms, projectId) => suggestionUsage.boostFor(key, terms, projectId),
-  }, configLoader.getSuggestionScoring());
-  let sessionContextUsageTracker: SessionContextUsageTracker | undefined;
+  const suggestionUsageByProfile = profileComposition.suggestionUsageByProfile;
+  const suggestionServices = profileComposition.suggestionServices;
+  const suggestionUsage = suggestionUsageByProfile.get('1')!;
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
@@ -455,124 +370,79 @@ export function registerIPCHandlers(
     // G5 usage feedback: correlate a fetch with a recent suggestion. Only
     // identifiable sessions land here; anonymous peers learn nothing.
     onItemFetched: (sessionId, type, id) => {
-      const workingDir = sessionManager.getSession(sessionId)?.workingDir;
-      const projectId = workingDir ? planManager.getProjectIdForDirectory(workingDir) : null;
-      suggestionUsage.recordFetch(sessionId, `${type}/${id}`, projectId);
+      const owner = registry.findSessionOwner(sessionId);
+      const workingDir = owner?.sessionManager.getSession(sessionId)?.workingDir;
+      const projectId = workingDir && owner ? owner.planManager.getProjectIdForDirectory(workingDir) : null;
+      (owner ? suggestionUsageByProfile.get(owner.userProfileId) : suggestionUsage)?.recordFetch(sessionId, `${type}/${id}`, projectId);
     },
-    onClaudeStatuslineUsage: (sessionId, cliSessionId, usage) => {
-      const session = sessionManager.getSession(sessionId);
-      if (!session || session.remote || configLoader.getCliTypeEntry(session.cliType)?.provider !== 'claude') return false;
-      return usage !== null
-        ? sessionContextUsageTracker?.reportStatuslineUsage(sessionId, cliSessionId, usage.contextTokens, usage.contextWindow)
-        : sessionContextUsageTracker?.clearStatuslineUsage(sessionId, cliSessionId);
-    },
+    onClaudeStatuslineUsage: (sessionId, cliSessionId, usage) =>
+      profileComposition.includeStatuslineUsage(sessionId, cliSessionId, usage),
   }, ptyManager, hookReceiver);
 
   // API tools: Helm hosts the agent loop for CLI types with an `api` block.
   // Tools dispatch through the MCP server's own path under the session's identity.
   const apiSessionHost = new ApiSessionHost({
     dispatchTool: (name, args, auth) => localhostMcpServer.dispatchForPeer(name, args, auth),
-    postChat: (sessionId, message, usage) => helmControlService.sendChat(sessionId, message, undefined, usage),
-    createMemory: (sessionId, input) => helmControlService.createMemory(sessionId, input),
-    linkMemory: (sessionId, fromId, toId) => { helmControlService.linkMemory(sessionId, fromId, toId); },
+    postChat: (sessionId, message, usage) => profileComposition.sendChatForSession(sessionId, message, usage),
+    createMemory: (sessionId, input) => profileComposition.requireSessionOwner(sessionId).memoryManager.createForSession(sessionId, input),
+    linkMemory: (sessionId, fromId, toId) => {
+      profileComposition.requireSessionOwner(sessionId).memoryManager.linkForSession(sessionId, fromId, toId);
+    },
     onPendingSubagents: (sessionId, count) => {
-      if (sessionManager.hasSession(sessionId)) sessionManager.updateSession(sessionId, { pendingSubagents: count || undefined });
+      registry.findSessionOwner(sessionId)?.sessionManager.updateSession(sessionId, { pendingSubagents: count || undefined });
     },
     mcpTools: () => MCP_TOOLS,
-    listSkills: (cwd) => helmControlService.listSkills(cwd ? { dirPath: cwd } : undefined),
-    getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
-    getManifestoContext: (sessionId) => appendSessionTodoContext(
-      formatManifestoContext(artifactManager.getManifestosForSession(sessionId)),
-      todoManager.list(sessionId),
-      configLoader.getHookInjectionOverrides(),
-    ),
+    listSkills: (sessionId, cwd, userProfileId) =>
+      profileComposition.listSkillsForSession(userProfileId, sessionId, cwd),
+    getMission: (sessionId) => registry.findSessionOwner(sessionId)?.sessionManager.getSession(sessionId)?.mission?.text,
+    getManifestoContext: (sessionId) => {
+      const owner = registry.findSessionOwner(sessionId);
+      if (!owner) return '';
+      return appendSessionTodoContext(
+        formatManifestoContext(owner.artifactManager.getManifestosForSession(sessionId)),
+        owner.todoManager.list(sessionId),
+        owner.configLoader.getHookInjectionOverrides(),
+      );
+    },
     // Wishes land as reviews on one all-projects skill, where skill feedback is already read.
     recordToolRequest: ({ name, purpose, example }, auth) => {
-      const skillId = helmControlService.resolveSkill(API_TOOL_REQUESTS_SKILL_TYPE)?.id
-        ?? helmControlService.createSkill({
+      if (!auth.sessionId) throw new Error('API tool request must have a session identity');
+      const owner = profileComposition.requireSessionOwner(auth.sessionId);
+      const session = owner.sessionManager.getSession(auth.sessionId);
+      if (!session) throw new Error(`Session not found: ${auth.sessionId}`);
+      const skillId = owner.skillManager.resolveEffective(API_TOOL_REQUESTS_SKILL_TYPE)?.id
+        ?? owner.skillManager.create({
           name: 'API tool requests',
           type: API_TOOL_REQUESTS_SKILL_TYPE,
           description: 'Tools that API-tool sessions asked for but do not exist yet. Each request is a review; build the popular ones.',
           body: 'Read this skill\'s feedback (skill_get_feedback) for requested tools: summary = name + purpose, improvement = example usage.',
           allProjects: true,
         }).id;
-      helmControlService.submitSkillFeedback(skillId, 1, `${name}: ${purpose}`, example, auth);
+      owner.skillAnalyticsManager.addReview(skillId, {
+        stars: 1,
+        summary: `${name}: ${purpose}`,
+        ...(example ? { improvement: example } : {}),
+        cliName: session.name,
+        cliType: session.cliType,
+        timestamp: new Date().toISOString(),
+      });
     },
     emitHook: (event) => hookReceiver.emit('hook', event),
-    onContextUsageChanged: (sessionId) => sessionContextUsageTracker?.refreshSession(sessionId),
+    onContextUsageChanged: (sessionId) => profileComposition.refreshContextUsage(sessionId),
     // Bound lazily: the injector is built further down, after the managers it reads.
     promptContext: (sessionId, prompt, tools) => contextInjector.promptContext(sessionId, prompt, tools),
     // A record with an originId came in from the user; the rest are the session's own replies.
     chatHistory: (sessionId) => mobileChatJournal.sessionEntries(sessionId).map(({ seq, record }) => ({
       seq, at: record.at, fromUser: record.originId !== undefined, text: record.text,
     })),
-    historyDir: join(getProfileConfigDir('1'), 'api-sessions'),
+    historyDir: activeRuntime.paths.apiSessionsDir,
+    historyDirForProfile: userProfileId => profileComposition.getRequiredRuntime(userProfileId).paths.apiSessionsDir,
     // Bound lazily: the recorder needs the silent runner, which needs this host.
-    recordTurn: (sessionId, history) => { void autoMemoryRecorder.recordTurns(sessionId, splitTurns(history)); },
+    recordTurn: (sessionId, history) => profileComposition.recordAutoMemoryTurn(sessionId, history),
   });
   registerApiSessionHost(apiSessionHost);
-  // Auto memory's silent runs go to the recording model picked in Settings:
-  // an API tool answers one direct request, a real CLI is run once, headless.
-  const recordingModelRunner = new RecordingModelRunner({
-    getRecordingModel: () => configLoader.getAutoMemoryConfig().recordingModel,
-    resolveModel: (ref) => {
-      const resolved = configLoader.resolveCliType(ref);
-      if (!resolved) return null;
-      const env = resolveConfiguredSpawnEnv(configLoader, resolved.id);
-      return resolved.config.api
-        ? { id: resolved.id, kind: 'api', api: resolved.config.api, env }
-        : { id: resolved.id, kind: 'cli', headlessCommand: resolved.config.headlessCommand, env };
-    },
-    backends: {
-      api: apiSilentBackend(apiSessionHost),
-      cli: new HeadlessCliRunner({ pty: ptyManager, workDir: join(getTempDir(dirname ?? process.cwd()), 'headless') }),
-    },
-  });
-  // The judge pass behind auto-save: at most one session-bound memory per finished turn.
-  const autoMemoryRecorder = new AutoMemoryRecorder({
-    runner: recordingModelRunner,
-    isEnabled: () => configLoader.getAutoMemoryConfig().autoSave,
-    getJudgePrompt: () => configLoader.getAutoMemoryConfig().judgePrompt,
-    isLive: (sessionId) => sessionManager.hasSession(sessionId),
-    getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
-    listBound: (sessionId) => memoryManager.listBoundForSession(sessionId),
-    create: (sessionId, memory) => { memoryManager.createForSession(sessionId, { ...memory, sessionBound: true }); },
-    update: (sessionId, id, memory) => { memoryManager.updateForSession(sessionId, id, memory); },
-  });
-  // The same pass for real CLI sessions, whose turns come from the transcript their hooks report.
-  const cliAutoMemory = new CliAutoMemory({
-    isEnabled: () => {
-      const { autoSave, recordingModel } = configLoader.getAutoMemoryConfig();
-      return autoSave && Boolean(recordingModel);
-    },
-    getTranscriptPath: (sessionId) => sessionManager.getSession(sessionId)?.cliTranscriptPath,
-    record: (sessionId, turns) => autoMemoryRecorder.recordTurns(sessionId, turns),
-  });
-  sessionManager.on('session:removed', (event: { sessionId: string }) => cliAutoMemory.forget(event.sessionId));
+  profileComposition.registerAutoMemoryServices(apiSessionHost, getTempDir(dirname ?? process.cwd()));
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
-  sessionContextUsageTracker = new SessionContextUsageTracker({
-    sessionManager,
-    resolve: (session) => helmControlService.getSessionContextSize(session.id),
-  });
-  sessionContextUsageTracker.start(hookReceiver);
-
-  // Pattern matcher uses raw deliverText for send-text rule actions.
-  const patternMatcher = new PatternMatcher(
-    (sessionId, data) => ptyManager.deliverText(sessionId, data),
-    (cliType) => configLoader.getPatterns(cliType),
-    // This runs on every PTY output chunk. resolveCliType throws on an ambiguous
-    // display name (two types sharing a label — reachable by hand-editing
-    // cli-types.yaml), and per invariant 7 nothing on the PTY data path may
-    // throw. Degrade to the raw reference instead.
-    (cliType) => {
-      try {
-        return configLoader.resolveCliType(cliType)?.id ?? cliType;
-      } catch {
-        return cliType;
-      }
-    },
-  );
-
   const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, {
     // The user asked for it outright: never second-guessed as redundant.
     quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, {}),
@@ -607,7 +477,7 @@ export function registerIPCHandlers(
       return memory ? { name: memory.tldr, body: memory.content } : null;
     },
   );
-  setupAutoMemoryHandlers(configLoader, recordingModelRunner);
+  setupAutoMemoryHandlers(configLoader, profileComposition.getRecordingModelRunner('1')!);
   setupDreamingHandlers(configLoader);
   setupToolsHandlers(configLoader);
   setupKeyboardHandlers(keyboard);
@@ -645,9 +515,9 @@ export function registerIPCHandlers(
   } catch (error) {
     logger.error(`[IPC] Operator ensure failed: ${error}`);
   }
-  setupProjectHandlers(projectStore, planManager, contextManager, windowManager);
+  setupProjectHandlers(projectStore, planManager, contextManager, windowManager, activeRuntime.planAttachmentManager);
   setupSkillHandlers(skillManager, skillAnalyticsManager);
-  setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname, helmControlService.getSuggestedPlanService() ?? undefined);
+  setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname, helmControlService.getSuggestedPlanService() ?? undefined, activeRuntime.planAttachmentManager);
   setupScheduledTaskHandlers(scheduledTaskManager, scheduledTaskHistoryManager, windowManager);
   // Time tracking: the session's Helm project, else its directory, gets the credit.
   const whereIsDir = (dir: string, projectId?: string) => {
@@ -656,49 +526,51 @@ export function registerIPCHandlers(
       ? { projectKey: project.id, projectName: project.name, dir }
       : { projectKey: dir, projectName: dir, dir };
   };
-  const timeTracker = new TimeTracker({
-    persistence: new TimePersistence(TIME_TRACKING_DIR),
-    resolve: (sessionId) => {
-      const session = sessionManager.getSession(sessionId);
-      return session?.workingDir ? { ...whereIsDir(session.workingDir, session.projectId), cliType: session.cliType } : null;
-    },
-  });
   // Only user-originated prompts start a turn. System pings count only after a hook proves real work.
   setDeliveryObserver((sessionId, origin) => {
-    timeTracker.recordPrompt(sessionId, origin);
+    registry.findSessionOwner(sessionId)?.timeTracker.recordPrompt(sessionId, origin);
   });
   stateDetector.on('activity-change', ({ sessionId, level }: { sessionId: string; level: string }) => {
-    if (level === 'idle' && !stateDetector.hasObservedHooks(sessionId)) timeTracker.disarmAi(sessionId);
+    const owner = registry.findSessionOwner(sessionId);
+    if (level === 'idle' && !stateDetector.hasObservedHooks(sessionId)) owner?.timeTracker.disarmAi(sessionId);
   });
-  // Every context reading feeds the token ledger; unchanged readings add nothing.
-  sessionManager.on('session:updated', (session: SessionUpdatedEvent) => {
-    if (!session.contextUsage || session.remote) return;
-    timeTracker.recordTokens(session.id, session.contextUsage.tokens);
-  });
+  for (const runtime of registry.all()) {
+    // Every context reading feeds its profile's token ledger; unchanged readings add nothing.
+    runtime.sessionManager.on('session:updated', (session: SessionUpdatedEvent) => {
+      if (!session.contextUsage || session.remote) return;
+      runtime.timeTracker.recordTokens(session.id, session.contextUsage.tokens);
+    });
+    runtime.sessionManager.on('session:removed', ({ session }: { session: SessionInfo }) => {
+      const ingest = profileComposition.subagentIngestors.get(runtime.userProfileId)!;
+      ingest.sweep([session]);
+      ingest.forget(session.id);
+      runtime.timeTracker.forgetSession(session.id);
+      runtime.patternMatcher.removeSession(session.id);
+      if (session.eta && !session.remote) runtime.etaTracker.close(session.eta, etaWhereOf(session), 'unmarked');
+    });
+  }
   // Sub-agents run while the main context stands still, so their logs are swept on a timer of their own.
   const SUBAGENT_SWEEP_MS = 60_000;
-  const subagentIngest = new SubagentTokenIngest(timeTracker, !timeTracker.hasSavedBaselines);
-  const sweepSubagents = () => subagentIngest.sweep(sessionManager.getAllSessions());
+  const sweepSubagents = () => {
+    for (const runtime of registry.all()) {
+      profileComposition.subagentIngestors.get(runtime.userProfileId)!.sweep(runtime.sessionManager.getAllSessions());
+    }
+  };
   const subagentSweepTimer = setInterval(sweepSubagents, SUBAGENT_SWEEP_MS);
-  // A closing session gets one last read: its sub-agents may have finished since the last sweep.
-  sessionManager.on('session:removed', ({ session }: { session: SessionInfo }) => {
-    subagentIngest.sweep([session]);
-    subagentIngest.forget(session.id);
-    timeTracker.forgetSession(session.id);
-  });
   // Twice per slot, so an active session never skips one.
-  const timeTrackerTimer = setInterval(() => timeTracker.tick(), SLOT_MS / 2);
+  const timeTrackerTimer = setInterval(() => {
+    for (const runtime of registry.all()) runtime.timeTracker.tick();
+  }, SLOT_MS / 2);
   // ETA accuracy: unmarked after ETA + 10m, or when the session closes with one open.
-  const etaTracker = new EtaTracker({ persistence: new EtaPersistence(TIME_TRACKING_DIR) });
   helmControlService.setEtaTracker?.(etaTracker);
-  sessionManager.on('session:removed', ({ session }: { session: SessionInfo }) => {
-    if (session.eta && !session.remote) etaTracker.close(session.eta, etaWhereOf(session), 'unmarked');
-  });
-  const etaSweepTimer = setInterval(() => sweepOverdueEtas(sessionManager, etaTracker), 60_000);
+  const etaSweepTimer = setInterval(() => {
+    for (const runtime of registry.all()) sweepOverdueEtas(runtime.sessionManager, runtime.etaTracker);
+  }, 60_000);
   const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir, () => configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id), etaTracker);
   // Keep lightweight handler fixtures (and embedders that do not enable
   // project services) compatible with the optional Mess surface.
-  const messManager = helmControlService.getMessManager?.() ?? null;
+  const messManager = activeMessManager;
+  helmControlService.setMessManager(messManager);
   // Created here (not in the mobile block far below) so the recycle bin's
   // purge paths can prune it — the journal's retention is the session's
   // lifetime, and a purged session's replay dies with it.
@@ -784,39 +656,20 @@ export function registerIPCHandlers(
       if (!win.isDestroyed()) win.webContents.send('todos:changed', change);
     }
   });
-  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, (sessionId, data) => timeTracker.recordTerminalInput(sessionId, data), patternMatcher, recycleBinManager, (sessionId) => isHandoverPending(sessionId));
-  // Freezes sessions past their CLI type's long prompt cache (docs/mess.md).
-  const autoFreezer = new AutoFreezer(sessionManager, cliType => configLoader.getCliTypeEntry(cliType));
-  autoFreezer.start();
-  // Keep-warm pings, per session on request, just before the short cache lapses.
-  const keepWarmer = new KeepWarmer(
+  setupPtyHandlers(
+    ptyManager,
+    stateDetector,
     sessionManager,
-    async (sessionId, text) => { await deliverPromptSequenceToSession({ sessionId, text, ptyManager, sessionManager, configLoader }); },
-    cliType => configLoader.getCliTypeEntry(cliType),
+    pipelineQueue,
+    windowManager,
+    configLoader,
+    notificationManager,
+    (sessionId, data) => registry.findSessionOwner(sessionId)?.timeTracker.recordTerminalInput(sessionId, data),
+    patternMatcher,
+    recycleBinManager,
+    (sessionId) => isHandoverPending(sessionId),
+    registry,
   );
-  keepWarmer.start();
-  const messNotifier = messManager
-    ? new MessNotifier(
-      messManager,
-      sessionManager,
-      stateDetector,
-      projectStore,
-      helmControlService,
-      sessionId => ptyManager.has(sessionId),
-      sessionId => {
-        if (sessionManager.getSession(sessionId)?.comfyUiTool) return false;
-        // An unresolved CLI type is not an opt-out: only an explicit false silences.
-        const cliType = sessionManager.getSession(sessionId)?.cliType;
-        const entry = configLoader.getCliTypeEntry(cliType ?? '');
-        if (entry?.messReminders === false) return false;
-        // An API tool can only act on a Mess nudge if mess_check is one of its ticked tools.
-        return !entry?.api || entry.api.allowedTools.includes('mess_check');
-      },
-      {
-        dormantAfterMs: sessionId => dormantAfterMs(configLoader.getCliTypeEntry(sessionManager.getSession(sessionId)?.cliType ?? '')),
-      },
-    )
-    : null;
   // Carries a session's handover note across its own compaction: session_compact
   // arms the text while the context still exists, and it is pasted back once
   // the terminal falls silent after the compact command.
@@ -848,31 +701,28 @@ export function registerIPCHandlers(
     { nudge: sessionId => { ptyManager.write(sessionId, '\x1b\x1b\x1b', 'system'); } },
   );
   helmControlService.setHandoverDelivery(handoverDelivery);
-  isHandoverPending = (sessionId) => handoverDelivery.isPending(sessionId);
+  isHandoverPending = (sessionId) => {
+    const owner = registry.findSessionOwner(sessionId);
+    return owner ? profileComposition.handoverDeliveries.get(owner.userProfileId)?.isPending(sessionId) ?? false : false;
+  };
   const cleanupHandover = setupHandoverHandlers(handoverDelivery, windowManager);
 
-  // G3: hook-reported truth. The tracker turns canonical hook events into the
-  // SAME state channels the timing fallback already drives — activity edges
-  // through StateDetector, session mutations through updateSession, plan
-  // moves through PlanManager — plus the PreCompact snapshot artifact. A
-  // session without hooks never produces hook events, so for it nothing here
-  // runs and behaviour is exactly as before.
-  const hookTracker = new HookTracker({
+  profileComposition.registerProfileServices({
     stateDetector,
-    sessionManager,
-    planManager,
-    flashAttention: (sessionId) => notificationManager.flashAttention(sessionId),
-    handoverDelivery,
-    artifactManager,
-    artifactAttachments: artifactAttachmentManager,
-    onTurnWorking: (sessionId) => timeTracker.armAi(sessionId),
-    onTurnEnded: (sessionId) => {
-      timeTracker.disarmAi(sessionId);
-      void cliAutoMemory.turnEnded(sessionId);
+    notificationManager,
+    hookReceiver,
+    profileOneHandover: handoverDelivery,
+    chatBroker,
+    apiContextSize: sessionId => apiSessionHost.getContextSize(sessionId),
+    onTurnEnded: (userProfileId, sessionId) => {
+      void profileComposition.getCliAutoMemory(userProfileId)?.turnEnded(sessionId);
     },
   });
-  hookTracker.watch(hookReceiver);
-  helmControlService.setCompactSnapshot(sessionId => hookTracker.snapshot(sessionId, 'quick compact'));
+  const hookTrackers = profileComposition.hookTrackers;
+  helmControlService.setCompactSnapshot(sessionId => {
+    const owner = registry.findSessionOwner(sessionId);
+    return owner ? hookTrackers.get(owner.userProfileId)?.snapshot(sessionId, 'quick compact') : undefined;
+  });
 
   // G8 loop driving: the Stop-hook continuation brain. Fed by the same hook
   // stream (progress ticks, user turns, StopFailure) and by plan_complete's
@@ -880,14 +730,8 @@ export function registerIPCHandlers(
   // earlier than the managers this needs, hence the late binding). G10:
   // autoImplement on a plan is the only consent; the global
   // hooks.loopDriving.enabled kill switch (read live) is the only opt-out.
-  const loopDriver = new LoopDriver({
-    getSession: (sessionId) => sessionManager.getSession(sessionId),
-    getPlan: (planId) => planManager.getItem(planId),
-    updateSession: (sessionId, updates) => sessionManager.updateSession(sessionId, updates),
-    flashAttention: (sessionId) => notificationManager.flashAttention(sessionId),
-    getLoopConfig: () => configLoader.getLoopDrivingConfig(),
-  });
-  loopDriver.watch(hookReceiver);
+  const loopDrivers = profileComposition.loopDrivers;
+  const loopDriver = loopDrivers.get('1')!;
   localhostMcpServer.setLoopDriver(loopDriver);
 
   // G4: the injection brain, bound to the receiver built above. SILENT for a
@@ -899,61 +743,86 @@ export function registerIPCHandlers(
   //
   // G5: the suggester now runs on the boosted scorer above, and feeds the
   // usage store what was actually sent.
-  const suggestionService = new SuggestionService({
-    getCandidates: createSuggestionCandidateSource({
-      listSkills: (projectId) => skillManager.listForProject(projectId),
-      listProjectMemories: (projectId) => memoryManager.listProjectRecords(projectId),
-      listBoundMemories: (sessionId) => memoryManager.listBoundForSession(sessionId),
-    }),
-    memoriesEnabled: () => configLoader.getAutoMemoryConfig().autoRecall,
-    scorer: suggestionScorer,
-    onSuggested: (sessionId, keys, terms, projectId) => suggestionUsage.noteSuggestion(sessionId, keys, terms, projectId),
-  });
   const contextInjector = new ContextInjector({
-    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    getSession: sessionId => registry.findSessionOwner(sessionId)?.sessionManager.getSession(sessionId) ?? null,
     getClaimedPlan: (sessionId) => {
-      const plan = planManager.claimedPlanFor(sessionId);
+      const owner = registry.findSessionOwner(sessionId);
+      const plan = owner?.planManager.claimedPlanFor(sessionId);
       return plan ? { humanId: plan.humanId, title: plan.title, status: plan.status } : null;
     },
-    getStartablePlans: (dirPath) => planManager.getStartableForDirectory(dirPath).map((plan) => ({
+    getStartablePlans: (dirPath, sessionId) => {
+      const owner = sessionId ? registry.findSessionOwner(sessionId) : undefined;
+      return owner?.planManager.getStartableForDirectory(dirPath).map((plan) => ({
       humanId: plan.humanId, title: plan.title, status: plan.status,
-    })),
-    getHandover: (sessionId) => handoverDelivery.peek(sessionId),
-    onHandoverInjected: (sessionId) => handoverDelivery.markDeliveredByHook(sessionId),
-    getManifestos: (sessionId) => artifactManager.getManifestosForSession(sessionId),
-    isIdeaPromptEnabled: () => configLoader.getAutoMemoryConfig().ideaPrompt,
-    getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
-    getTodos: (sessionId) => todoManager.list(sessionId),
-    clearReportsTo: (sessionId) => sessionManager.updateSession(sessionId, { reportsTo: undefined }),
-    getRingRequests: (sessionId) => getRingMemoryRequests(
-      memoryManager.listRecordsForSession(sessionId),
-      RING_ME_PREFIX,
-    ),
-    getOpenTasks: (sessionId) => {
-      const dir = sessionManager.getSession(sessionId)?.workingDir;
-      return dir ? openTaskLines(planManager.getForDirectory(dir)) : [];
+      })) ?? [];
     },
-    suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
-    suggestTool: (sessionId, query, projectId) => suggestionService.suggestTool(sessionId, query, projectId),
-    resetSuggestions: (sessionId) => suggestionService.resetSuggestions(sessionId),
-    resetToolSuggestionTurn: (sessionId) => suggestionService.resetToolSuggestionTurn(sessionId),
-    getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
+    getHandover: sessionId => {
+      const owner = registry.findSessionOwner(sessionId);
+      return owner ? profileComposition.handoverDeliveries.get(owner.userProfileId)?.peek(sessionId) : undefined;
+    },
+    onHandoverInjected: sessionId => {
+      const owner = registry.findSessionOwner(sessionId);
+      owner && profileComposition.handoverDeliveries.get(owner.userProfileId)?.markDeliveredByHook(sessionId);
+    },
+    getManifestos: sessionId => registry.findSessionOwner(sessionId)?.artifactManager.getManifestosForSession(sessionId) ?? [],
+    isIdeaPromptEnabled: () => configLoader.getAutoMemoryConfig().ideaPrompt,
+    getMission: sessionId => registry.findSessionOwner(sessionId)?.sessionManager.getSession(sessionId)?.mission,
+    getTodos: sessionId => registry.findSessionOwner(sessionId)?.todoManager.list(sessionId) ?? [],
+    clearReportsTo: sessionId => registry.findSessionOwner(sessionId)?.sessionManager.updateSession(sessionId, { reportsTo: undefined }),
+    getRingRequests: sessionId => {
+      const owner = registry.findSessionOwner(sessionId);
+      return owner ? getRingMemoryRequests(owner.memoryManager.listRecordsForSession(sessionId), RING_ME_PREFIX) : [];
+    },
+    getOpenTasks: (sessionId) => {
+      const owner = registry.findSessionOwner(sessionId);
+      const dir = owner?.sessionManager.getSession(sessionId)?.workingDir;
+      return dir && owner ? openTaskLines(owner.planManager.getForDirectory(dir)) : [];
+    },
+    suggest: async (sessionId, prompt, projectId) => {
+      const owner = registry.findSessionOwner(sessionId);
+      return owner ? await suggestionServices.get(owner.userProfileId)!.suggest(sessionId, prompt, projectId) : null;
+    },
+    suggestTool: async (sessionId, query, projectId) => {
+      const owner = registry.findSessionOwner(sessionId);
+      return owner ? await suggestionServices.get(owner.userProfileId)!.suggestTool(sessionId, query, projectId) : null;
+    },
+    resetSuggestions: sessionId => {
+      const owner = registry.findSessionOwner(sessionId);
+      owner && suggestionServices.get(owner.userProfileId)?.resetSuggestions(sessionId);
+    },
+    resetToolSuggestionTurn: sessionId => {
+      const owner = registry.findSessionOwner(sessionId);
+      owner && suggestionServices.get(owner.userProfileId)?.resetToolSuggestionTurn(sessionId);
+    },
+    getProjectIdForDirectory: (dirPath, sessionId) => {
+      const owner = sessionId ? registry.findSessionOwner(sessionId) : undefined;
+      return owner?.planManager.getProjectIdForDirectory(dirPath) ?? null;
+    },
     getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],
     getContextLimits: (session) => {
-      const cli = configLoader.getCliTypeEntry(session.cliType);
+      const owner = registry.getRequiredRuntime(session.userProfileId ?? '1');
+      const cli = owner.configLoader.getCliTypeEntry(session.cliType);
       return resolveContextLimits(cli, session.contextUsage?.window ?? cli?.contextWindow);
     },
     getHookInjectionOverrides: () => configLoader.getHookInjectionOverrides(),
-    loop: loopDriver,
+    loop: session => loopDrivers.get(session.userProfileId ?? '1'),
   });
-  hookReceiver.setResponder((event) => contextInjector.respond(event));
+  hookReceiver.setResponder(async event => {
+    const owner = event.helmSessionId ? registry.findSessionOwner(event.helmSessionId) : undefined;
+    return owner ? await contextInjector.respond(event) : null;
+  });
   // A closed session takes its nudger and suggester ledgers with it — a
   // restored session (same id) starts with clean slates.
-  sessionManager.on('session:removed', (event) => {
-    contextInjector.forgetSession(event.sessionId);
-    suggestionService.forgetSession(event.sessionId);
-    suggestionUsage.forgetSession(event.sessionId);
-    loopDriver.forgetSession(event.sessionId);
+  registerProfileSessionCleanup(profileComposition, {
+    forgetSessionState: (runtime, sessionId) => {
+      contextInjector.forgetSession(sessionId);
+      suggestionServices.get(runtime.userProfileId)?.forgetSession(sessionId);
+      suggestionUsageByProfile.get(runtime.userProfileId)?.forgetSession(sessionId);
+      loopDrivers.get(runtime.userProfileId)?.forgetSession(sessionId);
+      profileComposition.getCliAutoMemory(runtime.userProfileId)?.forget(sessionId);
+    },
+    closeComfyUiSession: sessionId => getComfyUiSessionHost().closeSession(sessionId),
+    pruneProfileOneJournal: sessionId => mobileChatJournal.pruneSession(sessionId),
   });
   // Dual-path rules delivery (G9): every surface resolves each standing
   // reminder from the same settings + capability — the delivery services
@@ -988,72 +857,10 @@ export function registerIPCHandlers(
       sessionWindow.webContents.send('session:updated', event);
     }
   });
-  sessionManager.on('session:removed', (event) => {
-    // ComfyUI references and results expire on close, even when the rest of the
-    // session is recoverable from the recycle bin.
-    if (event.session?.comfyUiTool === true) {
-      try {
-        getComfyUiSessionHost().closeSession(event.sessionId);
-      } catch (error) {
-        logger.error(`[IPC] Failed to clean ComfyUI images for closed session ${event.sessionId}: ${error}`);
-      }
-    }
-
-    // Recoverable (has a cliSessionName) closed sessions go to the recycle bin,
-    // and their directory is auto-bookmarked so the group header persists. Tag
-    // the bin entry with the session's runtime group (if any) so restore can
-    // re-attach it, then evict the closed session from that group.
-    const runtimeGroup = runtimeGroupManager.groupForSession(event.sessionId);
-    // Resolve the session's project for the bin's Project tree level. Use the
-    // snapshot's projectId when present, else look up by working dir — findByPath
-    // (never resolveForPath) so a close event can't spawn a phantom project.
-    const projectRecord =
-      (event.session?.projectId ? projectStore.getById(event.session.projectId) : undefined) ??
-      (event.session?.workingDir ? projectStore.findByPath(event.session.workingDir) : undefined);
-    const binned = recordRemovedSession(
-      event,
-      recycleBinManager,
-      dir => configLoader.addBookmarkedDir(dir),
-      runtimeGroup ? { id: runtimeGroup.id, name: runtimeGroup.name } : undefined,
-      projectRecord ? { id: projectRecord.id, name: projectRecord.name } : undefined,
-    );
-    runtimeGroupManager.removeSessionEverywhere(event.sessionId);
-    // A recoverable close keeps the Mess cursor so a restored session does not
-    // lose unread mail; an ephemeral close has no way back, so the cursor goes.
-    try {
-      messManager?.onSessionClosed(event.sessionId, binned ? 'recoverable' : 'ephemeral');
-    } catch (error) {
-      logger.error(`[IPC] Failed to update the Mess cursor for removed session ${event.sessionId}: ${error}`);
-    }
-
-    // Artifacts follow the session's recoverability. A recoverable session goes to
-    // the recycle bin, so KEEP its artifacts under the same id — restore reuses that
-    // id and they come straight back; only Forget/Empty clears them. A non-recoverable
-    // (ephemeral) close has no bin entry, so drop its artifacts now.
-    if (!binned) {
-      try {
-        memoryManager.purgeSession(event.sessionId);
-      } catch (error) {
-        logger.error(`[IPC] Failed to purge memories for removed session ${event.sessionId}: ${error}`);
-      }
-      artifactManager.clearSession(event.sessionId);
-      draftManager.clearSession(event.sessionId);
-      todoManager.clearSession(event.sessionId);
-      // No bin entry means no way back, so the phone's replay of this
-      // conversation goes now too — same rule the bin's purge paths enforce.
-      try {
-        mobileChatJournal.pruneSession(event.sessionId);
-      } catch (error) {
-        logger.error(`[IPC] Failed to prune the chat journal for removed session ${event.sessionId}: ${error}`);
-      }
-    }
-
-  });
-
   logger.info('[IPC] All handlers registered');
 
-  // Start scheduled task manager
-  scheduledTaskManager.start();
+  // Restore and schedule profile-local timers; the operator watcher remains on profile 1.
+  profileComposition.startScheduledTasks();
   // After start(): the watcher's startup sweep reads the loaded timers.
   new OperatorTaskWatcher({
     onSessionUpdated: (fn) => { sessionManager.on('session:updated', fn); },
@@ -1343,8 +1150,7 @@ export function registerIPCHandlers(
 
   registerComfyUiSessionHost(new ComfyUiSessionHost({
     tempDir: getTempDir(dirname ?? process.cwd()),
-    artifacts: artifactManager,
-    attachments: artifactAttachmentManager,
+    storesForProfile: userProfileId => profileComposition.storesForProfile(userProfileId),
     onAttachmentDeleted: (sessionId, artifactId, attachmentId) =>
       mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId),
     postChat: async (sessionId, text, attachment) => {
@@ -1357,16 +1163,17 @@ export function registerIPCHandlers(
     },
     recordPrompt: (sessionId, text) => mobileChatBridge.recordDesktopTurn(sessionId, text, randomUUID()),
     notifyRequester: async (requesterSessionId, comfySessionId, text) => {
+      const senderOwner = registry.findSessionOwner(comfySessionId);
       const sender = {
         senderSessionId: comfySessionId,
-        senderSessionName: sessionManager.getSession(comfySessionId)?.name ?? 'ComfyUI',
+        senderSessionName: senderOwner?.sessionManager.getSession(comfySessionId)?.name ?? 'ComfyUI',
       };
-      await helmControlService.sendTextToSession(requesterSessionId, text, sender);
+      await profileComposition.sendTextToSession(requesterSessionId, text, sender);
       // A Codex composer can swallow the submit that follows a multi-line paste
       // and still verify as delivered. A session sender is told to follow up
       // with Enter; this sender is Helm, so it does that itself. On a composer
       // that already submitted, a bare Enter is a no-op.
-      await helmControlService.sendInputToSession(requesterSessionId, '{Enter}', { ...sender, verify: false });
+      await profileComposition.sendInputToSession(requesterSessionId, '{Enter}', { ...sender, verify: false });
     },
   }));
   mobileChatBridge.start();
@@ -1500,31 +1307,23 @@ export function registerIPCHandlers(
       // Latch shutdown first: everything below can kill PTYs, and a PTY dying
       // because the app is quitting must not be mistaken for a closed session.
       ptyManager.beginShutdown();
-      sessionContextUsageTracker.stop();
       if (mcpStartTimer) clearTimeout(mcpStartTimer);
       cleanupSession();
       cancelAllPrompts();
-      messNotifier?.dispose();
-      autoFreezer.dispose();
-      keepWarmer.dispose();
       cleanupMess();
       clearInterval(timeTrackerTimer);
       clearInterval(subagentSweepTimer);
       clearInterval(etaSweepTimer);
       setDeliveryObserver(null);
       sweepSubagents();
-      timeTracker.flush();
       cleanupTimeTracking();
-      hookTracker.dispose();
       cleanupHandover();
-      handoverDelivery.dispose();
       operatorSessionManager.dispose();
+      profileComposition.dispose();
       stateDetector.dispose();
-      patternMatcher.dispose();
       notificationManager.dispose();
       ptyManager.killAll();
       await incomingWatcher.close();
-      scheduledTaskManager.stop();
       // Await the socket close so the next instance can bind the fixed port.
       await localhostMcpServer.close();
       disposePairing();

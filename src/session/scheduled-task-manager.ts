@@ -74,6 +74,14 @@ export class ScheduledTaskManager extends EventEmitter {
    */
   private dreamSessions = new Set<string>();
   private started = false;
+  private storeListenersAttached = false;
+  private unsubscribeProjectChanged?: () => void;
+  private readonly onPlanCompleted = () => this.cancelFinishedWatchers();
+  private readonly onProjectsChanged = (projects: ProjectRecord[]) => {
+    // ProjectStore can resolve an implicit project during application construction.
+    // Do not reconcile until persisted tasks have been loaded.
+    if (this.started) this.reconcileProjects(projects);
+  };
 
   constructor(
     private sessionManager: SessionManager,
@@ -83,17 +91,13 @@ export class ScheduledTaskManager extends EventEmitter {
     private historyManager?: ScheduledTaskHistoryManager,
     private readonly projectStore?: ProjectStore,
     private readonly options: ScheduledTaskManagerOptions = {},
+    private readonly scheduledTasksFile?: string,
   ) {
     super();
     // A timer watching plans exists to follow them up; once every one is done
     // there is nothing left to check. Helm cancels it rather than trusting the
     // agent that set it to remember to.
-    this.planManager.on?.('plan:completed', () => this.cancelFinishedWatchers());
-    this.projectStore?.onChanged((projects) => {
-      // ProjectStore can resolve an implicit project during application
-      // construction. Do not reconcile until persisted tasks have been loaded.
-      if (this.started) this.reconcileProjects(projects);
-    });
+    this.attachStoreListeners();
   }
 
   /**
@@ -506,7 +510,8 @@ export class ScheduledTaskManager extends EventEmitter {
 
   /** Start the manager: load pending tasks and restore timers. */
   start(): void {
-    const loaded = loadScheduledTasks();
+    this.attachStoreListeners();
+    const loaded = loadScheduledTasks(this.scheduledTasksFile);
     this.tasks.clear();
 
     for (const task of loaded) {
@@ -565,7 +570,23 @@ export class ScheduledTaskManager extends EventEmitter {
       this.clearTimer(id);
     }
     this.saveTasks();
+    this.detachStoreListeners();
     logger.info('[ScheduledTaskManager] Stopped');
+  }
+
+  private attachStoreListeners(): void {
+    if (this.storeListenersAttached) return;
+    this.planManager.on?.('plan:completed', this.onPlanCompleted);
+    this.unsubscribeProjectChanged = this.projectStore?.onChanged(this.onProjectsChanged);
+    this.storeListenersAttached = true;
+  }
+
+  private detachStoreListeners(): void {
+    if (!this.storeListenersAttached) return;
+    this.planManager.off?.('plan:completed', this.onPlanCompleted);
+    this.unsubscribeProjectChanged?.();
+    this.unsubscribeProjectChanged = undefined;
+    this.storeListenersAttached = false;
   }
 
   /**
@@ -851,7 +872,7 @@ export class ScheduledTaskManager extends EventEmitter {
   /** Save all tasks to disk. */
   private saveTasks(): void {
     const tasksToSave = this.listTasks().filter(t => PENDING_STATUSES.has(t.status) || t.status === 'cancelled');
-    saveScheduledTasks(tasksToSave);
+    saveScheduledTasks(tasksToSave, this.scheduledTasksFile);
   }
 
   private getNextRunTime(task: ScheduledTask): Date {

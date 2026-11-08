@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import type { SessionTodo } from '../types/todo.js';
 import type { TodoStore } from './todo-manager.js';
-import { TODOS_DIR } from './persistence-paths.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 
 const EXTENSION = '.json';
@@ -44,7 +43,7 @@ function parse(raw: unknown): SessionTodo[] | null {
 }
 
 /** One atomic JSON file per session under the app config directory. */
-export function createTodoStore(dir: string = TODOS_DIR): TodoStore {
+export function createTodoStore(dir: string): TodoStore {
   return {
     load(sessionId) {
       try {

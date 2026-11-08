@@ -27,9 +27,12 @@ export { RECYCLE_BIN_WINDOW_MS };
 export class RecycleBinManager extends EventEmitter {
   private entries: RecycleBinEntry[];
 
-  constructor(private readonly now: () => number = Date.now) {
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly recycleBinFile?: string,
+  ) {
     super();
-    this.entries = loadRecycleBin();
+    this.entries = loadRecycleBin(this.recycleBinFile);
   }
 
   /**
@@ -40,7 +43,7 @@ export class RecycleBinManager extends EventEmitter {
     const created: RecycleBinEntry = { id: randomUUID(), ...entry };
     this.entries.unshift(created);
     const expired = this.pruneExpiredEntries();
-    saveRecycleBin(this.entries);
+    saveRecycleBin(this.entries, this.recycleBinFile);
     this.emit('recycle-bin:changed');
     // Entries that aged out of the retention window at runtime need their
     // preserved artifacts reclaimed too (startup pruning only covers restarts).
@@ -55,7 +58,7 @@ export class RecycleBinManager extends EventEmitter {
   pruneExpired(): RecycleBinEntry[] {
     const expired = this.pruneExpiredEntries();
     if (expired.length === 0) return [];
-    saveRecycleBin(this.entries);
+    saveRecycleBin(this.entries, this.recycleBinFile);
     this.emit('recycle-bin:changed');
     this.emit('recycle-bin:expired', expired);
     return expired;
@@ -81,14 +84,14 @@ export class RecycleBinManager extends EventEmitter {
     const before = this.entries.length;
     this.entries = this.entries.filter(e => e.id !== id);
     if (this.entries.length === before) return;
-    saveRecycleBin(this.entries);
+    saveRecycleBin(this.entries, this.recycleBinFile);
     this.emit('recycle-bin:changed');
   }
 
   /** Empty the bin. */
   empty(): void {
     this.entries = [];
-    saveRecycleBin(this.entries);
+    saveRecycleBin(this.entries, this.recycleBinFile);
     this.emit('recycle-bin:changed');
   }
 

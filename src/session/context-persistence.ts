@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
 import type { ContextBinding, ContextNode } from '../types/context.js';
-import { DEFAULT_PLAN_CONTEXT_BINDINGS_FILE, DEFAULT_PLAN_CONTEXTS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isRecord, isString } from './persistence-utils.js';
 
 function isContextNode(value: unknown): value is ContextNode {
@@ -12,7 +11,8 @@ function isContextBinding(value: unknown): value is ContextBinding {
   return isRecord(value) && isString(value.contextId) && isString(value.targetId) && isString(value.targetType);
 }
 
-export function savePlanContexts(contexts: ContextNode[], contextsFile = DEFAULT_PLAN_CONTEXTS_FILE): void {
+export function savePlanContexts(contexts: ContextNode[], contextsFile?: string): void {
+  if (!contextsFile) return;
   try {
     atomicWriteFileSync(contextsFile, JSON.stringify({ version: 1, contexts }, null, 2));
   } catch (err) {
@@ -20,7 +20,8 @@ export function savePlanContexts(contexts: ContextNode[], contextsFile = DEFAULT
   }
 }
 
-export function loadPlanContexts(contextsFile = DEFAULT_PLAN_CONTEXTS_FILE): ContextNode[] {
+export function loadPlanContexts(contextsFile?: string): ContextNode[] {
+  if (!contextsFile) return [];
   try {
     if (!existsSync(contextsFile)) return [];
     const raw = JSON.parse(readFileSync(contextsFile, 'utf8')) as unknown;
@@ -32,7 +33,8 @@ export function loadPlanContexts(contextsFile = DEFAULT_PLAN_CONTEXTS_FILE): Con
   }
 }
 
-export function savePlanContextBindings(bindings: ContextBinding[], bindingsFile = DEFAULT_PLAN_CONTEXT_BINDINGS_FILE): void {
+export function savePlanContextBindings(bindings: ContextBinding[], bindingsFile?: string): void {
+  if (!bindingsFile) return;
   try {
     atomicWriteFileSync(bindingsFile, JSON.stringify({ version: 1, bindings }, null, 2));
   } catch (err) {
@@ -40,7 +42,8 @@ export function savePlanContextBindings(bindings: ContextBinding[], bindingsFile
   }
 }
 
-export function loadPlanContextBindings(bindingsFile = DEFAULT_PLAN_CONTEXT_BINDINGS_FILE): ContextBinding[] {
+export function loadPlanContextBindings(bindingsFile?: string): ContextBinding[] {
+  if (!bindingsFile) return [];
   try {
     if (!existsSync(bindingsFile)) return [];
     const raw = JSON.parse(readFileSync(bindingsFile, 'utf8')) as unknown;

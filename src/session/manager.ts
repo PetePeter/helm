@@ -26,8 +26,28 @@ export class SessionManager extends EventEmitter {
   private activeSessionId: string | null = null;
   private sessionOrder: string[] = [];
 
-  constructor(private readonly projectStore?: ProjectStore) {
+  private readonly projectStore?: ProjectStore;
+  private readonly userProfileId: string;
+  private readonly sessionsFile?: string;
+
+  constructor(options?: { userProfileId: string; sessionsFile: string; projectStore?: ProjectStore });
+  constructor(projectStore?: ProjectStore);
+  constructor(optionsOrProjectStore?: { userProfileId: string; sessionsFile: string; projectStore?: ProjectStore } | ProjectStore) {
     super();
+    if (optionsOrProjectStore && 'userProfileId' in optionsOrProjectStore) {
+      this.userProfileId = optionsOrProjectStore.userProfileId;
+      this.sessionsFile = optionsOrProjectStore.sessionsFile;
+      this.projectStore = optionsOrProjectStore.projectStore;
+    } else {
+      // Existing standalone consumers use an in-memory manager. Production
+      // runtimes always inject both identity and persistence paths.
+      this.userProfileId = '1';
+      this.projectStore = optionsOrProjectStore;
+    }
+  }
+
+  getUserProfileId(): string {
+    return this.userProfileId;
   }
 
   /**
@@ -35,6 +55,10 @@ export class SessionManager extends EventEmitter {
    * @param sessionInfo - Session information
    */
   addSession(sessionInfo: SessionInfo, skipPersist = false): void {
+    if (sessionInfo.userProfileId !== undefined && sessionInfo.userProfileId !== this.userProfileId) {
+      throw new Error(`Session ${sessionInfo.id} belongs to profile ${sessionInfo.userProfileId}, not ${this.userProfileId}`);
+    }
+    sessionInfo.userProfileId = this.userProfileId;
     this.applyProjectIdentity(sessionInfo);
     const { id } = sessionInfo;
 
@@ -217,6 +241,9 @@ export class SessionManager extends EventEmitter {
     if (!session) {
       throw new Error(`Session with id "${sessionId}" does not exist`);
     }
+    if (updates.userProfileId !== undefined && updates.userProfileId !== this.userProfileId) {
+      throw new Error(`Session ${sessionId} profile ownership is immutable`);
+    }
     Object.assign(session, updates);
     this.applyProjectIdentity(session);
     this.persistSessions();
@@ -398,7 +425,7 @@ export class SessionManager extends EventEmitter {
    * Skips sessions that already exist in memory.
    */
   restoreSessions(): SessionInfo[] {
-    const saved = loadSessions();
+    const saved = loadSessions(this.sessionsFile, this.userProfileId);
     for (const session of saved) {
       if (!this.getSession(session.id)) {
         this.addSession(session, true);
@@ -413,7 +440,7 @@ export class SessionManager extends EventEmitter {
   /** Write current session list to disk. */
   private persistSessions(): void {
     this.projectStore?.save();
-    saveSessions(this.getAllSessions());
+    saveSessions(this.getAllSessions(), this.sessionsFile);
   }
 
   private applyProjectIdentity(session: SessionInfo): void {

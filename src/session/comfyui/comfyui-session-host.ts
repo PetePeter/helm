@@ -27,10 +27,14 @@ export interface ComfyUiArtifacts {
   create(sessionId: string, title: string, kind: 'markdown', content: string, source: 'manual'): Artifact;
 }
 
-export interface ComfyUiSessionHostDeps {
-  tempDir: string;
+export interface ComfyUiProfileStores {
   artifacts: ComfyUiArtifacts;
   attachments: Pick<ArtifactAttachmentManager, 'add' | 'addGeneratedMediaFromFile' | 'get' | 'getPath' | 'list' | 'delete'>;
+}
+
+export interface ComfyUiSessionHostDeps {
+  tempDir: string;
+  storesForProfile: (userProfileId: string) => ComfyUiProfileStores;
   onAttachmentDeleted?: (sessionId: string, artifactId: string, attachmentId: string) => void;
   postChat: (sessionId: string, text: string, attachment?: ChatAttachmentRef) => Promise<void>;
   /** Put a prompt another session sent into the chat; the chat pane and a phone record their own. */
@@ -48,6 +52,7 @@ export interface ComfyUiSessionProcess extends PtyProcess {
 interface Job {
   id: string;
   sessionId: string;
+  userProfileId: string;
   /** The session that sent the prompt; chat prompts have none. */
   requesterSessionId?: string;
   endpoint: string;
@@ -70,15 +75,17 @@ const CHAT_FILES_BODY = 'Files generated or shared in this ComfyUI session. Stor
 /** ComfyUI sessions share one serialized GPU queue and the existing chat journal. */
 export class ComfyUiSessionHost {
   private readonly sessions = new Map<string, SessionProcess>();
+  private readonly profileBySession = new Map<string, string>();
   private readonly jobs = new Map<string, Job>();
   private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: ComfyUiSessionHostDeps) {}
 
-  create(sessionId: string, configValue: ComfyUiToolConfig): ComfyUiSessionProcess {
+  create(sessionId: string, configValue: ComfyUiToolConfig, userProfileId = '1'): ComfyUiSessionProcess {
     const config = validateComfyUiConfig(configValue);
     const process = new SessionProcess(sessionId, this, config);
     this.sessions.set(sessionId, process);
+    this.profileBySession.set(sessionId, userProfileId);
     return process;
   }
 
@@ -93,6 +100,8 @@ export class ComfyUiSessionHost {
   ): { jobId: string; profileId: string } {
     const process = this.sessions.get(sessionId);
     if (!process) throw new Error('ComfyUI session is not running');
+    const userProfileId = this.profileBySession.get(sessionId);
+    if (!userProfileId) throw new Error('ComfyUI session has no owning profile');
     const trimmed = prompt.trim();
     const profile = process.config.profiles.find(item => item.id === profileId)
       ?? (profileId ? undefined : process.config.profiles[0]);
@@ -108,14 +117,15 @@ export class ComfyUiSessionHost {
     const imageSize = COMFYUI_IMAGE_SIZE_OPTIONS.find(option => option.id === imageSizeId);
     const referencePaths: string[] = [];
     if (attachmentIds.length > 0) {
-      const filesArtifact = this.deps.artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE);
+      const stores = this.deps.storesForProfile(userProfileId);
+      const filesArtifact = stores.artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE);
       if (!filesArtifact) throw new Error('A selected reference image is no longer available in this session');
       for (const attachmentId of attachmentIds) {
-        const attachment = this.deps.attachments.get(filesArtifact.id, attachmentId);
+        const attachment = stores.attachments.get(filesArtifact.id, attachmentId);
         if (!attachment || !attachment.contentType?.toLowerCase().startsWith('image/')) {
           throw new Error('A selected reference image is no longer available in this session');
         }
-        referencePaths.push(this.deps.attachments.getPath(filesArtifact.id, attachment.id));
+        referencePaths.push(stores.attachments.getPath(filesArtifact.id, attachment.id));
       }
     }
     if (inputImagePath) {
@@ -126,6 +136,7 @@ export class ComfyUiSessionHost {
     const job: Job = {
       id: randomUUID(),
       sessionId,
+      userProfileId,
       ...(requesterSessionId ? { requesterSessionId } : {}),
       endpoint: process.config.endpoint,
       profileId: profile.id,
@@ -167,16 +178,19 @@ export class ComfyUiSessionHost {
 
   /** Permanently expire stored images after SessionManager removes this session. */
   closeSession(sessionId: string): void {
+    const userProfileId = this.profileBySession.get(sessionId);
     this.remove(sessionId);
-    this.deleteStoredImages(sessionId);
+    if (userProfileId) this.deleteStoredImages(sessionId, userProfileId);
+    this.profileBySession.delete(sessionId);
   }
 
-  private deleteStoredImages(sessionId: string): void {
-    for (const artifact of this.deps.artifacts.getForSession(sessionId).filter(item => item.title === CHAT_FILES_TITLE)) {
-      for (const attachment of this.deps.attachments.list(artifact.id)) {
+  private deleteStoredImages(sessionId: string, userProfileId: string): void {
+    const stores = this.deps.storesForProfile(userProfileId);
+    for (const artifact of stores.artifacts.getForSession(sessionId).filter(item => item.title === CHAT_FILES_TITLE)) {
+      for (const attachment of stores.attachments.list(artifact.id)) {
         if (!attachment.contentType?.toLowerCase().startsWith('image/')) continue;
         try {
-          if (!this.deps.attachments.delete(artifact.id, attachment.id)) continue;
+          if (!stores.attachments.delete(artifact.id, attachment.id)) continue;
           try {
             this.deps.onAttachmentDeleted?.(sessionId, artifact.id, attachment.id);
           } catch (error) {
@@ -246,8 +260,9 @@ export class ComfyUiSessionHost {
       });
       for (const [index, file] of files.entries()) {
         if (job.controller.signal.aborted || this.sessions.get(job.sessionId) !== process) break;
-        const artifact = this.chatFilesArtifact(job.sessionId);
-        const stored = await this.deps.attachments.addGeneratedMediaFromFile(artifact.id, {
+        const stores = this.deps.storesForProfile(job.userProfileId);
+        const artifact = this.chatFilesArtifact(job.sessionId, stores);
+        const stored = await stores.attachments.addGeneratedMediaFromFile(artifact.id, {
           filePath: file.filePath,
           filename: file.filename,
           contentType: file.mimeType,
@@ -257,7 +272,7 @@ export class ComfyUiSessionHost {
         // session removal pass may have run before the row reached the index;
         // remove this late result instead of leaving it behind after close.
         if (this.sessions.get(job.sessionId) !== process) {
-          if (this.deps.attachments.delete(stored.artifactId, stored.id)) {
+          if (stores.attachments.delete(stored.artifactId, stored.id)) {
             try {
               this.deps.onAttachmentDeleted?.(job.sessionId, stored.artifactId, stored.id);
             } catch (error) {
@@ -266,7 +281,7 @@ export class ComfyUiSessionHost {
           }
           break;
         }
-        const storedPath = this.deps.attachments.getPath(stored.artifactId, stored.id);
+        const storedPath = stores.attachments.getPath(stored.artifactId, stored.id);
         const attachment: ChatAttachmentRef = {
           artifactId: stored.artifactId,
           attachmentId: stored.id,
@@ -341,9 +356,9 @@ export class ComfyUiSessionHost {
     }
   }
 
-  private chatFilesArtifact(sessionId: string): Artifact {
-    return this.deps.artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE)
-      ?? this.deps.artifacts.create(sessionId, CHAT_FILES_TITLE, 'markdown', CHAT_FILES_BODY, 'manual');
+  private chatFilesArtifact(sessionId: string, stores = this.storesForSession(sessionId)): Artifact {
+    return stores.artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE)
+      ?? stores.artifacts.create(sessionId, CHAT_FILES_TITLE, 'markdown', CHAT_FILES_BODY, 'manual');
   }
 
   private importReferenceImage(sessionId: string, filePath: string): { filePath: string; attachment: ChatAttachmentRef } {
@@ -358,11 +373,12 @@ export class ComfyUiSessionHost {
     if (!hasMatchingComfyImageSignature(content, mimeType)) {
       throw new Error('ComfyUI image input content does not match its file type');
     }
-    const artifact = this.chatFilesArtifact(sessionId);
-    const stored = this.deps.attachments.add(artifact.id, {
+    const stores = this.storesForSession(sessionId);
+    const artifact = this.chatFilesArtifact(sessionId, stores);
+    const stored = stores.attachments.add(artifact.id, {
       filename: basename(filePath), content, contentType: mimeType,
     });
-    const storedPath = this.deps.attachments.getPath(stored.artifactId, stored.id);
+    const storedPath = stores.attachments.getPath(stored.artifactId, stored.id);
     return {
       filePath: storedPath,
       attachment: {
@@ -374,6 +390,12 @@ export class ComfyUiSessionHost {
         filePath: storedPath,
       },
     };
+  }
+
+  private storesForSession(sessionId: string): ComfyUiProfileStores {
+    const userProfileId = this.profileBySession.get(sessionId);
+    if (!userProfileId) throw new Error('ComfyUI session has no owning profile');
+    return this.deps.storesForProfile(userProfileId);
   }
 }
 

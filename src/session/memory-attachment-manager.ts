@@ -13,7 +13,6 @@ import {
 } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { getTempDir } from '../utils/app-paths.js';
-import { MEMORY_ATTACHMENTS_DIR } from './persistence-paths.js';
 import type {
   MemoryAttachment,
   MemoryAttachmentInput,
@@ -72,7 +71,7 @@ export class MemoryAttachmentManager {
   private readonly options: MemoryAttachmentManagerOptions;
 
   constructor(
-    private readonly rootDir: string = MEMORY_ATTACHMENTS_DIR,
+    private readonly rootDir: string,
     tempDir: string = getTempDir(import.meta.dirname ?? '.'),
     options: MemoryAttachmentManagerOptions = {},
   ) {

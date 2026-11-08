@@ -77,15 +77,17 @@ describe('ComfyUI requester reply', () => {
 
     host = new ComfyUiSessionHost({
       tempDir: rootDir,
-      artifacts: {
-        getForSession: sessionId => artifacts.filter(artifact => artifact.sessionId === sessionId),
-        create: (sessionId, title) => {
-          const artifact = { id: `artifact-${artifacts.length + 1}`, sessionId, title } as Artifact;
-          artifacts.push(artifact);
-          return artifact;
+      storesForProfile: () => ({
+        artifacts: {
+          getForSession: sessionId => artifacts.filter(artifact => artifact.sessionId === sessionId),
+          create: (sessionId, title) => {
+            const artifact = { id: `artifact-${artifacts.length + 1}`, sessionId, title } as Artifact;
+            artifacts.push(artifact);
+            return artifact;
+          },
         },
-      },
-      attachments,
+        attachments,
+      }),
       onAttachmentDeleted: (sessionId, artifactId, attachmentId) => {
         deletedAttachments.push({ sessionId, artifactId, attachmentId });
       },

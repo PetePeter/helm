@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import type { Draft, DraftSend } from '../types/draft.js';
 import type { DraftStore } from './draft-manager.js';
-import { DRAFTS_DIR } from './persistence-paths.js';
 import { atomicWriteFileSync, isAnyString, isNumber, isRecord } from './persistence-utils.js';
 
 const EXTENSION = '.json';
@@ -56,7 +55,7 @@ export function migrateLegacyDraftStore(configDir: string): void {
  * One JSON file per session under the user config dir. Errors are logged, never
  * thrown: a pad that cannot be saved must not break the session it belongs to.
  */
-export function createDraftStore(dir: string = DRAFTS_DIR): DraftStore {
+export function createDraftStore(dir: string): DraftStore {
   const historyDir = join(dir, 'history');
   const listFiles = (directory: string): string[] => existsSync(directory)
     ? readdirSync(directory).filter(name => name.endsWith(EXTENSION)).flatMap(sessionIdOf)

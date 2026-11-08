@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { SkillManager } from '../src/session/skill-manager.js';
 import { getToolReminder } from '../src/mcp/tools/reminders.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 const directories: string[] = [];
 
@@ -20,7 +21,7 @@ function setup() {
   const skillManager = new SkillManager(join(directory, 'skills.yaml'));
   return new HelmControlService(
     {} as never, {} as never, {} as never, {} as never,
-    undefined, undefined, undefined, undefined, skillManager,
+    unusedPlanAttachmentManager(), undefined, undefined, undefined, skillManager,
   );
 }
 

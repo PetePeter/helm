@@ -5,7 +5,7 @@ import * as path from 'path';
 import { isValidContextLimits, type ContextLimits } from '../session/context-limits.js';
 import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
-import { getConfigDir, getProfileConfigDir } from '../utils/app-paths.js';
+import { getConfigDir } from '../utils/app-paths.js';
 import {
   isCliTypeOptions,
   normalizeMcpPort,
@@ -558,60 +558,87 @@ export function stickVirtualButtonName(stick: 'left' | 'right', direction: Stick
 // ConfigLoader
 // ============================================================================
 
-const DEFAULT_GLOBAL_CONFIG_DIR = getConfigDir(import.meta.dirname ?? '.');
-const DEFAULT_PROFILE_CONFIG_DIR = getProfileConfigDir('1');
-
 export interface ConfigLoaderPaths {
+  userProfileId?: string;
   profileConfigDir: string;
   globalConfigDir: string;
+}
+
+interface SharedConfigState {
+  bindingStore: BindingStore;
+  inputConfigStore: InputConfigStore;
+  settingsManager: SettingsManager;
+  settings: SettingsConfig | null;
+  globalOwnerProfileId: string;
+  globalLoaded: boolean;
 }
 
 /** Well-known id of the profile legacy per-CLI bindings migrate into. */
 export const DEFAULT_BINDING_PROFILE_ID = 'default';
 
 export class ConfigLoader {
+  private userProfileId: string;
   private profileConfigDir: string;
   private globalConfigDir: string;
   private cliTypeStore: CliTypeStore;
   private bindingStore: BindingStore;
   private inputConfigStore: InputConfigStore;
   private settingsManager: SettingsManager;
+  private sharedConfigState: SharedConfigState;
   private voiceConfigManager: VoiceConfigManager;
-  private settings: SettingsConfig | null = null;
   private projectStore?: ProjectStore;
 
-  constructor(paths: ConfigLoaderPaths | string = {
-    profileConfigDir: DEFAULT_PROFILE_CONFIG_DIR,
-    globalConfigDir: DEFAULT_GLOBAL_CONFIG_DIR,
-  }) {
+  private get settings(): SettingsConfig | null { return this.sharedConfigState.settings; }
+  private set settings(value: SettingsConfig | null) { this.sharedConfigState.settings = value; }
+
+  constructor(paths: ConfigLoaderPaths | string, sharedConfigState?: SharedConfigState) {
     const resolved = typeof paths === 'string'
-      ? { profileConfigDir: paths, globalConfigDir: paths }
+      ? { userProfileId: '1', profileConfigDir: paths, globalConfigDir: paths }
       : paths;
+    this.userProfileId = resolved.userProfileId ?? '1';
     this.profileConfigDir = resolved.profileConfigDir;
     this.globalConfigDir = resolved.globalConfigDir;
     this.cliTypeStore = new CliTypeStore(this.profileConfigDir);
-    this.bindingStore = new BindingStore(this.globalConfigDir);
-    this.inputConfigStore = new InputConfigStore(this.globalConfigDir);
-    this.settingsManager = new SettingsManager(this.globalConfigDir);
+    this.sharedConfigState = sharedConfigState ?? {
+      bindingStore: new BindingStore(this.globalConfigDir),
+      inputConfigStore: new InputConfigStore(this.globalConfigDir),
+      settingsManager: new SettingsManager(this.globalConfigDir),
+      settings: null,
+      globalOwnerProfileId: this.userProfileId,
+      globalLoaded: false,
+    };
+    this.bindingStore = this.sharedConfigState.bindingStore;
+    this.inputConfigStore = this.sharedConfigState.inputConfigStore;
+    this.settingsManager = this.sharedConfigState.settingsManager;
     this.voiceConfigManager = new VoiceConfigManager(
       () => this.settings,
       () => this.saveSettings(),
     );
   }
 
+  /** Create a profile view that shares the machine-wide stores and settings cache. */
+  createProfileView(userProfileId: string, profileConfigDir: string): ConfigLoader {
+    return new ConfigLoader({ userProfileId, profileConfigDir, globalConfigDir: this.globalConfigDir }, this.sharedConfigState);
+  }
+
+  getUserProfileId(): string { return this.userProfileId; }
+  getProfileConfigDir(): string { return this.profileConfigDir; }
+  getGlobalConfigDir(): string { return this.globalConfigDir; }
+
   // ---------- Loading --------------------------------------------------
 
   load(): void {
-    this.loadSettings();
-    const migratedDreamPrompt = migrateSavedDreamPrompt(this.settings?.dreaming?.prompt);
-    if (migratedDreamPrompt !== null) {
-      this.settings!.dreaming = { prompt: migratedDreamPrompt };
-      this.saveSettings();
-    }
+    const ownsGlobalConfig = this.userProfileId === this.sharedConfigState.globalOwnerProfileId;
     this.cliTypeStore.load();
-    this.bindingStore.load();
-    this.inputConfigStore.load();
-    migrateFromProfile(this.profileConfigDir, this.cliTypeStore, this.bindingStore, this.inputConfigStore);
+    if (ownsGlobalConfig && !this.sharedConfigState.globalLoaded) {
+      this.loadGlobalConfig();
+    }
+    migrateFromProfile(
+      this.profileConfigDir,
+      this.cliTypeStore,
+      ownsGlobalConfig ? this.bindingStore : undefined,
+      ownsGlobalConfig ? this.inputConfigStore : undefined,
+    );
     // Re-key slug-based CLI types to UUIDs. Runs after the profile migration so
     // types it just imported are covered too; rewrites the file directly, hence
     // the reload.
@@ -620,11 +647,25 @@ export class ConfigLoader {
     }
     // Merge ComfyUI presets only into tools a user already configured. Fresh
     // installs remain free of optional ComfyUI tool entries.
-    if (path.resolve(this.profileConfigDir) === path.resolve(DEFAULT_PROFILE_CONFIG_DIR)
+    if (ownsGlobalConfig && this.userProfileId === '1'
       && migrateComfyUiToolDefaults(defaultComfyUiMigrationFiles(this.profileConfigDir))) {
       this.cliTypeStore.load();
     }
-    this.migrateLegacyBindings();
+    if (ownsGlobalConfig) {
+      this.migrateLegacyBindings();
+      this.sharedConfigState.globalLoaded = true;
+    }
+  }
+
+  private loadGlobalConfig(): void {
+    this.loadSettings();
+    const migratedDreamPrompt = migrateSavedDreamPrompt(this.settings?.dreaming?.prompt);
+    if (migratedDreamPrompt !== null) {
+      this.settings!.dreaming = { prompt: migratedDreamPrompt };
+      this.saveSettings();
+    }
+    this.bindingStore.load();
+    this.inputConfigStore.load();
   }
 
   /**

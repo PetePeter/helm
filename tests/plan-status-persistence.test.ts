@@ -8,19 +8,37 @@
  * recomputeStartable promoted them to 'ready'), losing worker claims with them.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 import { PlanManager } from '../src/session/plan-manager.js';
+import { ProjectStore } from '../src/session/project-store.js';
+import { getProfilePersistencePaths } from '../src/session/persistence-paths.js';
 
 describe('PlanManager status persistence round trip', () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  const newPaths = () => {
+    const root = mkdtempSync(join(tmpdir(), 'helm-plan-status-'));
+    roots.push(root);
+    return getProfilePersistencePaths(root);
+  };
+  const manager = (paths: ReturnType<typeof newPaths>) => new PlanManager(new ProjectStore(paths.projectsFile), paths);
+
   it('preserves coding/review statuses and the session claim across a reload', () => {
     const dir = '/tmp/plan-status-roundtrip';
-    const pm = new PlanManager();
+    const paths = newPaths();
+    const pm = manager(paths);
     const coding = pm.create(dir, 'Coding item', '');
     const review = pm.create(dir, 'Review item', '');
 
@@ -28,7 +46,7 @@ describe('PlanManager status persistence round trip', () => {
     expect(pm.setState(review.id, 'review')).not.toBeNull();
     pm.claimPlan(coding.id, 'worker-A');
 
-    const reloaded = new PlanManager();
+    const reloaded = manager(paths);
 
     expect(reloaded.getItem(coding.id)?.status).toBe('coding');
     expect(reloaded.getItem(review.id)?.status).toBe('review');
@@ -37,11 +55,12 @@ describe('PlanManager status persistence round trip', () => {
 
   it('preserves blocked stateInfo across a reload', () => {
     const dir = '/tmp/plan-status-roundtrip-blocked';
-    const pm = new PlanManager();
+    const paths = newPaths();
+    const pm = manager(paths);
     const item = pm.create(dir, 'Blocked item', '');
     pm.setState(item.id, 'blocked', 'Waiting on API key');
 
-    const reloaded = new PlanManager();
+    const reloaded = manager(paths);
     const loaded = reloaded.getItem(item.id);
     expect(loaded?.status).toBe('blocked');
     expect(loaded?.stateInfo).toBe('Waiting on API key');
@@ -49,10 +68,11 @@ describe('PlanManager status persistence round trip', () => {
 
   it('preserves suggested status and source idea across a reload', () => {
     const dir = `/tmp/plan-status-suggested-${randomUUID()}`;
-    const pm = new PlanManager();
+    const paths = newPaths();
+    const pm = manager(paths);
     const suggested = pm.createSuggested(dir, 'Suggested item', 'Awaiting triage', 'idea-1');
 
-    const reloaded = new PlanManager();
+    const reloaded = manager(paths);
 
     expect(reloaded.getItem(suggested.id)).toMatchObject({ status: 'suggested', sourceIdeaId: 'idea-1' });
     expect(reloaded.getStartableForDirectory(dir)).toEqual([]);
@@ -61,7 +81,8 @@ describe('PlanManager status persistence round trip', () => {
 
   it('still migrates legacy statuses on load', () => {
     const dir = '/tmp/plan-status-legacy';
-    const pm = new PlanManager();
+    const paths = newPaths();
+    const pm = manager(paths);
     const item = pm.create(dir, 'Legacy item', '');
     // Simulate a file written by an older build.
     const imported = pm.importItem({

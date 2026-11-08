@@ -146,6 +146,7 @@ describe('spawnConfiguredSession', () => {
 describe('spawnConfiguredSession — API tools', () => {
   it('adopts a Helm-hosted API session instead of spawning a CLI, and flags the row', async () => {
     const { ApiSessionHost, registerApiSessionHost } = await import('../src/session/api/api-session-host.js');
+    const historyProfiles: string[] = [];
     registerApiSessionHost(new ApiSessionHost({
       dispatchTool: async () => ({}),
       postChat: async () => ({}),
@@ -157,6 +158,7 @@ describe('spawnConfiguredSession — API tools', () => {
       recordToolRequest: () => {},
       emitHook: () => {},
       historyDir: 'unused-no-turns-run',
+      historyDirForProfile: userProfileId => { historyProfiles.push(userProfileId); return 'unused-no-turns-run'; },
     }));
     try {
       const ptyManager = { spawn: vi.fn(), adopt: vi.fn(), write: vi.fn() };
@@ -169,7 +171,10 @@ describe('spawnConfiguredSession — API tools', () => {
 
       const result = spawnConfiguredSession({
         ptyManager: ptyManager as any,
-        sessionManager: { addSession, updateSession: vi.fn(), hasSession: () => false, getSession: () => undefined } as any,
+        sessionManager: {
+          addSession, updateSession: vi.fn(), hasSession: () => false, getSession: () => undefined,
+          getUserProfileId: () => '2',
+        } as any,
         configLoader: configLoader as any,
         cliType: 'api-type',
         cwd: 'X:\coding\gamepad-cli-hub',
@@ -179,6 +184,7 @@ describe('spawnConfiguredSession — API tools', () => {
       expect(ptyManager.spawn).not.toHaveBeenCalled();
       expect(ptyManager.adopt).toHaveBeenCalledWith(result.sessionId, result.pty, expect.any(Object));
       expect(addSession).toHaveBeenCalledWith(expect.objectContaining({ apiTool: true, processId: 0, name: 'Mini' }));
+      expect(historyProfiles).toEqual(['2']);
     } finally {
       registerApiSessionHost(null);
     }

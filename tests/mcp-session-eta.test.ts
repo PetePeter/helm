@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionInfo } from '../src/types/session.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -35,7 +36,7 @@ describe('MCP session_eta_*', () => {
       getCliTypeEntry: () => null,
       getCliTypes: () => [],
     };
-    const service = new HelmControlService({} as never, manager, {} as never, configLoader as never);
+    const service = new HelmControlService({} as never, manager, {} as never, configLoader as never, unusedPlanAttachmentManager());
     const deps = { service, setPlanStateWithValidation: vi.fn(), completePlanWithValidation: vi.fn() };
     call = (tool, args = {}, auth = { sessionId: 'me' }) => callMcpTool(deps, tool, args, auth) as Promise<any>;
   });
@@ -110,7 +111,7 @@ describe('MCP session_eta_* with the EtaTracker', () => {
     const manager = new SessionManager();
     manager.addSession({ ...session('me', 'caller'), workingDir: 'X:/repo' });
     const configLoader = { getCliTypeLabel: (r: string) => r, getCliTypeEntry: () => null, getCliTypes: () => [] };
-    const service = new HelmControlService({} as never, manager, {} as never, configLoader as never);
+    const service = new HelmControlService({} as never, manager, {} as never, configLoader as never, unusedPlanAttachmentManager());
     service.setEtaTracker(tracker);
     const deps = { service, setPlanStateWithValidation: vi.fn(), completePlanWithValidation: vi.fn() };
     const call = (tool: string, args = {}) => callMcpTool(deps, tool, args, { sessionId: 'me' }) as Promise<any>;

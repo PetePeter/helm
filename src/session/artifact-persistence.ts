@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as YAML from 'yaml';
 import { logger } from '../utils/logger.js';
 import type { Artifact, ArtifactVersion } from '../types/artifact.js';
-import { ARTIFACTS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isAnyString, isNumber, isRecord, isString } from './persistence-utils.js';
 
 function isArtifactVersion(value: unknown): value is ArtifactVersion {
@@ -52,18 +51,20 @@ function sanitizeArtifacts(value: unknown): Record<string, Artifact[]> {
   return result;
 }
 
-export function saveArtifacts(all: Record<string, Artifact[]>): void {
+export function saveArtifacts(all: Record<string, Artifact[]>, filePath?: string): void {
+  if (!filePath) return;
   try {
-    atomicWriteFileSync(ARTIFACTS_FILE, YAML.stringify({ artifacts: all }));
+    atomicWriteFileSync(filePath, YAML.stringify({ artifacts: all }));
   } catch (err) {
     logger.error(`Failed to save artifacts: ${err}`);
   }
 }
 
-export function loadArtifacts(): Record<string, Artifact[]> {
+export function loadArtifacts(filePath?: string): Record<string, Artifact[]> {
+  if (!filePath) return {};
   try {
-    if (!existsSync(ARTIFACTS_FILE)) return {};
-    const parsed = YAML.parse(readFileSync(ARTIFACTS_FILE, 'utf8')) as unknown;
+    if (!existsSync(filePath)) return {};
+    const parsed = YAML.parse(readFileSync(filePath, 'utf8')) as unknown;
     return isRecord(parsed) ? sanitizeArtifacts(parsed.artifacts) : {};
   } catch (err) {
     logger.error(`Failed to load artifacts: ${err}`);

@@ -46,7 +46,7 @@ export interface ApiSessionHostDeps {
   /** Same dispatch path as the MCP server, under the session's own identity. */
   dispatchTool: (name: string, args: Record<string, unknown>, auth: AuthContext) => Promise<unknown>;
   mcpTools: () => readonly McpTool[];
-  listSkills: (cwd: string | undefined) => SkillSummary[];
+  listSkills: (sessionId: string, cwd: string | undefined, userProfileId?: string) => SkillSummary[];
   getMission: (sessionId: string) => string | undefined;
   /** Persistent opted-in artifact context, supplied on API context reset paths. */
   getManifestoContext?: (sessionId: string) => string;
@@ -78,6 +78,8 @@ export interface ApiSessionHostDeps {
   chatHistory?: (sessionId: string) => ChatHistoryEntry[];
   /** Folder holding one history JSON per cliSessionName. */
   historyDir: string;
+  /** Resolve the history directory from the creating runtime's explicit profile id. */
+  historyDirForProfile?: (userProfileId: string) => string;
   env?: NodeJS.ProcessEnv;
   createClient?: (api: ApiToolConfig, apiKey: string | undefined) => ChatClient;
   now?: () => Date;
@@ -85,6 +87,8 @@ export interface ApiSessionHostDeps {
 
 export interface ApiSessionSpawn {
   sessionId: string;
+  /** Owning runtime; available before the session has been added to its manager. */
+  userProfileId?: string;
   /** The CLI type id — a subagent is spawned from the same one. */
   cliType?: string;
   sessionName: string;
@@ -215,11 +219,14 @@ export class ApiSessionHost {
     const system = buildSystemPrompt({
       toolNames,
       deferredToolNames: deferred.map((tool) => tool.name),
-      skills: toolNames.includes('skill_get') ? this.safeSkills(cwd) : [],
+      skills: toolNames.includes('skill_get') ? this.safeSkills(sessionId, cwd, spawn.userProfileId) : [],
       extra: api.systemPrompt,
     });
     const client = this.slottedClient(api, spawn.env, spawn.cliType ?? sessionId);
-    const historyFile = this.historyFile(spawn.cliSessionName);
+    const historyDir = spawn.userProfileId && this.deps.historyDirForProfile
+      ? this.deps.historyDirForProfile(spawn.userProfileId)
+      : this.deps.historyDir;
+    const historyFile = this.historyFile(spawn.cliSessionName, historyDir);
     const now = this.deps.now ?? (() => new Date());
 
     const proc = new ApiSessionProcess({
@@ -233,7 +240,7 @@ export class ApiSessionHost {
       history: this.loadHistory(historyFile),
       saveHistory: (history) => this.saveHistory(historyFile, history),
       quickCompactHistory: (history, handover, manifestoContext) => this.quickCompactHistory(
-        history, spawn.cliSessionName, historyFile, handover, manifestoContext,
+        history, spawn.cliSessionName, historyFile, historyDir, handover, manifestoContext,
       ),
       getManifestoContext: () => this.deps.getManifestoContext?.(sessionId) ?? '',
       mutableContext: () => buildMutableContext({
@@ -630,18 +637,18 @@ export class ApiSessionHost {
     }
   }
 
-  private safeSkills(cwd: string | undefined): SkillSummary[] {
+  private safeSkills(sessionId: string, cwd: string | undefined, userProfileId?: string): SkillSummary[] {
     try {
-      return this.deps.listSkills(cwd);
+      return this.deps.listSkills(sessionId, cwd, userProfileId);
     } catch (err) {
       logger.warn(`[ApiSession] Skill listing failed: ${String(err)}`);
       return [];
     }
   }
 
-  private historyFile(cliSessionName: string): string | null {
+  private historyFile(cliSessionName: string, historyDir = this.deps.historyDir): string | null {
     // cliSessionName is a Helm UUID; refuse anything that could escape the folder.
-    return HISTORY_FILE_RE.test(cliSessionName) ? path.join(this.deps.historyDir, `${cliSessionName}.json`) : null;
+    return HISTORY_FILE_RE.test(cliSessionName) ? path.join(historyDir, `${cliSessionName}.json`) : null;
   }
 
   private loadHistory(file: string | null): ChatMessage[] {
@@ -669,13 +676,14 @@ export class ApiSessionHost {
     history: ChatMessage[],
     cliSessionName: string,
     historyFile: string | null,
+    historyDir: string,
     handover?: string,
     manifestoContext?: string,
   ): { history: ChatMessage[]; archiveFile: string; transcriptFile: string } {
     if (!historyFile) throw new Error('Cannot persist API history for this session name');
     const archiveId = randomUUID();
-    const archiveFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.json`);
-    const transcriptFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.md`);
+    const archiveFile = path.join(historyDir, `${cliSessionName}.${archiveId}.quick-compact.json`);
+    const transcriptFile = path.join(historyDir, `${cliSessionName}.${archiveId}.quick-compact.md`);
     const manifesto = manifestoContext?.trim();
     const nextHistory: ChatMessage[] = [
       ...(manifesto ? [

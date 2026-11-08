@@ -12,6 +12,7 @@ import { DEFAULT_DREAM_PROMPT } from '../src/types/dreaming.js';
 import { MemoryAttachmentManager } from '../src/session/memory-attachment-manager.js';
 import { MemoryManager } from '../src/session/memory-manager.js';
 import { MEMORY_DREAM_MIN_CANDIDATES } from '../src/types/memory.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 const PROJECT = 'project-alpha';
 const DREAMER = 'dream-session';
@@ -40,7 +41,7 @@ function setup() {
 
 function setupMcp() {
   const context = setup();
-  const service = new HelmControlService({} as never, {} as never, {} as never, {} as never);
+  const service = new HelmControlService({} as never, {} as never, {} as never, {} as never, unusedPlanAttachmentManager());
   service.setMemoryManager(context.manager, {} as MemoryAttachmentManager);
   const deps = { service, setPlanStateWithValidation: () => undefined, completePlanWithValidation: () => undefined };
   return { ...context, call: (tool: string, args: Record<string, unknown>, sessionId: string) => callMcpTool(deps, tool, args, { sessionId }) };

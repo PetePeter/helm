@@ -41,6 +41,8 @@ export const BUILTIN_SHELL_CLI_TYPE = 'shell';
 export interface SessionInfo {
   /** Unique session identifier */
   id: string;
+  /** User profile that owns this session's runtime and persistence. */
+  userProfileId?: string;
   /** Display name for the session */
   name: string;
   /** Type of CLI (e.g., 'claude-code', 'copilot-cli') */

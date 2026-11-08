@@ -30,6 +30,8 @@ export interface MessPersistenceLike {
 
 export interface MessManagerOptions {
   persistenceFactory?: (projectId: string) => MessPersistenceLike;
+  /** Profile-owned log directory used when no custom factory is needed. */
+  directory?: string;
   now?: () => number;
   maxDeltaEntries?: number;
   maxDeltaBytes?: number;
@@ -109,7 +111,11 @@ export class MessManager extends EventEmitter {
     options: MessManagerOptions = {},
   ) {
     super();
-    this.persistenceFactory = options.persistenceFactory ?? ((projectId) => new MessPersistence(projectId));
+    if (!options.persistenceFactory && !options.directory) {
+      throw new Error('MessManager requires an explicit profile Mess directory or persistence factory');
+    }
+    this.persistenceFactory = options.persistenceFactory
+      ?? (projectId => new MessPersistence(projectId, { directory: options.directory! }));
     this.now = options.now ?? Date.now;
     this.maxDeltaEntries = positiveLimit(options.maxDeltaEntries, DEFAULT_MESS_MAX_DELTA_ENTRIES);
     this.maxDeltaBytes = positiveLimit(options.maxDeltaBytes, DEFAULT_MESS_MAX_DELTA_BYTES);

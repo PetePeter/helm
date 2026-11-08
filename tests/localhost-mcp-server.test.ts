@@ -6,6 +6,7 @@ import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
 import { mintSessionAuthToken } from '../src/mcp/session-auth.js';
 import { HelmChatService } from '../src/mcp/services/helm-chat-service.js';
 import { ChatBroker } from '../src/session/chat/chat-broker.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
 
 /** The tool payload: compact JSON on the first line of the text content (a reminder may follow). */
@@ -1692,7 +1693,7 @@ describe('LocalhostMcpServer', () => {
         getWorkingDirectories: vi.fn(() => [{ path: 'X:\\coding\\gamepad-cli-hub', name: 'Helm' }]),
         getCliTypeEntry: vi.fn(() => undefined),
       } as any,
-      {} as any,
+      unusedPlanAttachmentManager(),
     );
 
     const content = service.getSessionInfo({ sessionId: 'sess-123', sessionName: 'Claude-Main' });

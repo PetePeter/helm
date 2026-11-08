@@ -59,7 +59,7 @@ describe('suggested plan MCP surface', () => {
     const service = new HelmPlanService(
       plans,
       config,
-      new PlanAttachmentManager(plans),
+      new PlanAttachmentManager(plans, join(root, 'config')),
       new ContextManager(plans),
       projects,
     );

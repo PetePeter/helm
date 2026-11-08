@@ -17,7 +17,6 @@ import type { PlanManager } from './plan-manager.js';
 import type { PlanItem, PlanDependency } from '../types/plan.js';
 import type { SuggestedPlanService } from './suggested-plan-service.js';
 import { logger } from '../utils/logger.js';
-import { getProfileConfigDir } from '../utils/app-paths.js';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
@@ -49,11 +48,10 @@ export class IncomingPlansWatcher extends EventEmitter {
   constructor(
     private readonly planManager: PlanManager,
     private readonly suggestedPlanService: SuggestedPlanService,
-    configDir?: string,
+    configDir: string,
   ) {
     super();
-    const resolvedConfigDir = configDir ?? getProfileConfigDir('1');
-    this.incomingDir = join(resolvedConfigDir, 'plans', 'incoming');
+    this.incomingDir = join(configDir, 'plans', 'incoming');
   }
 
   /** Start watching the incoming directory. Creates it if missing. */

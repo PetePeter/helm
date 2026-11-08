@@ -23,6 +23,7 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 
 import { saveRuntimeGroups, loadRuntimeGroups } from '../src/session/runtime-group-persistence.js';
+const RUNTIME_GROUPS_FILE = 'X:/test/profile-1/runtime-groups.yaml';
 
 const groupA: RuntimeGroup = {
   id: 'g1', name: 'Alpha', sessionIds: ['s1', 's2'],
@@ -39,13 +40,13 @@ describe('runtime-group persistence', () => {
   });
 
   it('P1 save→load round-trip preserves groups', () => {
-    saveRuntimeGroups([groupA, groupB]);
+    saveRuntimeGroups([groupA, groupB], RUNTIME_GROUPS_FILE);
 
     const [, writtenContent] = (fs.writeFileSync as any).mock.calls[0];
     (fs.existsSync as any).mockReturnValue(true);
     (fs.readFileSync as any).mockReturnValue(writtenContent);
 
-    const loaded = loadRuntimeGroups();
+    const loaded = loadRuntimeGroups(RUNTIME_GROUPS_FILE);
     expect(loaded).toHaveLength(2);
     expect(loaded[0]).toEqual(groupA);
     expect(loaded[1]).toEqual(groupB);
@@ -57,7 +58,7 @@ describe('runtime-group persistence', () => {
       'groups:\n  - { id: g1, name: A, sessionIds: [], collapsed: false, createdAt: 1, updatedAt: 1, color: "#123456" }\n',
     );
 
-    expect(loadRuntimeGroups()[0]).toEqual({ id: 'g1', name: 'A', sessionIds: [], collapsed: false, createdAt: 1, updatedAt: 1 });
+    expect(loadRuntimeGroups(RUNTIME_GROUPS_FILE)[0]).toEqual({ id: 'g1', name: 'A', sessionIds: [], collapsed: false, createdAt: 1, updatedAt: 1 });
   });
 
   it('maps a retired pastel colour to its saturated successor', () => {
@@ -66,12 +67,12 @@ describe('runtime-group persistence', () => {
       'groups:\n  - { id: g1, name: A, sessionIds: [], collapsed: false, createdAt: 1, updatedAt: 1, color: "#2ec4b6" }\n',
     );
 
-    expect(loadRuntimeGroups()[0]!.color).toBe('#00bfa5');
+    expect(loadRuntimeGroups(RUNTIME_GROUPS_FILE)[0]!.color).toBe('#00bfa5');
   });
 
   it('P2 missing file → []', () => {
     (fs.existsSync as any).mockReturnValue(false);
-    expect(loadRuntimeGroups()).toEqual([]);
+    expect(loadRuntimeGroups(RUNTIME_GROUPS_FILE)).toEqual([]);
   });
 
   it('P3 malformed YAML (a bare string) → [] and does not throw', () => {
@@ -79,7 +80,7 @@ describe('runtime-group persistence', () => {
     (fs.readFileSync as any).mockReturnValue('just a string');
 
     let result: RuntimeGroup[] = [];
-    expect(() => { result = loadRuntimeGroups(); }).not.toThrow();
+    expect(() => { result = loadRuntimeGroups(RUNTIME_GROUPS_FILE); }).not.toThrow();
     expect(result).toEqual([]);
   });
 
@@ -92,7 +93,7 @@ describe('runtime-group persistence', () => {
       '  - name: no-id\n    sessionIds: []\n',
     );
 
-    const loaded = loadRuntimeGroups();
+    const loaded = loadRuntimeGroups(RUNTIME_GROUPS_FILE);
     expect(loaded).toHaveLength(1);
     expect(loaded[0].id).toBe('g1');
   });

@@ -3,9 +3,13 @@
  * Verifies restoreSessions() is called at startup.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // We need to mock the SessionManager class to verify method calls
 const mockRestoreSessions = vi.fn().mockReturnValue([]);
+const testConfigRoot = mkdtempSync(join(tmpdir(), 'helm-handlers-restore-'));
 
 vi.mock('../src/session/manager.js', () => ({
   SessionManager: vi.fn(function (this: any) {
@@ -68,6 +72,9 @@ vi.mock('../src/session/notification-manager.js', () => ({
 
 const mockConfigLoader = {
     load: vi.fn(),
+    getUserProfileId: vi.fn().mockReturnValue('1'),
+    getProfileConfigDir: vi.fn().mockReturnValue(join(testConfigRoot, 'profile-1')),
+    getGlobalConfigDir: vi.fn().mockReturnValue(join(testConfigRoot, 'global')),
     getCliTypes: vi.fn().mockReturnValue([]),
     getCliTypeEntry: vi.fn(),
     getBindings: vi.fn(),
@@ -202,6 +209,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setTodoManager = vi.fn();
     this.setArtifactUploadService = vi.fn();
     this.setMemoryManager = vi.fn();
+    this.setMessManager = vi.fn();
     this.getSuggestedPlanService = vi.fn().mockReturnValue(undefined);
     this.setHandoverDelivery = vi.fn();
     this.setCompactSnapshot = vi.fn();
@@ -248,6 +256,7 @@ vi.mock('electron', () => ({
 }));
 
 import { registerIPCHandlers } from '../src/electron/ipc/handlers.js';
+import { ConfigLoader } from '../src/config/loader.js';
 import { logger } from '../src/utils/logger.js';
 import { SessionManager } from '../src/session/manager.js';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
@@ -259,7 +268,7 @@ describe('registerIPCHandlers restore wiring', () => {
   });
 
   it('calls restoreSessions() on startup', () => {
-    registerIPCHandlers(() => null);
+    registerIPCHandlers(undefined, new ConfigLoader() as any);
     expect(mockRestoreSessions).toHaveBeenCalledOnce();
   });
 
@@ -271,9 +280,10 @@ describe('registerIPCHandlers ring reminder injection', () => {
   });
 
   it('sends ordinary ring memories through the registered ContextInjector and omits ideas', async () => {
-    registerIPCHandlers(() => null);
+    registerIPCHandlers(undefined, new ConfigLoader() as any);
 
     const sessionManager = (SessionManager as any).mock.instances.at(-1);
+    sessionManager.hasSession.mockReturnValue(true);
     sessionManager.getSession.mockReturnValue({
       id: 'ring-session',
       role: 'operator',

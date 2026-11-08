@@ -21,6 +21,7 @@ import type { PlanItem, PlanDependency, DirectoryPlan, PlanStatus, SettablePlanS
 import { isStartable, PLAN_STATUSES, SETTABLE_PLAN_STATUSES } from '../types/plan.js';
 import { mergePlanTask } from './operator-tasks.js';
 import type { ProjectStore } from './project-store.js';
+import type { ProfilePersistencePaths } from './persistence-paths.js';
 
 const CURRENT_PLAN_STATUSES = new Set<PlanStatus>(PLAN_STATUSES);
 const ACTIVE_PLAN_STATUSES = new Set<PlanStatus>(['coding', 'review', 'blocked']);
@@ -49,7 +50,10 @@ export class PlanManager extends EventEmitter {
   private sequences = new Map<string, PlanSequence>();
   private nextHumanId = 1;
 
-  constructor(private readonly projectStore?: ProjectStore) {
+  constructor(
+    private readonly projectStore?: ProjectStore,
+    private readonly paths?: ProfilePersistencePaths,
+  ) {
     super();
     this.loadFromDisk();
   }
@@ -58,10 +62,10 @@ export class PlanManager extends EventEmitter {
    * Migrates old plan statuses to new ones on load.
    */
   private loadFromDisk(): void {
-    const filenames = listPlanFiles();
+    const filenames = listPlanFiles(this.paths?.plansDir);
     const loaded: PlanItem[] = [];
     for (const filename of filenames) {
-      const item = loadPlanFile(filename);
+      const item = loadPlanFile(filename, this.paths?.plansDir);
       if (!item) continue;
 
       // Migrate old statuses to new ones
@@ -81,22 +85,22 @@ export class PlanManager extends EventEmitter {
       // Statuses were already migrated in the load pass above; this pass only
       // backfills missing metadata (human IDs, project links, timestamps).
       if (this.ensurePlanMetadata(item)) {
-        savePlanFile(item);
+        savePlanFile(item, this.paths?.plansDir);
         rewritten++;
       }
     }
 
     const validIds = new Set(this.items.keys());
-    const { deps: cleanedDeps } = cleanupOrphanDependencies(validIds);
+    const { deps: cleanedDeps } = cleanupOrphanDependencies(validIds, this.paths?.planDependenciesFile);
     this.dependencies = cleanedDeps;
     let sequencesChanged = false;
-    for (const sequence of loadPlanSequences()) {
+    for (const sequence of loadPlanSequences(this.paths?.planSequencesFile)) {
       sequencesChanged = this.ensureSequenceProject(sequence) || sequencesChanged;
       this.sequences.set(sequence.id, sequence);
     }
     this.cleanupOrphanSequenceMemberships();
     if (sequencesChanged) {
-      savePlanSequences([...this.sequences.values()]);
+      savePlanSequences([...this.sequences.values()], this.paths?.planSequencesFile);
     }
 
     const dirs = new Set<string>();
@@ -114,10 +118,10 @@ export class PlanManager extends EventEmitter {
    *  @param options.skipSequences Skip writing sequences file (for dep-only/status-only changes).
    */
   private saveDir(dirPath: string, options?: { skipSequences?: boolean }): void {
-    for (const item of this.getForDirectory(dirPath)) savePlanFile(item);
-    saveDependencies(this.dependencies);
+    for (const item of this.getForDirectory(dirPath)) savePlanFile(item, this.paths?.plansDir);
+    saveDependencies(this.dependencies, this.paths?.planDependenciesFile);
     if (!options?.skipSequences) {
-      savePlanSequences([...this.sequences.values()]);
+      savePlanSequences([...this.sequences.values()], this.paths?.planSequencesFile);
     }
     this.projectStore?.save();
   }
@@ -168,12 +172,12 @@ export class PlanManager extends EventEmitter {
       updatedAt: now,
     };
     this.items.set(item.id, item);
-    savePlanFile(item);
+    savePlanFile(item, this.paths?.plansDir);
 
     // Recompute startable for the new item and any dependents
     // This transitions no-dep items to 'ready' immediately
     this.recomputeStartable(dirPath);
-    savePlanFile(item);
+    savePlanFile(item, this.paths?.plansDir);
 
     this.emit('plan:changed', dirPath);
     this.emit('plan:created', dirPath);
@@ -206,7 +210,7 @@ export class PlanManager extends EventEmitter {
     else if (updates.task) item.task = mergePlanTask(item.task, updates.task);
     item.updatedAt = Date.now();
 
-    savePlanFile(item);
+    savePlanFile(item, this.paths?.plansDir);
     this.emit('plan:changed', item.dirPath);
     logger.info(`[PlanManager] Updated plan ${id}`);
     return item;
@@ -228,7 +232,7 @@ export class PlanManager extends EventEmitter {
       updatedAt: now,
     };
     this.sequences.set(sequence.id, sequence);
-    savePlanSequences([...this.sequences.values()]);
+    savePlanSequences([...this.sequences.values()], this.paths?.planSequencesFile);
     this.emit('plan:changed', dirPath);
     logger.info(`[PlanManager] Created plan sequence "${title}" in ${dirPath}`);
     return sequence;
@@ -262,7 +266,7 @@ export class PlanManager extends EventEmitter {
     if (updates.sharedMemory !== undefined) sequence.sharedMemory = updates.sharedMemory;
     if (updates.order !== undefined) sequence.order = updates.order;
     sequence.updatedAt = Date.now();
-    savePlanSequences([...this.sequences.values()]);
+    savePlanSequences([...this.sequences.values()], this.paths?.planSequencesFile);
     this.emit('plan:changed', sequence.dirPath);
     logger.info(`[PlanManager] Updated plan sequence ${id}`);
     return sequence;
@@ -277,10 +281,10 @@ export class PlanManager extends EventEmitter {
       if (item.sequenceId === id) {
         item.sequenceId = undefined;
         item.updatedAt = Date.now();
-        savePlanFile(item);
+        savePlanFile(item, this.paths?.plansDir);
       }
     }
-    savePlanSequences([...this.sequences.values()]);
+    savePlanSequences([...this.sequences.values()], this.paths?.planSequencesFile);
     this.emit('plan:changed', sequence.dirPath);
     logger.info(`[PlanManager] Deleted plan sequence ${id}`);
     return true;
@@ -324,7 +328,7 @@ export class PlanManager extends EventEmitter {
       item.sequenceId = undefined;
     }
     item.updatedAt = Date.now();
-    savePlanFile(item);
+    savePlanFile(item, this.paths?.plansDir);
     this.emit('plan:changed', item.dirPath);
     return item;
   }
@@ -347,7 +351,7 @@ export class PlanManager extends EventEmitter {
         item.sequenceId = undefined;
       }
       item.updatedAt = Date.now();
-      savePlanFile(item);
+      savePlanFile(item, this.paths?.plansDir);
       count++;
     }
 
@@ -365,7 +369,7 @@ export class PlanManager extends EventEmitter {
     const dirPath = item.dirPath;
     const incoming = this.dependencies.filter(d => d.toId === id);
     const outgoing = this.dependencies.filter(d => d.fromId === id);
-    deletePlanFile(id);
+    deletePlanFile(id, this.paths?.plansDir);
     this.items.delete(id);
     this.dependencies = this.dependencies.filter(d => d.fromId !== id && d.toId !== id);
     let rewired = 0;
@@ -412,7 +416,7 @@ export class PlanManager extends EventEmitter {
     );
 
     for (const planId of planIds) {
-      deletePlanFile(planId);
+      deletePlanFile(planId, this.paths?.plansDir);
       this.items.delete(planId);
     }
 
@@ -424,13 +428,13 @@ export class PlanManager extends EventEmitter {
       if (item.sequenceId && sequenceIds.has(item.sequenceId)) {
         item.sequenceId = undefined;
         item.updatedAt = Date.now();
-        savePlanFile(item);
+        savePlanFile(item, this.paths?.plansDir);
       }
     }
 
     this.dependencies = this.dependencies.filter((dep) => !planIdSet.has(dep.fromId) && !planIdSet.has(dep.toId));
-    saveDependencies(this.dependencies);
-    savePlanSequences([...this.sequences.values()]);
+    saveDependencies(this.dependencies, this.paths?.planDependenciesFile);
+    savePlanSequences([...this.sequences.values()], this.paths?.planSequencesFile);
 
     for (const dirPath of dirPaths) {
       this.emit('plan:changed', dirPath);
@@ -533,7 +537,7 @@ export class PlanManager extends EventEmitter {
     if (!item || item.status === 'suggested') return false;
     item.sessionId = sessionId;
     item.updatedAt = Date.now();
-    savePlanFile(item);
+    savePlanFile(item, this.paths?.plansDir);
     this.emit('plan:changed', item.dirPath);
     return true;
   }
@@ -600,7 +604,7 @@ export class PlanManager extends EventEmitter {
     item.updatedAt = Date.now();
     item.stateUpdatedAt = item.updatedAt;
 
-    savePlanFile(item);
+    savePlanFile(item, this.paths?.plansDir);
     this.emit('plan:changed', item.dirPath);
     logger.info(`[PlanManager] Applied plan "${item.title}" (${id})`);
     return item;
@@ -693,7 +697,7 @@ export class PlanManager extends EventEmitter {
     item.updatedAt = Date.now();
     item.stateUpdatedAt = item.updatedAt;
 
-    savePlanFile(item);
+    savePlanFile(item, this.paths?.plansDir);
 
     this.emit('plan:changed', item.dirPath);
     logger.info(`[PlanManager] Set plan "${item.title}" (${id}) ${prevStatus} → ${status}`);
@@ -745,7 +749,7 @@ export class PlanManager extends EventEmitter {
     for (const dirPath of dirs) {
       this.recomputeStartable(dirPath);
     }
-    savePlanSequences([...this.sequences.values()]);
+    savePlanSequences([...this.sequences.values()], this.paths?.planSequencesFile);
 
     logger.info(`[PlanManager] Imported plans for ${dirs.size} directory(s)`);
   }
@@ -780,13 +784,13 @@ export class PlanManager extends EventEmitter {
     this.ensurePlanMetadata(imported);
 
     this.items.set(imported.id, imported);
-    savePlanFile(imported);
+    savePlanFile(imported, this.paths?.plansDir);
 
     // Only add deps whose both ends are known
     const validDeps = deps.filter(d => this.items.has(d.fromId) && this.items.has(d.toId));
     if (validDeps.length > 0) {
       this.dependencies.push(...validDeps);
-      saveDependencies(this.dependencies);
+      saveDependencies(this.dependencies, this.paths?.planDependenciesFile);
     }
 
     this.recomputeStartable(imported.dirPath);
@@ -883,7 +887,7 @@ export class PlanManager extends EventEmitter {
     for (const item of this.items.values()) {
       if (item.sequenceId && !sequenceIds.has(item.sequenceId)) {
         item.sequenceId = undefined;
-        savePlanFile(item);
+        savePlanFile(item, this.paths?.plansDir);
       }
     }
   }

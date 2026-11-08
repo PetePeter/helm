@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlink
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { atomicWriteFileSync } from './persistence-utils.js';
-import { getMessCursorPath, getMessLogPath, MESS_DIR } from './persistence-paths.js';
+import { getMessCursorPath, getMessLogPath } from './persistence-paths.js';
 import type { MessCursor, MessEntry, MessEntryInput } from '../types/mess.js';
 
 const STORE_VERSION = 1;
@@ -28,7 +28,7 @@ export interface MessCursorLoadResult {
 }
 
 export interface MessPersistenceOptions {
-  directory?: string;
+  directory: string;
   now?: () => number;
   idFactory?: () => string;
   atomicWrite?: (filePath: string, content: string) => void;
@@ -50,8 +50,8 @@ export class MessPersistence {
   private readonly idFactory: () => string;
   private readonly atomicWrite: (filePath: string, content: string) => void;
 
-  constructor(readonly projectId: string, options: MessPersistenceOptions = {}) {
-    const directory = options.directory ?? MESS_DIR;
+  constructor(readonly projectId: string, options: MessPersistenceOptions) {
+    const directory = options.directory;
     this.logPath = getMessLogPath(projectId, directory);
     this.cursorPath = getMessCursorPath(projectId, directory);
     this.compactingPath = `${this.logPath}${COMPACTION_SUFFIX}`;

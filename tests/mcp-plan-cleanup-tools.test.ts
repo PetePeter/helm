@@ -5,6 +5,7 @@ import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { PlanManager } from '../src/session/plan-manager.js';
 import { ContextManager } from '../src/session/context-manager.js';
 import { MCP_TOOLS } from '../src/mcp/tools/definitions.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -28,7 +29,7 @@ function setup() {
   const planManager = new PlanManager(projectStore);
   const contextManager = new ContextManager(planManager);
   const configLoader = { getWorkingDirectories: () => [{ name: 'T', path: dirPath }] } as any;
-  const service = new HelmControlService(planManager, {} as any, {} as any, configLoader, undefined, contextManager);
+  const service = new HelmControlService(planManager, {} as any, {} as any, configLoader, unusedPlanAttachmentManager(), contextManager);
   const deps: McpToolDispatcherDeps = {
     service,
     setPlanStateWithValidation: () => ({}),

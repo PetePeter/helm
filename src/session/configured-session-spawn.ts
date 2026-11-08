@@ -91,13 +91,13 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   // An API tool has no CLI: Helm hosts the agent loop and adopts it like a Remote row.
   const apiProcess = cfg?.api
     ? getApiSessionHost().create({
-      sessionId, sessionName, cliSessionName, cliType, cwd: normalizedCwd, api: cfg.api,
+      sessionId, userProfileId: params.sessionManager.getUserProfileId(), sessionName, cliSessionName, cliType, cwd: normalizedCwd, api: cfg.api,
       // The type's own env entries (with ${VAR} substitution) are where its API key lives.
       env: resolveConfiguredSpawnEnv(params.configLoader, params.cliType),
     })
     : null;
   const comfyUiProcess = cfg?.comfyUi
-    ? getComfyUiSessionHost().create(sessionId, cfg.comfyUi)
+    ? getComfyUiSessionHost().create(sessionId, cfg.comfyUi, params.sessionManager.getUserProfileId())
     : null;
   let launched: { pty: PtyProcess; rawCommand?: string; command?: string; args?: string[] };
   if (comfyUiProcess) {

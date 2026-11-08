@@ -23,9 +23,12 @@ export { HISTORY_WINDOW_MS };
 export class ScheduledTaskHistoryManager extends EventEmitter {
   private entries: ScheduledTaskHistoryEntry[];
 
-  constructor(private readonly now: () => number = Date.now) {
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly historyFile?: string,
+  ) {
     super();
-    this.entries = loadScheduledTaskHistory();
+    this.entries = loadScheduledTaskHistory(this.historyFile);
   }
 
   /**
@@ -36,7 +39,7 @@ export class ScheduledTaskHistoryManager extends EventEmitter {
     const created: ScheduledTaskHistoryEntry = { id: randomUUID(), ...entry };
     this.entries.unshift(created);
     this.prune();
-    saveScheduledTaskHistory(this.entries);
+    saveScheduledTaskHistory(this.entries, this.historyFile);
     this.emit('history:changed');
     return created;
   }
@@ -49,7 +52,7 @@ export class ScheduledTaskHistoryManager extends EventEmitter {
   /** Remove all history entries. */
   clear(): void {
     this.entries = [];
-    saveScheduledTaskHistory(this.entries);
+    saveScheduledTaskHistory(this.entries, this.historyFile);
     this.emit('history:changed');
   }
 

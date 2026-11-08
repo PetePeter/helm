@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { PlanManager } from './plan-manager.js';
+import type { ProfilePersistencePaths } from './persistence-paths.js';
 import {
   loadPlanContextBindings,
   loadPlanContexts,
@@ -21,10 +22,13 @@ export class ContextManager extends EventEmitter {
   private readonly contexts = new Map<string, ContextNode>();
   private bindings: ContextBinding[] = [];
 
-  constructor(private readonly planManager: PlanManager) {
+  constructor(
+    private readonly planManager: PlanManager,
+    private readonly paths?: ProfilePersistencePaths,
+  ) {
     super();
     let migratedContexts = false;
-    for (const context of loadPlanContexts() as Array<ContextNode | (Omit<ContextNode, 'projectId'> & { projectId?: string; dirPath?: string })>) {
+    for (const context of loadPlanContexts(this.paths?.planContextsFile) as Array<ContextNode | (Omit<ContextNode, 'projectId'> & { projectId?: string; dirPath?: string })>) {
       const normalized = this.normalizeContext(context);
       if (!normalized) {
         migratedContexts = true;
@@ -33,7 +37,7 @@ export class ContextManager extends EventEmitter {
       if (normalized !== context) migratedContexts = true;
       this.contexts.set(normalized.id, normalized);
     }
-    this.bindings = loadPlanContextBindings()
+    this.bindings = loadPlanContextBindings(this.paths?.planContextBindingsFile)
       .map((binding) => this.normalizeBinding(binding))
       .filter((binding): binding is ContextBinding => binding !== null);
     this.cleanupOrphans();
@@ -336,12 +340,12 @@ export class ContextManager extends EventEmitter {
   }
 
   private persist(): void {
-    savePlanContexts([...this.contexts.values()]);
+    savePlanContexts([...this.contexts.values()], this.paths?.planContextsFile);
     this.persistBindings();
   }
 
   private persistBindings(): void {
-    savePlanContextBindings(this.bindings);
+    savePlanContextBindings(this.bindings, this.paths?.planContextBindingsFile);
   }
 
   private normalizeBinding(binding: ContextBinding | (Partial<ContextBinding> & { contextId?: unknown; sequenceId?: unknown; createdAt?: unknown })): ContextBinding | null {

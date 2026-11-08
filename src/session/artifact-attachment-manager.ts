@@ -30,7 +30,6 @@ import { fileURLToPath } from 'node:url';
 import { MAX_ATTACHMENT_BYTES, type ArtifactAttachment } from '../types/artifact-attachment.js';
 import { ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES, resolveSliceWindow } from './artifact-download.js';
 import type { SliceWindow } from './artifact-download.js';
-import { getProfileConfigDir } from '../utils/app-paths.js';
 import { logger } from '../utils/logger.js';
 import { MAX_GENERATED_MEDIA_BYTES } from './generated-media-policy.js';
 
@@ -54,9 +53,8 @@ export class ArtifactAttachmentManager {
   private readonly rootDir: string;
   private readonly indexPath: string;
 
-  constructor(configDir?: string) {
-    const resolvedConfigDir = configDir ?? getProfileConfigDir('1');
-    this.rootDir = join(resolvedConfigDir, 'artifact-attachments');
+  constructor(configDir: string) {
+    this.rootDir = join(configDir, 'artifact-attachments');
     this.indexPath = join(this.rootDir, INDEX_FILE);
   }
 

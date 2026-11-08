@@ -10,6 +10,7 @@ import { SkillManager } from '../src/session/skill-manager.js';
 import { SkillAnalyticsManager } from '../src/session/skill-analytics-manager.js';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
 import { logger } from '../src/utils/logger.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -73,7 +74,7 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
     sessionManager as unknown as import('../src/session/manager.js').SessionManager,
     ptyManager as unknown as import('../src/session/pty-manager.js').PtyManager,
     configLoader as unknown as import('../src/config/loader.js').ConfigLoader,
-    undefined,
+    unusedPlanAttachmentManager(),
     undefined,
     schedulerManager as unknown as import('../src/session/scheduled-task-manager.js').ScheduledTaskManager | undefined,
   );
@@ -768,7 +769,7 @@ describe('HelmControlService.getSessionInfo', () => {
       sessionManager as unknown as import('../src/session/manager.js').SessionManager,
       ptyManager as unknown as import('../src/session/pty-manager.js').PtyManager,
       configLoader as unknown as import('../src/config/loader.js').ConfigLoader,
-      undefined,
+      unusedPlanAttachmentManager(),
       undefined,
       undefined,
       projectStore as any,
@@ -2118,7 +2119,7 @@ describe('HelmControlService artifact title revision', () => {
     const { ArtifactManager } = await import('../src/session/artifact-manager.js');
     const { ArtifactAttachmentManager } = await import('../src/session/artifact-attachment-manager.js');
     const { service } = makeService();
-    service.setArtifactManager(new ArtifactManager(), new ArtifactAttachmentManager());
+    service.setArtifactManager(new ArtifactManager(), new ArtifactAttachmentManager(mkdtempSync(join(tmpdir(), 'helm-empty-artifacts-'))));
     const created = service.createArtifact('sessA', 'Old', 'markdown', 'v1 body');
     return { service, id: created.id };
   }

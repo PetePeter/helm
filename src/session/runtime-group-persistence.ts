@@ -11,21 +11,22 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as YAML from 'yaml';
 import { logger } from '../utils/logger.js';
 import { normalizeRuntimeGroupColor, type RuntimeGroup } from '../types/runtime-group.js';
-import { RUNTIME_GROUPS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isRecord } from './persistence-utils.js';
 
-export function saveRuntimeGroups(groups: RuntimeGroup[]): void {
+export function saveRuntimeGroups(groups: RuntimeGroup[], filePath?: string): void {
+  if (!filePath) return;
   try {
-    atomicWriteFileSync(RUNTIME_GROUPS_FILE, YAML.stringify({ groups }));
+    atomicWriteFileSync(filePath, YAML.stringify({ groups }));
   } catch (err) {
     logger.error(`Failed to save runtime groups: ${err}`);
   }
 }
 
-export function loadRuntimeGroups(): RuntimeGroup[] {
+export function loadRuntimeGroups(filePath?: string): RuntimeGroup[] {
+  if (!filePath) return [];
   try {
-    if (!existsSync(RUNTIME_GROUPS_FILE)) return [];
-    const parsed = YAML.parse(readFileSync(RUNTIME_GROUPS_FILE, 'utf8')) as unknown;
+    if (!existsSync(filePath)) return [];
+    const parsed = YAML.parse(readFileSync(filePath, 'utf8')) as unknown;
     if (!isRecord(parsed) || !Array.isArray(parsed.groups)) return [];
 
     return parsed.groups

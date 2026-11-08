@@ -28,7 +28,7 @@ vi.mock('node:fs', async () => {
 });
 
 import { saveArtifacts, loadArtifacts } from '../src/session/artifact-persistence.js';
-import { ARTIFACTS_FILE } from '../src/session/persistence-paths.js';
+const ARTIFACTS_FILE = 'X:/test/profile-1/artifacts.yaml';
 
 function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
   return {
@@ -53,25 +53,25 @@ describe('artifact-persistence', () => {
       s2: [makeArtifact({ id: 'a2', sessionId: 's2', title: 'Other', kind: 'html' })],
       s3: [makeArtifact({ id: 'a3', sessionId: 's3', title: 'Compaction snapshot', kind: 'compact' })],
     };
-    saveArtifacts(data);
-    const loaded = loadArtifacts();
+    saveArtifacts(data, ARTIFACTS_FILE);
+    const loaded = loadArtifacts(ARTIFACTS_FILE);
     expect(loaded).toEqual(data);
   });
 
   // An unsaved draft is the user's work: it has to outlive a restart.
   it('keeps an unsaved draft across save -> load', () => {
     const data = { s1: [makeArtifact({ draft: { content: 'half-written', updatedAt: 200 } })] };
-    saveArtifacts(data);
-    expect(loadArtifacts()).toEqual(data);
+    saveArtifacts(data, ARTIFACTS_FILE);
+    expect(loadArtifacts(ARTIFACTS_FILE)).toEqual(data);
   });
 
   it('drops a malformed draft but keeps the artifact', () => {
-    saveArtifacts({ s1: [makeArtifact({ draft: { content: 42 } as unknown as Artifact['draft'] })] });
-    expect(loadArtifacts()).toEqual({ s1: [makeArtifact()] });
+    saveArtifacts({ s1: [makeArtifact({ draft: { content: 42 } as unknown as Artifact['draft'] })] }, ARTIFACTS_FILE);
+    expect(loadArtifacts(ARTIFACTS_FILE)).toEqual({ s1: [makeArtifact()] });
   });
 
   it('returns {} when the file does not exist', () => {
-    expect(loadArtifacts()).toEqual({});
+    expect(loadArtifacts(ARTIFACTS_FILE)).toEqual({});
   });
 
   it('drops malformed / garbage entries on load', async () => {
@@ -86,7 +86,7 @@ describe('artifact-persistence', () => {
       },
     }));
 
-    const loaded = loadArtifacts();
+    const loaded = loadArtifacts(ARTIFACTS_FILE);
     expect(Object.keys(loaded)).toEqual(['good']);
     expect(loaded.good).toHaveLength(1);
   });
@@ -94,7 +94,7 @@ describe('artifact-persistence', () => {
   it('returns {} when the payload is entirely garbage', async () => {
     const YAML = await importYaml();
     files.set(ARTIFACTS_FILE, YAML.stringify({ artifacts: 42 }));
-    expect(loadArtifacts()).toEqual({});
+    expect(loadArtifacts(ARTIFACTS_FILE)).toEqual({});
   });
 
   it('preserves artifacts with unknown intent as normal', async () => {
@@ -102,7 +102,7 @@ describe('artifact-persistence', () => {
     files.set(ARTIFACTS_FILE, YAML.stringify({
       artifacts: { s1: [makeArtifact({ intent: 'future-value' as Artifact['intent'] })] },
     }));
-    expect(loadArtifacts().s1[0].intent).toBe('normal');
+    expect(loadArtifacts(ARTIFACTS_FILE).s1[0].intent).toBe('normal');
   });
 
   it('rejects an artifact with an empty version stack', async () => {
@@ -113,7 +113,7 @@ describe('artifact-persistence', () => {
       },
     }));
 
-    const loaded = loadArtifacts();
+    const loaded = loadArtifacts(ARTIFACTS_FILE);
     // The versionless artifact is dropped; the well-formed one survives.
     expect(loaded.s1).toHaveLength(1);
     expect(loaded.s1[0].id).toBe('a2');

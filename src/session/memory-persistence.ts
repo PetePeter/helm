@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { MEMORIES_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync } from './persistence-utils.js';
 import {
   isMemoryEdgeType,
@@ -62,7 +61,7 @@ export class MemoryPersistence {
   private lastDiagnostic: MemoryDiagnostic | undefined;
 
   constructor(
-    private readonly filePath: string = MEMORIES_FILE,
+    private readonly filePath: string,
     private readonly options: MemoryPersistenceOptions = {},
   ) {}
 

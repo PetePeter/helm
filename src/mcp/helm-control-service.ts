@@ -73,6 +73,7 @@ import type { TodoManager } from '../session/todo-manager.js';
 import { HelmMemoryService, type MemoryExportResult, type WrittenMemory } from './services/helm-memory-service.js';
 import { HelmMessService } from './services/helm-mess-service.js';
 import { MessManager } from '../session/mess-manager.js';
+import { MessPersistence } from '../session/mess-persistence.js';
 import type { MemoryAttachmentManager } from '../session/memory-attachment-manager.js';
 import type { MemoryManager } from '../session/memory-manager.js';
 import type {
@@ -346,7 +347,7 @@ export class HelmControlService extends EventEmitter {
     private readonly sessionManager: SessionManager,
     private readonly ptyManager: PtyManager,
     private readonly configLoader: ConfigLoader,
-    private readonly attachmentManager: PlanAttachmentManager = new PlanAttachmentManager(planManager),
+    private readonly attachmentManager: PlanAttachmentManager,
     private readonly contextManager: ContextManager = new ContextManager(planManager),
     schedulerManager?: ScheduledTaskManager,
     private readonly projectStore?: ProjectStore,
@@ -458,7 +459,6 @@ export class HelmControlService extends EventEmitter {
         };
       })
       : null;
-    if (projectStore) this.setMessManager(new MessManager(sessionManager, projectStore));
     this.projectService = projectStore
       ? new HelmProjectService(projectStore, () => this.memoryManager, () => this.messManager)
       : null;

@@ -9,7 +9,7 @@ import { ipcMain } from 'electron';
 import type { ProjectStore } from '../../session/project-store.js';
 import type { PlanManager } from '../../session/plan-manager.js';
 import type { ContextManager } from '../../session/context-manager.js';
-import { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
+import type { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
 import { validateProjectDirectory, validateProjectPath } from '../../session/validation.js';
 import { logger } from '../../utils/logger.js';
 import type { WindowManager } from '../window-manager.js';
@@ -19,8 +19,8 @@ export function setupProjectHandlers(
   planManager?: PlanManager,
   contextManager?: ContextManager,
   windowManager?: WindowManager,
+  attachmentManager?: PlanAttachmentManager,
 ): void {
-  const attachmentManager = planManager ? new PlanAttachmentManager(planManager) : null;
 
   projectStore.onChanged((projects) => {
     for (const win of windowManager?.getAllWindows() ?? []) {

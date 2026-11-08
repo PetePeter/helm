@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { PlanManager } from '../../session/plan-manager.js';
 import type { IncomingPlansWatcher } from '../../session/incoming-plans-watcher.js';
 import type { ContextManager } from '../../session/context-manager.js';
-import { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
+import type { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
 import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts } from '../../session/plan-cleanup.js';
 import { logger } from '../../utils/logger.js';
 import type { PlanItem, PlanDependency } from '../../types/plan.js';
@@ -24,13 +24,13 @@ export function setupPlanHandlers(
   incomingWatcherArg?: IncomingPlansWatcher,
   moduleDirname?: string,
   suggestedPlanService?: SuggestedPlanService,
+  attachmentManager?: PlanAttachmentManager,
 ): void {
   const windowManager = isWindowManagerLike(windowManagerOrWatcher) ? windowManagerOrWatcher : undefined;
   const incomingWatcher = isIncomingWatcherLike(windowManagerOrWatcher)
     ? windowManagerOrWatcher
     : incomingWatcherArg;
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
-  const attachmentManager = new PlanAttachmentManager(planManager);
   const plannerWindowIds = new Map<string, number>();
 
   const getFolderLabel = (dirPath: string): string => {
@@ -109,7 +109,7 @@ export function setupPlanHandlers(
       result = planManager.delete(id);
     }
     if (result) {
-      attachmentManager.deletePlanAttachments(id);
+      attachmentManager?.deletePlanAttachments(id);
       contextManager?.removeBindingsForTarget('plan', id);
     }
     return result;
@@ -119,7 +119,7 @@ export function setupPlanHandlers(
     const doneItems = planManager.getForDirectory(dirPath).filter(i => i.status === 'done');
     const count = planManager.deleteCompletedForDirectory(dirPath);
     for (const item of doneItems) {
-      attachmentManager.deletePlanAttachments(item.id);
+      attachmentManager?.deletePlanAttachments(item.id);
       contextManager?.removeBindingsForTarget('plan', item.id);
     }
     return count;
@@ -167,7 +167,7 @@ export function setupPlanHandlers(
     ipcMain.handle('plan:rejectSuggestion', (_event, id: string) => {
       const result = suggestedPlanService.reject(id);
       if (result.deleted) {
-        attachmentManager.deletePlanAttachments(id);
+        attachmentManager?.deletePlanAttachments(id);
         contextManager?.removeBindingsForTarget('plan', id);
       }
       return result;
@@ -300,15 +300,16 @@ export function setupPlanHandlers(
   });
 
   ipcMain.handle('plan:attachment-list', (_event, planId: string) => {
-    return attachmentManager.list(planId);
+    return attachmentManager?.list(planId) ?? [];
   });
 
   ipcMain.handle('plan:attachment-has-any', (_event, planIds: string[]) => {
-    return attachmentManager.hasAnyForPlanIds(planIds);
+    return attachmentManager?.hasAnyForPlanIds(planIds) ?? false;
   });
 
   ipcMain.handle('plan:attachment-add-file', (_event, planId: string, filePath: string) => {
     try {
+      if (!attachmentManager) return null;
       const content = readFileSync(filePath);
       const attachment = attachmentManager.add(planId, {
         filename: basename(filePath),
@@ -324,6 +325,7 @@ export function setupPlanHandlers(
 
   ipcMain.handle('plan:attachment-delete', (_event, planId: string, attachmentId: string) => {
     try {
+      if (!attachmentManager) return false;
       const deleted = attachmentManager.delete(planId, attachmentId);
       if (deleted) {
         planManager.emit('plan:changed', planManager.getItem(planId)?.dirPath ?? '');
@@ -337,6 +339,7 @@ export function setupPlanHandlers(
 
   ipcMain.handle('plan:attachment-open', async (_event, planId: string, attachmentId: string) => {
     try {
+      if (!attachmentManager) return false;
       const { tempPath } = attachmentManager.getToTempFile(planId, attachmentId);
       const errorMessage = await shell.openPath(tempPath);
       if (errorMessage) {

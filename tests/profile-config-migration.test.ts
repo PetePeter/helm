@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import * as YAML from 'yaml';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConfigDir, getProfileConfigDir } from '../src/utils/app-paths.js';
 import { seedConfigIfNeeded } from '../src/utils/app-paths.js';
 import { getGlobalPersistencePaths, getProfilePersistencePaths } from '../src/session/persistence-paths.js';
@@ -163,6 +163,49 @@ describe('ConfigLoader profile ownership', () => {
     expect(loader.getActivityTimeout()).toBe(1234);
     expect(loader.getBindings(cliTypeId)).toMatchObject({ A: { action: 'keyboard', sequence: '{Ctrl+A}' } });
     expect(loader.getSkillsPath()).toBe(path.join(profileDir, 'skills.yaml'));
+  });
+
+  it('loads shared stores once and prevents a secondary profile migration from writing them', () => {
+    const appData = makeRoot();
+    const globalDir = getConfigDir('', appData);
+    const profileOneDir = getProfileConfigDir('1', appData);
+    const profileTwoDir = getProfileConfigDir('2', appData);
+    write(globalDir, 'settings.yaml', '{}\n');
+    write(profileOneDir, 'profiles/default.yaml', YAML.stringify({ bindings: {
+      test: { A: { action: 'keyboard', sequence: '{Ctrl+One}' } },
+    } }));
+    write(profileTwoDir, 'profiles/default.yaml', YAML.stringify({ bindings: {
+      test: { B: { action: 'keyboard', sequence: '{Ctrl+Two}' } },
+    } }));
+
+    const profileOne = new ConfigLoader({ userProfileId: '1', profileConfigDir: profileOneDir, globalConfigDir: globalDir });
+    const profileTwo = profileOne.createProfileView('2', profileTwoDir);
+    const shared = (profileOne as unknown as { sharedConfigState: {
+      settingsManager: { load: () => unknown };
+      bindingStore: { load: () => unknown; filePath: string };
+      inputConfigStore: { load: () => unknown };
+    } }).sharedConfigState;
+    const settingsLoad = vi.spyOn(shared.settingsManager, 'load');
+    const bindingsLoad = vi.spyOn(shared.bindingStore, 'load');
+    const inputLoad = vi.spyOn(shared.inputConfigStore, 'load');
+
+    profileTwo.load();
+    expect(settingsLoad).not.toHaveBeenCalled();
+    expect(bindingsLoad).not.toHaveBeenCalled();
+    expect(inputLoad).not.toHaveBeenCalled();
+    expect(fs.existsSync(shared.bindingStore.filePath)).toBe(false);
+
+    profileOne.load();
+    const bindingsAfterOwnerLoad = fs.readFileSync(shared.bindingStore.filePath, 'utf8');
+    profileTwo.load();
+    profileOne.load();
+
+    expect(settingsLoad).toHaveBeenCalledTimes(1);
+    expect(bindingsLoad).toHaveBeenCalledTimes(1);
+    expect(inputLoad).toHaveBeenCalledTimes(1);
+    expect(fs.readFileSync(shared.bindingStore.filePath, 'utf8')).toBe(bindingsAfterOwnerLoad);
+    expect(bindingsAfterOwnerLoad).toContain('{Ctrl+One}');
+    expect(bindingsAfterOwnerLoad).not.toContain('{Ctrl+Two}');
   });
 });
 

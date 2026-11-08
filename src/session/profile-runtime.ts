@@ -1,0 +1,57 @@
+import type { ProfilePersistencePaths } from './persistence-paths.js';
+import type { ConfigLoader } from '../config/loader.js';
+import type { ArtifactAttachmentManager } from './artifact-attachment-manager.js';
+import type { ArtifactManager } from './artifact-manager.js';
+import type { ArtifactTempRegistry } from './artifact-temp-registry.js';
+import type { ContextManager } from './context-manager.js';
+import type { DraftManager } from './draft-manager.js';
+import type { EtaTracker } from './eta-tracker.js';
+import type { MemoryAttachmentManager } from './memory-attachment-manager.js';
+import type { MemoryManager } from './memory-manager.js';
+import type { MemoryPersistence } from './memory-persistence.js';
+import type { MessManager } from './mess-manager.js';
+import type { PlanAttachmentManager } from './plan-attachment-manager.js';
+import type { PlanManager } from './plan-manager.js';
+import type { ProjectStore } from './project-store.js';
+import type { RecycleBinManager } from './recycle-bin-manager.js';
+import type { RuntimeGroupManager } from './runtime-group-manager.js';
+import type { SessionManager } from './manager.js';
+import type { ScheduledTaskHistoryManager } from './scheduled-task-history-manager.js';
+import type { ScheduledTaskManager } from './scheduled-task-manager.js';
+import type { SkillAnalyticsManager } from './skill-analytics-manager.js';
+import type { SkillManager } from './skill-manager.js';
+import type { TimeTracker } from './time-tracker.js';
+import type { TodoManager } from './todo-manager.js';
+import type { PatternMatcher } from './pattern-matcher.js';
+
+/** One user's long-lived, profile-owned manager container. */
+export interface ProfileRuntime {
+  readonly userProfileId: string;
+  readonly configDir: string;
+  readonly paths: ProfilePersistencePaths;
+  readonly configLoader: ConfigLoader;
+  readonly projectStore: ProjectStore;
+  readonly sessionManager: SessionManager;
+  readonly planManager: PlanManager;
+  readonly contextManager: ContextManager;
+  readonly scheduledTaskManager: ScheduledTaskManager;
+  readonly scheduledTaskHistoryManager: ScheduledTaskHistoryManager;
+  readonly messManager: MessManager;
+  readonly recycleBinManager: RecycleBinManager;
+  readonly runtimeGroupManager: RuntimeGroupManager;
+  readonly artifactManager: ArtifactManager;
+  readonly artifactAttachmentManager: ArtifactAttachmentManager;
+  readonly artifactTempRegistry: ArtifactTempRegistry;
+  readonly draftManager: DraftManager;
+  readonly todoManager: TodoManager;
+  readonly memoryManager: MemoryManager;
+  readonly memoryPersistence: MemoryPersistence;
+  readonly memoryAttachmentManager: MemoryAttachmentManager;
+  readonly planAttachmentManager: PlanAttachmentManager;
+  readonly skillManager: SkillManager;
+  readonly skillAnalyticsManager: SkillAnalyticsManager;
+  readonly timeTracker: TimeTracker;
+  readonly etaTracker: EtaTracker;
+  readonly patternMatcher: PatternMatcher;
+  dispose(): void;
+}

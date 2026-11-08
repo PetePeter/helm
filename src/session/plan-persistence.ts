@@ -3,12 +3,6 @@ import { basename, join } from 'node:path';
 import * as YAML from 'yaml';
 import { logger } from '../utils/logger.js';
 import type { DirectoryPlan, PlanDependency, PlanItem, PlanSequence } from '../types/plan.js';
-import {
-  DEFAULT_PLAN_DEPS_FILE,
-  DEFAULT_PLAN_SEQUENCES_FILE,
-  DEFAULT_PLANS_DIR,
-  PLANS_FILE,
-} from './persistence-paths.js';
 import { atomicWriteFileSync, isAnyString, isNumber, isRecord, isString } from './persistence-utils.js';
 
 const FILE_VERSION = 1;
@@ -44,16 +38,18 @@ function isDirectoryPlan(value: unknown): value is DirectoryPlan {
   return isString(value.dirPath) && Array.isArray(value.items) && Array.isArray(value.dependencies);
 }
 
-export function savePlans(plans: Record<string, DirectoryPlan>): void {
+export function savePlans(plans: Record<string, DirectoryPlan>, plansFile?: string): void {
+  if (!plansFile) return;
   try {
-    atomicWriteFileSync(PLANS_FILE, YAML.stringify({ plans }));
+    atomicWriteFileSync(plansFile, YAML.stringify({ plans }));
   } catch (err) {
     logger.error(`Failed to save plans: ${err}`);
   }
 }
 
 export function loadPlans(plansFile?: string): Record<string, DirectoryPlan> {
-  const file = plansFile ?? PLANS_FILE;
+  if (!plansFile) return {};
+  const file = plansFile;
   try {
     if (!existsSync(file)) return {};
     const parsed = YAML.parse(readFileSync(file, 'utf8')) as unknown;
@@ -86,7 +82,8 @@ export function decodeFilename(filename: string): { dirPath: string; planId: str
   };
 }
 
-export function savePlanFile(item: PlanItem, plansDir = DEFAULT_PLANS_DIR): void {
+export function savePlanFile(item: PlanItem, plansDir?: string): void {
+  if (!plansDir) return;
   try {
     const filename = encodeFilename(item.dirPath, item.id);
     atomicWriteFileSync(join(plansDir, filename), JSON.stringify({ ...item, _fileVersion: FILE_VERSION }, null, 2));
@@ -95,7 +92,8 @@ export function savePlanFile(item: PlanItem, plansDir = DEFAULT_PLANS_DIR): void
   }
 }
 
-export function loadPlanFile(filename: string, plansDir = DEFAULT_PLANS_DIR): PlanItem | null {
+export function loadPlanFile(filename: string, plansDir?: string): PlanItem | null {
+  if (!plansDir) return null;
   try {
     const filePath = join(plansDir, filename);
     if (!existsSync(filePath)) return null;
@@ -109,7 +107,8 @@ export function loadPlanFile(filename: string, plansDir = DEFAULT_PLANS_DIR): Pl
   }
 }
 
-export function deletePlanFile(planId: string, plansDir = DEFAULT_PLANS_DIR): boolean {
+export function deletePlanFile(planId: string, plansDir?: string): boolean {
+  if (!plansDir) return false;
   try {
     if (!existsSync(plansDir)) return false;
     const files = readdirSync(plansDir, { withFileTypes: true });
@@ -142,7 +141,8 @@ export function deletePlanFile(planId: string, plansDir = DEFAULT_PLANS_DIR): bo
   }
 }
 
-export function listPlanFiles(plansDir = DEFAULT_PLANS_DIR): string[] {
+export function listPlanFiles(plansDir?: string): string[] {
+  if (!plansDir) return [];
   try {
     if (!existsSync(plansDir)) return [];
     return readdirSync(plansDir, { withFileTypes: true })
@@ -154,7 +154,8 @@ export function listPlanFiles(plansDir = DEFAULT_PLANS_DIR): string[] {
   }
 }
 
-export function saveDependencies(deps: PlanDependency[], depsFile = DEFAULT_PLAN_DEPS_FILE): void {
+export function saveDependencies(deps: PlanDependency[], depsFile?: string): void {
+  if (!depsFile) return;
   try {
     atomicWriteFileSync(depsFile, JSON.stringify({ version: 1, dependencies: deps }, null, 2));
   } catch (err) {
@@ -162,7 +163,8 @@ export function saveDependencies(deps: PlanDependency[], depsFile = DEFAULT_PLAN
   }
 }
 
-export function loadDependencies(depsFile = DEFAULT_PLAN_DEPS_FILE): PlanDependency[] {
+export function loadDependencies(depsFile?: string): PlanDependency[] {
+  if (!depsFile) return [];
   try {
     if (!existsSync(depsFile)) return [];
     const raw = JSON.parse(readFileSync(depsFile, 'utf8')) as unknown;
@@ -176,7 +178,7 @@ export function loadDependencies(depsFile = DEFAULT_PLAN_DEPS_FILE): PlanDepende
 
 export function cleanupOrphanDependencies(
   validPlanIds: Set<string>,
-  depsFile = DEFAULT_PLAN_DEPS_FILE,
+  depsFile?: string,
 ): { removed: number; deps: PlanDependency[] } {
   const deps = loadDependencies(depsFile);
   const cleaned = deps.filter(d => validPlanIds.has(d.fromId) && validPlanIds.has(d.toId));
@@ -188,7 +190,8 @@ export function cleanupOrphanDependencies(
   return { removed, deps: cleaned };
 }
 
-export function savePlanSequences(sequences: PlanSequence[], sequencesFile = DEFAULT_PLAN_SEQUENCES_FILE): void {
+export function savePlanSequences(sequences: PlanSequence[], sequencesFile?: string): void {
+  if (!sequencesFile) return;
   try {
     atomicWriteFileSync(sequencesFile, JSON.stringify({ version: 1, sequences }, null, 2));
   } catch (err) {
@@ -196,7 +199,8 @@ export function savePlanSequences(sequences: PlanSequence[], sequencesFile = DEF
   }
 }
 
-export function loadPlanSequences(sequencesFile = DEFAULT_PLAN_SEQUENCES_FILE): PlanSequence[] {
+export function loadPlanSequences(sequencesFile?: string): PlanSequence[] {
+  if (!sequencesFile) return [];
   try {
     if (!existsSync(sequencesFile)) return [];
     const raw = JSON.parse(readFileSync(sequencesFile, 'utf8')) as unknown;

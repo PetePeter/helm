@@ -60,7 +60,7 @@ export interface ContextInjectorDeps {
   /** The session's claimed plan, when one is claimed and not done. */
   getClaimedPlan(sessionId: string): ClaimedPlanSummary | null;
   /** Startable (unclaimed, unblocked) plans in a directory. */
-  getStartablePlans(dirPath: string): ClaimedPlanSummary[];
+  getStartablePlans(dirPath: string, sessionId?: string): ClaimedPlanSummary[];
   /** Persistent artifact context; every selected manifesto is included. */
   getManifestos?(sessionId: string): ManifestoSnapshot[];
   /** Settings → Auto memory → Idea prompts. Absent = off. */
@@ -96,7 +96,7 @@ export interface ContextInjectorDeps {
   resetSuggestions?(sessionId: string): void;
   resetToolSuggestionTurn?(sessionId: string): void;
   /** Directory → project id, for pre-filtering suggester candidates. */
-  getProjectIdForDirectory(dirPath: string): string | null;
+  getProjectIdForDirectory(dirPath: string, sessionId?: string): string | null;
   /**
    * G9: the user's per-reminder delivery mode from settings. Absent means
    * every reminder keeps its default — inject, as G4 already did. The hook
@@ -113,7 +113,7 @@ export interface ContextInjectorDeps {
    * one-shot nudge; exactly one block is ever emitted per Stop. Absent in
    * pre-G8 wiring — the Stop path is then byte-identical to before.
    */
-  loop?: Pick<LoopDriver, 'stopBlock'>;
+  loop?: Pick<LoopDriver, 'stopBlock'> | ((session: SessionInfo) => Pick<LoopDriver, 'stopBlock'> | undefined);
 }
 
 /** One hook reply: 200 with a body the CLI reads, or null (send nothing). */
@@ -308,7 +308,7 @@ export class ContextInjector {
     if (!this.deps.suggestTool || !supportsPostToolUseContext(event.cli)) return null;
     const query = buildToolSuggestionQuery(event);
     if (!query) return null;
-    const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
+    const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir, session.id) : null;
     const pointer = await this.deps.suggestTool(session.id, query, projectId);
     return pointer
       ? { statusCode: 200, body: encodeAdditionalContext(event, this.injection('suggestionPointer', { content: pointer })) }
@@ -386,7 +386,7 @@ export class ContextInjector {
       if (can('memory_create') && this.deps.isIdeaPromptEnabled?.()) parts.push(this.injection('ideasPrompt'));
     }
 
-    const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
+    const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir, session.id) : null;
     const pointer = await this.deps.suggest(session.id, prompt, projectId);
     if (pointer && (can('memory_get') || can('skill_get'))) parts.push(this.injection('suggestionPointer', { content: pointer }));
 
@@ -472,7 +472,7 @@ export class ContextInjector {
     const lines: string[] = [];
     if (can('session_plan_claim') && !this.deps.getClaimedPlan(session.id)) {
       const dirPath = session.workingDir ?? '';
-      for (const plan of this.deps.getStartablePlans(dirPath)) {
+      for (const plan of this.deps.getStartablePlans(dirPath, session.id)) {
         const key = `startable:${plan.humanId ?? plan.title}`;
         if (!this.markNudged(session.id, key)) continue;
         lines.push(this.injection('startablePlanNudge', { humanId: plan.humanId ?? '?', title: plan.title }));
@@ -500,7 +500,8 @@ export class ContextInjector {
     // G8 FIRST: continuation into an auto-implement follow-up, then the
     // one-shot recap verification. Exactly one block per Stop event — when
     // the loop speaks, the nudge below stays silent (and its ledger intact).
-    const loopBlock = this.deps.loop?.stopBlock(session);
+    const loop = typeof this.deps.loop === 'function' ? this.deps.loop(session) : this.deps.loop;
+    const loopBlock = loop?.stopBlock(session);
     if (loopBlock) {
       return { statusCode: 200, body: encodeStopBlock(event, this.injection('loopStopBlock', { content: loopBlock })) };
     }

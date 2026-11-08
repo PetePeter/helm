@@ -7,14 +7,16 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { mkdtempSync } from 'node:fs';
 import {
   saveRecycleBin,
   loadRecycleBin,
   RECYCLE_BIN_WINDOW_MS,
 } from '../src/session/recycle-bin-persistence.js';
-import { RECYCLE_BIN_FILE } from '../src/session/persistence-paths.js';
 import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
+const RECYCLE_BIN_FILE = join(mkdtempSync(join(tmpdir(), 'helm-recycle-bin-test-')), 'recycle-bin.yaml');
 
 function entry(overrides: Partial<RecycleBinEntry> = {}): RecycleBinEntry {
   return {
@@ -31,13 +33,13 @@ function entry(overrides: Partial<RecycleBinEntry> = {}): RecycleBinEntry {
 
 describe('recycle-bin persistence', () => {
   afterEach(() => {
-    saveRecycleBin([]);
+    saveRecycleBin([], RECYCLE_BIN_FILE);
   });
 
   it('round-trips entries through YAML', () => {
-    saveRecycleBin([entry({ id: 'a', name: 'codex' })]);
+    saveRecycleBin([entry({ id: 'a', name: 'codex' })], RECYCLE_BIN_FILE);
 
-    const loaded = loadRecycleBin();
+    const loaded = loadRecycleBin(RECYCLE_BIN_FILE);
     expect(loaded).toHaveLength(1);
     expect(loaded[0].id).toBe('a');
     expect(loaded[0].name).toBe('codex');
@@ -49,9 +51,9 @@ describe('recycle-bin persistence', () => {
     saveRecycleBin([
       entry({ id: 'fresh', closedAt: now - 1000 }),
       entry({ id: 'stale', closedAt: now - RECYCLE_BIN_WINDOW_MS - 5000 }),
-    ]);
+    ], RECYCLE_BIN_FILE);
 
-    const ids = loadRecycleBin().map(e => e.id);
+    const ids = loadRecycleBin(RECYCLE_BIN_FILE).map(e => e.id);
     expect(ids).toContain('fresh');
     expect(ids).not.toContain('stale');
   });
@@ -61,21 +63,21 @@ describe('recycle-bin persistence', () => {
     saveRecycleBin([
       entry({ id: 'ok', closedAt: now }),
       { ...entry({ id: 'bad', closedAt: now }), cliSessionName: '' },
-    ]);
+    ], RECYCLE_BIN_FILE);
 
-    const ids = loadRecycleBin().map(e => e.id);
+    const ids = loadRecycleBin(RECYCLE_BIN_FILE).map(e => e.id);
     expect(ids).toEqual(['ok']);
   });
 
   it('returns [] for a missing file', () => {
-    saveRecycleBin([]);
-    expect(loadRecycleBin()).toEqual([]);
+    saveRecycleBin([], RECYCLE_BIN_FILE);
+    expect(loadRecycleBin(RECYCLE_BIN_FILE)).toEqual([]);
   });
 
   it('returns [] for a corrupt file', () => {
     mkdirSync(dirname(RECYCLE_BIN_FILE), { recursive: true });
     writeFileSync(RECYCLE_BIN_FILE, ':::not yaml: [unclosed', 'utf8');
-    expect(loadRecycleBin()).toEqual([]);
+    expect(loadRecycleBin(RECYCLE_BIN_FILE)).toEqual([]);
     expect(existsSync(RECYCLE_BIN_FILE)).toBe(true);
   });
 });

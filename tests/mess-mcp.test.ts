@@ -10,6 +10,7 @@ import { MessManager } from '../src/session/mess-manager.js';
 import { MessPersistence } from '../src/session/mess-persistence.js';
 import { SessionManager } from '../src/session/manager.js';
 import type { ProjectRecord } from '../src/types/project.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 const project: ProjectRecord = { id: 'mess-project', name: 'Mess Project', canonicalPath: 'C:/mess-project', createdAt: 1, updatedAt: 1 };
 const directories: string[] = [];
@@ -34,7 +35,7 @@ function setup() {
     now: () => POSTED_AT,
     persistenceFactory: projectId => new MessPersistence(projectId, { directory }),
   });
-  const service = new HelmControlService({} as any, sessions, {} as any, {} as any, undefined, undefined, undefined, projects as any);
+  const service = new HelmControlService({} as any, sessions, {} as any, {} as any, unusedPlanAttachmentManager(), undefined, undefined, projects as any);
   service.setMessManager(manager);
   const deps = { service, setPlanStateWithValidation: () => undefined, completePlanWithValidation: () => undefined };
   return { service, deps, sessions, mess: new HelmMessService(manager, sessions) };

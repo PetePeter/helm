@@ -216,7 +216,7 @@ describe('PlanManager', () => {
       });
       expect(assigned?.sequenceId).toBe(sequence.id);
       expect(pm.getSequencesForDirectory('/d')).toEqual([sequence]);
-      expect(persistence.savePlanSequences).toHaveBeenCalledWith(expect.arrayContaining([sequence]));
+      expect(persistence.savePlanSequences).toHaveBeenCalledWith(expect.arrayContaining([sequence]), undefined);
     });
 
     it('rejects sequence assignment across directories', () => {
@@ -298,7 +298,7 @@ describe('PlanManager', () => {
         id: 'legacy-id',
         humanId: expect.stringMatching(/^P-\d{4,}$/),
         stateUpdatedAt: 101,
-      }));
+      }), undefined);
     });
 
     it('resolves UUID and P-id plan references', () => {
@@ -770,6 +770,7 @@ describe('PlanManager', () => {
         pm.completeItem(item.id, 'Persisted completion notes');
         expect(persistence.savePlanFile).toHaveBeenCalledWith(
           expect.objectContaining({ completionNotes: 'Persisted completion notes' }),
+          undefined,
         );
       });
     });
@@ -1230,8 +1231,8 @@ describe('PlanManager', () => {
       expect(withProjects.getItem(other.id)).not.toBeNull();
       expect(withProjects.getSequencesForDirectory('X:\\coding\\repo-a')).toEqual([]);
       expect(withProjects.exportDirectory('X:\\coding\\repo-b')?.dependencies).toEqual([]);
-      expect(persistence.deletePlanFile).toHaveBeenCalledWith(targetA.id);
-      expect(persistence.deletePlanFile).toHaveBeenCalledWith(targetB.id);
+      expect(persistence.deletePlanFile).toHaveBeenCalledWith(targetA.id, undefined);
+      expect(persistence.deletePlanFile).toHaveBeenCalledWith(targetB.id, undefined);
     });
   });
 

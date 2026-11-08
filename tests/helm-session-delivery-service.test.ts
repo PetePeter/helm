@@ -849,16 +849,18 @@ describe('HelmSessionDeliveryService', () => {
       };
       const host = new ComfyUiSessionHost({
         tempDir: tmpdir(),
-        artifacts: {
-          getForSession: () => [chatFiles],
-          create: () => chatFiles,
-        },
-        attachments: {
-          add: () => importedImage,
-          addGeneratedMediaFromFile: async () => ({}) as never,
-          get: () => importedImage as never,
-          getPath: () => join(tmpdir(), 'stored-source.png'),
-        },
+        storesForProfile: () => ({
+          artifacts: {
+            getForSession: () => [chatFiles],
+            create: () => chatFiles,
+          },
+          attachments: {
+            add: () => importedImage,
+            addGeneratedMediaFromFile: async () => ({}) as never,
+            get: () => importedImage as never,
+            getPath: () => join(tmpdir(), 'stored-source.png'),
+          },
+        }),
         postChat: async (_sessionId, text) => { chatLines.push(text); },
         recordPrompt: () => undefined,
         notifyRequester: async requesterSessionId => { notified.push(requesterSessionId); },

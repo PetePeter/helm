@@ -8,14 +8,10 @@ describe('ComfyUI session input', () => {
     const postChat = vi.fn(async () => undefined);
     const host = new ComfyUiSessionHost({
       tempDir: tmpdir(),
-      artifacts: {
-        getForSession: () => [],
-        create: () => ({}) as never,
-      },
-      attachments: {
-        addGeneratedMediaFromFile: async () => ({}) as never,
-        getPath: () => '',
-      },
+      storesForProfile: () => ({
+        artifacts: { getForSession: () => [], create: () => ({}) as never },
+        attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' } as never,
+      }),
       postChat,
     });
     const process = host.create('session-1', cloneDefaultComfyUiConfigForKind('image'));
@@ -29,8 +25,10 @@ describe('ComfyUI session input', () => {
   it('exposes model workflows and image size options independently to chat clients', () => {
     const host = new ComfyUiSessionHost({
       tempDir: tmpdir(),
-      artifacts: { getForSession: () => [], create: () => ({}) as never },
-      attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' },
+      storesForProfile: () => ({
+        artifacts: { getForSession: () => [], create: () => ({}) as never },
+        attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' } as never,
+      }),
       postChat: vi.fn(async () => undefined),
     });
     const process = host.create('session-2', cloneDefaultComfyUiConfigForKind('image'));
@@ -49,13 +47,15 @@ describe('ComfyUI session input', () => {
     const getAttachment = vi.fn(() => null);
     const host = new ComfyUiSessionHost({
       tempDir: tmpdir(),
-      artifacts: { getForSession: () => [{ id: 'chat-files', title: 'Chat files' }] as never, create: () => ({}) as never },
-      attachments: {
-        add: () => ({}) as never,
-        addGeneratedMediaFromFile: async () => ({}) as never,
-        get: getAttachment,
-        getPath: () => '',
-      },
+      storesForProfile: () => ({
+        artifacts: { getForSession: () => [{ id: 'chat-files', title: 'Chat files' }] as never, create: () => ({}) as never },
+        attachments: {
+          add: () => ({}) as never,
+          addGeneratedMediaFromFile: async () => ({}) as never,
+          get: getAttachment,
+          getPath: () => '',
+        } as never,
+      }),
       postChat: vi.fn(async () => undefined),
     });
     const process = host.create('session-4', cloneDefaultComfyUiConfigForKind('image'));
@@ -71,13 +71,15 @@ describe('ComfyUI session input', () => {
     const postChat = vi.fn(async () => undefined);
     const host = new ComfyUiSessionHost({
       tempDir: tmpdir(),
-      artifacts: { getForSession: () => [{ id: 'chat-files', title: 'Chat files' }] as never, create: () => ({}) as never },
-      attachments: {
-        add: () => ({}) as never,
-        addGeneratedMediaFromFile: async () => ({}) as never,
-        get: getAttachment,
-        getPath: () => '',
-      },
+      storesForProfile: () => ({
+        artifacts: { getForSession: () => [{ id: 'chat-files', title: 'Chat files' }] as never, create: () => ({}) as never },
+        attachments: {
+          add: () => ({}) as never,
+          addGeneratedMediaFromFile: async () => ({}) as never,
+          get: getAttachment,
+          getPath: () => '',
+        } as never,
+      }),
       postChat,
     });
     const process = host.create('session-5', cloneDefaultComfyUiConfigForKind('image'));
@@ -92,8 +94,10 @@ describe('ComfyUI session input', () => {
   it('does not expose the image picker for video-only tools', () => {
     const host = new ComfyUiSessionHost({
       tempDir: tmpdir(),
-      artifacts: { getForSession: () => [], create: () => ({}) as never },
-      attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' },
+      storesForProfile: () => ({
+        artifacts: { getForSession: () => [], create: () => ({}) as never },
+        attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' } as never,
+      }),
       postChat: vi.fn(async () => undefined),
     });
     const process = host.create('session-3', cloneDefaultComfyUiConfigForKind('video'));

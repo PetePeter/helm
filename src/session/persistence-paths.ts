@@ -1,6 +1,6 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getConfigDir, getProfileConfigDir } from '../utils/app-paths.js';
+import { getConfigDir } from '../utils/app-paths.js';
 import { getGlobalPersistencePaths as getGlobalPersistencePathsFromSharedDefinition } from './global-persistence-paths.mjs';
 
 export interface ProfilePersistencePaths {
@@ -90,36 +90,11 @@ export function getProfilePersistencePaths(configDir: string): ProfilePersistenc
 
 /** Build every machine-shared config path from the canonical shared definition. */
 export function getGlobalPersistencePaths(configDir: string): GlobalPersistencePaths {
-  return getGlobalPersistencePathsFromSharedDefinition(configDir) as GlobalPersistencePaths;
+  return getGlobalPersistencePathsFromSharedDefinition(configDir) as unknown as GlobalPersistencePaths;
 }
 
 const persistenceDirname = dirname(fileURLToPath(import.meta.url));
-const profilePaths = getProfilePersistencePaths(getProfileConfigDir('1'));
 const globalPaths = getGlobalPersistencePaths(getConfigDir(persistenceDirname));
-
-// Default-profile aliases keep the existing singleton stores concise. New
-// profile-aware callers should use getProfilePersistencePaths(configDir).
-export const SESSIONS_FILE = profilePaths.sessionsFile;
-export const PLANS_FILE = profilePaths.plansFile;
-export const DEFAULT_PLANS_DIR = profilePaths.plansDir;
-export const DEFAULT_PLAN_DEPS_FILE = profilePaths.planDependenciesFile;
-export const DEFAULT_PLAN_SEQUENCES_FILE = profilePaths.planSequencesFile;
-export const DEFAULT_PROJECTS_FILE = profilePaths.projectsFile;
-export const DEFAULT_PLAN_CONTEXTS_FILE = profilePaths.planContextsFile;
-export const DEFAULT_PLAN_CONTEXT_BINDINGS_FILE = profilePaths.planContextBindingsFile;
-export const SCHEDULED_TASKS_FILE = profilePaths.scheduledTasksFile;
-export const SCHEDULED_TASK_HISTORY_FILE = profilePaths.scheduledTaskHistoryFile;
-export const RECYCLE_BIN_FILE = profilePaths.recycleBinFile;
-export const RUNTIME_GROUPS_FILE = profilePaths.runtimeGroupsFile;
-export const ARTIFACTS_FILE = profilePaths.artifactsFile;
-export const DRAFTS_DIR = profilePaths.draftsDir;
-export const TODOS_DIR = profilePaths.todosDir;
-export const MEMORIES_FILE = profilePaths.memoriesFile;
-export const MEMORY_ATTACHMENTS_DIR = profilePaths.memoryAttachmentsDir;
-/** Mess is stored below per-user app data, never below the repository. */
-export const MESS_DIR = profilePaths.messDir;
-/** Time tracking: one append-only JSONL file of 5-minute slots per month. */
-export const TIME_TRACKING_DIR = profilePaths.timeTrackingDir;
 
 export const PEERS_FILE = globalPaths.peersFile;
 export const MACHINE_IDENTITY_FILE = globalPaths.machineIdentityFile;
@@ -141,15 +116,12 @@ function assertSafeProjectId(projectId: string): void {
 }
 
 /** The immutable project UUID, rather than its name or path, owns these files. */
-export function getMessLogPath(projectId: string, directory = MESS_DIR): string {
+export function getMessLogPath(projectId: string, directory: string): string {
   assertSafeProjectId(projectId);
   return join(directory, `${projectId}.jsonl`);
 }
 
-export function getMessCursorPath(projectId: string, directory = MESS_DIR): string {
+export function getMessCursorPath(projectId: string, directory: string): string {
   assertSafeProjectId(projectId);
   return join(directory, `${projectId}.cursors.json`);
 }
-
-// Descriptive aliases keep callers independent of the on-disk file naming.
-export const MEMORY_FILE = MEMORIES_FILE;

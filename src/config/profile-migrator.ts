@@ -18,8 +18,8 @@ import type { InputConfigStore } from './input-config-store.js';
 export function migrateFromProfile(
   configDir: string,
   cliTypeStore: CliTypeStore,
-  bindingStore: BindingStore,
-  inputConfigStore: InputConfigStore,
+  bindingStore?: BindingStore,
+  inputConfigStore?: InputConfigStore,
 ): boolean {
   const profilePath = path.join(configDir, 'profiles', 'default.yaml');
   if (!fs.existsSync(profilePath)) return false;
@@ -48,7 +48,7 @@ export function migrateFromProfile(
 
     // Stage legacy per-CLI bindings; ConfigLoader folds them into a profile.
     // importLegacy is a no-op when the store already holds data.
-    if (raw.bindings && typeof raw.bindings === 'object') {
+    if (bindingStore && raw.bindings && typeof raw.bindings === 'object') {
       bindingStore.importLegacy(raw.bindings);
       logger.info('[Config] Staged bindings from profile for migration');
     }
@@ -56,7 +56,7 @@ export function migrateFromProfile(
     // Migrate input config only on first migration (file absence is our flag).
     // Once the file exists, subsequent runs must not re-import or they would
     // clobber edits the user has made through the Settings UI.
-    if (!fs.existsSync(inputConfigStore.filePath)) {
+    if (inputConfigStore && !fs.existsSync(inputConfigStore.filePath)) {
       inputConfigStore.importFrom({
         sticks: raw.sticks,
         dpad: raw.dpad,

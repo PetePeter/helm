@@ -3,13 +3,27 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { saveSessions, loadSessions, clearPersistedSessions, saveProjectRecords, loadProjectRecords } from '../src/session/persistence.js';
+import {
+  saveSessions as persistSessions,
+  loadSessions as loadPersistedSessions,
+  clearPersistedSessions as clearPersistedSessionFile,
+  saveProjectRecords as persistProjectRecords,
+  loadProjectRecords as loadPersistedProjectRecords,
+} from '../src/session/persistence.js';
 import { SessionManager } from '../src/session/manager.js';
 import type { SessionInfo } from '../src/types/session.js';
 import type { ProjectRecord } from '../src/types/project.js';
 import { normalizeProjectPath as norm } from '../src/session/project-identity.js';
 import * as fs from 'node:fs';
 import * as YAML from 'yaml';
+
+const sessionsFile = 'X:/test/profile-1/sessions.yaml';
+const projectsFile = 'X:/test/profile-1/projects.json';
+const saveSessions = (sessions: SessionInfo[]) => persistSessions(sessions, sessionsFile);
+const loadSessions = () => loadPersistedSessions(sessionsFile);
+const clearPersistedSessions = () => clearPersistedSessionFile(sessionsFile);
+const saveProjectRecords = (projects: ProjectRecord[]) => persistProjectRecords(projects, projectsFile);
+const loadProjectRecords = () => loadPersistedProjectRecords(projectsFile);
 
 // Mock fs so we never touch the real filesystem
 vi.mock('node:fs', () => ({
@@ -391,7 +405,7 @@ describe('SessionManager persistence integration', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    manager = new SessionManager();
+    manager = new SessionManager({ userProfileId: '1', sessionsFile });
   });
 
   it('persists after addSession', () => {
@@ -530,7 +544,7 @@ describe('SessionManager persistence integration', () => {
     expect(savedYaml.sessions[0].name).toBe('Renamed Session');
 
     // Simulate reload from disk
-    const manager2 = new SessionManager();
+    const manager2 = new SessionManager({ userProfileId: '1', sessionsFile });
     (fs.existsSync as any).mockReturnValue(true);
     (fs.readFileSync as any).mockReturnValue(lastWrite[1]);
     manager2.restoreSessions();

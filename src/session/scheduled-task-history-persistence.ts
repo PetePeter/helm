@@ -11,13 +11,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import * as YAML from 'yaml';
 import { logger } from '../utils/logger.js';
 import type { ScheduledTaskHistoryEntry } from '../types/scheduled-task.js';
-import { SCHEDULED_TASK_HISTORY_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isRecord } from './persistence-utils.js';
 
 /** Retention window: entries older than this (by ranAt) are discarded. */
 export const HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function saveScheduledTaskHistory(entries: ScheduledTaskHistoryEntry[]): void {
+export function saveScheduledTaskHistory(entries: ScheduledTaskHistoryEntry[], filePath?: string): void {
+  if (!filePath) return;
   try {
     const data = {
       entries: entries.map(e => ({
@@ -25,16 +25,17 @@ export function saveScheduledTaskHistory(entries: ScheduledTaskHistoryEntry[]): 
         ...(e.endDate ? { endDate: e.endDate.toISOString() } : {}),
       })),
     };
-    atomicWriteFileSync(SCHEDULED_TASK_HISTORY_FILE, YAML.stringify(data));
+    atomicWriteFileSync(filePath, YAML.stringify(data));
   } catch (err) {
     logger.error(`Failed to save scheduled task history: ${err}`);
   }
 }
 
-export function loadScheduledTaskHistory(): ScheduledTaskHistoryEntry[] {
+export function loadScheduledTaskHistory(filePath?: string): ScheduledTaskHistoryEntry[] {
+  if (!filePath) return [];
   try {
-    if (!existsSync(SCHEDULED_TASK_HISTORY_FILE)) return [];
-    const parsed = YAML.parse(readFileSync(SCHEDULED_TASK_HISTORY_FILE, 'utf8')) as unknown;
+    if (!existsSync(filePath)) return [];
+    const parsed = YAML.parse(readFileSync(filePath, 'utf8')) as unknown;
     if (!isRecord(parsed) || !Array.isArray(parsed.entries)) return [];
 
     const cutoff = Date.now() - HISTORY_WINDOW_MS;

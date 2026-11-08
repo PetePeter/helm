@@ -2,6 +2,7 @@ import { Notification, BrowserWindow } from 'electron';
 import type { SessionManager } from './manager.js';
 import { logger } from '../utils/logger.js';
 import type { WindowManager } from '../electron/window-manager.js';
+import type { ProfileRuntimeRegistry } from './profile-runtime-registry.js';
 
 /** Payload broadcast to renderers to start a flash-attention pulse on a session. */
 export interface FlashAttentionPayload {
@@ -40,6 +41,7 @@ export class NotificationManager {
   constructor(
     private windowManager: WindowManager,
     private sessionManager: SessionManager,
+    private readonly runtimeRegistry?: Pick<ProfileRuntimeRegistry, 'findSessionOwner'>,
   ) {}
 
   setScreenLockChecker(fn: () => boolean): void { this.screenLockChecker = fn; }
@@ -60,7 +62,10 @@ export class NotificationManager {
    * or its (collapsed) group header. Unknown sessions are a graceful no-op.
    */
   flashAttention(sessionId: string): { flashed: boolean } {
-    const session = this.sessionManager.getSession(sessionId);
+    const owner = this.runtimeRegistry?.findSessionOwner(sessionId);
+    const session = owner
+      ? owner.sessionManager.getSession(sessionId)
+      : this.runtimeRegistry ? null : this.sessionManager.getSession(sessionId);
     if (!session) {
       logger.warn(`[Flash] Ignoring flash_attention for unknown session: ${sessionId}`);
       return { flashed: false };

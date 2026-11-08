@@ -13,6 +13,7 @@ import { logger } from '../../utils/logger.js';
 import type { WindowManager } from '../window-manager.js';
 import type { PtyWriteOptions } from '../../session/delivery-context.js';
 import { normalizeProjectPath } from '../../session/project-identity.js';
+import type { ProfileRuntimeRegistry } from '../../session/profile-runtime-registry.js';
 
 // Track cancel functions for initial prompt pre-loading per session
 const promptCancellers: Map<string, () => void> = new Map();
@@ -37,7 +38,10 @@ export function setupPtyHandlers(
   recycleBin?: Pick<RecycleBinManager, 'list'>,
   /** A session compacting behind a handover takes no user input; see docs/handover.md. */
   isHandoverPending: (sessionId: string) => boolean = () => false,
+  runtimeRegistry?: ProfileRuntimeRegistry,
 ): void {
+  const ownerFor = (sessionId: string) => runtimeRegistry?.findSessionOwner(sessionId);
+  const managerFor = (sessionId: string) => ownerFor(sessionId)?.sessionManager ?? (runtimeRegistry ? undefined : sessionManager);
   const isRendererOwner = (event: Electron.IpcMainInvokeEvent, sessionId: string): boolean => {
     // Electron always supplies sender for a real invoke. The missing-sender
     // fallback keeps direct unit calls useful without weakening the runtime
@@ -125,7 +129,10 @@ export function setupPtyHandlers(
   ptyManager.setActivityMarker(sessionId => stateDetector.markActive(sessionId));
   // Freeze is enforced at the write itself so no path — desktop keys, hooks,
   // Mess pokes, handover pastes — can wake a frozen session.
-  ptyManager.setWriteGate(sessionId => !sessionManager.getSession(sessionId)?.frozen);
+  ptyManager.setWriteGate(sessionId => {
+    const ownerManager = managerFor(sessionId);
+    return !!ownerManager && !ownerManager.getSession(sessionId)?.frozen;
+  });
 
   // pty:write - Write data to a session's PTY stdin
   ipcMain.handle('pty:write', (event, sessionId: string, data: string, options?: PtyWriteOptions) => {
@@ -210,13 +217,18 @@ export function setupPtyHandlers(
 
   // Forward PTY data events to renderer
   ptyManager.on('data', (sessionId: string, data: string) => {
+    const owner = ownerFor(sessionId);
+    const ownerManager = owner?.sessionManager ?? (runtimeRegistry ? undefined : sessionManager);
     // Feed to state detector for activity tracking.
     stateDetector.processOutput(sessionId, data);
 
     // Feed to pattern matcher for regex-triggered actions
-    if (patternMatcher) {
-      const cliType = sessionManager.getSession(sessionId)?.cliType;
-      if (cliType) patternMatcher.processOutput(sessionId, cliType, data);
+    const sessionPatternMatcher = owner
+      ? owner.patternMatcher
+      : runtimeRegistry ? undefined : patternMatcher;
+    if (sessionPatternMatcher) {
+      const cliType = ownerManager?.getSession(sessionId)?.cliType;
+      if (cliType) sessionPatternMatcher.processOutput(sessionId, cliType, data);
     }
 
     // Forward to renderer for xterm.js rendering
@@ -229,6 +241,7 @@ export function setupPtyHandlers(
 
   // Forward PTY exit events to renderer
   ptyManager.on('exit', (sessionId: string, exitCode: number) => {
+    const ownerManager = managerFor(sessionId);
     const snappedWindowId = windowManager.getWindowIdForSession(sessionId);
 
     // Cancel any pending initial prompt
@@ -245,10 +258,11 @@ export function setupPtyHandlers(
     // Clean up: remove from queue, state tracking, notification tracking, and session manager
     pipelineQueue.dequeue(sessionId);
     stateDetector.removeSession(sessionId);
-    patternMatcher?.removeSession(sessionId);
+    const owner = ownerFor(sessionId);
+    (owner ? owner.patternMatcher : runtimeRegistry ? undefined : patternMatcher)?.removeSession(sessionId);
     notificationManager?.removeSession(sessionId);
-    if (sessionManager.hasSession(sessionId)) {
-      sessionManager.removeSession(sessionId, { force: true });
+    if (ownerManager?.hasSession(sessionId)) {
+      ownerManager.removeSession(sessionId, { force: true });
     }
 
     if (snappedWindowId !== undefined) {
@@ -264,7 +278,8 @@ export function setupPtyHandlers(
 
   // Forward activity change events to renderer
   stateDetector.on('activity-change', (event) => {
-    if (sessionManager.hasSession(event.sessionId)) {
+    const ownerManager = managerFor(event.sessionId);
+    if (ownerManager?.hasSession(event.sessionId)) {
       const updates: Partial<SessionInfo> = { activityLevel: event.level };
       if (event.lastOutputAt !== undefined && event.lastOutputAt > 0) {
         updates.lastOutputAt = event.lastOutputAt;
@@ -274,7 +289,7 @@ export function setupPtyHandlers(
           updates.lastActiveAt = event.lastOutputAt;
         }
       }
-      sessionManager.updateSession(event.sessionId, updates);
+      ownerManager.updateSession(event.sessionId, updates);
     }
 
     const win = windowManager.getWindowForSession(event.sessionId);
@@ -331,20 +346,23 @@ export function setupPtyHandlers(
   });
 
   // Pattern matcher — forward events to renderer
-  if (patternMatcher) {
-    patternMatcher.on('schedule-created', (event) => {
+  const patternMatchers = runtimeRegistry
+    ? runtimeRegistry.all().map(runtime => runtime.patternMatcher)
+    : patternMatcher ? [patternMatcher] : [];
+  for (const matcher of patternMatchers) {
+    matcher.on('schedule-created', (event) => {
       const win = windowManager.getWindowForSession(event.sessionId);
       if (win && !win.isDestroyed()) {
         win.webContents.send('pattern:schedule-created', event);
       }
     });
-    patternMatcher.on('schedule-fired', (event) => {
+    matcher.on('schedule-fired', (event) => {
       const win = windowManager.getWindowForSession(event.sessionId);
       if (win && !win.isDestroyed()) {
         win.webContents.send('pattern:schedule-fired', event);
       }
     });
-    patternMatcher.on('schedule-cancelled', (event) => {
+    matcher.on('schedule-cancelled', (event) => {
       const win = windowManager.getWindowForSession(event.sessionId);
       if (win && !win.isDestroyed()) {
         win.webContents.send('pattern:schedule-cancelled', event);

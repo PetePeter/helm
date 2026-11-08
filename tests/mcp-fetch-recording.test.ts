@@ -16,6 +16,7 @@ import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { callMcpTool, type McpToolDispatcherDeps } from '../src/mcp/tools/dispatcher.js';
 import { MemoryAttachmentManager } from '../src/session/memory-attachment-manager.js';
 import { MemoryManager } from '../src/session/memory-manager.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 function makeDeps(
   service: HelmControlService,
@@ -38,7 +39,7 @@ describe('MCP fetch recording', () => {
 
   function makeService(): { service: HelmControlService; memoryManager: MemoryManager } {
     tempRoot = makeTempRoot('helm-fetch-recording-');
-    const service = new HelmControlService({} as never, {} as never, {} as never, {} as never);
+    const service = new HelmControlService({} as never, {} as never, {} as never, {} as never, unusedPlanAttachmentManager());
     const memoryManager = new MemoryManager();
     service.setMemoryManager(
       memoryManager,

@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { HelmControlService } from '../src/mcp/helm-control-service';
 import { SessionManager } from '../src/session/manager';
 import { parseSessionFeedCursor } from '../src/session/session-change-feed';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 function makeService() {
   const sessionManager = new SessionManager();
@@ -22,6 +23,7 @@ function makeService() {
       getCliTypeLabel: (ref: string) => ref,
       getWorkingDirectories: () => [],
     } as never,
+    unusedPlanAttachmentManager(),
   );
   service.sessionChangeFeed.attach(sessionManager);
   const add = (id: string) => sessionManager.addSession({ id, name: id, cliType: 'claude', processId: 1 }, true);

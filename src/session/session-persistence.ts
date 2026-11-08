@@ -7,7 +7,6 @@ import {
   type SessionInfo,
   type UserPromptSource,
 } from '../types/session.js';
-import { SESSIONS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 import { normalizeProjectPath } from './project-identity.js';
 import { hydrateChatBindings, serializeChatBindings } from './chat/chat-bindings.js';
@@ -15,10 +14,11 @@ import { isSessionMission } from './mission.js';
 import { isSessionEta } from './session-eta.js';
 import { isContextUsageSample } from './context-usage-history.js';
 
-function serializeSession(s: SessionInfo): Record<string, unknown> {
+export function serializeSession(s: SessionInfo): Record<string, unknown> {
   return {
     id: s.id,
     name: s.name,
+    ...(isString(s.userProfileId) ? { userProfileId: s.userProfileId } : {}),
     cliType: s.cliType,
     processId: s.processId,
     ...(s.workingDir ? { workingDir: s.workingDir } : {}),
@@ -93,7 +93,8 @@ function isUserPromptSource(value: unknown): value is UserPromptSource {
   return value === 'terminal' || value === 'phone' || value === 'chat';
 }
 
-export function saveSessions(sessions: SessionInfo[], sessionsFile = SESSIONS_FILE): void {
+export function saveSessions(sessions: SessionInfo[], sessionsFile?: string): void {
+  if (!sessionsFile) return;
   try {
     // Remote rows are reopened from their peer, and built-in shells have no
     // resumable CLI identity. Neither belongs in the restart session list.
@@ -104,7 +105,8 @@ export function saveSessions(sessions: SessionInfo[], sessionsFile = SESSIONS_FI
   }
 }
 
-export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
+export function loadSessions(sessionsFile?: string, expectedProfileId?: string): SessionInfo[] {
+  if (!sessionsFile) return [];
   try {
     if (!existsSync(sessionsFile)) return [];
     const parsed = YAML.parse(readFileSync(sessionsFile, 'utf8')) as unknown;
@@ -113,6 +115,11 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       .filter(isSessionInfo)
       .filter(session => session.cliType !== BUILTIN_SHELL_CLI_TYPE)
       .map(session => {
+        // Migrated profile-1 sessions predate ownership metadata. A profile
+        // runtime drops any row explicitly owned by another profile.
+        if (typeof session.userProfileId !== 'string' || !session.userProfileId) {
+          session.userProfileId = '1';
+        }
         if (session.hidden !== true) delete session.hidden;
         // Normalize workingDir and projectPath on load to ensure consistent casing across platforms
         if (session.workingDir) {
@@ -164,14 +171,16 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
         }
         // Rehydrate chat bindings and discard retired Telegram session fields.
         return hydrateChatBindings(session);
-      });
+      })
+      .filter(session => expectedProfileId === undefined || session.userProfileId === expectedProfileId);
   } catch (err) {
     logger.error(`Failed to load sessions: ${err}`);
     return [];
   }
 }
 
-export function clearPersistedSessions(sessionsFile = SESSIONS_FILE): void {
+export function clearPersistedSessions(sessionsFile?: string): void {
+  if (!sessionsFile) return;
   try {
     if (existsSync(sessionsFile)) {
       atomicWriteFileSync(sessionsFile, YAML.stringify({ sessions: [] }));

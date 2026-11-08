@@ -8,6 +8,7 @@ import { MCP_TOOLS } from '../src/mcp/tools/definitions.js';
 import { MemoryAttachmentManager } from '../src/session/memory-attachment-manager.js';
 import { MemoryManager } from '../src/session/memory-manager.js';
 import { ArtifactTempRegistry } from '../src/session/artifact-temp-registry.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 function makeService(
   manager: MemoryManager,
@@ -19,6 +20,7 @@ function makeService(
     {} as any,
     {} as any,
     {} as any,
+    unusedPlanAttachmentManager(),
   );
   service.setMemoryManager(manager, attachments, tempRegistry);
   return service;

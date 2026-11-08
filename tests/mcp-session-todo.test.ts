@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionInfo } from '../src/types/session.js';
 import type { SessionTodo } from '../src/types/todo.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -44,7 +45,7 @@ describe('MCP session_todo_*', () => {
     sessions.addSession(session('other', 'sibling'));
     todos = new TodoManager(memoryStore(), () => 'generated-id', () => 5000);
     const configLoader = { getCliTypeLabel: (ref: string) => ref, getCliTypeEntry: () => null, getCliTypes: () => [] };
-    const service = new HelmControlService({} as never, sessions, {} as never, configLoader as never);
+    const service = new HelmControlService({} as never, sessions, {} as never, configLoader as never, unusedPlanAttachmentManager());
     service.setTodoManager(todos);
     const deps = { service, setPlanStateWithValidation: vi.fn(), completePlanWithValidation: vi.fn() };
     call = (tool, args = {}, auth = { sessionId: 'me' }) => callMcpTool(deps, tool, args, auth) as Promise<any>;

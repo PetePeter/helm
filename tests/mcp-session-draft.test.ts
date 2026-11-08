@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { SessionInfo } from '../src/types/session.js';
 import type { Draft } from '../src/types/draft.js';
+import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -55,7 +56,7 @@ describe('MCP session_draft_*', () => {
     sessions.addSession(session('other', 'sibling'));
     pads = new DraftManager(memoryStore(), () => 5000);
     const configLoader = { getCliTypeLabel: (ref: string) => ref, getCliTypeEntry: () => null, getCliTypes: () => [] };
-    const service = new HelmControlService({} as never, sessions, {} as never, configLoader as never);
+    const service = new HelmControlService({} as never, sessions, {} as never, configLoader as never, unusedPlanAttachmentManager());
     service.setDraftManager(pads);
     peerCall = vi.fn();
     (service as unknown as { peerCall: unknown }).peerCall = peerCall;
