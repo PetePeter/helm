@@ -24,6 +24,10 @@ export function cancelAllPrompts(): void {
   promptCancellers.clear();
 }
 
+export function registerPromptCanceller(sessionId: string, cancel: () => void): void {
+  promptCancellers.set(sessionId, cancel);
+}
+
 export function setupPtyHandlers(
   ptyManager: PtyManager,
   stateDetector: StateDetector,
@@ -42,7 +46,13 @@ export function setupPtyHandlers(
 ): void {
   const ownerFor = (sessionId: string) => runtimeRegistry?.findSessionOwner(sessionId);
   const managerFor = (sessionId: string) => ownerFor(sessionId)?.sessionManager ?? (runtimeRegistry ? undefined : sessionManager);
+  const belongsToActiveProfile = (sessionId: string): boolean =>
+    !runtimeRegistry || runtimeRegistry.isSessionInActiveProfile(sessionId);
   const isRendererOwner = (event: Electron.IpcMainInvokeEvent, sessionId: string): boolean => {
+    if (!belongsToActiveProfile(sessionId)) {
+      logger.warn(`[PTY IPC] Rejected inactive-profile session access for session=${sessionId}`);
+      return false;
+    }
     // Electron always supplies sender for a real invoke. The missing-sender
     // fallback keeps direct unit calls useful without weakening the runtime
     // boundary.
@@ -81,6 +91,9 @@ export function setupPtyHandlers(
 
   // pty:spawn - Spawn a new PTY process and register as session
   ipcMain.handle('pty:spawn', (_event, sessionId: string, command: string, args: string[], cwd?: string, cliType?: string, contextText?: string, resumeSessionName?: string) => {
+    if (ownerFor(sessionId) && !belongsToActiveProfile(sessionId)) {
+      return { success: false, error: 'Session does not belong to the active profile' };
+    }
     logger.info(`[PTY IPC] pty:spawn called: sessionId=${sessionId}, command=${command}, args=${JSON.stringify(args)}, cwd=${cwd}, cliType=${cliType}, hasContext=${!!contextText}, resume=${resumeSessionName || 'none'}`);
     // Reload profile from disk if the file changed — ensures profile edits take
     // effect for new sessions without restarting the app.
@@ -112,7 +125,7 @@ export function setupPtyHandlers(
           ? recycleBin?.list().find(e => e.sessionId === sessionId)?.cliThreadId
           : undefined,
         markRestored: sid => stateDetector.markRestored(sid),
-        onPromptCancel: cancel => promptCancellers.set(sessionId, cancel),
+        onPromptCancel: cancel => registerPromptCanceller(sessionId, cancel),
       });
 
       logger.info(`[PTY IPC] Spawn success: pid=${pty.pid}`);
@@ -197,11 +210,13 @@ export function setupPtyHandlers(
 
   // pty:markSwitching - Suppress activity promotion before terminal switch
   ipcMain.handle('pty:markSwitching', (_event, sessionId: string) => {
+    if (!belongsToActiveProfile(sessionId)) return;
     stateDetector.markSwitching(sessionId);
   });
 
   // pty:kill - Kill a session's PTY
   ipcMain.handle('pty:kill', (_event, sessionId: string) => {
+    if (!belongsToActiveProfile(sessionId)) return;
     // Cancel any pending initial prompt
     const cancelPrompt = promptCancellers.get(sessionId);
     if (cancelPrompt) {
@@ -232,6 +247,7 @@ export function setupPtyHandlers(
     }
 
     // Forward to renderer for xterm.js rendering
+    if (!belongsToActiveProfile(sessionId)) return;
     const win = windowManager.getWindowForSession(sessionId);
     if (win && !win.isDestroyed()) {
       win.webContents.send('pty:data', sessionId, data);
@@ -251,7 +267,7 @@ export function setupPtyHandlers(
       promptCancellers.delete(sessionId);
     }
 
-    const win = windowManager.getWindowForSession(sessionId);
+    const win = belongsToActiveProfile(sessionId) ? windowManager.getWindowForSession(sessionId) : undefined;
     if (win && !win.isDestroyed()) {
       win.webContents.send('pty:exit', sessionId, exitCode);
     }
@@ -292,7 +308,7 @@ export function setupPtyHandlers(
       ownerManager.updateSession(event.sessionId, updates);
     }
 
-    const win = windowManager.getWindowForSession(event.sessionId);
+    const win = belongsToActiveProfile(event.sessionId) ? windowManager.getWindowForSession(event.sessionId) : undefined;
     if (win && !win.isDestroyed()) {
       win.webContents.send('pty:activity-change', event);
     }
@@ -301,6 +317,7 @@ export function setupPtyHandlers(
 
   // Pipeline queue management
   ipcMain.handle('pipeline:enqueue', (_event, sessionId: string) => {
+    if (!belongsToActiveProfile(sessionId)) return { success: false, error: 'Session does not belong to the active profile' };
     pipelineQueue.enqueue(sessionId);
     const session = sessionManager.getSession(sessionId);
     if (session) sessionManager.updateSession(sessionId, { state: 'waiting' });
@@ -308,20 +325,25 @@ export function setupPtyHandlers(
   });
 
   ipcMain.handle('pipeline:dequeue', (_event, sessionId: string) => {
+    if (!belongsToActiveProfile(sessionId)) return { success: false, error: 'Session does not belong to the active profile' };
     pipelineQueue.dequeue(sessionId);
     return { success: true };
   });
 
   ipcMain.handle('pipeline:getQueue', () => {
-    return pipelineQueue.getAll();
+    return runtimeRegistry
+      ? pipelineQueue.getAll().filter(sessionId => belongsToActiveProfile(sessionId))
+      : pipelineQueue.getAll();
   });
 
   ipcMain.handle('pipeline:getPosition', (_event, sessionId: string) => {
+    if (!belongsToActiveProfile(sessionId)) return 0;
     return pipelineQueue.getPosition(sessionId);
   });
 
   // Manual state override
   ipcMain.handle('session:setState', (_event, sessionId: string, state: string) => {
+    if (!belongsToActiveProfile(sessionId)) return { success: false, error: 'Session does not belong to the active profile' };
     if (!VALID_SESSION_STATES.includes(state as SessionState)) {
       return { success: false, error: `Invalid state: ${state}` };
     }
@@ -341,6 +363,7 @@ export function setupPtyHandlers(
 
   // Pattern matcher — cancel schedule
   ipcMain.handle('pattern:cancelSchedule', (_event, sessionId: string) => {
+    if (!belongsToActiveProfile(sessionId)) return { success: false, error: 'Session does not belong to the active profile' };
     patternMatcher?.cancelSchedule(sessionId);
     return { success: true };
   });
@@ -351,18 +374,21 @@ export function setupPtyHandlers(
     : patternMatcher ? [patternMatcher] : [];
   for (const matcher of patternMatchers) {
     matcher.on('schedule-created', (event) => {
+      if (!belongsToActiveProfile(event.sessionId)) return;
       const win = windowManager.getWindowForSession(event.sessionId);
       if (win && !win.isDestroyed()) {
         win.webContents.send('pattern:schedule-created', event);
       }
     });
     matcher.on('schedule-fired', (event) => {
+      if (!belongsToActiveProfile(event.sessionId)) return;
       const win = windowManager.getWindowForSession(event.sessionId);
       if (win && !win.isDestroyed()) {
         win.webContents.send('pattern:schedule-fired', event);
       }
     });
     matcher.on('schedule-cancelled', (event) => {
+      if (!belongsToActiveProfile(event.sessionId)) return;
       const win = windowManager.getWindowForSession(event.sessionId);
       if (win && !win.isDestroyed()) {
         win.webContents.send('pattern:schedule-cancelled', event);

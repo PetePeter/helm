@@ -9,6 +9,8 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
+import { installProfileReload } from './profile-reload.js';
+import { profileClient } from './ipc/clients.js';
 
 const DYNAMIC_IMPORT_RELOAD_KEY = 'helm:dynamic-import-reload-attempted';
 const DYNAMIC_IMPORT_RELOAD_COOLDOWN_MS = 10_000;
@@ -35,6 +37,9 @@ window.addEventListener('error', event => {
 window.addEventListener('unhandledrejection', event => {
   reloadAfterDynamicImportFailure(event.reason);
 });
+
+// Every window, not just the one hosting the switcher, drops its per-profile state.
+installProfileReload(profileClient, () => window.location.reload());
 
 const app = createApp(App);
 app.use(createPinia());

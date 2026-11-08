@@ -9,6 +9,7 @@ import { UserProfileStore } from '../src/config/user-profile-store.js';
 import { ProfileRuntimeComposition } from '../src/electron/profile-runtime-composition.js';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
+import { mintSessionAuthToken } from '../src/mcp/session-auth.js';
 import { ProfileMcpRouter } from '../src/mcp/profile-mcp-router.js';
 import { createProfileRemoteService, ProfileMcpServiceFactory } from '../src/mcp/profile-mcp-service-factory.js';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
@@ -98,6 +99,18 @@ function addSession(composition: ProfileRuntimeComposition, profileId: string, i
   return runtime.sessionManager.getSession(id)!;
 }
 
+function postMcp(port: number, token: string, params: Record<string, unknown>, headers: Record<string, string> = {}) {
+  return fetch(`http://127.0.0.1:${port}/mcp`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params }),
+  });
+}
+
+function toolPayload(json: any): any {
+  return JSON.parse(json.result.content[0].text.split('\n\n')[0]);
+}
+
 function createService(
   runtime: ReturnType<ProfileRuntimeComposition['getRequiredRuntime']>,
   pty: PtyManager,
@@ -147,7 +160,7 @@ describe('caller-profile MCP routing', () => {
     expect(mobileRouter.runtimeForCaller({ sessionId: `mobile:${device.id}` }).userProfileId).toBe('2');
     const makeSet = (runtime: typeof one) => {
       builds.set(runtime.userProfileId, (builds.get(runtime.userProfileId) ?? 0) + 1);
-      return { service: createService(runtime, ptyManager, chatBroker) };
+      return { userProfileId: runtime.userProfileId, service: createService(runtime, ptyManager, chatBroker) };
     };
     const primary = makeSet(one);
     const factory = new ProfileMcpServiceFactory(router, primary, makeSet);
@@ -198,7 +211,7 @@ describe('caller-profile MCP routing', () => {
     await expect(server.dispatchForPeer('session_rename', { sessionId: sessionOne.id, newName: 'tampered' }, { sessionId: sessionTwo.id }))
       .rejects.toThrow(/Session not found/);
     await expect(server.dispatchForPeer('helm_restart', { handoverArtifactId: 'unused' }, { sessionId: sessionTwo.id }))
-      .rejects.toThrow(/only through profile 1/);
+      .rejects.toThrow(/admin only/i);
     expect(one.sessionManager.getSession(sessionOne.id)?.name).toBe('session-one');
     await expect(server.dispatchForPeer('session_get', { sessionId: sessionOne.id }, { sessionId: sessionOne.id }))
       .resolves.toMatchObject({ id: 'session-one' });
@@ -211,6 +224,93 @@ describe('caller-profile MCP routing', () => {
     const router = new ProfileMcpRouter(composition, { get: () => undefined } as never);
     expect(() => router.runtimeForCaller({ sessionId: 'deleted-api-session' })).toThrow(/owner/i);
     expect(() => router.runtimeForCaller({ sessionId: 'mobile:missing-device' })).toThrow(/device|profile/i);
+  });
+
+  it('routes anonymous callers and fleet ownership to a directly assigned admin profile', () => {
+    const { composition, ptyManager } = makeComposition();
+    const profiles = new UserProfileStore(composition.getRequiredRuntime('1').configLoader.getGlobalConfigDir());
+    profiles.adminProfileId = '2';
+    const router = new ProfileMcpRouter(composition, new MobileDeviceStore());
+    const adminRuntime = composition.getRequiredRuntime('2');
+    const adminServices = { userProfileId: '2', service: createService(adminRuntime, ptyManager) };
+    const factory = new ProfileMcpServiceFactory(router, adminServices, runtime => ({
+      userProfileId: runtime.userProfileId,
+      service: createService(runtime, ptyManager),
+    }));
+
+    expect(router.runtimeForCaller({}).userProfileId).toBe('2');
+    expect(factory.forCaller({}).userProfileId).toBe('2');
+    expect(() => factory.forProfile('2').service.restartHelm(true)).not.toThrow();
+    expect(() => factory.forProfile('1').service.restartHelm(true)).toThrow(/admin/i);
+    factory.dispose();
+    composition.dispose();
+  });
+
+  it('routes bearer-only MCP calls to the admin profile while identity tools still require a signed session', async () => {
+    const { composition, ptyManager } = makeComposition();
+    const one = composition.getRequiredRuntime('1');
+    const two = composition.getRequiredRuntime('2');
+    addSession(composition, '1', 'admin-session');
+    addSession(composition, '2', 'private-session');
+    const router = new ProfileMcpRouter(composition, new MobileDeviceStore());
+    const primary = createService(one, ptyManager);
+    const factory = new ProfileMcpServiceFactory(router, { userProfileId: '1', service: primary }, runtime => ({
+      userProfileId: runtime.userProfileId,
+      service: createService(runtime, ptyManager),
+    }));
+    const resolveCallerServices = vi.fn((auth: { sessionId?: string; sessionName?: string }) => factory.forCaller(auth));
+    const server = new LocalhostMcpServer(primary, {
+      token: 'shared-secret',
+      port: 0,
+      resolveCallerServices,
+    }, ptyManager);
+    await server.start();
+
+    try {
+      const port = server.getAddress()!.port;
+      const listed = await postMcp(port, 'shared-secret', { name: 'session_list', arguments: {} });
+      const listedJson = await listed.json();
+      const listResult = toolPayload(listedJson);
+      const sessions = Array.isArray(listResult) ? listResult : listResult.items;
+      expect(sessions.map((session: { id: string }) => session.id)).toEqual(['admin-session']);
+      expect(router.runtimeForCaller({}).userProfileId).toBe(
+        composition.registry.all().find(runtime => new UserProfileStore(runtime.configLoader.getGlobalConfigDir())
+          .isAdmin(runtime.userProfileId))?.userProfileId,
+      );
+
+      const identityCall = await postMcp(port, 'shared-secret', {
+        name: 'session_send_text',
+        arguments: { sessionId: 'admin-session', text: 'hello', senderSessionId: 'admin-session' },
+      });
+      const identityJson = await identityCall.json();
+      expect(identityJson.error.message).toContain('signed session token');
+
+      const forgedHeader = await postMcp(port, 'shared-secret', { name: 'session_list', arguments: {} }, {
+        'x-helm-session-id': 'private-session',
+      });
+      expect(forgedHeader.status).toBe(401);
+
+      const callsBeforeUnknown = resolveCallerServices.mock.calls.length;
+      const unknown = await postMcp(port, 'shared-secret', { name: 'not_in_catalog', arguments: {} });
+      expect((await unknown.json()).error.message).toContain('Unknown tool');
+      expect(resolveCallerServices).toHaveBeenCalledTimes(callsBeforeUnknown);
+
+      const toolList = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer shared-secret', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      });
+      expect((await toolList.json()).result.tools.map((tool: { name: string }) => tool.name)).toContain('skill_activate');
+
+      const signedAdmin = mintSessionAuthToken('shared-secret', 'admin-session', 'admin-session');
+      const signedMismatch = await postMcp(port, signedAdmin, { name: 'session_list', arguments: {} }, {
+        'x-helm-session-id': 'private-session',
+      });
+      expect(signedMismatch.status).toBe(401);
+    } finally {
+      await server.close();
+      factory.dispose();
+    }
   });
 
   it('keeps profile-two RemoteService viewer-only and does not advertise its sessions', async () => {

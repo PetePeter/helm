@@ -2,19 +2,30 @@ import type { MobileDeviceStore } from '../mobile/mobile-device-store.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../mobile/mobile-identity.js';
 import type { ProfileRuntime } from '../session/profile-runtime.js';
 import type { ProfileRuntimeComposition } from '../electron/profile-runtime-composition.js';
+import { UserProfileStore } from '../config/user-profile-store.js';
 import { isProxySessionId } from './peer/proxy-identity.js';
 import type { AuthContext } from './tools/types.js';
 
 /** Resolves an authenticated MCP caller to the runtime that owns its data. */
 export class ProfileMcpRouter {
+  private readonly userProfileStore: UserProfileStore;
+
   constructor(
     private readonly composition: ProfileRuntimeComposition,
     private readonly deviceStore: Pick<MobileDeviceStore, 'get'>,
-  ) {}
+  ) {
+    const firstRuntime = composition.registry.all()[0];
+    if (!firstRuntime) throw new Error('No profile runtime is available for MCP routing');
+    this.userProfileStore = new UserProfileStore(firstRuntime.configLoader.getGlobalConfigDir());
+  }
 
   runtimeForCaller(authContext: AuthContext): ProfileRuntime {
     const sessionId = authContext.sessionId;
-    if (!sessionId) return this.runtimeForProfile('1');
+    if (!sessionId) {
+      const adminProfile = this.userProfileStore.list().find(profile => this.userProfileStore.isAdmin(profile.id));
+      if (!adminProfile) throw new Error('Admin profile is not configured');
+      return this.runtimeForProfile(adminProfile.id);
+    }
 
     if (isMobileSessionId(sessionId)) {
       const deviceId = deviceIdFromMobileSessionId(sessionId);
@@ -26,7 +37,7 @@ export class ProfileMcpRouter {
 
     // Fleet calls are process-level capabilities. Their proxy identity must not
     // be mistaken for a local session or a mobile profile binding.
-    if (isProxySessionId(sessionId)) return this.runtimeForProfile('1');
+    if (isProxySessionId(sessionId)) return this.runtimeForProfile(this.userProfileStore.adminProfileId);
 
     const owner = this.composition.registry.findSessionOwner(sessionId);
     if (!owner) throw new Error(`Unknown session owner: ${sessionId}`);

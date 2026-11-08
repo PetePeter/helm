@@ -4,8 +4,15 @@ import type { ProfileRuntime } from './profile-runtime.js';
 export class ProfileRuntimeRegistry {
   private readonly runtimes = new Map<string, ProfileRuntime>();
 
-  constructor(runtimes: Iterable<ProfileRuntime> = []) {
+  constructor(
+    runtimes: Iterable<ProfileRuntime> = [],
+    private readonly activeProfileIdProvider?: () => string,
+  ) {
     for (const runtime of runtimes) this.register(runtime);
+  }
+
+  getActiveProfileId(): string | undefined {
+    return this.activeProfileIdProvider?.();
   }
 
   register(runtime: ProfileRuntime): void {
@@ -30,6 +37,16 @@ export class ProfileRuntimeRegistry {
 
   all(): ProfileRuntime[] {
     return [...this.runtimes.values()];
+  }
+
+  /**
+   * The gate for every main→renderer push of session-scoped data: the renderer
+   * shows only the active profile, so an inactive profile's session (still
+   * running in the background) must not reach it.
+   */
+  isSessionInActiveProfile(sessionId: string): boolean {
+    const owner = this.findSessionOwner(sessionId);
+    return !!owner && owner.userProfileId === this.getActiveProfileId();
   }
 
   /** Resolve ownership through the session containers rather than assuming profile 1. */

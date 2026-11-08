@@ -40,6 +40,7 @@ interface JsonRpcRequest {
 interface AuthContext {
   sessionId?: string;
   sessionName?: string;
+  sharedBearer?: true;
 }
 
 const MCP_PROTOCOL_VERSION = '2025-06-18';
@@ -68,7 +69,7 @@ export interface LocalhostMcpServerOptions {
   ) => boolean | void;
   /** Caller-specific runtime services shared by HTTP and API/peer dispatch. */
   resolveCallerServices?: (authContext: AuthContext) => ProfileMcpServiceSet;
-  /** Resolve the optional base-token session header across all profiles. */
+  /** @deprecated Session identity is taken only from the signed bearer token. */
   resolveSessionIdentity?: (sessionId: string) => { id: string; name: string } | null;
 }
 
@@ -109,7 +110,6 @@ export class LocalhostMcpServer {
   private readonly onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
   private readonly onClaudeStatuslineUsage?: LocalhostMcpServerOptions['onClaudeStatuslineUsage'];
   private readonly resolveCallerServices?: LocalhostMcpServerOptions['resolveCallerServices'];
-  private readonly resolveSessionIdentity?: LocalhostMcpServerOptions['resolveSessionIdentity'];
   private ptyManager?: PtyManager;
   private hookReceiver?: HookReceiver;
   /** G8 loop driving — late-bound like the receiver: the LoopDriver needs
@@ -127,7 +127,6 @@ export class LocalhostMcpServer {
     this.onItemFetched = options.onItemFetched;
     this.onClaudeStatuslineUsage = options.onClaudeStatuslineUsage;
     this.resolveCallerServices = options.resolveCallerServices;
-    this.resolveSessionIdentity = options.resolveSessionIdentity;
     const env = options.env ?? process.env;
     this.host = options.host ?? env.HELM_MCP_HOST ?? DEFAULT_HOST;
     this.port = options.port ?? parsePort(env.HELM_MCP_PORT) ?? DEFAULT_PORT;
@@ -436,8 +435,10 @@ export class LocalhostMcpServer {
     service = this.service,
     callerLoopDriver = this.loopDriver,
     includeResolver = true,
+    userProfileId?: string,
   ): McpToolDispatcherDeps {
     return {
+      ...(userProfileId ? { userProfileId } : {}),
       service,
       setPlanStateWithValidation: (id, status, stateInfo) => service.setPlanState(id, status, stateInfo),
       completePlanWithValidation: (id, documentation) =>
@@ -449,7 +450,7 @@ export class LocalhostMcpServer {
       ...(includeResolver && this.resolveCallerServices ? {
         resolveForCaller: caller => {
           const set = this.resolveCallerServices!(caller);
-          return this.dispatcherDeps(caller, set.service, set.loopDriver, false);
+          return this.dispatcherDeps(caller, set.service, set.loopDriver, false, set.userProfileId);
         },
       } : {}),
     };
@@ -536,32 +537,20 @@ export class LocalhostMcpServer {
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) return null;
     const token = header.slice(7);
+    const sessionHeader = req.headers['x-helm-session-id'];
+    if (Array.isArray(sessionHeader)) return null;
+    const requestedSessionId = typeof sessionHeader === 'string' ? sessionHeader.trim() : undefined;
     const provided = Buffer.from(token, 'utf8');
     const expected = Buffer.from(this.token, 'utf8');
     if (provided.length === expected.length && timingSafeEqual(provided, expected)) {
-      const sessionId = this.getSingleHeader(req, 'x-helm-session-id')?.trim();
-      if (!sessionId) {
-        // Anonymous access: shared bearer grants read access to plan/directory/query
-        // tools. Tools requiring sender identity (session_send_text etc.) will reject
-        // later when senderSessionId is missing.
-        return {};
-      }
-      const session = this.resolveSessionIdentity
-        ? this.resolveSessionIdentity(sessionId)
-        : this.service.getSession(sessionId);
-      if (!session) return null;
-      return {
-        sessionId: session.id,
-        sessionName: session.name,
-      };
+      // Shared bearer clients have no caller identity. Any session header is
+      // untrusted input and cannot turn the base token into a session token.
+      return sessionHeader === undefined ? { sharedBearer: true } : null;
     }
-    return parseSessionAuthToken(this.token, token);
-  }
-
-  private getSingleHeader(req: IncomingMessage, name: string): string | undefined {
-    const value = req.headers[name];
-    if (Array.isArray(value)) return value[0];
-    return value;
+    const auth = parseSessionAuthToken(this.token, token);
+    if (!auth) return null;
+    if (sessionHeader !== undefined && requestedSessionId !== auth.sessionId) return null;
+    return auth;
   }
 
   private readBody(req: IncomingMessage): Promise<string> {

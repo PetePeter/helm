@@ -10,10 +10,13 @@ import { configClient } from '../../../ipc/clients.js';
 import { getCliDisplayName } from '../../../utils.js';
 import { OPERATOR_RULES } from '../../../../src/mcp/guides/operator-guide.js';
 import { trackSave, useAutosave } from '../../../composables/useAutosave.js';
+import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
+import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 
 interface OperatorConfig { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string }
 
 const config = ref<OperatorConfig>({ enabled: false, cliType: '', compactEveryMinutes: 60, rules: '' });
+const { isAdmin, loadRole } = useActiveProfileRole();
 /**
  * Edited locally and autosaved on a long pause or on leaving the field, since
  * every save re-runs ensure().
@@ -30,16 +33,23 @@ const cliTypes = ref<string[]>([]);
 const RULES_DEBOUNCE_MS = 1500;
 
 onMounted(async () => {
-  const [loaded, types] = await Promise.all([
-    configClient.configGetOperatorConfig(),
-    configClient.configGetCliTypes(),
-  ]);
-  config.value = loaded;
-  rulesDraft.value = loaded.rules;
-  cliTypes.value = types ?? [];
+  await loadRole();
+  if (!isAdmin.value) return;
+  try {
+    const [loaded, types] = await Promise.all([
+      configClient.configGetOperatorConfig(),
+      configClient.configGetCliTypes(),
+    ]);
+    config.value = loaded;
+    rulesDraft.value = loaded.rules;
+    cliTypes.value = types ?? [];
+  } catch {
+    // The main-process admin guard can deny the read if the role changed mid-load.
+  }
 });
 
 function save(updates: Partial<OperatorConfig>): Promise<boolean> {
+  if (!isAdmin.value) return Promise.resolve(false);
   return trackSave(async () => {
     const result = await configClient.configSetOperatorConfig(updates);
     if (result.success) {
@@ -80,18 +90,21 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
         type="checkbox"
         class="focusable"
         :checked="config.enabled"
+        :disabled="!isAdmin"
         @change="save({ enabled: ($event.target as HTMLInputElement).checked })"
       />
       <span>Keep the Helm operator session running</span>
     </label>
+    <AdminOnlyHint :show="!isAdmin" />
 
     <label class="operator-setting">
       <span>CLI type</span>
-      <select class="btn btn--secondary btn--sm focusable" :value="config.cliType" @change="save({ cliType: selectValue($event) })">
+      <select class="btn btn--secondary btn--sm focusable" :value="config.cliType" :disabled="!isAdmin" @change="save({ cliType: selectValue($event) })">
         <option value="" disabled>Choose a CLI type…</option>
         <option v-for="type in cliTypes" :key="type" :value="type">{{ getCliDisplayName(type) }}</option>
       </select>
     </label>
+    <AdminOnlyHint :show="!isAdmin" />
 
 
     <label class="operator-setting">
@@ -99,6 +112,7 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
       <select
         class="btn btn--secondary btn--sm focusable"
         :value="config.compactEveryMinutes"
+        :disabled="!isAdmin"
         @change="save({ compactEveryMinutes: Number(selectValue($event)) })"
       >
         <option v-if="!COMPACT_CHOICES.some(c => c.minutes === config.compactEveryMinutes)" :value="config.compactEveryMinutes">
@@ -107,6 +121,7 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
         <option v-for="choice in COMPACT_CHOICES" :key="choice.minutes" :value="choice.minutes">{{ choice.label }}</option>
       </select>
     </label>
+    <AdminOnlyHint :show="!isAdmin" />
 
     <div class="settings-panel__header settings-span">
       <span class="settings-panel__title">Rules</span>
@@ -129,9 +144,11 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
         class="field-input focusable"
         rows="6"
         placeholder="e.g. Never message the build session."
+        :disabled="!isAdmin"
         @blur="rulesAutosave.flush()"
       />
     </div>
+    <AdminOnlyHint :show="!isAdmin" />
   </div>
 </template>
 

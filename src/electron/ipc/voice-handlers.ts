@@ -22,9 +22,11 @@ import type { MobileChatJournal } from '../../mobile/mobile-chat-journal.js';
 import type { WindowManager } from '../window-manager.js';
 import { setupOperatorHandlers } from './operator-handlers.js';
 import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
-import { createProfileOnePromptDelivery } from './profile-runtime-routing.js';
+import { createAdminPromptDelivery } from './profile-runtime-routing.js';
+import { getMainProcessAdminGuard, type AdminGuard } from './admin-guard.js';
 
 export interface VoiceHandlerDeps {
+  adminGuard?: AdminGuard;
   config: {
     getVoiceConfig: () => VoiceConfig;
     setVoiceConfig: (updates: Partial<VoiceConfig>) => void;
@@ -37,9 +39,11 @@ export interface VoiceHandlerDeps {
 }
 
 export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
-  ipcMain.handle('voice:getConfig', () => deps.config.getVoiceConfig());
+  const requireAdmin = () => (deps.adminGuard ?? getMainProcessAdminGuard()).requireAdmin();
+  ipcMain.handle('voice:getConfig', () => { requireAdmin(); return deps.config.getVoiceConfig(); });
 
   ipcMain.handle('voice:setConfig', (_event, updates: unknown) => {
+    requireAdmin();
     if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
       return { ok: false, error: 'Invalid voice config' };
     }
@@ -53,6 +57,7 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
   });
 
   ipcMain.handle('voice:transcribe', async (_event, audio: unknown, mimeType: unknown) => {
+    requireAdmin();
     if (!(audio instanceof Uint8Array) || typeof mimeType !== 'string') {
       return { ok: false, error: 'Invalid audio payload' };
     }
@@ -60,13 +65,15 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
   });
 
   ipcMain.handle('voice:speak', async (_event, text: unknown) => {
+    requireAdmin();
     if (typeof text !== 'string') return { ok: false, error: 'Invalid text' };
     return deps.voiceService.speak(text);
   });
 
-  ipcMain.handle('voice:lastOperatorReply', () => deps.lastReply());
+  ipcMain.handle('voice:lastOperatorReply', () => { requireAdmin(); return deps.lastReply(); });
 
   ipcMain.handle('voice:ask', async (_event, text: unknown) => {
+    requireAdmin();
     if (typeof text !== 'string') return { ok: false, error: 'Nothing to send' };
     try {
       return await deps.ask(text.trim());
@@ -77,8 +84,9 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
   });
 }
 
-export function setupProfileOneVoiceSurface(options: {
-  profileOneRuntime: ProfileRuntime;
+export function setupAdminVoiceSurface(options: {
+  adminRuntime: ProfileRuntime;
+  adminGuard?: AdminGuard;
   ptyManager: PtyManager;
   operatorSessionManager: OperatorSessionManager;
   chatBroker: ChatBroker;
@@ -87,22 +95,27 @@ export function setupProfileOneVoiceSurface(options: {
   windowManager: WindowManager;
   tempDir: string;
 }): void {
-  const { profileOneRuntime, operatorSessionManager, chatBroker, mobileChatBridge, mobileChatJournal } = options;
-  if (profileOneRuntime.userProfileId !== '1') throw new Error('Voice operator requires profileOneRuntime');
-  setupOperatorHandlers(profileOneRuntime.configLoader, operatorSessionManager);
-  const voiceTools = new CapabilityDetector(profileOneRuntime.configLoader);
+  const { adminRuntime, operatorSessionManager, chatBroker, mobileChatBridge, mobileChatJournal } = options;
+  const adminGuard = options.adminGuard ?? getMainProcessAdminGuard();
+  adminGuard.requireAdmin(adminRuntime.userProfileId);
+  setupOperatorHandlers(adminRuntime.configLoader, operatorSessionManager, adminGuard);
+  const voiceTools = new CapabilityDetector(adminRuntime.configLoader);
   chatBroker.register(new DesktopVoiceBridge({
     getOperatorId: () => operatorSessionManager.getOperatorId(),
     emitReply: reply => {
+      // The admin operator keeps running after a switch; its reply belongs to
+      // the admin's screen, not whichever profile is showing now.
+      try { adminGuard.requireAdmin(); } catch { return; }
       const win = options.windowManager.getMainWindow();
       if (win && !win.isDestroyed()) win.webContents.send('voice:operatorReply', reply);
     },
   }));
-  const deliverPrompt = createProfileOnePromptDelivery(profileOneRuntime, options.ptyManager);
+  const deliverPrompt = createAdminPromptDelivery(adminRuntime, options.ptyManager, adminGuard);
   setupVoiceHandlers({
-    config: profileOneRuntime.configLoader,
+    adminGuard,
+    config: adminRuntime.configLoader,
     voiceService: new DefaultVoiceService({
-      getConfig: () => profileOneRuntime.configLoader.getVoiceConfig(),
+      getConfig: () => adminRuntime.configLoader.getVoiceConfig(),
       getTools: () => voiceTools.getVoiceTools(),
       tempDir: options.tempDir,
     }),

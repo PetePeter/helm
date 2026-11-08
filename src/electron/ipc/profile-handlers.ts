@@ -14,22 +14,25 @@ import { ProfileMcpServiceFactory, bindProfileMcpServicesToMobile, type ProfileM
 import type { ProfileMcpRouter } from '../../mcp/profile-mcp-router.js';
 import type { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
 import type { ProfileRuntime } from '../../session/profile-runtime.js';
+import { MainProcessAdminGuard } from './admin-guard.js';
 
 export interface ProfileSummary {
   id: string;
   name: string;
+  isAdmin: boolean;
   hasPin: boolean;
-  isActive: boolean;
-  sessionCount: number;
-  recoverableSessionCount: number;
-  deviceCount: number;
-  canDelete: boolean;
+  isActive?: boolean;
+  sessionCount?: number;
+  recoverableSessionCount?: number;
+  deviceCount?: number;
+  canDelete?: boolean;
 }
 
 export type ProfileActionResult = { ok: true } | { ok: false; error: string; pinRequired?: boolean; retryAfterMs?: number };
 
 export interface ProfileIpcControllerOptions {
   profileStore: UserProfileStore;
+  adminGuard?: MainProcessAdminGuard;
   composition: ProfileRuntimeComposition;
   runtimeView: ActiveProfileRuntimeView;
   devices: MobileDeviceStore;
@@ -42,13 +45,25 @@ export interface ProfileIpcControllerOptions {
 /** Owns profile CRUD, PIN verification, and the desktop's active runtime selection. */
 export class ProfileIpcController {
   private readonly rateLimiter = new ProfilePinRateLimiter();
+  private readonly adminGuard: MainProcessAdminGuard;
 
-  constructor(private readonly options: ProfileIpcControllerOptions) {}
+  constructor(private readonly options: ProfileIpcControllerOptions) {
+    this.adminGuard = options.adminGuard ?? new MainProcessAdminGuard(options.profileStore);
+  }
 
   listProfiles(): ProfileSummary[] {
     const activeId = this.options.profileStore.getActiveProfileId();
     const devices = this.options.devices.list();
-    return this.options.profileStore.list().map(profile => this.summary(profile, activeId, devices));
+    const isAdmin = this.adminGuard.isAdmin(activeId);
+    return this.options.profileStore.list().map(profile => {
+      if (isAdmin || profile.id === activeId) return this.summary(profile, activeId, devices);
+      return {
+        id: profile.id,
+        name: profile.name,
+        hasPin: Boolean(profile.pinHash),
+        isAdmin: this.options.profileStore.isAdmin(profile.id),
+      };
+    });
   }
 
   getActiveProfile(): ProfileSummary {
@@ -59,6 +74,7 @@ export class ProfileIpcController {
   }
 
   createProfile(name: string): ProfileSummary {
+    this.adminGuard.requireAdmin();
     const profile = this.options.composition.createProfile(name);
     try {
       this.options.onProfileAdded?.(profile.id);
@@ -74,6 +90,7 @@ export class ProfileIpcController {
 
   renameProfile(id: string, name: string): ProfileActionResult {
     try {
+      this.adminGuard.requireAdmin();
       this.options.profileStore.rename(id, name);
       this.notify('profile:registryChanged');
       return { ok: true };
@@ -83,8 +100,11 @@ export class ProfileIpcController {
   }
 
   setProfilePin(id: string, pin: string | null): ProfileActionResult {
-    if (id !== this.options.profileStore.getActiveProfileId()) {
+    if (id !== this.options.profileStore.getActiveProfileId() && !this.adminGuard.isAdmin(this.options.profileStore.getActiveProfileId())) {
       return { ok: false, error: 'Switch to this profile before changing its PIN' };
+    }
+    if (id !== this.options.profileStore.getActiveProfileId()) {
+      try { this.adminGuard.requireAdmin(); } catch (error) { return { ok: false, error: errorText(error) }; }
     }
     if (pin !== null && !/^\d{4,12}$/.test(pin)) {
       return { ok: false, error: 'PIN must be 4 to 12 digits' };
@@ -118,6 +138,10 @@ export class ProfileIpcController {
       await this.options.onProfileChanged?.(id);
       this.options.profileStore.setActiveProfileId(id);
       this.options.runtimeView.select(this.options.composition.getRequiredRuntime(id));
+      this.options.windowManager.closeChildWindowsNotOwnedByProfile(
+        id,
+        sessionId => this.options.composition.registry.findSessionOwner(sessionId)?.userProfileId,
+      );
       this.rateLimiter.recordSuccess(id);
       this.notify('profile:changed', this.getActiveProfile());
       return { ok: true };
@@ -132,6 +156,7 @@ export class ProfileIpcController {
   }
 
   bindDeviceToProfile(deviceId: string, userProfileId: string): ProfileActionResult {
+    try { this.adminGuard.requireAdmin(); } catch (error) { return { ok: false, error: errorText(error) }; }
     if (!this.options.profileStore.list().some(profile => profile.id === userProfileId)) {
       return { ok: false, error: `Unknown user profile: ${userProfileId}` };
     }
@@ -141,7 +166,9 @@ export class ProfileIpcController {
   }
 
   deleteProfile(id: string): ProfileActionResult {
+    try { this.adminGuard.requireAdmin(); } catch (error) { return { ok: false, error: errorText(error) }; }
     if (id === '1') return { ok: false, error: 'The default profile cannot be deleted' };
+    if (this.options.profileStore.isAdmin(id)) return { ok: false, error: 'The admin profile cannot be deleted' };
     if (id === this.options.profileStore.getActiveProfileId()) {
       return { ok: false, error: 'Switch to another profile before deleting this one' };
     }
@@ -173,18 +200,25 @@ export class ProfileIpcController {
     return {
       id: profile.id,
       name: profile.name,
+      isAdmin: this.options.profileStore.isAdmin(profile.id),
       hasPin: Boolean(profile.pinHash),
       isActive: profile.id === activeId,
       sessionCount,
       recoverableSessionCount,
       deviceCount,
-      canDelete: profile.id !== '1' && profile.id !== activeId && sessionCount === 0 && recoverableSessionCount === 0 && deviceCount === 0,
+      canDelete: profile.id !== '1' && !this.options.profileStore.isAdmin(profile.id) && profile.id !== activeId && sessionCount === 0 && recoverableSessionCount === 0 && deviceCount === 0,
     };
   }
 
   private notify(channel: 'profile:changed' | 'profile:registryChanged', payload?: ProfileSummary): void {
-    const window = this.options.windowManager.getMainWindow();
-    if (window && !window.isDestroyed()) window.webContents.send(channel, payload);
+    // A switch is a renderer-state boundary: every window (pop-outs included) must
+    // drop what it cached for the previous profile, so it goes to all of them.
+    const windows = channel === 'profile:changed'
+      ? this.options.windowManager.getAllWindows()
+      : [this.options.windowManager.getMainWindow()];
+    for (const window of windows) {
+      if (window && !window.isDestroyed()) window.webContents.send(channel, payload);
+    }
   }
 }
 
@@ -243,7 +277,7 @@ export function setupProfileRuntimeDomain(options: Omit<ProfileIpcControllerOpti
     const services = options.createServices(runtime);
     if (mobileChatBridge) bindProfileMcpServicesToMobile([services], mobileChatBridge);
     return services;
-  });
+  }, id => options.profileStore.isAdmin(id));
   for (const runtime of options.composition.registry.all()) serviceFactory.forRuntime(runtime);
   const cleanup = setupProfileRuntimeIpcHandlers({
     profileStore: options.profileStore,

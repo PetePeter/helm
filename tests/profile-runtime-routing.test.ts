@@ -2,13 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigLoader } from '../src/config/loader.js';
 import { UserProfileStore } from '../src/config/user-profile-store.js';
 import {
-  createProfileOneHandoverDelivery,
-  createProfileOneOperatorTaskWatcher,
-  createProfileOnePromptDelivery,
+  createAdminHandoverDelivery,
+  createAdminOperatorTaskWatcher,
+  createAdminPromptDelivery,
+  createProfileRecycleBinRestorer,
+  ringAnsweredForBoundDevice,
   sendDesktopChatToSessionOwner,
 } from '../src/electron/ipc/profile-runtime-routing.js';
 import { ActiveProfileRuntimeView } from '../src/electron/active-profile-runtime.js';
@@ -19,10 +21,11 @@ import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
 import { PtyManager } from '../src/session/pty-manager.js';
 import { getProfileConfigDir } from '../src/utils/app-paths.js';
 import { WindowManager } from '../src/electron/window-manager.js';
+import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
 
 const roots: string[] = [];
 
-function setup() {
+function setupAdminRouting() {
   const appData = mkdtempSync(join(tmpdir(), 'helm-profile-routing-'));
   roots.push(appData);
   const globalConfigDir = join(appData, 'Helm', 'config');
@@ -33,11 +36,10 @@ function setup() {
   const configLoader = new ConfigLoader({ userProfileId: '1', profileConfigDir: profileOneDir, globalConfigDir });
   const profileStore = new UserProfileStore(globalConfigDir);
   const composition = new ProfileRuntimeComposition({ configLoader, userProfileStore: profileStore, ptyManager: new PtyManager() });
-  const runtimeView = new ActiveProfileRuntimeView(composition.getRequiredRuntime('1'));
   const controller = new ProfileIpcController({
     profileStore,
     composition,
-    runtimeView,
+    runtimeView: new ActiveProfileRuntimeView(composition.getRequiredRuntime('1')),
     devices: new MobileDeviceStore(),
     windowManager: new WindowManager(),
   });
@@ -46,13 +48,7 @@ function setup() {
 }
 
 function addSession(runtime: ProfileRuntime, id: string): void {
-  runtime.sessionManager.addSession({
-    id,
-    name: id,
-    cliType: 'test',
-    processId: 1,
-    workingDir: 'X:\\project',
-  });
+  runtime.sessionManager.addSession({ id, name: id, cliType: 'test', processId: 1, workingDir: 'X:\\project' });
 }
 
 function recordingPty() {
@@ -70,9 +66,154 @@ afterEach(() => {
   for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
-describe('profile runtime routing with profile 2 active', () => {
-  it('delivers voice prompts to the profile 1 operator', async () => {
-    const { composition, profileStore, controller, profileTwo } = setup();
+function makeEntry(overrides: Partial<RecycleBinEntry> = {}): RecycleBinEntry {
+  return {
+    id: 'bin-entry', sessionId: 'session-1', name: 'Session', cliType: 'claude-code',
+    workingDir: 'X:/source-project', cliSessionName: 'cli-session', closedAt: 1,
+    ...overrides,
+  };
+}
+
+function makeRuntime(profileId: string, entry?: RecycleBinEntry, projects = ['X:/source-project']) {
+  const entries = entry ? [entry] : [];
+  const metadataOperations: string[] = [];
+  return {
+    userProfileId: profileId,
+    metadataOperations,
+    recycleBinManager: {
+      peek: vi.fn((id: string) => entries.find(candidate => candidate.id === id) ?? null),
+      forget: vi.fn((id: string) => {
+        metadataOperations.push('commit');
+        const index = entries.findIndex(candidate => candidate.id === id);
+        if (index >= 0) entries.splice(index, 1);
+      }),
+    },
+    sessionManager: {
+      hasSession: vi.fn(() => false),
+      renameSession: vi.fn((_id: string, _name: string) => { metadataOperations.push('rename'); }),
+      getSpawnCwdContext: () => ({ userProfileId: profileId, projectStore: { list: () => projects.map(canonicalPath => ({ canonicalPath })) } }),
+      restoreMission: vi.fn(),
+    },
+    runtimeGroupManager: {
+      ensureGroup: vi.fn(() => { metadataOperations.push('ensure-group'); }),
+      addSession: vi.fn(() => { metadataOperations.push('add-session'); }),
+    },
+    configLoader: { reloadActiveProfileIfChanged: vi.fn() },
+  };
+}
+
+describe('profile runtime routing', () => {
+  it.each([
+    ['no device binding', undefined],
+    ['stale profile binding', 'deleted-profile'],
+  ])('does not route ringAnswered with %s', (_case, binding) => {
+    const ringAnswered = vi.fn();
+    const profileId = binding;
+    const routed = ringAnsweredForBoundDevice({
+      sessionId: 'session-1', deviceId: 'phone-1',
+      devices: { get: () => profileId ? { userProfileId: profileId } : {} } as any,
+      profiles: { list: () => [{ id: '1' }] } as any,
+      registry: { getRequiredRuntime: vi.fn(() => { throw new Error('stale runtime'); }) } as any,
+      services: { forProfile: () => ({ service: { ringAnswered } }) } as any,
+    });
+
+    expect(routed).toBe(false);
+    expect(ringAnswered).not.toHaveBeenCalled();
+  });
+
+  it('routes ringAnswered only to the currently bound profile runtime', () => {
+    const ringAnswered = vi.fn();
+    const routed = ringAnsweredForBoundDevice({
+      sessionId: 'session-1', deviceId: 'phone-1',
+      devices: { get: () => ({ userProfileId: '2' }) } as any,
+      profiles: { list: () => [{ id: '1' }, { id: '2' }] } as any,
+      registry: { getRequiredRuntime: vi.fn(id => ({ userProfileId: id })) } as any,
+      services: { forProfile: vi.fn(() => ({ service: { ringAnswered } })) } as any,
+    });
+
+    expect(routed).toBe(true);
+    expect(ringAnswered).toHaveBeenCalledOnce();
+    expect(ringAnswered).toHaveBeenCalledWith('session-1');
+  });
+
+  it('keeps restore bound to its source runtime when the active profile switches', async () => {
+    const entry = makeEntry({ name: 'Restored Name', runtimeGroupId: 'group-2', runtimeGroupName: 'Source Group' });
+    const admin = makeRuntime('1');
+    const source = makeRuntime('2', entry);
+    const ptyManager = { has: vi.fn(() => false) };
+    const stateDetector = { markRestored: vi.fn() };
+    let activeProfileId = '2';
+    const spawn = vi.fn((params: any) => {
+      activeProfileId = '1';
+      expect(params.sessionManager).toBe(source.sessionManager);
+      expect(params.configLoader).toBe(source.configLoader);
+      return {};
+    });
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [admin, source] } as any,
+      getActiveProfileId: () => activeProfileId,
+      ptyManager: ptyManager as any,
+      stateDetector: stateDetector as any,
+      trackPromptCanceller: vi.fn(),
+      spawn: spawn as any,
+    });
+
+    await expect(restore(entry.id)).resolves.toEqual(entry);
+
+    expect(activeProfileId).toBe('1');
+    expect(source.sessionManager.restoreMission).toHaveBeenCalledWith(entry.sessionId, undefined, undefined);
+    expect(source.sessionManager.renameSession).toHaveBeenCalledWith(entry.sessionId, 'Restored Name');
+    expect(source.runtimeGroupManager.ensureGroup).toHaveBeenCalledWith('group-2', 'Source Group');
+    expect(source.runtimeGroupManager.addSession).toHaveBeenCalledWith('group-2', entry.sessionId);
+    expect(source.metadataOperations).toEqual(['rename', 'ensure-group', 'add-session', 'commit']);
+    expect(source.recycleBinManager.forget).toHaveBeenCalledWith(entry.id);
+    expect(admin.recycleBinManager.forget).not.toHaveBeenCalled();
+  });
+
+  it('rejects a recycle-bin entry owned by another profile before spawning', async () => {
+    const entry = makeEntry();
+    const active = makeRuntime('1');
+    const other = makeRuntime('2', entry);
+    const spawn = vi.fn();
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [active, other] } as any,
+      getActiveProfileId: () => '1',
+      ptyManager: { has: vi.fn(() => false) } as any,
+      stateDetector: { markRestored: vi.fn() } as any,
+      trackPromptCanceller: vi.fn(),
+      spawn: spawn as any,
+    });
+
+    await expect(restore(entry.id)).resolves.toBeNull();
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(other.recycleBinManager.forget).not.toHaveBeenCalled();
+    expect(active.recycleBinManager.peek).toHaveBeenCalledWith(entry.id);
+  });
+
+  it('rejects a restore cwd outside the source profile projects without committing', async () => {
+    const entry = makeEntry({ workingDir: 'X:/another-profile' });
+    const source = makeRuntime('2', entry, ['X:/source-project']);
+    const ptyManager = { has: vi.fn(() => false), spawn: vi.fn() };
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [source] } as any,
+      getActiveProfileId: () => '2',
+      ptyManager: ptyManager as any,
+      stateDetector: { markRestored: vi.fn() } as any,
+      trackPromptCanceller: vi.fn(),
+    });
+
+    await expect(restore(entry.id)).resolves.toBeNull();
+
+    expect(source.recycleBinManager.forget).not.toHaveBeenCalled();
+    expect(source.sessionManager.restoreMission).not.toHaveBeenCalled();
+    expect(ptyManager.spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('admin profile routing while another profile is active', () => {
+  it('delivers voice prompts to the admin profile operator', async () => {
+    const { composition, profileStore, controller, profileTwo } = setupAdminRouting();
     try {
       addSession(composition.getRequiredRuntime('1'), 'operator-1');
       addSession(composition.getRequiredRuntime(profileTwo.id), 'child-session');
@@ -80,7 +221,7 @@ describe('profile runtime routing with profile 2 active', () => {
       expect(profileStore.getActiveProfileId()).toBe(profileTwo.id);
       const { ptyManager, writes } = recordingPty();
 
-      await createProfileOnePromptDelivery(composition.getRequiredRuntime('1'), ptyManager)('operator-1', 'voice prompt');
+      await createAdminPromptDelivery(composition.getRequiredRuntime('1'), ptyManager)('operator-1', 'voice prompt');
 
       expect(writes.some(write => write.sessionId === 'operator-1' && write.text.includes('voice prompt'))).toBe(true);
     } finally {
@@ -88,26 +229,23 @@ describe('profile runtime routing with profile 2 active', () => {
     }
   });
 
-  it('delivers a profile 1 handover with profile 1 session and CLI configuration', async () => {
-    const { composition, profileStore, controller, profileTwo } = setup();
+  it('delivers admin handovers through the admin session and CLI configuration', async () => {
+    const { composition, profileStore, controller, profileTwo } = setupAdminRouting();
     try {
       addSession(composition.getRequiredRuntime('1'), 'parent-session');
       addSession(composition.getRequiredRuntime(profileTwo.id), 'child-session');
       expect(await controller.switchProfile(profileTwo.id)).toMatchObject({ ok: true });
       expect(profileStore.getActiveProfileId()).toBe(profileTwo.id);
       const { ptyManager, writes } = recordingPty();
-
-      const handover = createProfileOneHandoverDelivery(
-        composition.getRequiredRuntime('1'),
-        ptyManager,
-        { notifyLlmDirected() {} } as any,
-        { floorMs: 0, silenceMs: 0 },
-        0,
+      const handover = createAdminHandoverDelivery(
+        composition.getRequiredRuntime('1'), ptyManager, { notifyLlmDirected() {} } as any,
+        { floorMs: 0, silenceMs: 0 }, 0,
       );
       handover.arm('parent-session', 'handover note');
       const settled = handover.whenSettled('parent-session');
       handover.sendNow('parent-session');
       await settled;
+
       expect(writes.some(write => write.sessionId === 'parent-session' && write.text.includes('handover note'))).toBe(true);
       handover.dispose();
     } finally {
@@ -115,39 +253,26 @@ describe('profile runtime routing with profile 2 active', () => {
     }
   });
 
-  it('keeps the operator task watcher on profile 1 while profile 2 is active', async () => {
-    const { composition, profileStore, controller, profileTwo } = setup();
+  it('keeps the admin operator task watcher on the admin runtime', async () => {
+    const { composition, profileStore, controller, profileTwo } = setupAdminRouting();
     try {
-      const profileOneRuntime = composition.getRequiredRuntime('1');
-      const profileOneSessionManager = profileOneRuntime.sessionManager;
-      profileOneSessionManager.addSession({
-        id: 'builder-1',
-        name: 'Builder',
-        cliType: 'test',
-        processId: 1,
-        workingDir: 'X:\\project',
-        activityLevel: 'active',
+      const admin = composition.getRequiredRuntime('1');
+      admin.sessionManager.addSession({
+        id: 'builder-1', name: 'Builder', cliType: 'test', processId: 1,
+        workingDir: 'X:\\project', activityLevel: 'active',
       });
-      const timer = {
-        id: 'check-1',
-        status: 'pending',
-        mode: 'direct',
-        planIds: ['plan-1'],
-        enabled: true,
-        scheduleKind: 'interval',
-      } as any;
+      const timer = { id: 'check-1', status: 'pending', mode: 'direct', planIds: ['plan-1'], enabled: true, scheduleKind: 'interval' } as any;
       const plan = { status: 'doing', task: { builderSessionId: 'builder-1', checks: 'on' } };
       const runs: string[] = [];
-      profileOneRuntime.scheduledTaskManager.listTasks = () => [timer];
-      profileOneRuntime.scheduledTaskManager.runTaskNow = async id => { runs.push(id); return true; };
-      profileOneRuntime.planManager.getItem = id => id === 'plan-1' ? plan as any : null;
-
+      admin.scheduledTaskManager.listTasks = () => [timer];
+      admin.scheduledTaskManager.runTaskNow = async id => { runs.push(id); return true; };
+      admin.planManager.getItem = id => id === 'plan-1' ? plan as any : null;
       addSession(composition.getRequiredRuntime(profileTwo.id), 'child-session');
       expect(await controller.switchProfile(profileTwo.id)).toMatchObject({ ok: true });
       expect(profileStore.getActiveProfileId()).toBe(profileTwo.id);
-      createProfileOneOperatorTaskWatcher(profileOneRuntime).start();
+      createAdminOperatorTaskWatcher(admin).start();
 
-      profileOneSessionManager.updateSession('builder-1', { activityLevel: 'idle' });
+      admin.sessionManager.updateSession('builder-1', { activityLevel: 'idle' });
 
       expect(runs).toEqual(['check-1']);
     } finally {
@@ -155,8 +280,8 @@ describe('profile runtime routing with profile 2 active', () => {
     }
   });
 
-  it('sends desktop chat through the session owner profile service', async () => {
-    const { composition, profileStore, controller, profileTwo } = setup();
+  it('sends desktop chat through the owning profile service', async () => {
+    const { composition, profileStore, controller, profileTwo } = setupAdminRouting();
     try {
       addSession(composition.getRequiredRuntime('1'), 'parent-session');
       addSession(composition.getRequiredRuntime(profileTwo.id), 'child-session');
@@ -167,9 +292,7 @@ describe('profile runtime routing with profile 2 active', () => {
       await sendDesktopChatToSessionOwner({
         registry: composition.registry,
         serviceForProfile: profileId => ({
-          sendDesktopChatTextToSession: async (sessionId: string, text: string) => {
-            messages.push({ profileId, sessionId, text });
-          },
+          sendDesktopChatTextToSession: async (sessionId: string, text: string) => { messages.push({ profileId, sessionId, text }); },
         }),
         sessionId: 'child-session',
         text: 'chat prompt',

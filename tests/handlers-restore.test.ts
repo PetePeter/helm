@@ -157,6 +157,7 @@ vi.mock('../src/electron/ipc/system-handlers.js', () => ({
 vi.mock('../src/electron/ipc/pty-handlers.js', () => ({
   setupPtyHandlers: vi.fn(),
   cancelAllPrompts: vi.fn(),
+  registerPromptCanceller: vi.fn(),
 }));
 vi.mock('../src/session/draft-manager.js', () => ({
   DraftManager: vi.fn(function (this: any) {

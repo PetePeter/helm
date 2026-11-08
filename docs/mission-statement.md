@@ -35,7 +35,7 @@ graph LR
     SM -.->|getMission| CI[ContextInjector]
     CI -->|"SessionStart + every UserPromptSubmit<br/>[HELM_MISSION]"| CLI[CLI additionalContext]
     SM -->|session:removed| RB[(recycle bin entry)]
-    RB -->|commitRestore| SM
+    RB -->|restore| SM
 ```
 
 ## The 500-character limit

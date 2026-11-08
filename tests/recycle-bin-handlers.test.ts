@@ -46,6 +46,14 @@ function getHandler(channel: string): Function {
   return handler;
 }
 
+function testRestore(bin: InstanceType<typeof RecycleBinManager>) {
+  return async (id: string) => {
+    const entry = bin.peek(id);
+    if (entry) bin.forget(id);
+    return entry;
+  };
+}
+
 describe('recycle-bin handlers — artifact lifecycle', () => {
   let bin: InstanceType<typeof RecycleBinManager>;
   let artifacts: InstanceType<typeof ArtifactManager>;
@@ -55,7 +63,7 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
     handleCalls.clear();
     bin = new RecycleBinManager();
     artifacts = new ArtifactManager();
-    setupRecycleBinHandlers(bin, artifacts);
+    setupRecycleBinHandlers(bin, artifacts, undefined, undefined, undefined, undefined, undefined, testRestore(bin));
   });
 
   function binSession(sessionId: string): RecycleBinEntry {
@@ -93,7 +101,7 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
     expect(artifacts.count('s2')).toBe(0);
   });
 
-  it('Restore PEEKS: returns the entry, keeps it in the bin, and never clears artifacts', async () => {
+  it('Restore returns the entry after commit and keeps its artifacts', async () => {
     artifacts.create('s1', 'A', 'markdown', 'v1');
     const e1 = binSession('s1');
 
@@ -101,16 +109,18 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
 
     expect(restored?.sessionId).toBe('s1');   // original id preserved for reuse
     expect(artifacts.count('s1')).toBe(1);    // artifacts intact
-    expect(bin.count()).toBe(1);              // entry stays until commit (retryable)
+    expect(bin.count()).toBe(0);              // one operation spawns then commits
+    expect(handleCalls.has('recycleBin:commitRestore')).toBe(false);
   });
 
-  it('commitRestore removes the entry but keeps the artifacts (session owns them now)', async () => {
+  it('failed restore keeps the entry recoverable', async () => {
     artifacts.create('s1', 'A', 'markdown', 'v1');
     const e1 = binSession('s1');
+    handleCalls.set('recycleBin:restore', async () => null);
 
-    await getHandler('recycleBin:commitRestore')(null, e1.id);
+    await getHandler('recycleBin:restore')(null, e1.id);
 
-    expect(bin.count()).toBe(0);              // entry gone
+    expect(bin.count()).toBe(1);              // failed spawn does not commit
     expect(artifacts.count('s1')).toBe(1);    // artifacts preserved for the reused id
   });
 
@@ -167,7 +177,7 @@ describe('recycle-bin handlers: draft lifecycle', () => {
       remove: id => { todoFiles.delete(id); },
       list: () => [...todoFiles.keys()],
     });
-    setupRecycleBinHandlers(bin, new ArtifactManager(), undefined, undefined, undefined, undefined, undefined, undefined, pads, todos);
+    setupRecycleBinHandlers(bin, new ArtifactManager(), undefined, undefined, undefined, undefined, undefined, testRestore(bin), pads, todos);
   });
 
   function binSession(sessionId: string): RecycleBinEntry {
@@ -184,7 +194,6 @@ describe('recycle-bin handlers: draft lifecycle', () => {
     expect(files.has('s1')).toBe(true);
 
     await getHandler('recycleBin:restore')(null, entry.id);
-    await getHandler('recycleBin:commitRestore')(null, entry.id);
 
     expect(bin.count()).toBe(0);
     expect(pads.get('s1').text).toBe('notes of s1');

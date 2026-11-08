@@ -11,6 +11,7 @@
  * honoured from settings.yaml for anyone who needs to pin one interface.
  */
 import { ref, watch, computed } from 'vue';
+import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 
 export interface FleetConfig {
   enabled: boolean;
@@ -28,7 +29,7 @@ export interface FleetStatus {
   allInterfaces: boolean;
 }
 
-const props = defineProps<{ config: FleetConfig; status?: FleetStatus }>();
+const props = defineProps<{ config: FleetConfig; status?: FleetStatus; isAdmin: boolean }>();
 const emit = defineEmits<{ update: [updates: Partial<FleetConfig>] }>();
 
 const localEnabled = ref(props.config.enabled);
@@ -40,10 +41,12 @@ watch(() => props.config, (c) => {
 });
 
 function onToggleEnabled(): void {
+  if (!props.isAdmin) return;
   emit('update', { enabled: localEnabled.value });
 }
 
 function commitPort(): void {
+  if (!props.isAdmin) return;
   const port = normalizePort(String(localPort.value));
   localPort.value = port;
   emit('update', { port });
@@ -98,6 +101,7 @@ async function copyAddress(address: string): Promise<void> {
           v-model="localEnabled"
           type="checkbox"
           class="focusable"
+          :disabled="!props.isAdmin"
           @change="onToggleEnabled"
         />
       </div>
@@ -110,10 +114,12 @@ async function copyAddress(address: string): Promise<void> {
           min="1"
           max="65535"
           step="1"
+          :disabled="!props.isAdmin"
           @change="commitPort"
           @blur="commitPort"
         />
       </div>
+      <AdminOnlyHint :show="!props.isAdmin" />
       <div class="fcp-status-row">
         <span class="fcp-status-label">Status</span>
         <span
@@ -132,6 +138,7 @@ async function copyAddress(address: string): Promise<void> {
           class="fcp-address focusable"
           type="button"
           title="Copy"
+          :disabled="!props.isAdmin"
           @click="copyAddress(address)"
         >{{ address }}</button>
       </div>

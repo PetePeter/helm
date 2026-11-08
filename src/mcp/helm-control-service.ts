@@ -1743,7 +1743,7 @@ export class HelmControlService extends EventEmitter {
    * that asked for it — the caller hands over its next step as the prompt.
    */
   restartHelm(resume = true, options?: { callerSessionId?: string; resumePrompt?: string }): { sessionsClosed: number; resume: boolean; resumeTaskId?: string } {
-    if (!this.restartAllowed) throw new Error('Helm restart is available only through profile 1');
+    if (!this.restartAllowed) throw new Error('Helm restart is admin only');
     if (options?.resumePrompt) {
       if (!resume) {
         throw new Error('resumePrompt requires resume:true (the default) — with resume:false the calling session is closed and cannot be re-prompted');
@@ -1813,7 +1813,7 @@ export class HelmControlService extends EventEmitter {
     handoverArtifactId: string | undefined,
     resume = true,
   ): { sessionsClosed: number; resume: boolean; resumeTaskId?: string } {
-    if (!this.restartAllowed) throw new Error('Helm restart is available only through profile 1');
+    if (!this.restartAllowed) throw new Error('Helm restart is admin only');
     if (!handoverArtifactId) {
       throw new Error(
         'helm_restart refused — this is phase 1 of 2, and a restart destroys your own context. ' +

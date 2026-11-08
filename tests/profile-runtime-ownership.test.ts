@@ -87,7 +87,7 @@ function registerProfileServices(composition: ProfileRuntimeComposition, ptyMana
       notifyLlmDirected: () => 'none',
     } as never,
     hookReceiver: new HookReceiver(),
-    profileOneHandover: handover,
+    adminHandover: handover,
     chatBroker,
     apiContextSize: () => ({ available: false }),
     onTurnEnded: () => undefined,

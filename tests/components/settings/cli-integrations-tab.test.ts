@@ -17,14 +17,20 @@ import { mount, flushPromises } from '@vue/test-utils';
 import CliIntegrationsTab from '../../../renderer/components/settings/pages/CliIntegrationsTab.vue';
 
 const setCalls: Array<Record<string, string>> = [];
+const injectionSetCalls: Array<Record<string, string>> = [];
+const resetInjectionCalls: number[] = [];
 let modes: Record<string, string> = {};
 const providerCalls: Array<{ key: string; provider: string }> = [];
+const role = vi.hoisted(() => ({ isAdmin: true }));
 
 const CLAUDE_SNIPPET = '{\n  "hooks": { "SessionStart": [] }\n}';
 const CODEX_SNIPPET = '{\n  "hooks": { "SessionStart": [] }\n}';
 const COPILOT_SNIPPET = '{\n  "version": 1,\n  "hooks": { "sessionStart": [] }\n}';
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
+  profileClient: {
+    profileActive: async () => ({ id: '1', name: 'Admin', hasPin: false, isAdmin: role.isAdmin }),
+  },
   configClient: {
     hooksGetStatus: vi.fn(async () => ({
       success: true,
@@ -36,6 +42,15 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
     })),
     hooksInstall: vi.fn(async () => ({ success: true })),
     hooksUninstall: vi.fn(async () => ({ success: true })),
+    configGetHookInjections: vi.fn(async () => ({ success: true, overrides: {} })),
+    configSetHookInjections: vi.fn(async (updates: Record<string, string>) => {
+      injectionSetCalls.push(updates);
+      return { success: true, overrides: updates };
+    }),
+    configResetHookInjections: vi.fn(async () => {
+      resetInjectionCalls.push(1);
+      return { success: true, overrides: {} };
+    }),
     configGetReminderDelivery: vi.fn(async () => ({ success: true, modes })),
     configSetReminderDelivery: vi.fn(async (updates: Record<string, string>) => {
       setCalls.push(updates);
@@ -57,6 +72,12 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
     }),
   },
 }));
+
+beforeEach(() => {
+  role.isAdmin = true;
+  injectionSetCalls.length = 0;
+  resetInjectionCalls.length = 0;
+});
 
 async function factory() {
   const wrapper = mount(CliIntegrationsTab, { attachTo: document.body });
@@ -155,6 +176,33 @@ describe('CliIntegrationsTab — copy-ready hook registration code', () => {
     const rows = hookRows(wrapper);
     await rows[1].findAll('button').find(b => b.text() === 'Copy')!.trigger('click');
     expect(writeText).toHaveBeenCalledWith(CODEX_SNIPPET);
+  });
+
+  it('disables hook install and removal with an Admin only hint for non-admins', async () => {
+    role.isAdmin = false;
+    const wrapper = await factory();
+    const install = wrapper.findAll('button').find(button => button.text().trim() === 'Install');
+    const remove = wrapper.findAll('button').find(button => button.text().trim() === 'Remove');
+    expect(install?.element).toHaveProperty('disabled', true);
+    expect(remove?.element).toHaveProperty('disabled', true);
+    expect(wrapper.text()).toContain('Admin only');
+  });
+
+  it('disables machine-wide hook injection editing and reset for non-admins', async () => {
+    role.isAdmin = false;
+    const wrapper = await factory();
+    const injections = section(wrapper, 'Hook injections');
+
+    expect((injections.find('textarea').element as HTMLTextAreaElement).disabled).toBe(true);
+    expect(injections.find('button').element).toHaveProperty('disabled', true);
+    expect(injections.findAll('.hook-injection-list__item').every(button => (button.element as HTMLButtonElement).disabled)).toBe(true);
+    expect(injections.text()).toContain('Admin only');
+
+    await injections.find('textarea').setValue('attempted change');
+    await injections.find('button').trigger('click');
+    await flushPromises();
+    expect(injectionSetCalls).toEqual([]);
+    expect(resetInjectionCalls).toEqual([]);
   });
 });
 

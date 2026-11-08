@@ -30,6 +30,8 @@
 
 import { logger } from '../utils/logger.js';
 import type { AuthContext } from '../mcp/tools/types.js';
+import type { AdminGuard } from '../electron/ipc/admin-guard.js';
+import { getMainProcessAdminGuard } from '../electron/ipc/admin-guard.js';
 import { MCP_TOOLS } from '../mcp/tools/definitions.js';
 import { HARD_DENY_TOOLS } from '../mcp/peer/inbound-call-gate.js';
 import { PeerRateLimiter } from '../mcp/peer/rate-limiter.js';
@@ -230,6 +232,7 @@ function ownsTargetSession(
 export interface MobileGateDeps {
   /** The paired-phone registry. Owns the allow-list and the enabled flag. */
   deviceStore: Pick<MobileDeviceStore, 'isToolAllowed' | 'get'>;
+  adminGuard?: AdminGuard;
   /** Confirms the paired device still points at a configured runtime. */
   profileExists?: (userProfileId: string) => boolean;
   /**
@@ -267,6 +270,7 @@ export class MobileGate {
   private readonly ringAnswered: MobileGateDeps['ringAnswered'];
   private readonly timesheet: MobileGateDeps['timesheet'];
   private readonly profileExists: MobileGateDeps['profileExists'];
+  private readonly adminGuard: MobileGateDeps['adminGuard'];
 
   constructor(deps: MobileGateDeps) {
     this.deviceStore = deps.deviceStore;
@@ -278,6 +282,7 @@ export class MobileGate {
     this.ringAnswered = deps.ringAnswered;
     this.timesheet = deps.timesheet;
     this.profileExists = deps.profileExists;
+    this.adminGuard = deps.adminGuard;
   }
 
   /** Gate + dispatch one inbound phone call. */
@@ -349,6 +354,11 @@ export class MobileGate {
     // 2c. The user's restart. Keeping sessions is the default: the destructive
     // choice must be an explicit `resume: false`, never inferred from junk.
     if (method === RESERVED_RESTART_HELM_METHOD) {
+      try {
+        (this.adminGuard ?? getMainProcessAdminGuard()).requireAdmin(device.userProfileId);
+      } catch (err) {
+        throw new GateError(JSONRPC_SERVER_ERROR, err instanceof Error ? err.message : String(err));
+      }
       if (!this.restartHelm || !this.deviceStore.isToolAllowed(deviceId, RESTART_GRANT)) {
         return this.denied(deviceId, method);
       }

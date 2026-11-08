@@ -30,6 +30,7 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 
 const { setupConfigHandlers } = await import('../src/electron/ipc/config-handlers.js');
+const testAdminGuard = { isAdmin: () => true, requireAdmin: () => {} };
 
 function getHandler(channel: string): Function {
   const handler = handleCalls.get(channel);
@@ -61,7 +62,8 @@ describe('hooks:getStatus', () => {
         return { code: 0 };
       },
     };
-    setupConfigHandlers(fakeConfigLoader(), undefined, undefined, undefined, undefined, hookDeps as any);
+    setupConfigHandlers(fakeConfigLoader(), undefined, undefined, undefined, undefined,
+      hookDeps as any, undefined, undefined, testAdminGuard);
   });
 
   afterEach(() => {
@@ -96,7 +98,8 @@ describe('hooks:install / hooks:uninstall (by provider)', () => {
       shimPath: join(home, 'hooks', 'helm-hook-shim.py'),
       runCommand: async (command: string) => (command === 'python' ? { code: 0 } : { code: 1 }),
     };
-    setupConfigHandlers(fakeConfigLoader(), undefined, undefined, undefined, undefined, hookDeps as any);
+    setupConfigHandlers(fakeConfigLoader(), undefined, undefined, undefined, undefined,
+      hookDeps as any, undefined, undefined, testAdminGuard);
   });
 
   afterEach(() => {

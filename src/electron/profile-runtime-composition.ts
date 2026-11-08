@@ -34,6 +34,7 @@ import type { ChatBroker } from '../session/chat/chat-broker.js';
 import { getProfileConfigDir } from '../utils/app-paths.js';
 import { createProfileRuntime } from './profile-runtime-factory.js';
 import type { ProfileRuntime } from '../session/profile-runtime.js';
+import { initializeMainProcessAdminGuard } from './ipc/admin-guard.js';
 
 export interface ProfileRuntimeCompositionOptions {
   configLoader: ConfigLoader;
@@ -45,7 +46,7 @@ export interface RegisterProfileServicesOptions {
   stateDetector: StateDetector;
   notificationManager: NotificationManager;
   hookReceiver: HookReceiver;
-  profileOneHandover: HandoverDelivery;
+  adminHandover: HandoverDelivery;
   chatBroker: ChatBroker;
   apiContextSize: (sessionId: string) => ApiSessionContextSize;
   onTurnEnded: (userProfileId: string, sessionId: string) => void;
@@ -55,7 +56,7 @@ type QuickCompactHandler = (sessionId: string, prompt: string) => Promise<void>;
 
 /** Owns the profile runtimes, their hook services, and their paired shutdown. */
 export class ProfileRuntimeComposition {
-  readonly registry = new ProfileRuntimeRegistry();
+  readonly registry: ProfileRuntimeRegistry;
   readonly suggestionUsageByProfile = new Map<string, SuggestionUsageStore>();
   readonly suggestionServices = new Map<string, SuggestionService>();
   readonly hookTrackers = new Map<string, HookTracker>();
@@ -87,10 +88,12 @@ export class ProfileRuntimeComposition {
 
   constructor(options: ProfileRuntimeCompositionOptions) {
     const { configLoader, userProfileStore, ptyManager } = options;
+    this.registry = new ProfileRuntimeRegistry([], () => userProfileStore.getActiveProfileId());
     this.ptyManager = ptyManager;
     this.rootConfigLoader = configLoader;
     this.userProfileStore = userProfileStore;
     userProfileStore.ensureDefaultProfile();
+    initializeMainProcessAdminGuard(userProfileStore);
     this.appDataBase = dirname(dirname(configLoader.getGlobalConfigDir()));
 
     for (const profile of userProfileStore.list()) this.addRuntime(profile);
@@ -112,6 +115,7 @@ export class ProfileRuntimeComposition {
 
   removeProfileRuntime(userProfileId: string): ProfileRuntime {
     if (userProfileId === '1') throw new Error('The default profile runtime cannot be removed');
+    if (this.userProfileStore.isAdmin(userProfileId)) throw new Error('The admin profile runtime cannot be removed');
     const runtime = this.registry.getRequiredRuntime(userProfileId);
     if (runtime.sessionManager.getAllSessions().length || runtime.recycleBinManager.list().length) {
       throw new Error('Close or remove this profile’s sessions before deleting it');
@@ -249,15 +253,15 @@ export class ProfileRuntimeComposition {
   }
 
   registerProfileServices(options: RegisterProfileServicesOptions): void {
-    const { stateDetector, notificationManager, hookReceiver, profileOneHandover, chatBroker, apiContextSize, onTurnEnded } = options;
+    const { stateDetector, notificationManager, hookReceiver, adminHandover, chatBroker, apiContextSize, onTurnEnded } = options;
     if (this.profileServices && this.profileServices !== options) throw new Error('Profile services already use another dependency set');
     this.profileServices = options;
 
     for (const runtime of this.registry.all()) {
       const userProfileId = runtime.userProfileId;
       if (this.hookTrackers.has(userProfileId)) continue;
-      const handover = userProfileId === '1'
-        ? profileOneHandover
+      const handover = this.userProfileStore.isAdmin(userProfileId)
+        ? adminHandover
         : this.createHandoverDelivery(runtime, notificationManager);
       this.handoverDeliveries.set(userProfileId, handover);
       this.deliveryServices.get(userProfileId)?.setHandoverDelivery(handover);

@@ -8,4 +8,6 @@ export interface McpTool {
 export interface AuthContext {
   sessionId?: string;
   sessionName?: string;
+  /** Set only for HTTP requests authenticated by the shared bearer token. */
+  sharedBearer?: true;
 }

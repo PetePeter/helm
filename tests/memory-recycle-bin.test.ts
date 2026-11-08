@@ -39,7 +39,7 @@ describe('per-session store lifecycle in recycle-bin handlers', () => {
     const messManager = { onSessionClosed: vi.fn() };
     const artifactManager = { clearSession: vi.fn() };
     const tempRegistry = { drain: vi.fn() };
-    setupRecycleBinHandlers(recycleBin as any, artifactManager as any, undefined, tempRegistry as any, memoryManager as any, messManager as any);
+    setupRecycleBinHandlers(recycleBin as any, artifactManager as any, undefined, tempRegistry as any, memoryManager as any, messManager as any, undefined, async id => recycleBin.peek(id) as any);
 
     await handlers.get('recycleBin:forget')!(null, 'bin-1');
     expect(memoryManager.purgeSession).toHaveBeenCalledWith('s1');
@@ -54,7 +54,6 @@ describe('per-session store lifecycle in recycle-bin handlers', () => {
     expect(messManager.onSessionClosed).toHaveBeenCalledWith('s1', 'expired');
 
     await handlers.get('recycleBin:restore')!(null, 'bin-1');
-    await handlers.get('recycleBin:commitRestore')!(null, 'bin-1');
     expect(memoryManager.purgeSession).toHaveBeenCalledTimes(4);
     expect(messManager.onSessionClosed).toHaveBeenCalledTimes(4);
   });

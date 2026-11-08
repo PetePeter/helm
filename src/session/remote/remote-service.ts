@@ -1,6 +1,6 @@
 /**
  * RemoteService — "talk to another PC's sessions". One per profile runtime;
- * profile 1 plays both roles, while other profiles can remain viewer-only:
+ * the admin profile plays both roles, while other profiles can remain viewer-only:
  *
  *  - OWNER: a RemotePtyHost streams local PTYs to attached peers.
  *  - VIEWER: `open()` attaches to a peer's session and adopts it into the local
@@ -45,7 +45,7 @@ export interface RemoteServiceDeps {
   pty: PtyManager;
   sessions: Pick<SessionManager, 'addSession' | 'getSession' | 'getAllSessions' | 'on' | 'off'>;
   coalesceMs?: number;
-  /** Only profile 1 can own sessions or publish them to fleet peers. Defaults to true. */
+  /** Only the admin profile can own sessions or publish them to fleet peers. Defaults to true. */
   fleetOwnerEnabled?: boolean;
   /** True only when this peer has an enabled inbound grant from this machine. */
   canSendSessionsToPeer?: (peerId: string) => boolean;
@@ -157,7 +157,7 @@ export class RemoteService extends EventEmitter {
 
   /** OWNER: a gated `remote.*` request from a peer (routed here by the gate's dispatch). */
   handleCall(peerId: string, method: string, params: unknown): RemoteAttachResult {
-    if (!this.host) throw new Error('Remote session ownership is profile 1 only');
+    if (!this.host) throw new Error('Remote session ownership is admin only');
     // A Remote row is itself a view — re-exporting it would chain machines.
     // Answer exactly like a missing session so it can't be probed apart.
     const sessionId = (params as { sessionId?: unknown } | null)?.sessionId;

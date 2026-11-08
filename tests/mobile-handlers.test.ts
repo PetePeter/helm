@@ -55,6 +55,10 @@ function setup(options: { withPairing?: boolean; lan?: Parameters<typeof setupMo
   });
 
   const dispose = setupMobileHandlers({
+    adminGuard: {
+      isAdmin: profileId => profileId === '1',
+      requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+    },
     deviceStore: devices,
     getPairing: () => (options.withPairing === false ? null : pairing),
     isOnline: (machineId: string) => machineId === 'phone-online',

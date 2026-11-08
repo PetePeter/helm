@@ -29,7 +29,7 @@ graph TB
         RRS["recordRemovedSession()<br/>bookmark dir + append entry"]
         RBM["RecycleBinManager<br/>EventEmitter · injectable clock<br/>append/list/count/peek/forget/empty"]
         RBP["recycle-bin-persistence<br/>recycle-bin.yaml · 30d prune"]
-        RBH["recycle-bin-handlers<br/>5 IPC channels"]
+        RBH["recycle-bin-handlers<br/>4 IPC channels"]
         AM["ArtifactManager"]
         SR -->|"resolve project + runtime group"| RRS --> RBM --> RBP
         RBH --> RBM
@@ -41,14 +41,12 @@ graph TB
         BADGE["🗑️ Recycle Bin button + badge<br/>(Project Planner section)"]
         MODAL["RecycleBinModal.vue<br/>nested collapsible searchable tree"]
         TREE["buildRecycleTree()<br/>pure · unit-tested"]
-        SPAWN["doSpawn(cliType, dir, _, cliSessionName, sessionId)"]
         URB --> BADGE & MODAL
         MODAL --> TREE
-        URB --> SPAWN
     end
     RBH -. "recycle-bin:changed" .-> URB
     URB -->|"recycleBin:*"| RBH
-    SPAWN -->|"success → commitRestore<br/>+ sessionRename + runtimeGroupReattach"| RBH
+    URB -->|"restore → owning profile runtime<br/>+ sessionRename + runtimeGroupReattach"| RBH
 ```
 
 ## What gets recorded
@@ -83,22 +81,23 @@ After recording, the session is evicted from its runtime group via
 `runtimeGroupManager.removeSessionEverywhere(sessionId)` — the tag on the bin entry
 is what remembers the association.
 
-## Restore is a two-phase transaction
+## Restore is one main-process transaction
 
-Restore does **not** remove the entry up front:
+The main process resolves the runtime that owns the entry and keeps the whole
+operation on it, even if the desktop switches profiles while the IPC request is
+in flight:
 
-1. `recycleBin:restore(id)` → **`peek`** — returns the entry, leaving it in the bin.
-2. The renderer calls
-   `doSpawn(entry.cliType, entry.workingDir, undefined, entry.cliSessionName, entry.sessionId)`
-   — the identical path used by startup auto-resume.
-3. Spawn failed (`!spawnedId`) → **return early, entry stays in the bin**, retryable.
-4. Spawn succeeded → `recycleBin:commitRestore(id)` removes the entry.
-5. `session:rename(spawnedId, entry.name)` re-applies the **display name the session
+1. `recycleBin:restore(id)` peeks the entry and runs the standard configured spawn
+   with that runtime's session manager and config loader. The normal profile cwd
+   assertion rejects directories outside that profile's projects.
+2. Spawn failed → **the entry stays in the bin**, retryable.
+3. Spawn succeeded → the same runtime restores the mission and removes the entry.
+4. `session:rename(entry.sessionId, entry.name)` re-applies the **display name the session
    was closed under** (see below).
-6. If tagged, `runtimeGroupReattach({ runtimeGroupId, runtimeGroupName }, spawnedId)`
+5. If tagged, `runtimeGroupReattach({ runtimeGroupId, runtimeGroupName }, entry.sessionId)`
    re-adds it to its runtime group, recreating the group if it is gone.
 
-A `restoring` set guards against double-clicks.
+A renderer and main-process in-flight guard prevent duplicate restores.
 
 ### Name reuse
 
@@ -109,10 +108,8 @@ re-applies `entry.name` — skipped when the name is blank or is just the `cliTy
 so a failure logs and lets the group re-attach proceed. This mirrors startup
 auto-resume, which renames the same way after `doSpawn`.
 
-> **Note vs. CLAUDE.md decision 28**, which describes 4 IPC channels and a restore
-> that "returns the entry and removes it". The code has **5** channels: restore was
-> split into `restore` (peek) + `commitRestore` (forget), precisely so a failed
-> re-spawn cannot destroy the entry — and with it the session's preserved artifacts.
+The main-process transaction keeps failed restores retryable without a separate
+commit channel.
 
 ### Session id reuse
 
@@ -158,8 +155,7 @@ its artifacts stranded.
 | Channel | Purpose |
 |---|---|
 | `recycleBin:list` | All entries, newest close first (returns `[]` on error) |
-| `recycleBin:restore(id)` | **Peek** the entry — does not remove it |
-| `recycleBin:commitRestore(id)` | Remove the entry after a successful re-spawn; artifacts stay |
+| `recycleBin:restore(id)` | Spawn on the entry's owning profile, then remove it after success; artifacts stay |
 | `recycleBin:forget(id)` | Permanently delete the entry **and** its artifacts |
 | `recycleBin:empty` | Delete everything, clearing all binned sessions' artifacts |
 | `recycle-bin:changed` | Main → renderer event, broadcast to every live window |

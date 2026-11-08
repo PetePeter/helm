@@ -37,6 +37,11 @@ vi.mock('../src/utils/logger.js', () => ({
 import { setupUpdateHandlers } from '../src/electron/ipc/update-handlers.js';
 import { buildUpdateScript } from '../src/session/update-checker.js';
 
+const testAdminGuard = {
+  isAdmin: (profileId: string) => profileId === '1',
+  requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+};
+
 const INSTALLER_URL = 'https://github.com/PetePeter/helm/releases/download/v3.12.0/Helm-Setup-3.12.0.exe';
 const INSTALLER_BYTES = Buffer.from('fake-nsis-installer');
 
@@ -90,6 +95,7 @@ beforeEach(() => {
   });
 
   setupUpdateHandlers({
+    adminGuard: testAdminGuard,
     tempDir: testDir,
     modeStore,
     execPath: 'C:\\Program Files\\Helm\\Helm.exe',
@@ -122,6 +128,7 @@ describe('update:check', () => {
   it('answers no update — never throws — when the fetch fails', async () => {
     handlers.clear();
     setupUpdateHandlers({
+      adminGuard: testAdminGuard,
       tempDir: testDir,
     modeStore,
       execPath: 'x',
@@ -189,6 +196,7 @@ describe('update:install', () => {
       headers: { 'Content-Length': String(INSTALLER_BYTES.length) },
     });
     setupUpdateHandlers({
+      adminGuard: testAdminGuard,
       tempDir: testDir,
     modeStore,
       execPath: 'x',

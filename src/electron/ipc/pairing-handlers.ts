@@ -27,8 +27,11 @@ import { ipcMain } from 'electron';
 import { logger } from '../../utils/logger.js';
 import type { PairingRuntime } from '../../mcp/peer/fleet-controller.js';
 import type { PairingPeerInfo } from '../../mcp/peer/peer-pairing.js';
+import { getMainProcessAdminGuard, type AdminGuard } from './admin-guard.js';
+import type { MainProcessAdminGuard } from './admin-guard.js';
 
 export interface PairingHandlerDeps {
+  adminGuard?: AdminGuard;
   /** Resolve the live pairing runtime, or null when fleet is not running. */
   getPairingRuntime: () => PairingRuntime | null;
 }
@@ -40,12 +43,15 @@ const NOT_RUNNING = { ok: false, reason: 'Fleet is not running' } as const;
  * (for app shutdown only — never on a fleet toggle).
  */
 export function setupPairingHandlers(deps: PairingHandlerDeps): () => void {
+  const requireAdmin = (profileId?: string) => (deps.adminGuard ?? getMainProcessAdminGuard()).requireAdmin(profileId);
   ipcMain.handle('peer:listDiscovered', () => {
+    requireAdmin();
     const runtime = deps.getPairingRuntime();
     return runtime ? [...runtime.discovered.values()] : [];
   });
 
   ipcMain.handle('peer:startPairing', (_e, machineId: string) => {
+    requireAdmin();
     const runtime = deps.getPairingRuntime();
     if (!runtime) return NOT_RUNNING;
     const peer = runtime.discovered.get(machineId);
@@ -68,6 +74,7 @@ export function setupPairingHandlers(deps: PairingHandlerDeps): () => void {
    * shows up as a mismatched code rather than a silent mispairing.
    */
   ipcMain.handle('peer:startPairingByAddress', (_e, address: string) => {
+    requireAdmin();
     const runtime = deps.getPairingRuntime();
     if (!runtime) return NOT_RUNNING;
     const trimmed = (address ?? '').trim();
@@ -77,6 +84,7 @@ export function setupPairingHandlers(deps: PairingHandlerDeps): () => void {
   });
 
   ipcMain.handle('peer:confirmPairing', (_e, sessionId: string, accepted: boolean) => {
+    requireAdmin();
     const runtime = deps.getPairingRuntime();
     if (!runtime) return NOT_RUNNING;
     runtime.coordinator.confirm(sessionId, accepted === true);
@@ -84,6 +92,7 @@ export function setupPairingHandlers(deps: PairingHandlerDeps): () => void {
   });
 
   ipcMain.handle('peer:cancelPairing', () => {
+    requireAdmin();
     const runtime = deps.getPairingRuntime();
     if (!runtime) return NOT_RUNNING;
     runtime.coordinator.cancel();

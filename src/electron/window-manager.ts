@@ -132,6 +132,21 @@ export class WindowManager {
     return sessions;
   }
 
+  /** Close snap-outs from other profiles and return their sessions to the main desktop. */
+  closeChildWindowsNotOwnedByProfile(
+    profileId: string,
+    getSessionProfileId: (sessionId: string) => string | undefined,
+  ): void {
+    for (const id of this.getChildWindowIds()) {
+      const sessions = this.getSessionsInWindow(id);
+      if (sessions.length > 0 && sessions.every(sessionId => getSessionProfileId(sessionId) === profileId)) continue;
+
+      for (const sessionId of sessions) this.unassignSession(sessionId);
+      const window = this.windows.get(id);
+      if (window && !window.isDestroyed()) window.destroy();
+    }
+  }
+
   /** Get all snapped-out session IDs. */
   getSnappedOutSessions(): string[] {
     return Array.from(this.sessionToWindow.keys());

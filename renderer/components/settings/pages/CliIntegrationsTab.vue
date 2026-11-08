@@ -21,6 +21,8 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { configClient, toolsClient } from '../../../ipc/clients.js';
+import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
+import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 import {
   DEFAULT_REMINDER_MODES,
   REMINDER_IDS,
@@ -66,6 +68,7 @@ const MODE_TEXT: Record<ReminderDeliveryMode, string> = {
 };
 
 const items = ref<HookIntegrationItem[]>([]);
+const { isAdmin } = useActiveProfileRole();
 const loading = ref(true);
 const busyId = ref<string | null>(null);
 const errorText = ref('');
@@ -98,6 +101,7 @@ async function loadStatus(): Promise<void> {
 }
 
 async function install(item: HookIntegrationItem): Promise<void> {
+  if (!isAdmin.value) return;
   busyId.value = item.provider;
   try {
     const result = await configClient.hooksInstall(item.provider);
@@ -109,6 +113,7 @@ async function install(item: HookIntegrationItem): Promise<void> {
 }
 
 async function remove(item: HookIntegrationItem): Promise<void> {
+  if (!isAdmin.value) return;
   busyId.value = item.provider;
   try {
     const result = await configClient.hooksUninstall(item.provider);
@@ -241,6 +246,7 @@ async function loadHookInjections(): Promise<void> {
 }
 
 function updateInjection(id: HookInjectionId, value: string): void {
+  if (!isAdmin.value) return;
   injectionOverrides.value = { ...injectionOverrides.value, [id]: value };
   injectionStatus.value = 'Saving…';
   if (injectionSaveTimer) clearTimeout(injectionSaveTimer);
@@ -249,6 +255,7 @@ function updateInjection(id: HookInjectionId, value: string): void {
 }
 
 function selectInjection(id: HookInjectionId): void {
+  if (!isAdmin.value) return;
   if (injectionSaveTimer) {
     clearTimeout(injectionSaveTimer);
     void saveInjection(selectedInjectionId.value, selectedInjectionText.value, injectionSaveVersion);
@@ -257,6 +264,7 @@ function selectInjection(id: HookInjectionId): void {
 }
 
 async function saveInjection(id: HookInjectionId, value: string, version: number): Promise<void> {
+  if (!isAdmin.value) return;
   injectionSaveTimer = undefined;
   const save = injectionSaveQueue.then(async () => {
     try {
@@ -273,6 +281,7 @@ async function saveInjection(id: HookInjectionId, value: string, version: number
 }
 
 async function resetHookInjections(): Promise<void> {
+  if (!isAdmin.value) return;
   if (injectionSaveTimer) clearTimeout(injectionSaveTimer);
   injectionSaveTimer = undefined;
   ++injectionSaveVersion;
@@ -355,7 +364,7 @@ onUnmounted(() => {
           <button
             v-if="item.status === 'not-installed' || item.status === 'outdated'"
             class="btn btn--primary btn--sm focusable"
-            :disabled="busyId === item.provider || item.status === 'interpreter-missing'"
+            :disabled="!isAdmin || busyId === item.provider || item.status === 'interpreter-missing'"
             @click="install(item)"
           >
             {{ item.status === 'outdated' ? 'Update' : 'Install' }}
@@ -363,11 +372,12 @@ onUnmounted(() => {
           <button
             v-if="item.status !== 'not-installed' && item.status !== 'interpreter-missing'"
             class="btn btn--secondary btn--sm focusable"
-            :disabled="busyId === item.provider"
+            :disabled="!isAdmin || busyId === item.provider"
             @click="remove(item)"
           >
             Remove
           </button>
+          <AdminOnlyHint :show="!isAdmin" />
         </div>
       </div>
       <p v-if="!loading && items.length === 0" class="settings-form__hint">
@@ -464,7 +474,8 @@ onUnmounted(() => {
         </div>
         <div class="hook-injection-heading__actions">
           <span class="settings-form__hint" role="status" aria-live="polite">{{ injectionStatus }}</span>
-          <button class="btn btn--secondary btn--sm focusable" :disabled="injectionLoading" @click="resetHookInjections">Reset defaults</button>
+          <AdminOnlyHint :show="!isAdmin" />
+          <button class="btn btn--secondary btn--sm focusable" :disabled="!isAdmin || injectionLoading" @click="resetHookInjections">Reset defaults</button>
         </div>
       </div>
       <div class="hook-injection-editor">
@@ -477,6 +488,7 @@ onUnmounted(() => {
               class="hook-injection-list__item focusable"
               :class="{ 'hook-injection-list__item--selected': selectedInjectionId === item.id }"
               :aria-current="selectedInjectionId === item.id ? 'page' : undefined"
+              :disabled="!isAdmin"
               @click="selectInjection(item.id)"
             >
               <span>{{ item.label }}</span>
@@ -495,7 +507,7 @@ onUnmounted(() => {
             rows="12"
             maxlength="10000"
             spellcheck="false"
-            :disabled="injectionLoading"
+            :disabled="!isAdmin || injectionLoading"
             :aria-label="`${selectedInjection.label} template`"
           />
           <p class="settings-form__hint">Template placeholders such as &#123;&#123;tokens&#125;&#125;, &#123;&#123;red&#125;&#125; and &#123;&#123;content&#125;&#125; are replaced when the hook runs.</p>

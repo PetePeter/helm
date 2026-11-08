@@ -14,6 +14,7 @@ export interface UserProfileRecord {
 interface UserProfileDocument {
   version: 1;
   activeProfileId?: string;
+  adminProfileId?: string;
   profiles: UserProfileRecord[];
 }
 
@@ -27,8 +28,22 @@ export class UserProfileStore {
     this.filePath = getGlobalPersistencePaths(globalConfigDir).userProfilesFile;
   }
 
+  get adminProfileId(): string {
+    return this.loadDocument().adminProfileId ?? DEFAULT_PROFILE.id;
+  }
+
+  set adminProfileId(id: string) {
+    const document = this.loadDocument();
+    if (!document.profiles.some(profile => profile.id === id)) throw new Error(`Unknown admin profile: ${id}`);
+    this.save({ ...document, adminProfileId: id });
+  }
+
   list(): UserProfileRecord[] {
     return this.loadDocument().profiles.map(profile => ({ ...profile }));
+  }
+
+  isAdmin(profileId: string): boolean {
+    return profileId === this.adminProfileId;
   }
 
   getActiveProfileId(): string {
@@ -45,6 +60,7 @@ export class UserProfileStore {
   }
 
   create(name: string): UserProfileRecord {
+    this.ensureDefaultProfile();
     const document = this.loadDocument();
     const normalizedName = validateName(name);
     if (document.profiles.some(profile => profile.name.toLowerCase() === normalizedName.toLowerCase())) {
@@ -75,6 +91,7 @@ export class UserProfileStore {
   remove(id: string): void {
     const document = this.loadDocument();
     if (id === DEFAULT_PROFILE.id) throw new Error('The default profile cannot be deleted');
+    if (id === document.adminProfileId) throw new Error('The admin profile cannot be deleted');
     if (document.activeProfileId === id) throw new Error('Switch away from the active profile before deleting it');
     if (!document.profiles.some(profile => profile.id === id)) throw new Error(`Unknown user profile: ${id}`);
     this.save({ ...document, profiles: document.profiles.filter(profile => profile.id !== id) });
@@ -88,12 +105,17 @@ export class UserProfileStore {
     const activeProfileId = profiles.some(profile => profile.id === document.activeProfileId)
       ? document.activeProfileId!
       : DEFAULT_PROFILE.id;
-    if (profiles === document.profiles && document.activeProfileId === activeProfileId) return;
-    this.save({ version: 1, activeProfileId, profiles });
+    const adminProfileId = profiles.some(profile => profile.id === document.adminProfileId)
+      ? document.adminProfileId!
+      : DEFAULT_PROFILE.id;
+    if (profiles === document.profiles
+      && document.activeProfileId === activeProfileId
+      && document.adminProfileId === adminProfileId) return;
+    this.save({ version: 1, activeProfileId, adminProfileId, profiles });
   }
 
   private loadDocument(): UserProfileDocument {
-    if (!existsSync(this.filePath)) return { version: 1, profiles: [] };
+    if (!existsSync(this.filePath)) return { version: 1, adminProfileId: DEFAULT_PROFILE.id, profiles: [] };
     const parsed = YAML.parse(readFileSync(this.filePath, 'utf8')) as unknown;
     if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.profiles)) {
       throw new Error(`Invalid user profile registry: ${this.filePath}`);
@@ -128,7 +150,20 @@ export class UserProfileStore {
       && (typeof parsed.activeProfileId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(parsed.activeProfileId))) {
       throw new Error('Invalid active user profile id');
     }
-    return { version: 1, activeProfileId: parsed.activeProfileId as string | undefined, profiles };
+    if (parsed.adminProfileId !== undefined
+      && (typeof parsed.adminProfileId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(parsed.adminProfileId))) {
+      throw new Error('Invalid admin user profile id');
+    }
+    const adminProfileId = (parsed.adminProfileId as string | undefined) ?? DEFAULT_PROFILE.id;
+    if (parsed.adminProfileId !== undefined && !profiles.some(profile => profile.id === adminProfileId)) {
+      throw new Error(`Unknown admin profile: ${adminProfileId}`);
+    }
+    return {
+      version: 1,
+      activeProfileId: parsed.activeProfileId as string | undefined,
+      adminProfileId,
+      profiles,
+    };
   }
 
   private save(document: UserProfileDocument): void {

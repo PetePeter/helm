@@ -60,6 +60,11 @@ export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
   'mobile_pair_cancel',
   'mobile_device_list',
   'mobile_device_allow',
+  // Fleet management tools are local admin capabilities. A synthetic inbound
+  // peer identity must never inherit the host admin profile when routed.
+  'peer_list',
+  'peer_tools',
+  'peer_call',
   // Running-session group killer: destructive to host/app lifecycle. An allowed
   // peer could otherwise batch-kill a whole group.
   'session_group_close',

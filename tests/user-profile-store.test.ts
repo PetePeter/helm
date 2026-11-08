@@ -19,7 +19,9 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 describe('UserProfileStore', () => {
   it('keeps profile 1 as the default and persists the active profile globally', () => {
     expect(store.getActiveProfileId()).toBe('1');
+    expect(store.isAdmin('1')).toBe(true);
     const child = store.create('Child 1');
+    expect(store.isAdmin(child.id)).toBe(false);
     store.setActiveProfileId(child.id);
 
     const reloaded = new UserProfileStore(root);
@@ -37,6 +39,19 @@ describe('UserProfileStore', () => {
     const document = readFileSync(store.filePath, 'utf8');
     expect(document).toContain(hash);
     expect(document).not.toContain('2718');
+  });
+
+  it('persists a directly assigned admin profile and protects it from deletion', () => {
+    const admin = store.create('Admin');
+    const member = store.create('Member');
+    store.adminProfileId = admin.id;
+
+    const reloaded = new UserProfileStore(root);
+    expect(reloaded.adminProfileId).toBe(admin.id);
+    expect(reloaded.isAdmin(admin.id)).toBe(true);
+    expect(reloaded.isAdmin('1')).toBe(false);
+    expect(reloaded.isAdmin(member.id)).toBe(false);
+    expect(() => reloaded.remove(admin.id)).toThrow(/admin profile/i);
   });
 
   it('rejects selecting an unknown profile and deleting profile 1', () => {

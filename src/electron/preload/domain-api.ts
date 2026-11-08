@@ -1271,11 +1271,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** List recoverable closed sessions (newest close first) */
   recycleBinList: (): Promise<RecycleBinEntry[]> => ipcRenderer.invoke('recycleBin:list'),
 
-  /** Peek an entry (no removal) so the caller can re-spawn with resume, then commit */
+  /** Restore an entry on its owning profile runtime; failed spawns leave it recoverable. */
   recycleBinRestore: (id: string): Promise<RecycleBinEntry | null> => ipcRenderer.invoke('recycleBin:restore', id),
-
-  /** Commit a restore: remove the entry after a successful re-spawn (artifacts kept) */
-  recycleBinCommitRestore: (id: string): Promise<boolean> => ipcRenderer.invoke('recycleBin:commitRestore', id),
 
   /** Forget (permanently delete) a single entry */
   recycleBinForget: (id: string): Promise<boolean> => ipcRenderer.invoke('recycleBin:forget', id),
@@ -1647,13 +1644,16 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   // ---- mobile (paired phones over BLE) --------------------------------------
 
   profileList: (): Promise<Array<{
-    id: string; name: string; hasPin: boolean; isActive: boolean;
-    sessionCount: number; recoverableSessionCount: number; deviceCount: number; canDelete: boolean;
+    id: string; name: string; isAdmin: boolean; hasPin: boolean; isActive?: boolean;
+    sessionCount?: number; recoverableSessionCount?: number; deviceCount?: number; canDelete?: boolean;
   }>> => ipcRenderer.invoke('profile:list'),
 
-  profileActive: (): Promise<{ id: string; name: string; hasPin: boolean }> => ipcRenderer.invoke('profile:active'),
+  profileActive: (): Promise<{
+    id: string; name: string; isAdmin: boolean; hasPin: boolean; isActive: boolean;
+    sessionCount: number; recoverableSessionCount: number; deviceCount: number; canDelete: boolean;
+  }> => ipcRenderer.invoke('profile:active'),
 
-  profileCreate: (name: string): Promise<{ id: string; name: string; hasPin: boolean }> =>
+  profileCreate: (name: string): Promise<{ id: string; name: string; isAdmin: boolean; hasPin: boolean }> =>
     ipcRenderer.invoke('profile:create', name),
 
   profileRename: (id: string, name: string): Promise<{ ok: boolean; error?: string }> =>

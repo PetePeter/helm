@@ -17,6 +17,20 @@ export interface ChatHandlerDeps {
   fanOut: (message: ChatOutboundMessage) => Promise<unknown>;
 }
 
+/**
+ * Live fan-out of journal appends to the desktop Chat pane. The journal spans
+ * every profile; only the visible profile's sessions may reach the renderer.
+ */
+export function createChatEntryForwarder(options: {
+  isSessionVisible: (sessionId: string) => boolean;
+  getWindows: () => Array<{ webContents: { send: (channel: string, entry: ChatJournalEntry) => void } }>;
+}): (entry: ChatJournalEntry) => void {
+  return entry => {
+    if (!options.isSessionVisible(entry.record.sessionId)) return;
+    for (const win of options.getWindows()) win.webContents.send('chat:entry', entry);
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

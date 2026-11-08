@@ -83,13 +83,23 @@ function cancelDismiss(): void {
 }
 
 async function refresh(): Promise<void> {
-  devices.value = await mobileClient.mobileList();
-  await refreshLan();
+  try {
+    devices.value = await mobileClient.mobileList();
+    await refreshLan();
+  } catch {
+    // A profile switch can invalidate an in-flight read after this tab subscribed.
+    devices.value = [];
+    lan.value = { ...EMPTY_LAN };
+  }
 }
 
 /** Re-read the LAN panel. Separate so a toggle can settle it without a full load. */
 async function refreshLan(): Promise<void> {
-  lan.value = await mobileClient.mobileLanConfig();
+  try {
+    lan.value = await mobileClient.mobileLanConfig();
+  } catch {
+    lan.value = { ...EMPTY_LAN };
+  }
 }
 
 /**
@@ -127,7 +137,7 @@ function ensureSubscribed(): void {
   void mobileClient.mobilePairingState().then((state: MobilePairingState) => {
     // A dialog opened mid-flow (or after a renderer reload) picks up the truth.
     if (state.status !== 'idle') pairing.value = state;
-  });
+  }).catch(() => { pairing.value = { status: 'idle' }; });
 }
 
 /**

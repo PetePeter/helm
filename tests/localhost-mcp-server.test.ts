@@ -1,13 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Agent, createServer as createHttpServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server.js';
+import { getAdminLoopDriver } from '../src/mcp/admin-loop-routing.js';
 import { mintSessionAuthToken } from '../src/mcp/session-auth.js';
 import { HelmChatService } from '../src/mcp/services/helm-chat-service.js';
 import { ChatBroker } from '../src/session/chat/chat-broker.js';
 import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
+import { initializeMainProcessAdminGuard } from '../src/electron/ipc/admin-guard.js';
 
 /** The tool payload: compact JSON on the first line of the text content (a reminder may follow). */
 function toolPayload(json: any): any {
@@ -149,6 +151,19 @@ async function rpc(port: number, token: string | null, body: unknown, headers: R
 
 describe('LocalhostMcpServer', () => {
   const servers: LocalhostMcpServer[] = [];
+
+beforeEach(() => initializeMainProcessAdminGuard({
+  isAdmin: profileId => profileId === 'custom-admin',
+  getActiveProfileId: () => 'custom-admin',
+}));
+
+function adminServer(service: HelmControlService): LocalhostMcpServer {
+  return new LocalhostMcpServer(service, {
+    token: 'secret-token',
+    port: 0,
+    resolveCallerServices: () => ({ userProfileId: 'custom-admin', service }),
+  });
+}
 
   afterEach(async () => {
     while (servers.length > 0) {
@@ -345,7 +360,7 @@ describe('LocalhostMcpServer', () => {
     Object.assign(service, {
       sendChat: chatService.sendChat.bind(chatService),
     });
-    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    const server = adminServer(service);
     servers.push(server);
     await server.start();
     const port = server.getAddress()!.port;
@@ -358,12 +373,12 @@ describe('LocalhostMcpServer', () => {
     expect(toolNames).toContain('ring_user');
     expect(toolNames).toContain('call_transfer');
 
-    const sendResponse = await rpc(port, 'secret-token', {
+    const sendResponse = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 501,
       method: 'tools/call',
       params: { name: 'chat_send', arguments: { message: 'Phone only' } },
-    }, { 'x-helm-session-id': 's1' });
+    });
 
     expect(toolPayload(await sendResponse.json())).toEqual({ sent: true });
     expect(delivered).toEqual([{ sessionId: 's1', text: 'Phone only' }]);
@@ -371,12 +386,12 @@ describe('LocalhostMcpServer', () => {
 
   it('dispatches tool calls into the shared service', async () => {
     const service = makeService();
-    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    const server = adminServer(service);
     servers.push(server);
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 3,
       method: 'tools/call',
@@ -393,7 +408,7 @@ describe('LocalhostMcpServer', () => {
     expect((service.sendTextToSession as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'hello', { senderSessionId: 's1', senderSessionName: 'Claude' });
     expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
 
-    const restartResponse = await rpc(port, 'secret-token', {
+    const restartResponse = await rpc(port, mintSessionAuthToken('secret-token', 'sender-1', 'Session'), {
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
@@ -412,7 +427,7 @@ describe('LocalhostMcpServer', () => {
     expect((service.restartHelmGated as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('sender-1', 'art-1', true);
     expect(toolPayload(restartJson)).toEqual({ sessionsClosed: 0, resume: true });
 
-    const forceResponse = await rpc(port, 'secret-token', {
+    const forceResponse = await rpc(port, mintSessionAuthToken('secret-token', 'sender-1', 'Session'), {
       jsonrpc: '2.0',
       id: 5,
       method: 'tools/call',
@@ -445,12 +460,12 @@ describe('LocalhostMcpServer', () => {
         );
       },
     );
-    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    const server = adminServer(service);
     servers.push(server);
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 'sender-1', 'Session'), {
       jsonrpc: '2.0',
       id: 6,
       method: 'tools/call',
@@ -479,7 +494,7 @@ describe('LocalhostMcpServer', () => {
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 'sender-1', 'Session'), {
       jsonrpc: '2.0',
       id: 7,
       method: 'tools/call',
@@ -541,12 +556,12 @@ describe('LocalhostMcpServer', () => {
     const getJson = await getResponse.json();
     expect(toolPayload(getJson).body).toBe('Check the diff');
 
-    const feedbackResponse = await rpc(port, 'secret-token', {
+    const feedbackResponse = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 321,
       method: 'tools/call',
       params: { name: 'skill_submit_feedback', arguments: { skillId: 'skill-1', stars: 5, summary: 'Useful' } },
-    }, { 'x-helm-session-id': 's1' });
+    });
     const feedbackJson = await feedbackResponse.json();
     expect(toolPayload(feedbackJson)).toEqual({ received: true });
     expect(feedbackJson.result.content[0].text).toBe('{"received":true}');
@@ -613,7 +628,7 @@ describe('LocalhostMcpServer', () => {
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 1,
       method: 'tools/call',
@@ -1488,14 +1503,14 @@ describe('LocalhostMcpServer', () => {
     expect(json.error.message).toBe('Session not found: missing-session');
   });
 
-  it('passes sender info into sendTextToSession', async () => {
+  it('uses the signed session identity for sendTextToSession', async () => {
     const service = makeService();
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
     servers.push(server);
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 38,
       method: 'tools/call',
@@ -1535,7 +1550,7 @@ describe('LocalhostMcpServer', () => {
     expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
   });
 
-  it('infers sender info from session headers with the shared bearer token', async () => {
+  it('rejects caller-supplied session identity with the shared bearer token', async () => {
     const service = makeService();
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
     servers.push(server);
@@ -1554,13 +1569,30 @@ describe('LocalhostMcpServer', () => {
       'X-Helm-Session-Id': 'sender-1',
       'X-Helm-Session-Name': 'Header Session',
     });
-    const json = await response.json();
-    expect((service.sendTextToSession as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', 'hello', {
-      senderSessionId: 'sender-1',
-      senderSessionName: 'Claude',
-      expectsResponse: true,
-    });
-    expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
+    expect(response.status).toBe(401);
+    expect(service.sendTextToSession).not.toHaveBeenCalled();
+
+    const blankHeader = await rpc(port, 'secret-token', {
+      jsonrpc: '2.0', id: 38.7, method: 'tools/call',
+      params: { name: 'session_list', arguments: {} },
+    }, { 'X-Helm-Session-Id': '' });
+    expect(blankHeader.status).toBe(401);
+  });
+
+  it('rejects a signed session token paired with a different session header', async () => {
+    const service = makeService();
+    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    servers.push(server);
+    await server.start();
+
+    const response = await rpc(server.getAddress()!.port,
+      mintSessionAuthToken('secret-token', 'signed-session', 'Signed Session'), {
+        jsonrpc: '2.0', id: 38.8, method: 'tools/call',
+        params: { name: 'session_list', arguments: {} },
+      }, { 'X-Helm-Session-Id': 'other-session' });
+
+    expect(response.status).toBe(401);
+    expect(service.listSessions).not.toHaveBeenCalled();
   });
 
   it('passes expectsResponse into sendTextToSession', async () => {
@@ -1570,7 +1602,7 @@ describe('LocalhostMcpServer', () => {
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 39,
       method: 'tools/call',
@@ -1584,7 +1616,7 @@ describe('LocalhostMcpServer', () => {
     expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
   });
 
-  it('rejects session_send_text when sender info is missing', async () => {
+  it('rejects session_send_text when only a caller-supplied sender id is present', async () => {
     const service = makeService();
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
     servers.push(server);
@@ -1597,21 +1629,21 @@ describe('LocalhostMcpServer', () => {
       method: 'tools/call',
       params: {
         name: 'session_send_text',
-        arguments: { sessionId: 's1', text: 'hello' },
+        arguments: { sessionId: 's1', text: 'hello', senderSessionId: 's1' },
       },
     });
     const json = await response.json();
     expect(json.error.message).toContain('could not identify the sending session');
   });
 
-  it('rejects session_send_text when senderSessionId does not match a known session', async () => {
+  it('ignores a caller-supplied senderSessionId when a signed session identity is present', async () => {
     const service = makeService();
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
     servers.push(server);
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 'signed-sender', 'Signed Sender'), {
       jsonrpc: '2.0',
       id: 40.1,
       method: 'tools/call',
@@ -1621,8 +1653,11 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const json = await response.json();
-    expect(json.error.message).toContain('Unknown sender session');
-    expect(json.error.message).toContain('does not match any active Helm session');
+    expect(toolPayload(json)).toEqual({ success: true, sessionId: 's1', name: 'Claude' });
+    expect(service.sendTextToSession).toHaveBeenCalledWith('s1', 'hello', {
+      senderSessionId: 'signed-sender',
+      senderSessionName: 'Signed Sender',
+    });
   });
 
   it('rejects session_send_text when neither sessionId nor name is provided', async () => {
@@ -1632,7 +1667,7 @@ describe('LocalhostMcpServer', () => {
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 41,
       method: 'tools/call',
@@ -1652,7 +1687,7 @@ describe('LocalhostMcpServer', () => {
     await server.start();
     const port = server.getAddress()!.port;
 
-    const response = await rpc(port, 'secret-token', {
+    const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
       jsonrpc: '2.0',
       id: 42,
       method: 'tools/call',
@@ -1800,7 +1835,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 50,
         method: 'tools/call',
@@ -1828,7 +1863,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 51,
         method: 'tools/call',
@@ -1877,7 +1912,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      await rpc(port, 'secret-token', {
+      await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 53,
         method: 'tools/call',
@@ -1885,7 +1920,7 @@ describe('LocalhostMcpServer', () => {
           name: 'plan_complete',
           arguments: { uuid: 'p1', documentation: 'All tests pass and feature works' },
         },
-      }, { 'x-helm-session-id': 's1' });
+      });
 
       expect((service.notifyUser as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
         's1',
@@ -1916,7 +1951,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      await rpc(port, 'secret-token', {
+      await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 54,
         method: 'tools/call',
@@ -1924,7 +1959,7 @@ describe('LocalhostMcpServer', () => {
           name: 'plan_complete',
           arguments: { uuid: 'p1', documentation: 'All tests pass and feature works' },
         },
-      }, { 'x-helm-session-id': 's1' });
+      });
 
       expect(noteCompletion).toHaveBeenCalledWith('s1', {
         planId: 'p1',
@@ -1933,6 +1968,48 @@ describe('LocalhostMcpServer', () => {
         completionRecap: false,
         followUps: [{ id: 'p2', humanId: 'P-0002', title: 'Follow up' }],
       });
+    });
+
+    it('notifies the reassigned admin profile loop driver when its auto-implement plan completes', async () => {
+      const service = makeService();
+      (service.getPlan as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'p1', dirPath: '/proj', title: 'Task', status: 'coding' });
+      (service.completePlan as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'p1', humanId: 'P-0001', dirPath: '/proj', title: 'Task', status: 'done' });
+      (service.exportDirectory as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        dirPath: '/proj',
+        items: [
+          { id: 'p1', humanId: 'P-0001', dirPath: '/proj', title: 'Task', status: 'done' },
+          { id: 'p2', humanId: 'P-0002', dirPath: '/proj', title: 'Automatic follow-up', status: 'ready', autoImplement: true },
+        ],
+        dependencies: [{ fromId: 'p1', toId: 'p2' }],
+      });
+      const defaultProfileDriver = { noteCompletion: vi.fn() };
+      const reassignedAdminDriver = { noteCompletion: vi.fn() };
+      const adminProfileId = '2';
+      const loopDriver = getAdminLoopDriver(new Map([
+        ['1', defaultProfileDriver],
+        [adminProfileId, reassignedAdminDriver],
+      ]), adminProfileId);
+      const server = new LocalhostMcpServer(service, {
+        token: 'secret-token',
+        port: 0,
+        resolveCallerServices: () => ({ userProfileId: adminProfileId, service, loopDriver }),
+      });
+      server.setLoopDriver(loopDriver);
+      servers.push(server);
+      await server.start();
+
+      await rpc(server.getAddress()!.port, mintSessionAuthToken('secret-token', 'admin-session-2', 'Admin'), {
+        jsonrpc: '2.0',
+        id: 56,
+        method: 'tools/call',
+        params: { name: 'plan_complete', arguments: { uuid: 'p1', documentation: 'Completed with an automatic follow-up' } },
+      });
+
+      expect(defaultProfileDriver.noteCompletion).not.toHaveBeenCalled();
+      expect(reassignedAdminDriver.noteCompletion).toHaveBeenCalledWith('admin-session-2', expect.objectContaining({
+        planId: 'p1',
+        followUps: [{ id: 'p2', humanId: 'P-0002', title: 'Automatic follow-up' }],
+      }));
     });
 
     it('completes without a loop driver wired (fail-open)', async () => {
@@ -1946,7 +2023,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 55,
         method: 'tools/call',
@@ -1954,7 +2031,7 @@ describe('LocalhostMcpServer', () => {
           name: 'plan_complete',
           arguments: { uuid: 'p1', documentation: 'All tests pass and feature works' },
         },
-      }, { 'x-helm-session-id': 's1' });
+      });
       const json = await response.json();
       expect(toolPayload(json).followUpPlans).toEqual([]);
     });
@@ -1978,7 +2055,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 54,
         method: 'tools/call',
@@ -2014,7 +2091,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 80,
         method: 'tools/call',
@@ -2068,7 +2145,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 81,
         method: 'tools/call',
@@ -2119,7 +2196,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 'sender1', 'Sender'), {
         jsonrpc: '2.0',
         id: 82,
         method: 'tools/call',
@@ -2161,7 +2238,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 83,
         method: 'tools/call',
@@ -2205,7 +2282,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 84,
         method: 'tools/call',
@@ -2251,7 +2328,7 @@ describe('LocalhostMcpServer', () => {
         preambleUsed: true,
       }));
 
-      const response1 = await rpc(port, 'secret-token', {
+      const response1 = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 85,
         method: 'tools/call',
@@ -2272,7 +2349,7 @@ describe('LocalhostMcpServer', () => {
         preambleUsed: false,
       }));
 
-      const response2 = await rpc(port, 'secret-token', {
+      const response2 = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 86,
         method: 'tools/call',
@@ -2311,7 +2388,7 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 81,
         method: 'tools/call',
@@ -2330,11 +2407,11 @@ describe('LocalhostMcpServer', () => {
       expect(sendInputMock).toHaveBeenCalledWith(
         's1',
         '{Esc}{Tab}{Enter}',
-        expect.objectContaining({ senderSessionId: 's2', senderSessionName: 'Worker' }),
+        expect.objectContaining({ senderSessionId: 's1', senderSessionName: 'Claude' }),
       );
     });
 
-    it('rejects when senderSessionId is unknown', async () => {
+    it('rejects senderSessionId as identity when there is no signed session', async () => {
       const service = makeService();
       (service.listSessions as unknown as ReturnType<typeof vi.fn>).mockReturnValue([
         { id: 's1', name: 'Claude', cliType: 'claude-code' },
@@ -2356,7 +2433,7 @@ describe('LocalhostMcpServer', () => {
       });
 
       const json = await response.json();
-      expect(json.error.message).toContain('Unknown sender session');
+      expect(json.error.message).toContain('signed session token');
     });
   });
 
@@ -2373,12 +2450,12 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 83,
         method: 'tools/call',
         params: { name: 'session_clear', arguments: { sessionId: 's1', context: 'feature X half done' } },
-      }, { 'x-helm-session-id': 's1' });
+      });
 
       const json = await response.json();
       expect(toolPayload(json).ok).toBe(true);
@@ -2396,12 +2473,12 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 84,
         method: 'tools/call',
         params: { name: 'session_clear', arguments: {} },
-      }, { 'x-helm-session-id': 's1' });
+      });
 
       const json = await response.json();
       expect(json.error.message).toContain('sessionId is required');
@@ -2417,13 +2494,13 @@ describe('LocalhostMcpServer', () => {
       await server.start();
       const port = server.getAddress()!.port;
 
-      const response = await rpc(port, 'secret-token', {
+      const response = await rpc(port, mintSessionAuthToken('secret-token', 's1', 'Claude'), {
         jsonrpc: '2.0',
         id: 90,
         method: 'tools/call',
         // A misleading name must NOT override the verified caller identity.
         params: { name: 'chat_send', arguments: { name: 'some-other-session', message: 'hi' } },
-      }, { 'x-helm-session-id': 's1' });
+      });
 
       const json = await response.json();
       expect(toolPayload(json)).toEqual({ sent: true });

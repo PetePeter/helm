@@ -2,6 +2,7 @@ import { basename } from 'node:path';
 import { logger } from '../../utils/logger.js';
 import type { HelmControlService } from '../helm-control-service.js';
 import type { AuthContext } from './types.js';
+import { getMainProcessAdminGuard } from '../../electron/ipc/admin-guard.js';
 import type { Artifact } from '../../types/artifact.js';
 import type { ArtifactFileResult } from '../../session/artifact-file-import.js';
 import type { ScheduledTaskFrozenPolicy } from '../../types/scheduled-task.js';
@@ -10,6 +11,7 @@ import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mob
 import { parsePlanTask } from '../../session/operator-tasks.js';
 import { parseSessionFeedCursor } from '../../session/session-change-feed.js';
 import { requireOperatorTask, trackOperatorTask } from '../../session/operator-delegation.js';
+import { MCP_TOOLS } from './definitions.js';
 import {
   asArtifactKind,
   asArtifactIntent,
@@ -119,8 +121,7 @@ function requireCallerSession(authContext: AuthContext, tool: string): string {
   if (!authContext.sessionId) {
     throw new Error(
       `${tool} could not determine your session. Call session_info to get your own ` +
-        'sessionId and ensure Helm injected the X-Helm-Session-Id header ' +
-        '(HELM_SESSION_ID env var) at startup.',
+        'sessionId and use the signed session token injected through HELM_MCP_TOKEN at startup.',
     );
   }
   return authContext.sessionId;
@@ -228,12 +229,12 @@ function resolveSenderIdentity(
   args: Record<string, unknown>,
   authContext: AuthContext,
 ): { senderSessionId: string; senderSessionName: string } {
-  // The sender is who authenticated the call, not what the model typed: a
-  // model has no reliable way to know its own id (API tools have no env var,
-  // a switched CLI carries a stale one). An explicit value counts only for a
-  // fleet peer (InboundCallGate stamps fleet:<peer>:<id>) or a caller with no
-  // session of its own (global token), and then it must name a live session.
+  // The sender is the session authenticated by the signed token, not what the
+  // model typed. Shared-bearer requests cannot supply their own identity.
   const explicitSenderId = typeof args.senderSessionId === 'string' ? args.senderSessionId : undefined;
+  if (authContext.sharedBearer) {
+    throw new Error('Helm could not identify the sending session — this call needs a signed session token.');
+  }
   if (explicitSenderId && isFleetSessionId(explicitSenderId)) {
     return { senderSessionId: explicitSenderId, senderSessionName: authContext.sessionName ?? explicitSenderId };
   }
@@ -258,6 +259,8 @@ function isMobileSenderSessionId(id: string): boolean {
 }
 
 export interface McpToolDispatcherDeps {
+  /** Resolved owner profile for this authenticated caller. */
+  userProfileId?: string;
   service: HelmControlService;
   setPlanStateWithValidation: (
     id: string,
@@ -290,8 +293,13 @@ export async function callMcpTool(
   args: Record<string, unknown>,
   authContext: AuthContext,
 ): Promise<unknown> {
+  if (!MCP_TOOLS.some(tool => tool.name === name)) throw new Error(`Unknown tool: ${name}`);
   if (deps.resolveForCaller) {
     return callMcpTool(deps.resolveForCaller(authContext), name, args, authContext);
+  }
+  if (name.startsWith('peer_') || name.startsWith('mobile_') || name === 'helm_restart') {
+    if (!deps.userProfileId) throw new Error('Admin only');
+    getMainProcessAdminGuard().requireAdmin(deps.userProfileId);
   }
   const { service, setPlanStateWithValidation, completePlanWithValidation } = deps;
 
@@ -921,8 +929,8 @@ export async function callMcpTool(
         return service.getAppVisibility();
       case 'chat_send': {
         // This routes to the authenticated caller's own session topic. The only trustworthy
-        // identity is the server-derived authContext.sessionId (from the
-        // X-Helm-Session-Id header / session token). An explicit args.sessionId UUID
+        // identity is the server-derived authContext.sessionId from the signed session token.
+        // An explicit args.sessionId UUID
         // is accepted as a fallback for global-token callers, but resolving by NAME is
         // rejected: duplicate session names are ambiguous and silently mis-route the
         // reply to the wrong chat topic (cross-talk).
@@ -931,7 +939,7 @@ export async function callMcpTool(
           throw new Error(
             `${name} could not determine your session. Call session_info to get ` +
               'your own sessionId and pass it as sessionId. Ensure Helm injected the ' +
-              'X-Helm-Session-Id header (HELM_SESSION_ID env var) at startup. ' +
+              'signed session token in HELM_MCP_TOKEN at startup. ' +
               'Resolving by name is not allowed — duplicate session names route replies ' +
               'to the wrong chat topic.',
           );

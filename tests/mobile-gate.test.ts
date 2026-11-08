@@ -80,6 +80,10 @@ function build(
     ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
   });
   const gate = new MobileGate({
+    adminGuard: {
+      isAdmin: profileId => profileId === '1',
+      requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+    },
     deviceStore: {
       get: id => {
         const found = store.get(id);
@@ -321,6 +325,10 @@ describe('MobileGate — rate limiting', () => {
     const store = new MobileDeviceStore(undefined, () => clock);
     const device = store.add({ machineId: 'm', name: 'Pixel', pskRef: 'r', allow: ['session_list'] });
     const gate = new MobileGate({
+      adminGuard: {
+        isAdmin: profileId => profileId === '1',
+        requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+      },
       deviceStore: store,
       dispatch: async () => ({}),
       rateLimiter: createDefaultMobileRateLimiter(() => clock),
@@ -492,9 +500,9 @@ describe('MobileGate — restart Helm', () => {
   it('routes restart through the device profile and denies profile two', async () => {
     const profileTwo = build(['*'], { userProfileId: '2' });
     await expect(profileTwo.gate.handle(profileTwo.deviceId, RESERVED_RESTART_HELM_METHOD, {}))
-      .rejects.toThrow(/only through profile 1/);
-    expect(profileTwo.restarts).toEqual([true]);
-    expect(profileTwo.restartProfiles).toEqual(['2']);
+      .rejects.toThrow(/admin profile required/i);
+    expect(profileTwo.restarts).toEqual([]);
+    expect(profileTwo.restartProfiles).toEqual([]);
   });
 
   it('denies when no restart capability is wired', async () => {

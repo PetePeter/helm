@@ -30,6 +30,7 @@ import {
   type UpdateInfo,
 } from '../../session/update-checker.js';
 import type { UpdateCheckMode } from '../../config/loader.js';
+import { getMainProcessAdminGuard, type AdminGuard } from './admin-guard.js';
 
 export interface UpdateCheckResult {
   /** False in dev — the renderer only auto-prompts for a packaged app. */
@@ -50,6 +51,7 @@ export interface UpdateProgress {
 
 /** The subset of deps tests replace; production values come from Electron. */
 export interface UpdateHandlerOverrides {
+  adminGuard?: AdminGuard;
   /** Absolute path of the running Helm.exe — where the script relaunches. */
   execPath?: string;
   /**
@@ -72,6 +74,7 @@ export interface UpdateHandlerOverrides {
 }
 
 export function setupUpdateHandlers(overrides: UpdateHandlerOverrides): void {
+  const requireAdmin = () => (overrides.adminGuard ?? getMainProcessAdminGuard()).requireAdmin();
   // A second click while an install is in flight must not re-download or,
   // worse, spawn a second quit.
   let installing = false;
@@ -108,6 +111,7 @@ export function setupUpdateHandlers(overrides: UpdateHandlerOverrides): void {
   ipcMain.handle('update:getMode', (): UpdateCheckMode => overrides.modeStore.getUpdateCheckMode());
 
   ipcMain.handle('update:setMode', (_event, mode: unknown): { success: boolean; error?: string } => {
+    try { requireAdmin(); } catch (error) { return { success: false, error: String(error) }; }
     if (mode !== 'auto' && mode !== 'manual') return { success: false, error: `Invalid update check mode: ${String(mode)}` };
     try {
       overrides.modeStore.setUpdateCheckMode(mode);
@@ -119,6 +123,7 @@ export function setupUpdateHandlers(overrides: UpdateHandlerOverrides): void {
   });
 
   ipcMain.handle('update:install', async (_event, installerUrl: string): Promise<{ success: boolean; error?: string }> => {
+    try { requireAdmin(); } catch (error) { return { success: false, error: String(error) }; }
     if (installing) return { success: true };
     // The renderer passes back the URL from update:check; re-validate it so a
     // tampered renderer can at most trigger re-downloading our own release.

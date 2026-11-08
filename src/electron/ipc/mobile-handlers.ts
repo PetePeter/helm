@@ -23,8 +23,10 @@ import { describeApkRelease, apkReleaseUrl, type ApkReleaseInfo } from '../../mo
 import { reachableAddresses } from '../../mcp/peer/reachable-addresses.js';
 import { mobilePairingPort } from '../../mobile/lan/socket-link-transport.js';
 import type { MobileLanConfig } from '../../config/loader.js';
+import { getMainProcessAdminGuard, type AdminGuard } from './admin-guard.js';
 
 export interface MobileHandlerDeps {
+  adminGuard?: AdminGuard;
   deviceStore: MobileDeviceStore;
   /** Resolved per call — the coordinator only exists while BLE is running. */
   getPairing: () => MobilePairing | null;
@@ -109,8 +111,10 @@ export type ApkReleaseResult =
 const INERT = { ok: false, reason: 'Mobile BLE is not running' } as const;
 
 export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
-  ipcMain.handle('mobile:list', (): MobileDeviceListItem[] =>
-    deps.deviceStore.list().map((device) => ({
+  const requireAdmin = () => (deps.adminGuard ?? getMainProcessAdminGuard()).requireAdmin();
+  ipcMain.handle('mobile:list', (): MobileDeviceListItem[] => {
+    requireAdmin();
+    return deps.deviceStore.list().map((device) => ({
       id: device.id,
       userProfileId: device.userProfileId ?? '1',
       machineId: device.machineId,
@@ -121,16 +125,18 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
       online: deps.isOnline?.(device.machineId) ?? false,
       createdAt: device.createdAt,
       ...(device.lastSeenAt !== undefined ? { lastSeenAt: device.lastSeenAt } : {}),
-    })),
-  );
+    }));
+  });
 
   ipcMain.handle('mobile:startPairing', () => {
+    requireAdmin();
     const pairing = deps.getPairing();
     if (!pairing) return INERT;
     return pairing.start();
   });
 
   ipcMain.handle('mobile:confirmPairing', (_e, accepted: boolean) => {
+    requireAdmin();
     const pairing = deps.getPairing();
     if (!pairing) return INERT;
     pairing.confirm(accepted === true);
@@ -138,17 +144,20 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
   });
 
   ipcMain.handle('mobile:cancelPairing', () => {
+    requireAdmin();
     const pairing = deps.getPairing();
     if (!pairing) return INERT;
     pairing.cancel('cancelled by the user');
     return { ok: true };
   });
 
-  ipcMain.handle('mobile:pairingState', (): MobilePairingState =>
-    deps.getPairing()?.getState() ?? { status: 'idle' },
-  );
+  ipcMain.handle('mobile:pairingState', (): MobilePairingState => {
+    requireAdmin();
+    return deps.getPairing()?.getState() ?? { status: 'idle' };
+  });
 
   ipcMain.handle('mobile:setAllowList', (_e, deviceId: string, allow: string[]) => {
+    requireAdmin();
     const cleaned = Array.isArray(allow)
       ? allow.filter((a): a is string => typeof a === 'string' && a.length > 0)
       : [];
@@ -156,6 +165,7 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
   });
 
   ipcMain.handle('mobile:setEnabled', (_e, deviceId: string, enabled: boolean) => {
+    requireAdmin();
     const on = enabled === true;
     const updated = deps.deviceStore.update(deviceId, { enabled: on });
     if (!updated) return { ok: false };
@@ -166,6 +176,7 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
   });
 
   ipcMain.handle('mobile:revoke', (_e, deviceId: string) => {
+    requireAdmin();
     const pairing = deps.getPairing();
     if (!pairing) return INERT;
     const revoked = pairing.revoke(deviceId);
@@ -212,6 +223,7 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
     deps.lan?.addresses?.(port) ?? reachableAddresses('0.0.0.0', port).addresses;
 
   ipcMain.handle('mobile:lanConfig', (): MobileLanStatus => {
+    requireAdmin();
     const config = deps.lan?.get() ?? { enabled: false, port: 0 };
     const boundPort = deps.lan?.boundPort() ?? null;
     return {
@@ -227,6 +239,7 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
   });
 
   ipcMain.handle('mobile:setLanConfig', async (_e, config: MobileLanConfig) => {
+    requireAdmin();
     if (!deps.lan) return INERT;
     await deps.lan.set({ enabled: config.enabled === true, port: config.port });
     broadcast((win) => win.webContents.send('mobile-devices:changed'));

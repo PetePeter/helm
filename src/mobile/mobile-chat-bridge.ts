@@ -138,6 +138,7 @@ export interface MobileChatBridgeDeps {
   /** All profile feeds, used to notify each phone about only its own session list. */
   sessionFeeds?: () => Iterable<MobileSessionFeed>;
   sessionFeedForProfile?: (profileId: string) => MobileSessionFeed | undefined;
+  isAdminProfile?: (profileId: string) => boolean;
   /** Told which journaled messages a user deleted — an API tool drops them from its history. */
   onMessagesDeleted?: (sessionId: string, removed: ChatJournalEntry[]) => void;
   now?: () => number;
@@ -641,7 +642,7 @@ export class MobileChatBridge implements ChatBridge {
 
   private feedForProfile(profileId: string): MobileSessionFeed | undefined {
     if (this.deps.sessionFeedForProfile) return this.deps.sessionFeedForProfile(profileId);
-    return profileId === '1' ? this.deps.sessionFeed : undefined;
+    return this.deps.isAdminProfile?.(profileId) ? this.deps.sessionFeed : undefined;
   }
 
   private answer(machineId: string, payload: Buffer): void {

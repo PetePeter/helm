@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
 
 const roots: string[] = [];
 
-function setup(onProfileChanged?: (id: string) => void | Promise<void>) {
+function setup(onProfileChanged?: (id: string) => void | Promise<void>, windowManager = new WindowManager()) {
   const appData = mkdtempSync(join(tmpdir(), 'helm-profile-ipc-'));
   roots.push(appData);
   const globalConfigDir = join(appData, 'Helm', 'config');
@@ -34,11 +34,12 @@ function setup(onProfileChanged?: (id: string) => void | Promise<void>) {
   writeFileSync(join(globalConfigDir, 'settings.yaml'), '{}\n');
   const configLoader = new ConfigLoader({ userProfileId: '1', profileConfigDir: profileOneDir, globalConfigDir });
   const profileStore = new UserProfileStore(globalConfigDir);
-  const composition = new ProfileRuntimeComposition({ configLoader, userProfileStore: profileStore, ptyManager: new PtyManager() });
+  const ptyManager = new PtyManager();
+  const composition = new ProfileRuntimeComposition({ configLoader, userProfileStore: profileStore, ptyManager });
   const runtimeView = new ActiveProfileRuntimeView(composition.getRequiredRuntime(profileStore.getActiveProfileId()));
   const devices = new MobileDeviceStore();
-  const controller = new ProfileIpcController({ profileStore, composition, runtimeView, devices, windowManager: new WindowManager(), onProfileChanged });
-  return { appData, profileStore, composition, runtimeView, devices, controller };
+  const controller = new ProfileIpcController({ profileStore, composition, runtimeView, devices, windowManager, onProfileChanged });
+  return { appData, profileStore, composition, runtimeView, devices, controller, windowManager, ptyManager };
 }
 
 afterEach(() => {
@@ -96,6 +97,67 @@ describe('ProfileIpcController', () => {
     }
   });
 
+  it('closes snap-outs owned by the previous profile while keeping their sessions for switch-back', async () => {
+    const windowManager = new WindowManager();
+    const makeWindow = (id: number) => ({
+      id,
+      isDestroyed: () => false,
+      destroy: vi.fn(),
+      webContents: { id, send: vi.fn() },
+    });
+    const main = makeWindow(1);
+    const adminSnapOut = makeWindow(2);
+    const memberSnapOut = makeWindow(3);
+    windowManager.setMainWindow(main as any);
+    windowManager.registerWindow(2, adminSnapOut as any);
+    windowManager.registerWindow(3, memberSnapOut as any);
+    const { composition, controller, windowManager: manager } = setup(undefined, windowManager);
+    try {
+      const member = composition.createProfile('Member');
+      composition.getRequiredRuntime('1').sessionManager.addSession({
+        id: 'admin-terminal', name: 'Admin terminal', cliType: 'test', processId: 11, workingDir: 'X:\\admin',
+      });
+      composition.getRequiredRuntime(member.id).sessionManager.addSession({
+        id: 'member-terminal', name: 'Member terminal', cliType: 'test', processId: 12, workingDir: 'X:\\member',
+      });
+      manager.assignSessionToWindow('admin-terminal', 2);
+      manager.assignSessionToWindow('member-terminal', 3);
+
+      expect(await controller.switchProfile(member.id)).toEqual({ ok: true });
+
+      expect(adminSnapOut.destroy).toHaveBeenCalledOnce();
+      expect(memberSnapOut.destroy).not.toHaveBeenCalled();
+      expect(manager.getWindowIdForSession('admin-terminal')).toBeUndefined();
+      expect(composition.getRequiredRuntime('1').sessionManager.hasSession('admin-terminal')).toBe(true);
+
+      expect(await controller.switchProfile('1')).toEqual({ ok: true });
+
+      expect(memberSnapOut.destroy).toHaveBeenCalledOnce();
+      expect(manager.getWindowIdForSession('member-terminal')).toBeUndefined();
+      expect(composition.getRequiredRuntime(member.id).sessionManager.hasSession('member-terminal')).toBe(true);
+    } finally {
+      composition.dispose();
+    }
+  });
+
+  it('tells every surviving window about a switch so each drops the previous profile renderer state', async () => {
+    const windowManager = new WindowManager();
+    const makeWindow = (id: number) => ({ id, isDestroyed: () => false, destroy: vi.fn(), webContents: { id, send: vi.fn() } });
+    const main = makeWindow(1);
+    const popOut = makeWindow(2);
+    windowManager.setMainWindow(main as any);
+    windowManager.registerWindow(2, popOut as any);
+    const { composition, controller } = setup(undefined, windowManager);
+    try {
+      const member = composition.createProfile('Member');
+      expect(await controller.switchProfile(member.id)).toMatchObject({ ok: true });
+      expect(main.webContents.send).toHaveBeenCalledWith('profile:changed', expect.objectContaining({ id: member.id }));
+      expect(popOut.webContents.send).toHaveBeenCalledWith('profile:changed', expect.objectContaining({ id: member.id }));
+    } finally {
+      composition.dispose();
+    }
+  });
+
   it('waits for profile runtime preparation before committing the switch', async () => {
     let finishPreparation!: () => void;
     let prepared = false;
@@ -135,6 +197,41 @@ describe('ProfileIpcController', () => {
       composition.dispose();
     }
   });
+
+  it('redacts other profiles for a non-admin while keeping the active profile counts', async () => {
+    const { composition, controller } = setup();
+    try {
+      const child = composition.createProfile('Child');
+      expect(await controller.switchProfile(child.id)).toMatchObject({ ok: true });
+
+      const profiles = controller.listProfiles();
+      const own = profiles.find(profile => profile.id === child.id)!;
+      const other = profiles.find(profile => profile.id === '1')!;
+
+      expect(Object.keys(other).sort()).toEqual(['hasPin', 'id', 'isAdmin', 'name']);
+      expect(own).toMatchObject({
+        id: child.id, isActive: true, sessionCount: 0,
+        recoverableSessionCount: 0, deviceCount: 0, canDelete: false,
+      });
+    } finally {
+      composition.dispose();
+    }
+  });
+
+  it('returns full profile summaries to the admin', () => {
+    const { composition, controller } = setup();
+    try {
+      composition.createProfile('Child');
+
+      expect(controller.listProfiles().every(profile =>
+        profile.isActive !== undefined && profile.sessionCount !== undefined
+          && profile.recoverableSessionCount !== undefined && profile.deviceCount !== undefined
+          && profile.canDelete !== undefined,
+      )).toBe(true);
+    } finally {
+      composition.dispose();
+    }
+  });
 });
 
 describe('Profile runtime IPC domain', () => {
@@ -142,7 +239,7 @@ describe('Profile runtime IPC domain', () => {
     const { profileStore, composition, runtimeView, devices } = setup();
     const profileTwo = composition.createProfile('Kids');
     const windowManager = new WindowManager();
-    const makeServiceSet = () => ({ service: { setRestartAllowed() {}, dispose() {} } }) as any;
+    const makeServiceSet = () => ({ userProfileId: '1', service: { setRestartAllowed() {}, dispose() {} } }) as any;
     let domain: ReturnType<typeof setupProfileRuntimeDomain> | undefined;
     try {
       domain = setupProfileRuntimeDomain({

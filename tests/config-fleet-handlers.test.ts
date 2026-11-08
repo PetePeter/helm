@@ -23,6 +23,7 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 
 const { setupConfigHandlers } = await import('../src/electron/ipc/config-handlers.js');
+const testAdminGuard = { isAdmin: () => true, requireAdmin: () => {} };
 
 function getHandler(channel: string): Function {
   const handler = handleCalls.get(channel);
@@ -51,7 +52,8 @@ describe('config:setFleetConfig / getFleetConfig', () => {
     loader = fakeConfigLoader();
     applied = [];
     applyFleetConfig = vi.fn(async (cfg: any) => { applied.push(cfg); });
-    setupConfigHandlers(loader, undefined, undefined, applyFleetConfig as never);
+    setupConfigHandlers(loader, undefined, undefined, applyFleetConfig as never,
+      undefined, undefined, undefined, undefined, testAdminGuard);
   });
 
   it('persists the update then hot-applies the freshly-read config and returns success', async () => {
@@ -80,7 +82,8 @@ describe('config:setFleetConfig / getFleetConfig', () => {
 
   it('works without an applyFleetConfig closure (optional dep)', async () => {
     handleCalls.clear();
-    setupConfigHandlers(loader, undefined, undefined);
+    setupConfigHandlers(loader, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, testAdminGuard);
     const res = await getHandler('config:setFleetConfig')({}, { enabled: true });
     expect(loader.setFleetConfig).toHaveBeenCalled();
     expect(res).toEqual({ success: true });

@@ -15,8 +15,10 @@ import { MobileShareInbox } from '../mobile/mobile-share-inbox.js';
 import { MobileChatBridge } from '../mobile/mobile-chat-bridge.js';
 import { RingRetry } from '../session/ring-retry.js';
 import { join } from 'node:path';
+import { getMainProcessAdminGuard } from '../electron/ipc/admin-guard.js';
 
 export interface ProfileMcpServiceSet {
+  userProfileId: string;
   service: HelmControlService;
   uploads?: MobileArtifactUploadService;
   loopDriver?: Pick<LoopDriver, 'noteCompletion'>;
@@ -38,15 +40,16 @@ export interface ProfileRuntimeMcpOptions {
   currentPeerLinkManager: () => PeerLinkManager | null;
 }
 
-/** Build the shared fleet-owner service for profile 1 and viewer-only services for other profiles. */
+/** Build the shared fleet-owner service for the configured admin profile. */
 export function createProfileRemoteService(
   runtime: ProfileRuntime,
   deps: Omit<RemoteServiceDeps, 'sessions' | 'fleetOwnerEnabled'>,
+  isAdmin: (profileId: string) => boolean = profileId => getMainProcessAdminGuard().isAdmin(profileId),
 ): RemoteService {
   return new RemoteService({
     ...deps,
     sessions: runtime.sessionManager,
-    fleetOwnerEnabled: runtime.userProfileId === '1',
+    fleetOwnerEnabled: isAdmin(runtime.userProfileId),
   });
 }
 
@@ -67,7 +70,7 @@ export function createProfileRuntimeMcpServiceSet(
     runtime.skillManager,
     runtime.skillAnalyticsManager,
   );
-  service.setRestartAllowed(runtime.userProfileId === '1');
+  service.setRestartAllowed(getMainProcessAdminGuard().isAdmin(runtime.userProfileId));
   service.sessionChangeFeed.attach(runtime.sessionManager);
   service.setNotificationManager(options.notificationManager);
   service.setChatBroker(options.chatBroker);
@@ -99,6 +102,7 @@ export function createProfileRuntimeMcpServiceSet(
   service.setPeerLinkManager(initialLinks);
 
   return {
+    userProfileId: runtime.userProfileId,
     service,
     uploads,
     remoteService,
@@ -150,10 +154,12 @@ export class ProfileMcpServiceFactory {
 
   constructor(
     private readonly router: ProfileMcpRouter,
-    profileOne: ProfileMcpServiceSet,
+    adminServices: ProfileMcpServiceSet,
     private readonly build: (runtime: ProfileRuntime) => ProfileMcpServiceSet,
+    private readonly isAdmin: (profileId: string) => boolean = profileId => getMainProcessAdminGuard().isAdmin(profileId),
   ) {
-    this.services.set('1', profileOne);
+    adminServices.service.setRestartAllowed(this.isAdmin(adminServices.userProfileId));
+    this.services.set(adminServices.userProfileId, adminServices);
   }
 
   forCaller(authContext: AuthContext): ProfileMcpServiceSet {
@@ -168,7 +174,7 @@ export class ProfileMcpServiceFactory {
     const cached = this.services.get(runtime.userProfileId);
     if (cached) return cached;
     const created = this.build(runtime);
-    created.service.setRestartAllowed(runtime.userProfileId === '1');
+    created.service.setRestartAllowed(this.isAdmin(runtime.userProfileId));
     this.services.set(runtime.userProfileId, created);
     return created;
   }
@@ -187,6 +193,7 @@ export class ProfileMcpServiceFactory {
 
   removeProfile(userProfileId: string): void {
     if (userProfileId === '1') throw new Error('The default profile service cannot be removed');
+    if (this.isAdmin(userProfileId)) throw new Error('The admin profile service cannot be removed');
     const set = this.services.get(userProfileId);
     if (!set) return;
     set.dispose?.();

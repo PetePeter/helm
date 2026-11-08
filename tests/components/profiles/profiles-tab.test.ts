@@ -4,6 +4,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import ProfilesTab from '../../../renderer/components/settings/pages/ProfilesTab.vue';
 
 const mocks = vi.hoisted(() => ({
+  active: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
   rename: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
   profileClient: {
+    profileActive: mocks.active,
     profileList: mocks.list,
     profileCreate: mocks.create,
     profileRename: mocks.rename,
@@ -29,10 +31,11 @@ let profileRecords: Array<Record<string, unknown>>;
 describe('ProfilesTab', () => {
   beforeEach(() => {
     profileRecords = [
-      { id: '1', name: 'Me', hasPin: false, isActive: true, sessionCount: 1, recoverableSessionCount: 0, deviceCount: 0, canDelete: false },
-      { id: '2', name: 'Kids', hasPin: true, isActive: false, sessionCount: 0, recoverableSessionCount: 0, deviceCount: 0, canDelete: true },
+      { id: '1', name: 'Me', hasPin: false, isAdmin: true, isActive: true, sessionCount: 1, recoverableSessionCount: 0, deviceCount: 0, canDelete: false },
+      { id: '2', name: 'Kids', hasPin: true, isAdmin: false, isActive: false, sessionCount: 0, recoverableSessionCount: 0, deviceCount: 0, canDelete: true },
     ];
     mocks.list.mockReset().mockImplementation(async () => profileRecords);
+    mocks.active.mockReset().mockResolvedValue({ id: '1', name: 'Me', hasPin: false, isAdmin: true });
     mocks.create.mockReset().mockResolvedValue({ id: '3', name: 'Guest', hasPin: false });
     mocks.rename.mockReset().mockImplementation(async (id: string, name: string) => {
       const profile = profileRecords.find(item => item.id === id);
@@ -75,5 +78,20 @@ describe('ProfilesTab', () => {
     await wrapper.get('button[aria-label="Clear profile PIN"]').trigger('click');
     await flushPromises();
     expect(mocks.setPin).toHaveBeenLastCalledWith('1', null);
+  });
+
+  it('shows the admin badge and disables profile management and other-profile PIN controls for non-admins', async () => {
+    mocks.active.mockResolvedValue({ id: '2', name: 'Kids', hasPin: true, isAdmin: false });
+    wrapper = mount(ProfilesTab);
+    await flushPromises();
+
+    expect(wrapper.findAll('.profile-admin-badge')).toHaveLength(1);
+    expect(wrapper.get('[aria-label="Create profile"]').element).toHaveProperty('disabled', true);
+    expect(wrapper.get('[aria-label="Rename Me"]').element).toHaveProperty('disabled', true);
+    expect(wrapper.get('[aria-label="Save name for Me"]').element).toHaveProperty('disabled', true);
+    expect(wrapper.get('[aria-label="Delete Kids"]').element).toHaveProperty('disabled', true);
+    expect(wrapper.get('[aria-label="New PIN for Me"]').element).toHaveProperty('disabled', true);
+    expect(wrapper.get('[aria-label="Set PIN for Me"]').element).toHaveProperty('disabled', true);
+    expect(wrapper.text()).toContain('Admin only');
   });
 });

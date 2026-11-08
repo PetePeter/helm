@@ -11,7 +11,9 @@
  */
 import { computed, onMounted, ref } from 'vue';
 import { usePeers, type ConfiguredPeer, type DiscoveredPeer, type FleetConfig, type PeerSession } from '../../../composables/usePeers.js';
+import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
 import { getPeerStatusColor } from '../../../state-colors.js';
+import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 import PeerAuditModal from '../../modals/PeerAuditModal.vue';
 import FleetConfigPanel from './FleetConfigPanel.vue';
 
@@ -31,8 +33,10 @@ const {
   listPeerSessions,
   attachPeerSession,
 } = usePeers();
+const { isAdmin } = useActiveProfileRole();
 
 function onFleetUpdate(updates: Partial<FleetConfig>): void {
+  if (!isAdmin.value) return;
   void setFleetConfig(updates);
 }
 
@@ -42,6 +46,7 @@ const attachSessions = ref<PeerSession[]>([]);
 const attachError = ref('');
 
 async function toggleAttach(peer: ConfiguredPeer): Promise<void> {
+  if (!isAdmin.value) return;
   attachError.value = '';
   attachSessions.value = [];
   if (attachPeerId.value === peer.id) { attachPeerId.value = null; return; }
@@ -54,6 +59,7 @@ async function toggleAttach(peer: ConfiguredPeer): Promise<void> {
 }
 
 async function onAttach(peer: ConfiguredPeer, session: PeerSession): Promise<void> {
+  if (!isAdmin.value) return;
   const result = await attachPeerSession(peer.id, session.id);
   if (result.ok) attachPeerId.value = null;
   else attachError.value = result.error ?? 'Attach failed';
@@ -75,6 +81,7 @@ const discoveryState = computed<'off' | 'error' | 'scanning' | 'found'>(() => {
 });
 
 function onPairManual(): void {
+  if (!isAdmin.value) return;
   const address = manualAddress.value.trim();
   if (!address) return;
   void startPairingByAddress(address);
@@ -112,19 +119,23 @@ function accessLabel(peer: ConfiguredPeer): string {
 }
 
 function onToggleInbound(peer: ConfiguredPeer, event: Event): void {
+  if (!isAdmin.value) return;
   void setInbound(peer.id, (event.target as HTMLInputElement).checked);
 }
 
 function onToggleEnabled(peer: ConfiguredPeer, event: Event): void {
+  if (!isAdmin.value) return;
   const enabled = (event.target as HTMLInputElement).checked;
   void setEnabled(peer.id, enabled);
 }
 
 function onUnpair(peer: ConfiguredPeer): void {
+  if (!isAdmin.value) return;
   void unpair(peer.id);
 }
 
 function onPair(peer: DiscoveredPeer): void {
+  if (!isAdmin.value) return;
   void startPairing(peer);
 }
 
@@ -132,7 +143,7 @@ function onPair(peer: DiscoveredPeer): void {
 
 <template>
   <div class="peers-tab settings-sections">
-    <FleetConfigPanel :config="fleetConfig" :status="fleetStatus" @update="onFleetUpdate" />
+    <FleetConfigPanel :config="fleetConfig" :status="fleetStatus" :is-admin="isAdmin" @update="onFleetUpdate" />
 
     <div v-if="!fleetEnabled" class="peers-off-hint">
       Fleet is off — enable it above to pair with other machines.
@@ -141,8 +152,9 @@ function onPair(peer: DiscoveredPeer): void {
     <div class="peers-section settings-span">
       <div class="peers-section-head">
         <h4 class="peers-section-title">Paired peers</h4>
-        <button class="btn btn--secondary btn--sm peers-audit-btn" type="button" @click="auditVisible = true">Audit</button>
+        <button class="btn btn--secondary btn--sm peers-audit-btn" type="button" :disabled="!isAdmin" @click="auditVisible = true">Audit</button>
       </div>
+      <AdminOnlyHint :show="!isAdmin" />
 
       <div v-if="configuredPeers.length === 0" class="peers-empty">No paired peers yet.</div>
 
@@ -163,6 +175,7 @@ function onPair(peer: DiscoveredPeer): void {
               type="checkbox"
               class="peer-inbound-input"
               :checked="peer.inbound"
+              :disabled="!isAdmin"
               @change="onToggleInbound(peer, $event)"
             />
             <span class="peer-toggle-label">May call me</span>
@@ -173,6 +186,7 @@ function onPair(peer: DiscoveredPeer): void {
               type="checkbox"
               class="peer-enable-input"
               :checked="peer.enabled"
+              :disabled="!isAdmin"
               @change="onToggleEnabled(peer, $event)"
             />
             <span class="peer-toggle-label">{{ peer.enabled ? 'On' : 'Off' }}</span>
@@ -181,11 +195,11 @@ function onPair(peer: DiscoveredPeer): void {
           <button
             class="btn btn--secondary btn--sm peer-attach-toggle focusable"
             type="button"
-            :disabled="!peer.online"
+            :disabled="!isAdmin || !peer.online"
             title="Drive one of this peer's sessions from here (Remote)"
             @click="toggleAttach(peer)"
           >Attach…</button>
-          <button class="btn btn--danger btn--sm peer-unpair" type="button" @click="onUnpair(peer)">Unpair</button>
+          <button class="btn btn--danger btn--sm peer-unpair" type="button" :disabled="!isAdmin" @click="onUnpair(peer)">Unpair</button>
         </div>
 
         <div v-if="attachPeerId === peer.id" class="peer-attach-picker">
@@ -195,7 +209,7 @@ function onPair(peer: DiscoveredPeer): void {
             <span class="peer-alias">{{ session.name }}</span>
             <span class="peer-direction">{{ session.cliType }}</span>
             <span class="peer-spacer"></span>
-            <button class="btn btn--primary btn--sm peer-session-attach focusable" type="button" @click="onAttach(peer, session)">Attach</button>
+            <button class="btn btn--primary btn--sm peer-session-attach focusable" type="button" :disabled="!isAdmin" @click="onAttach(peer, session)">Attach</button>
           </div>
         </div>
 
@@ -217,7 +231,7 @@ function onPair(peer: DiscoveredPeer): void {
         <span class="peer-alias">{{ peer.alias }}</span>
         <span class="peer-address">{{ peer.address }}</span>
         <span class="peer-spacer"></span>
-        <button class="btn btn--primary btn--sm peer-pair-btn" type="button" @click="onPair(peer)">Pair</button>
+        <button class="btn btn--primary btn--sm peer-pair-btn" type="button" :disabled="!isAdmin" @click="onPair(peer)">Pair</button>
       </div>
 
       <p v-if="discoveryState === 'scanning'" class="peers-empty">
@@ -231,16 +245,17 @@ function onPair(peer: DiscoveredPeer): void {
           type="text"
           class="peer-add-input focusable"
           placeholder="10.98.1.140:47474"
-          :disabled="!fleetEnabled"
+          :disabled="!isAdmin || !fleetEnabled"
           @keydown.enter.prevent="onPairManual"
         />
         <button
           class="btn btn--secondary btn--sm"
           type="button"
-          :disabled="!fleetEnabled || !manualAddress.trim()"
+          :disabled="!isAdmin || !fleetEnabled || !manualAddress.trim()"
           @click="onPairManual"
         >Pair by address</button>
       </div>
+      <AdminOnlyHint :show="!isAdmin" />
     </div>
 
     <PeerAuditModal v-model:visible="auditVisible" />

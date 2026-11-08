@@ -44,7 +44,7 @@ Artifacts belong to a single session, keyed by its hub `sessionId`. Their fate
 follows the session's **recoverability**:
 
 - **Recoverable close** (session carried a `cliSessionName` → goes to the recycle bin): the `session:removed` listener **keeps** the artifacts under the same id. They live alongside the bin entry for its 30-day window.
-- **Restore** reuses the session's **original id** (exactly like startup auto-resume — `doSpawn(..., entry.sessionId)`), so the preserved artifacts come straight back attached, with no re-keying. Restore is **two-phase**: `recycleBin:restore` *peeks* the entry (no removal), and only a successful re-spawn calls `recycleBin:commitRestore` to remove it — a failed spawn leaves the entry (and its artifacts) intact and retryable.
+- **Restore** reuses the session's **original id**, so the preserved artifacts come straight back attached, with no re-keying. One `recycleBin:restore` call resolves the owning profile, validates its project cwd, spawns, and removes the entry only after success; a failed spawn leaves the entry and artifacts intact for retry.
 - **Forget** (delete one bin entry) clears that entry's artifacts; **Empty** clears every binned entry's artifacts. An entry that **expires** past the 30-day window at runtime fires `recycle-bin:expired` and its artifacts are cleared then too (not only at startup).
 - **Non-recoverable / ephemeral close** (no bin entry): the listener clears the artifacts immediately.
 - **Startup reclamation**: `pruneOrphanArtifacts` drops any stored artifact whose session is neither live nor in the bin — crash orphans, or a bin entry that expired past the 30-day window.

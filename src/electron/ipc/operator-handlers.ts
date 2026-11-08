@@ -9,12 +9,15 @@ import { ipcMain } from 'electron';
 import { logger } from '../../utils/logger.js';
 import type { ConfigLoader, OperatorConfig } from '../../config/loader.js';
 import type { OperatorSessionManager } from '../../session/operator-session-manager.js';
+import { getMainProcessAdminGuard, type AdminGuard } from './admin-guard.js';
 
-export function setupOperatorHandlers(configLoader: ConfigLoader, operator: OperatorSessionManager): void {
-  ipcMain.handle('config:getOperatorConfig', () => configLoader.getOperatorConfig());
+export function setupOperatorHandlers(configLoader: ConfigLoader, operator: OperatorSessionManager, providedAdminGuard?: AdminGuard): void {
+  const requireAdmin = () => (providedAdminGuard ?? getMainProcessAdminGuard()).requireAdmin();
+  ipcMain.handle('config:getOperatorConfig', () => { requireAdmin(); return configLoader.getOperatorConfig(); });
 
   ipcMain.handle('config:setOperatorConfig', (_event, updates: Partial<OperatorConfig>) => {
     try {
+      requireAdmin();
       configLoader.setOperatorConfig(updates);
       operator.ensure();
       return { success: true };

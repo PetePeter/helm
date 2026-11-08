@@ -41,7 +41,7 @@ export class NotificationManager {
   constructor(
     private windowManager: WindowManager,
     private sessionManager: SessionManager,
-    private readonly runtimeRegistry?: Pick<ProfileRuntimeRegistry, 'findSessionOwner'>,
+    private readonly runtimeRegistry?: Pick<ProfileRuntimeRegistry, 'findSessionOwner' | 'isSessionInActiveProfile'>,
   ) {}
 
   setScreenLockChecker(fn: () => boolean): void { this.screenLockChecker = fn; }
@@ -77,7 +77,10 @@ export class NotificationManager {
     // user who may not be at the desk, which is the case the phone exists for.
     this.mobileNotifier?.flashed(sessionId);
 
-    const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+    // Only the desktop is gated: an inactive profile's session is not on screen.
+    const windows = this.runtimeRegistry && !this.runtimeRegistry.isSessionInActiveProfile(sessionId)
+      ? []
+      : BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
     for (const window of windows) {
       window.webContents.send('session:flashAttention', payload);
     }
@@ -125,6 +128,10 @@ export class NotificationManager {
     if (isLocked) {
       return 'none';
     }
+
+    // An inactive profile's session is still running; its title and body are
+    // that profile's private content and must not reach the visible desktop.
+    if (this.runtimeRegistry && !this.runtimeRegistry.isSessionInActiveProfile(sessionId)) return 'none';
 
     const visibility = this.getAppVisibility();
     this.dispatchLlmInAppNotification(sessionId, title, content);

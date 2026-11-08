@@ -62,6 +62,20 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'skill_activate',
+    title: 'Activate Skill',
+    description: 'Activate a skill for the current session by id, with optional context for why it applies.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        skillId: { type: 'string' },
+        context: { type: 'string' },
+      },
+      required: ['skillId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'skill_submit_feedback',
     title: 'Submit Skill Feedback',
     description: 'Submit LLM feedback for a user-managed Helm skill after applying it. Stores stars, summary, optional improvement, and caller CLI attribution.',
@@ -1466,7 +1480,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'chat_send',
     title: 'Send Chat',
-    description: 'Send concise mobile-friendly text to the user over the session\'s bound chat surfaces (paired phone over BLE or available LAN bridges). Replies go to YOUR OWN chat surfaces (resolved from the X-Helm-Session-Id header); you do not need to pass sessionId. sessionId is an optional override for global-token callers. Resolving by name is not supported — duplicate names would mis-route. Lines must be short; do not send large wide logs, tables, or code blocks.',
+    description: 'Send concise mobile-friendly text to the user over the session\'s bound chat surfaces (paired phone over BLE or available LAN bridges). Replies go to YOUR OWN chat surfaces (resolved from the signed session token); you do not need to pass sessionId. sessionId is an optional target override for shared-token callers. Resolving by name is not supported — duplicate names would mis-route. Lines must be short; do not send large wide logs, tables, or code blocks.',
     inputSchema: {
       type: 'object',
       properties: {

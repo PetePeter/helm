@@ -86,6 +86,10 @@ beforeEach(() => {
   SESSIONS.get('s1')!.interactionChannel = 'desktop';
   SESSIONS.get('operator')!.interactionChannel = 'desktop';
   gate = new MobileGate({
+    adminGuard: {
+      isAdmin: profileId => profileId === '1',
+      requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+    },
     deviceStore,
     dispatch: async (method, params, ctx) => {
       dispatched.push({ method, params, deviceId: ctx.sessionId ?? '' });
@@ -817,6 +821,10 @@ describe('MobileChatBridge answering a download', () => {
       links: downloadLinks,
       deviceStore: store,
       gate: () => new MobileGate({
+        adminGuard: {
+          isAdmin: profileId => profileId === '1',
+          requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+        },
         deviceStore: store,
         dispatch: async () => result,
         rateLimiter: createDefaultMobileRateLimiter(),
@@ -1005,6 +1013,7 @@ describe('MobileChatBridge session change notices', () => {
 
   const bridgeOver = (listing: MobileGate) => new MobileChatBridge({
     links, deviceStore, gate: () => listing, journal, now: () => clock, sessionFeed: feed,
+    isAdminProfile: profileId => profileId === '1',
     sessions: { getSession: (id: string) => SESSIONS.get(id) ?? null, updateSession: () => {} },
   });
 
@@ -1013,6 +1022,10 @@ describe('MobileChatBridge session change notices', () => {
     clock = NOW;
     feed = new SessionChangeFeed({ epoch: 'e1' });
     const listing = new MobileGate({
+      adminGuard: {
+        isAdmin: profileId => profileId === '1',
+        requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+      },
       deviceStore,
       // The delta reply as the real service shapes it: the cursor is the feed's.
       dispatch: async (_method, params) => (params as { since?: unknown } | undefined)?.since === undefined
@@ -1101,6 +1114,10 @@ describe('MobileChatBridge session change notices', () => {
   it('tells a phone about a move that landed between its reply and the arming', async () => {
     // The reply carries seq 0, but by the time the phone is armed the feed is at 1.
     const racing = new MobileGate({
+      adminGuard: {
+        isAdmin: profileId => profileId === '1',
+        requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+      },
       deviceStore,
       dispatch: async () => {
         const reply = { epoch: feed.epoch, seq: feed.seq, full: true, sessions: [], removed: [] };

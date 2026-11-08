@@ -26,8 +26,11 @@ import type { PinnedCertStore } from '../../mcp/peer/pinned-cert-store.js';
 import type { SecretStore } from '../../mcp/peer/secret-store.js';
 import type { RemoteSpawnArgs } from '../../session/remote/remote-service.js';
 import type { RemoteService } from '../../session/remote/remote-service.js';
+import { getMainProcessAdminGuard, type AdminGuard } from './admin-guard.js';
+import type { MainProcessAdminGuard } from './admin-guard.js';
 
 export interface PeerManagementDeps {
+  adminGuard?: AdminGuard;
   /** Live fleet-enabled state, read per call (P-0658 in-app toggle). */
   isEnabled: () => boolean;
   peerConfigManager: PeerConfigManager;
@@ -86,9 +89,11 @@ export interface PeerListItem {
  * that removes the handlers and detaches the event listeners.
  */
 export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => void {
-  ipcMain.handle('peer:fleetEnabled', () => deps.isEnabled());
+  const requireAdmin = () => (deps.adminGuard ?? getMainProcessAdminGuard()).requireAdmin();
+  ipcMain.handle('peer:fleetEnabled', () => { requireAdmin(); return deps.isEnabled(); });
 
   ipcMain.handle('peer:list', (): PeerListItem[] => {
+    requireAdmin();
     if (!deps.isEnabled()) return [];
     const link = deps.getLinkManager();
     return deps.peerConfigManager.list().map((peer) => ({
@@ -106,12 +111,14 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   });
 
   ipcMain.handle('peer:setInbound', (_e, peerId: string, inbound: boolean) => {
+    requireAdmin();
     if (!deps.isEnabled()) return { ok: false };
     const updated = deps.peerConfigManager.update(peerId, { inbound: inbound === true });
     return { ok: Boolean(updated) };
   });
 
   ipcMain.handle('peer:setEnabled', (_e, peerId: string, enabled: boolean) => {
+    requireAdmin();
     if (!deps.isEnabled()) return { ok: false };
     const on = enabled === true;
     const updated = deps.peerConfigManager.update(peerId, { enabled: on });
@@ -127,6 +134,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   });
 
   ipcMain.handle('peer:unpair', (_e, peerId: string) => {
+    requireAdmin();
     if (!deps.isEnabled()) return { ok: false };
     const peer = deps.peerConfigManager.get(peerId);
     if (!peer) return { ok: false };
@@ -144,6 +152,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   // Remote — discovery rides Fleet (the peer's own session_list, gated by its
   // access flag); attach adopts the chosen session as a local row.
   ipcMain.handle('peer:sessions', async (_e, peerId: string): Promise<PeerSessionItem[]> => {
+    requireAdmin();
     const link = deps.getLinkManager();
     if (!deps.isEnabled() || !link) return [];
     const listed = await link.call(peerId, 'session_list', {}) as { sessions?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
@@ -163,6 +172,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   });
 
   ipcMain.handle('peer:attach', async (_e, peerId: string, sessionId: string) => {
+    requireAdmin();
     if (!deps.isEnabled()) return { ok: false, error: 'Fleet is off' };
     try {
       const session = await deps.attach(peerId, sessionId);
@@ -175,6 +185,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   // Remote spawn — the peer's own directory_list feeds the dir picker, and the
   // spawn is its session_create followed by an attach here.
   ipcMain.handle('peer:dirs', async (_e, peerId: string): Promise<PeerDirItem[]> => {
+    requireAdmin();
     const link = deps.getLinkManager();
     if (!deps.isEnabled() || !link) return [];
     const listed = await link.call(peerId, 'directory_list', {});
@@ -192,6 +203,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   // inbound-gated MCP call, so a peer that has not granted access cannot expose
   // its local tool catalogue.
   ipcMain.handle('peer:cliTypes', async (_e, peerId: string): Promise<PeerCliTypeItem[]> => {
+    requireAdmin();
     if (!deps.isEnabled()) throw new Error('Fleet is off');
     const link = deps.getLinkManager();
     if (!link) throw new Error('Fleet is unavailable');
@@ -208,6 +220,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   });
 
   ipcMain.handle('peer:spawn', async (_e, peerId: string, cliType: string, dirPath: string) => {
+    requireAdmin();
     if (!deps.isEnabled()) return { ok: false, error: 'Fleet is off' };
     try {
       const session = await deps.spawn(peerId, { cliType, dirPath });
@@ -218,6 +231,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   });
 
   ipcMain.handle('peer:getAudit', () => {
+    requireAdmin();
     if (!deps.isEnabled()) return [];
     return deps.audit.list();
   });

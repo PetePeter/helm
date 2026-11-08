@@ -19,6 +19,7 @@ function mountPanel(
   return mount(FleetConfigPanel, {
     props: {
       config,
+      isAdmin: true,
       // Default to a healthy running stack so tests that only care about config
       // do not have to describe status.
       status: status ?? {
@@ -120,5 +121,20 @@ describe('FleetConfigPanel.vue', () => {
     await port.trigger('change');
     // Local port changed, but props.config.enabled is false → status stays Off.
     expect(w.find('.fcp-status-value').text()).toMatch(/off/i);
+  });
+
+  it('disables fleet configuration and address copying for non-admins with a hint', () => {
+    const config = { enabled: true, host: '0.0.0.0', port: 47474 };
+    const w = mount(FleetConfigPanel, {
+      props: {
+        config,
+        isAdmin: false,
+        status: { enabled: true, running: true, error: null, addresses: ['10.0.0.1:47474'], allInterfaces: true },
+      },
+    });
+    expect(w.find('input[type="checkbox"]').element).toHaveProperty('disabled', true);
+    expect(w.find('input[type="number"]').element).toHaveProperty('disabled', true);
+    expect(w.find('.fcp-address').element).toHaveProperty('disabled', true);
+    expect(w.text()).toContain('Admin only');
   });
 });

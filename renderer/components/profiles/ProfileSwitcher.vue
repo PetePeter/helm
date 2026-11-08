@@ -6,7 +6,8 @@ import { toDirection } from '../../utils.js';
 
 const emit = defineEmits<{ (event: 'manage'): void }>();
 type Profile = Awaited<ReturnType<typeof profileClient.profileList>>[number];
-const active = ref<{ id: string; name: string; hasPin: boolean } | null>(null);
+type ActiveProfile = Awaited<ReturnType<typeof profileClient.profileActive>>;
+const active = ref<ActiveProfile | null>(null);
 const profiles = ref<Profile[]>([]);
 const open = ref(false);
 const selectedIndex = ref(0);
@@ -35,7 +36,7 @@ function openSwitcher(): void {
 }
 
 async function selectProfile(profile: Profile): Promise<void> {
-  if (profile.isActive) { close(); return; }
+  if (profile.id === active.value?.id) { close(); return; }
   error.value = '';
   if (profile.hasPin && !pinProfile.value) {
     pinProfile.value = profile;
@@ -94,16 +95,13 @@ function updateModal(): void {
 }
 
 watch([open, pinProfile], updateModal);
-let stopChanged: (() => void) | undefined;
 let stopRegistryChanged: (() => void) | undefined;
 onMounted(() => {
   void refresh();
-  stopChanged = profileClient.profileOnChanged(() => { window.location.reload(); });
   stopRegistryChanged = profileClient.profileOnRegistryChanged(() => { void refresh(); });
 });
 onUnmounted(() => {
   modalStack.pop('profile-switcher');
-  stopChanged?.();
   stopRegistryChanged?.();
 });
 
@@ -119,6 +117,7 @@ defineExpose({ handleButton, open: openSwitcher });
   >
     <span class="profile-switcher-trigger__icon" aria-hidden="true">◉</span>
     <span>{{ active?.name ?? 'Profile' }}</span>
+    <span v-if="active?.isAdmin" class="profile-admin-badge">Admin</span>
     <span class="profile-switcher-trigger__chevron" aria-hidden="true">▾</span>
   </button>
 
@@ -149,13 +148,14 @@ defineExpose({ handleButton, open: openSwitcher });
             v-for="(profile, index) in profiles"
             :key="profile.id"
             class="profile-switcher-row"
-            :class="{ 'profile-switcher-row--selected': selectedIndex === index, 'profile-switcher-row--active': profile.isActive }"
+            :class="{ 'profile-switcher-row--selected': selectedIndex === index, 'profile-switcher-row--active': profile.id === active?.id }"
             role="menuitem"
             @mouseenter="selectedIndex = index"
             @click="activate(index)"
           >
-            <span class="profile-switcher-row__mark" aria-hidden="true">{{ profile.isActive ? '✓' : '' }}</span>
+            <span class="profile-switcher-row__mark" aria-hidden="true">{{ profile.id === active?.id ? '✓' : '' }}</span>
             <span>{{ profile.name }}</span>
+            <span v-if="profile.isAdmin" class="profile-admin-badge">Admin</span>
             <span v-if="profile.hasPin" class="profile-switcher-row__lock" aria-label="PIN protected">●</span>
           </button>
           <button
@@ -186,6 +186,7 @@ defineExpose({ handleButton, open: openSwitcher });
 .profile-switcher-trigger:hover { border-color: var(--accent); }
 .profile-switcher-trigger__icon { color: var(--accent); }
 .profile-switcher-trigger__chevron { color: var(--text-dim); }
+.profile-admin-badge { padding: 2px 6px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); font-size: var(--font-size-sm); }
 .profile-switcher-overlay { z-index: 1200; }
 .profile-switcher-modal {
   width: min(360px, calc(100vw - 32px)); padding: 18px;

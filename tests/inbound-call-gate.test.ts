@@ -7,6 +7,9 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   InboundCallGate,
   HARD_DENY_TOOLS,
@@ -18,6 +21,10 @@ import { MCP_TOOLS } from '../src/mcp/tools/definitions.js';
 import { PeerRateLimiter } from '../src/mcp/peer/rate-limiter.js';
 import { PeerAuditLog } from '../src/mcp/peer/peer-audit-log.js';
 import { isProxySessionId } from '../src/mcp/peer/proxy-identity.js';
+import { callMcpTool } from '../src/mcp/tools/dispatcher.js';
+import { UserProfileStore } from '../src/config/user-profile-store.js';
+import { initializeMainProcessAdminGuard } from '../src/electron/ipc/admin-guard.js';
+import type { HelmControlService } from '../src/mcp/helm-control-service.js';
 import type { AuthContext } from '../src/mcp/tools/types.js';
 
 vi.mock('../src/utils/logger.js', () => ({
@@ -314,6 +321,45 @@ describe('InboundCallGate', () => {
     expect(calls).toHaveLength(0);
     const { tools } = await gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {}) as { tools: Array<{ name: string }> };
     expect(tools.map(t => t.name)).not.toContain(tool);
+  });
+
+  it.each([
+    ['peer_list', {}],
+    ['peer_tools', { peer: 'third' }],
+    ['peer_call', { peer: 'third', tool: 'session_list', args: {} }],
+  ])('blocks inbound %s before the admin dispatcher can use fleet capabilities', async (tool, args) => {
+    const root = mkdtempSync(join(tmpdir(), 'helm-inbound-peer-admin-'));
+    try {
+      const profiles = new UserProfileStore(root);
+      profiles.ensureDefaultProfile();
+      initializeMainProcessAdminGuard(profiles);
+      const service = { peerCall: vi.fn(() => ({ reachedThirdPeer: true })) };
+      const dispatcherDeps = {
+        service: service as unknown as HelmControlService,
+        userProfileId: profiles.adminProfileId,
+        setPlanStateWithValidation: () => ({}),
+        completePlanWithValidation: () => ({}),
+      };
+      const { gate, calls, audit } = build({ laptop: true }, {
+        dispatchImpl: (method, params, ctx) => callMcpTool(
+          dispatcherDeps,
+          method,
+          params as Record<string, unknown>,
+          ctx,
+        ),
+      });
+
+      await expect(gate.handle('laptop', tool, args)).rejects.toMatchObject({
+        code: -32000,
+        message: 'Tool not permitted',
+      });
+
+      expect(calls).toHaveLength(0);
+      expect(service.peerCall).not.toHaveBeenCalled();
+      expect(audit.list()[0].outcome).toBe('denied');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

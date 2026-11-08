@@ -1,9 +1,7 @@
 /**
  * Recycle Bin IPC Handlers
  *
- * Lists / restores / forgets closed recoverable sessions. Restore returns the
- * entry (and removes it from the bin) so the renderer can re-spawn it via the
- * normal spawn-with-resume flow (doSpawn → pty:spawn with resumeSessionName).
+ * Lists, restores, and forgets closed recoverable sessions.
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
@@ -27,8 +25,8 @@ export function setupRecycleBinHandlers(
   memoryManager?: Pick<MemoryManager, 'purgeSession'>,
   messManager?: Pick<MessManager, 'onSessionClosed'>,
   chatJournal?: Pick<MobileChatJournal, 'pruneSession'>,
-  /** Re-applies bin-carried session fields (the mission) once the re-spawn is back. */
-  onRestoreCommitted?: (entry: RecycleBinEntry) => void,
+  /** Peeks, spawns, and commits on the runtime that owns this entry. */
+  restoreEntry?: (id: string) => Promise<RecycleBinEntry | null>,
   draftManager?: Pick<DraftManager, 'clearSession'>,
   todoManager?: Pick<TodoManager, 'clearSession'>,
 ): void {
@@ -95,35 +93,14 @@ export function setupRecycleBinHandlers(
     }
   });
 
-  // Restore is a two-phase transaction so a failed re-spawn cannot lose the entry
-  // (and its preserved artifacts): restore PEEKS the entry, the renderer re-spawns,
-  // and only a successful spawn calls commitRestore to remove it. Artifacts are kept
-  // either way — the reused session id owns them once it comes back.
-  ipcMain.handle('recycleBin:restore', (_event, id: string) => {
+  // The runtime restorer binds lookup, spawn, and commit to one profile before
+  // awaiting any work, so a renderer profile switch cannot change ownership.
+  ipcMain.handle('recycleBin:restore', async (_event, id: string) => {
     try {
-      return recycleBin.peek(id);
+      return typeof id === 'string' ? await restoreEntry?.(id) ?? null : null;
     } catch (err) {
       logger.error(`[recycleBin:restore] Failed: ${err}`);
       return null;
-    }
-  });
-
-  ipcMain.handle('recycleBin:commitRestore', (_event, id: string) => {
-    try {
-      const entry = recycleBin.peek(id);
-      if (entry && onRestoreCommitted) {
-        try {
-          onRestoreCommitted(entry);
-        } catch (err) {
-          // Never fatal: the session is already back; losing its mission must not strand the entry.
-          logger.warn(`[recycleBin:commitRestore] Failed to re-apply session fields: ${err}`);
-        }
-      }
-      recycleBin.forget(id); // remove the entry only; artifacts stay with the reused id
-      return true;
-    } catch (err) {
-      logger.error(`[recycleBin:commitRestore] Failed: ${err}`);
-      return false;
     }
   });
 

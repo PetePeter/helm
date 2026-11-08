@@ -8,6 +8,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { type ConfigLoader, type PlanFilterConfig, type EditorPrefs, type FleetConfig, type WorkspaceLayoutProfile } from '../../config/loader.js';
+import { getMainProcessAdminGuard, type AdminGuard } from './admin-guard.js';
 import type { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
 import type { ProjectStore } from '../../session/project-store.js';
 import type { FleetStatus } from '../../mcp/peer/fleet-controller.js';
@@ -30,7 +31,19 @@ export function setupConfigHandlers(
   hookDeps?: HookInstallerDeps,
   suggestionUsage?: SuggestionUsageStore,
   resolveSuggestionUsageItem?: SuggestionUsageItemResolver,
+  sharedAdminGuard?: AdminGuard,
 ): void {
+  const getAdminGuard = () => sharedAdminGuard ?? getMainProcessAdminGuard();
+  const requireAdmin = () => getAdminGuard().requireAdmin();
+  const isActiveProfileAdmin = () => {
+    try {
+      requireAdmin();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   ipcMain.handle('config:getAll', () => {
     try {
       configLoader.load();
@@ -251,7 +264,8 @@ export function setupConfigHandlers(
 
   ipcMain.handle('config:getMcpConfig', () => {
     try {
-      return configLoader.getMcpConfig();
+      const config = configLoader.getMcpConfig();
+      return isActiveProfileAdmin() ? config : { ...config, authToken: '' };
     } catch (error) {
       logger.error(`[IPC] Failed to get MCP config: ${error}`);
       return { enabled: false, port: 47373, authToken: '' };
@@ -260,6 +274,7 @@ export function setupConfigHandlers(
 
   ipcMain.handle('config:setMcpConfig', async (_event, updates: { enabled?: boolean; port?: number; authToken?: string }) => {
     try {
+      requireAdmin();
       configLoader.setMcpConfig(updates);
       logger.info(`[IPC] MCP config updated: ${JSON.stringify({ enabled: updates.enabled, port: updates.port, authToken: updates.authToken ? '[redacted]' : undefined })}`);
       if (localhostMcpServer) {
@@ -309,6 +324,7 @@ export function setupConfigHandlers(
   // still report success (identical to the MCP server contract).
   ipcMain.handle('config:setFleetConfig', async (_event, updates: { enabled?: boolean; host?: string; port?: number }) => {
     try {
+      requireAdmin();
       configLoader.setFleetConfig(updates);
       logger.info(`[IPC] Fleet config updated: ${JSON.stringify(updates)}`);
       if (applyFleetConfig) {
@@ -327,6 +343,7 @@ export function setupConfigHandlers(
 
   ipcMain.handle('config:generateMcpToken', async () => {
     try {
+      requireAdmin();
       const token = `${randomUUID().replace(/-/g, '')}${randomUUID().replace(/-/g, '')}`;
       configLoader.setMcpConfig({ authToken: token });
       logger.info('[IPC] Generated new MCP auth token');
@@ -618,6 +635,7 @@ export function setupConfigHandlers(
   ipcMain.handle('hooks:install', async (_event, provider: string) => {
     if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
     try {
+      requireAdmin();
       const resolved = resolveHooks(provider);
       if (!resolved) return { success: false, error: `No hooks config for provider: ${provider}` };
       const result = await installCliHooks(resolved, hookDeps);
@@ -632,6 +650,7 @@ export function setupConfigHandlers(
   ipcMain.handle('hooks:uninstall', (_event, provider: string) => {
     if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
     try {
+      requireAdmin();
       const resolved = resolveHooks(provider);
       if (!resolved) return { success: false, error: `No hooks config for provider: ${provider}` };
       const result = uninstallCliHooks(resolved, hookDeps);
@@ -710,6 +729,7 @@ export function setupConfigHandlers(
 
   ipcMain.handle('config:setHookInjections', (_event, updates: Record<string, unknown>) => {
     try {
+      requireAdmin();
       const validated: Partial<Record<keyof HookInjectionOverrides, string | null>> = {};
       for (const [id, value] of Object.entries(updates ?? {})) {
         if (isHookInjectionId(id) && (value === null || (typeof value === 'string' && value.length <= 10000))) {
@@ -726,6 +746,7 @@ export function setupConfigHandlers(
 
   ipcMain.handle('config:resetHookInjections', () => {
     try {
+      requireAdmin();
       configLoader.resetHookInjectionOverrides();
       return { success: true, overrides: configLoader.getHookInjectionOverrides() };
     } catch (error) {

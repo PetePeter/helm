@@ -19,7 +19,6 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
   recycleBinClient: {
     recycleBinList: mocks.recycleBinList,
     recycleBinRestore: vi.fn(),
-    recycleBinCommitRestore: vi.fn(),
     recycleBinForget: vi.fn(),
     recycleBinEmpty: vi.fn(),
   },

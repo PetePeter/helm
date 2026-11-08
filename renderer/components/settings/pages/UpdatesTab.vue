@@ -5,6 +5,8 @@
 import { onMounted, ref } from 'vue';
 import { appClient, updateClient } from '../../../ipc/clients.js';
 import { checkForAppUpdateNow, installStatus, installUpdate, updateOffer } from '../../../composables/useUpdateCheck.js';
+import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
+import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 
 type UpdateCheckMode = 'auto' | 'manual';
 
@@ -12,16 +14,22 @@ const mode = ref<UpdateCheckMode>('auto');
 const version = ref('');
 const status = ref('');
 const checking = ref(false);
+const { isAdmin } = useActiveProfileRole();
 
 onMounted(async () => {
   [mode.value, version.value] = await Promise.all([updateClient.updateGetMode(), appClient.appGetVersion()]);
 });
 
 async function onModeChange(event: Event): Promise<void> {
+  if (!isAdmin.value) return;
   const next = (event.target as HTMLSelectElement).value as UpdateCheckMode;
   const result = await updateClient.updateSetMode(next);
   if (result.success) mode.value = next;
   else status.value = result.error ?? 'Could not save setting';
+}
+
+function onInstallUpdate(): void {
+  if (isAdmin.value) void installUpdate();
 }
 
 async function onCheckNow(): Promise<void> {
@@ -48,19 +56,20 @@ async function onCheckNow(): Promise<void> {
 
     <label class="updates-setting">
       <span>Check for updates</span>
-      <select class="btn btn--secondary btn--sm focusable" :value="mode" @change="onModeChange">
+      <select class="btn btn--secondary btn--sm focusable" :value="mode" :disabled="!isAdmin" @change="onModeChange">
         <option value="auto">Automatically at launch</option>
         <option value="manual">Manually only</option>
       </select>
     </label>
+    <AdminOnlyHint :show="!isAdmin" />
 
     <div class="updates-setting">
       <button class="btn btn--secondary btn--sm focusable" :disabled="checking" @click="onCheckNow">Check now</button>
       <button
         v-if="updateOffer"
         class="btn btn--primary btn--sm focusable updates-install"
-        :disabled="installStatus !== '' && !installStatus.startsWith('Update failed')"
-        @click="installUpdate"
+        :disabled="!isAdmin || (installStatus !== '' && !installStatus.startsWith('Update failed'))"
+        @click="onInstallUpdate"
       >Update to v{{ updateOffer.version }}</button>
       <span v-if="installStatus || status" class="updates-status">{{ installStatus || status }}</span>
     </div>

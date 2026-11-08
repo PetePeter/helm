@@ -1,3 +1,4 @@
+import { ProfileRuntimeRegistry } from '../src/session/profile-runtime-registry.js';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
 
@@ -58,13 +59,17 @@ function setup(onPtyInput = vi.fn(), isHandoverPending = (_id: string) => false)
     removeSession: vi.fn(),
   };
   const pipelineQueue = new EventEmitter();
+  const childWindow = { isDestroyed: () => false, webContents: { send: vi.fn() } };
   const windowManager = {
-    getWindowForSession: vi.fn(() => null),
+    getWindowForSession: vi.fn(() => childWindow),
     getWindowIdForSession: vi.fn(() => undefined),
     isSessionOwnedByWebContents: vi.fn(() => true),
     markSessionRendererAttached: vi.fn(),
     markSessionRendererDetached: vi.fn(() => true),
   };
+  let activeProfileId = 'admin';
+  const runtimeRegistry = new ProfileRuntimeRegistry([{ userProfileId: 'admin', sessionManager: { ...sessionManager, hasSession: (id: string) => id === 's1' }, patternMatcher: Object.assign(new EventEmitter(), { processOutput: vi.fn() }) } as any], () => activeProfileId);
+
   setupPtyHandlers(
     ptyManager as any,
     stateDetector as any,
@@ -77,9 +82,13 @@ function setup(onPtyInput = vi.fn(), isHandoverPending = (_id: string) => false)
     undefined,
     undefined,
     isHandoverPending,
+    runtimeRegistry as any,
   );
 
-  return { ptyManager, stateDetector, sessionManager, onPtyInput, windowManager };
+  return {
+    ptyManager, stateDetector, sessionManager, onPtyInput, windowManager, childWindow, runtimeRegistry,
+    switchProfile: (profileId: string) => { activeProfileId = profileId; },
+  };
 }
 
 describe('pty:write input origin', () => {
@@ -207,5 +216,26 @@ describe('pty:write input origin', () => {
       error: 'Renderer does not own session',
     });
     expect(ptyManager.getTerminalTail).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies old-profile terminal access and output after a profile switch', async () => {
+    const { ptyManager, windowManager, childWindow, switchProfile } = setup();
+    const attach = handlers.get('terminal:attach')!;
+    const write = handlers.get('pty:write')!;
+
+    expect(attach({}, 's1')).toMatchObject({ success: true });
+    expect(write({}, 's1', 'same-profile input')).toMatchObject({ success: true });
+    ptyManager.emit('data', 's1', 'same-profile output');
+    expect(childWindow.webContents.send).toHaveBeenCalledWith('pty:data', 's1', 'same-profile output');
+
+    vi.clearAllMocks();
+    switchProfile('member');
+
+    expect(attach({}, 's1')).toMatchObject({ success: false });
+    expect(write({}, 's1', 'cross-profile input')).toMatchObject({ success: false });
+    expect(ptyManager.write).not.toHaveBeenCalled();
+    ptyManager.emit('data', 's1', 'cross-profile output');
+    expect(childWindow.webContents.send).not.toHaveBeenCalled();
+    expect(windowManager.getWindowForSession).not.toHaveBeenCalled();
   });
 });

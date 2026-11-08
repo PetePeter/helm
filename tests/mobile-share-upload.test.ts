@@ -62,6 +62,10 @@ function build(allow: string[] = ['*']) {
   const store = new MobileDeviceStore(undefined, () => 0);
   const device = store.add({ machineId: 'phone', name: 'Pixel', pskRef: 'psk', allow });
   const gate = new MobileGate({
+    adminGuard: {
+      isAdmin: profileId => profileId === '1',
+      requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+    },
     deviceStore: store,
     dispatch: (method, params, ctx) =>
       callMcpTool(

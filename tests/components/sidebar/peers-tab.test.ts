@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 
 // --- Fake IPC surface --------------------------------------------------------
+const role = vi.hoisted(() => ({ isAdmin: true }));
+
 const state = {
   fleetEnabled: true,
   peers: [] as any[],
@@ -41,6 +43,9 @@ function capture(name: string) {
 }
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
+  profileClient: {
+    profileActive: async () => ({ id: '1', name: 'Admin', hasPin: false, isAdmin: role.isAdmin }),
+  },
   peersClient: {
     peerFleetEnabled: (...a: any[]) => peerFleetEnabled(...a),
     peerList: (...a: any[]) => peerList(...a),
@@ -90,6 +95,7 @@ function onlinePeer(over: Partial<any> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  role.isAdmin = true;
   resetPeersStateForTesting();
   state.fleetEnabled = true;
   state.peers = [];
@@ -248,5 +254,22 @@ describe('PeersTab', () => {
     await w.find('.peer-session-attach').trigger('click');
     await flushPromises();
     expect(w.find('.peer-attach-error').text()).toContain('Tool not permitted');
+  });
+
+  it('disables peer, pairing, attach, and fleet controls with an Admin only hint for non-admins', async () => {
+    role.isAdmin = false;
+    state.peers = [onlinePeer()];
+    state.discovered = [{ machineId: 'mac-2', alias: 'the PC', address: '10.0.0.6:47474' }];
+    const w = mount(PeersTab);
+    await flushPromises();
+
+    expect(w.find('.peer-inbound-input').element).toHaveProperty('disabled', true);
+    expect(w.find('.peer-enable-input').element).toHaveProperty('disabled', true);
+    expect(w.find('.peer-attach-toggle').element).toHaveProperty('disabled', true);
+    expect(w.find('.peer-unpair').element).toHaveProperty('disabled', true);
+    expect(w.find('.peer-pair-btn').element).toHaveProperty('disabled', true);
+    expect(w.find('.peers-audit-btn').element).toHaveProperty('disabled', true);
+    expect(w.find('.fleet-config-panel input[type="checkbox"]').element).toHaveProperty('disabled', true);
+    expect(w.text()).toContain('Admin only');
   });
 });

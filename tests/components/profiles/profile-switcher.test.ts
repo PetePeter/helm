@@ -47,7 +47,7 @@ let wrapper: VueWrapper | null = null;
 
 describe('ProfileSwitcher', () => {
   beforeEach(() => {
-    mocks.active.mockReset().mockResolvedValue({ id: '2', name: 'Kids', hasPin: false });
+    mocks.active.mockReset().mockResolvedValue({ id: '2', name: 'Kids', hasPin: false, isAdmin: false });
     mocks.list.mockReset().mockResolvedValue([
       { id: '1', name: 'Me', hasPin: false, isActive: false },
       { id: '2', name: 'Kids', hasPin: false, isActive: true },
@@ -96,5 +96,12 @@ describe('ProfileSwitcher', () => {
     router.handleButton('A');
     await flushPromises();
     expect(mocks.switch).toHaveBeenCalledWith('3', '2468');
+  });
+
+  it('shows an Admin badge for the active admin profile', async () => {
+    mocks.active.mockResolvedValue({ id: '1', name: 'Me', hasPin: false, isAdmin: true });
+    wrapper = mount(ProfileSwitcher);
+    await flushPromises();
+    expect(wrapper.get('.profile-admin-badge').text()).toBe('Admin');
   });
 });

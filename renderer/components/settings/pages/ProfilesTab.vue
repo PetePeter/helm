@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import ConfirmDialog from '../../modals/ConfirmDialog.vue';
 import FieldRow from '../primitives/FieldRow.vue';
 import SettingsCard from '../primitives/SettingsCard.vue';
+import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 import { profileClient } from '../../../ipc/clients.js';
 
 type Profile = Awaited<ReturnType<typeof profileClient.profileList>>[number];
@@ -12,19 +13,25 @@ const renameNames = ref<Record<string, string>>({});
 const pinDraft = ref('');
 const error = ref('');
 const deleteTarget = ref<Profile | null>(null);
+const activeProfileId = ref<string | null>(null);
+const isAdmin = ref(false);
+const otherPinDrafts = ref<Record<string, string>>({});
 const confirmIndex = ref(0);
 const saving = ref(false);
-const activeProfile = computed(() => profiles.value.find(profile => profile.isActive) ?? null);
+const activeProfile = computed(() => profiles.value.find(profile => profile.id === activeProfileId.value) ?? null);
 const validPin = computed(() => /^\d{4,12}$/.test(pinDraft.value));
 
 async function refresh(): Promise<void> {
-  profiles.value = await profileClient.profileList();
+  const [all, active] = await Promise.all([profileClient.profileList(), profileClient.profileActive()]);
+  profiles.value = all;
+  activeProfileId.value = active.id;
+  isAdmin.value = active.isAdmin === true;
   renameNames.value = Object.fromEntries(profiles.value.map(profile => [profile.id, profile.name]));
 }
 
 async function createProfile(): Promise<void> {
   const name = createName.value.trim();
-  if (!name || saving.value) return;
+  if (!isAdmin.value || !name || saving.value) return;
   saving.value = true;
   error.value = '';
   try {
@@ -38,7 +45,7 @@ async function createProfile(): Promise<void> {
 
 async function renameProfile(profile: Profile): Promise<void> {
   const name = renameNames.value[profile.id]?.trim();
-  if (!name || name === profile.name || saving.value) return;
+  if (!isAdmin.value || !name || name === profile.name || saving.value) return;
   saving.value = true;
   error.value = '';
   try {
@@ -63,6 +70,33 @@ async function savePin(): Promise<void> {
   } finally { saving.value = false; }
 }
 
+async function setOtherProfilePin(profile: Profile): Promise<void> {
+  const pin = otherPinDrafts.value[profile.id] ?? '';
+  if (!isAdmin.value || !/^\d{4,12}$/.test(pin) || saving.value) return;
+  saving.value = true;
+  error.value = '';
+  try {
+    const result = await profileClient.profileSetPin(profile.id, pin);
+    if (!result.ok) error.value = result.error ?? 'Could not set PIN';
+    else { otherPinDrafts.value[profile.id] = ''; await refresh(); }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  } finally { saving.value = false; }
+}
+
+async function clearOtherProfilePin(profile: Profile): Promise<void> {
+  if (!isAdmin.value || saving.value) return;
+  saving.value = true;
+  error.value = '';
+  try {
+    const result = await profileClient.profileSetPin(profile.id, null);
+    if (!result.ok) error.value = result.error ?? 'Could not clear PIN';
+    else await refresh();
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  } finally { saving.value = false; }
+}
+
 async function clearPin(): Promise<void> {
   if (!activeProfile.value || saving.value) return;
   saving.value = true;
@@ -77,7 +111,7 @@ async function clearPin(): Promise<void> {
 }
 
 async function deleteProfile(): Promise<void> {
-  if (!deleteTarget.value || saving.value) return;
+  if (!isAdmin.value || !deleteTarget.value || saving.value) return;
   saving.value = true;
   error.value = '';
   try {
@@ -110,8 +144,9 @@ onUnmounted(() => stopRegistryChanged?.());
 
     <SettingsCard title="Create profile" class="settings-span">
       <FieldRow label="Profile name" hint="Names are visible in the desktop switcher." for="new-profile-name">
-        <input id="new-profile-name" v-model="createName" class="input" maxlength="48" aria-label="New profile name" @keyup.enter="createProfile" />
-        <button class="btn btn-primary focusable" aria-label="Create profile" :disabled="!createName.trim() || saving" @click="createProfile">Create</button>
+        <input id="new-profile-name" v-model="createName" class="input" maxlength="48" aria-label="New profile name" :disabled="!isAdmin" @keyup.enter="createProfile" />
+        <button class="btn btn-primary focusable" aria-label="Create profile" :disabled="!isAdmin || !createName.trim() || saving" @click="createProfile">Create</button>
+        <AdminOnlyHint :show="!isAdmin" />
       </FieldRow>
     </SettingsCard>
 
@@ -120,24 +155,44 @@ onUnmounted(() => stopRegistryChanged?.());
       <div v-for="profile in profiles" :key="profile.id" class="profile-row">
         <div class="profile-row__heading">
           <strong>{{ profile.name }}</strong>
-          <span v-if="profile.isActive" class="profile-active-badge">Active on this desktop</span>
+          <span v-if="profile.id === activeProfileId" class="profile-active-badge">Active on this desktop</span>
+          <span v-if="profile.isAdmin" class="profile-admin-badge">Admin</span>
           <span v-if="profile.hasPin" class="profile-pin-badge">PIN protected</span>
           <span class="profile-row__spacer"></span>
           <button
             v-if="profile.canDelete"
             class="btn btn-danger focusable"
             :aria-label="`Delete ${profile.name}`"
+            :disabled="!isAdmin || saving"
             @click="deleteTarget = profile"
           >Delete</button>
-          <span v-else-if="profile.id !== '1'" class="profile-delete-note">
+          <AdminOnlyHint v-if="profile.canDelete" :show="!isAdmin" />
+          <span v-else-if="!profile.isAdmin" class="profile-delete-note">
             Delete requires no sessions, recoverable sessions, or paired devices.
           </span>
         </div>
         <FieldRow :label="`Name for ${profile.name}`" :for="`profile-name-${profile.id}`">
-          <input :id="`profile-name-${profile.id}`" v-model="renameNames[profile.id]" class="input" maxlength="48" :aria-label="`Rename ${profile.name}`" />
-          <button class="btn btn-secondary focusable" :aria-label="`Save name for ${profile.name}`" :disabled="saving || !renameNames[profile.id]?.trim() || renameNames[profile.id]?.trim() === profile.name" @click="renameProfile(profile)">Rename</button>
+          <input :id="`profile-name-${profile.id}`" v-model="renameNames[profile.id]" class="input" maxlength="48" :aria-label="`Rename ${profile.name}`" :disabled="!isAdmin" />
+          <button class="btn btn-secondary focusable" :aria-label="`Save name for ${profile.name}`" :disabled="!isAdmin || saving || !renameNames[profile.id]?.trim() || renameNames[profile.id]?.trim() === profile.name" @click="renameProfile(profile)">Rename</button>
+          <AdminOnlyHint :show="!isAdmin" />
         </FieldRow>
-        <p class="profile-meta">
+        <FieldRow v-if="profile.id !== activeProfileId" :label="`PIN for ${profile.name}`" :for="`profile-pin-${profile.id}`">
+          <input
+            :id="`profile-pin-${profile.id}`"
+            v-model="otherPinDrafts[profile.id]"
+            class="input"
+            type="password"
+            inputmode="numeric"
+            autocomplete="new-password"
+            maxlength="12"
+            :aria-label="`New PIN for ${profile.name}`"
+            :disabled="!isAdmin"
+          />
+          <button class="btn btn-secondary focusable" :aria-label="`Set PIN for ${profile.name}`" :disabled="!isAdmin || saving || !/^\d{4,12}$/.test(otherPinDrafts[profile.id] ?? '')" @click="setOtherProfilePin(profile)">Set PIN</button>
+          <button v-if="profile.hasPin" class="btn btn-secondary focusable" :aria-label="`Clear PIN for ${profile.name}`" :disabled="!isAdmin || saving" @click="clearOtherProfilePin(profile)">Clear PIN</button>
+          <AdminOnlyHint :show="!isAdmin" />
+        </FieldRow>
+        <p v-if="profile.sessionCount !== undefined" class="profile-meta">
           {{ profile.sessionCount }} sessions · {{ profile.recoverableSessionCount }} recoverable · {{ profile.deviceCount }} paired devices
         </p>
       </div>
@@ -191,7 +246,8 @@ onUnmounted(() => stopRegistryChanged?.());
 .profile-row:last-child { border-bottom: 0; }
 .profile-row__heading { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--text-primary); font-size: var(--font-size-sm); }
 .profile-row__spacer { flex: 1; }
-.profile-active-badge, .profile-pin-badge { padding: 2px 6px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); font-size: 10px; }
+.profile-active-badge, .profile-pin-badge, .profile-admin-badge { padding: 2px 6px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); font-size: 10px; }
+.profile-admin-badge { font-size: var(--font-size-sm); }
 .profile-pin-badge { background: var(--bg-tertiary); color: var(--text-secondary); }
 .profile-delete-note, .profile-meta { color: var(--text-dim); font-size: 11px; }
 .profile-meta { margin: 5px 0 0; }

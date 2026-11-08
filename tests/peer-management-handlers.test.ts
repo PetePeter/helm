@@ -27,6 +27,10 @@ vi.mock('../src/utils/logger.js', () => ({
 const { PeerConfigManager } = await import('../src/session/peer-config-manager.js');
 const { PeerAuditLog } = await import('../src/mcp/peer/peer-audit-log.js');
 const { setupPeerManagementHandlers } = await import('../src/electron/ipc/peer-management-handlers.js');
+const testAdminGuard = {
+  isAdmin: (profileId: string) => profileId === '1',
+  requireAdmin(profileId = '1') { if (profileId !== '1') throw new Error('Admin profile required'); },
+};
 
 function getHandler(channel: string): Function {
   const handler = handleCalls.get(channel);
@@ -68,6 +72,7 @@ describe('peer-management handlers — remote CLI type listing', () => {
     audit = new PeerAuditLog(() => {}, () => 0);
     link = fakeLinkManager();
     setupPeerManagementHandlers({
+      adminGuard: testAdminGuard,
       isEnabled: () => true,
       peerConfigManager: new PeerConfigManager(),
       pinnedCertStore: { removePin: vi.fn() } as any,
@@ -138,6 +143,7 @@ describe('peer-management handlers — peer Sessions snapshot', () => {
       { id: 'r', name: 'Remote view', cliType: 'codex', remote: { peerId: 'elsewhere', sessionId: 'x' } },
     ];
     setupPeerManagementHandlers({
+      adminGuard: testAdminGuard,
       isEnabled: () => true,
       peerConfigManager: cfg,
       pinnedCertStore: { removePin: vi.fn() } as any,
@@ -169,6 +175,7 @@ describe('peer-management handlers — setEnabled live-transport wiring', () => 
     audit = new PeerAuditLog(() => {}, () => 0);
     link = fakeLinkManager();
     setupPeerManagementHandlers({
+      adminGuard: testAdminGuard,
       isEnabled: () => true,
       peerConfigManager: cfg,
       pinnedCertStore: { removePin: vi.fn() } as any,
@@ -218,6 +225,7 @@ describe('peer-management handlers — live isEnabled() closure (P-0658)', () =>
     handleCalls.clear();
     let enabled = false;
     setupPeerManagementHandlers({
+      adminGuard: testAdminGuard,
       isEnabled: () => enabled,
       peerConfigManager: new PeerConfigManager(),
       pinnedCertStore: { removePin: vi.fn() } as any,
@@ -239,6 +247,7 @@ describe('peer-management handlers — live isEnabled() closure (P-0658)', () =>
     const cfg = new PeerConfigManager();
     cfg.add({ alias: 'Mac', address: 'h:1', pskRef: 'r' });
     setupPeerManagementHandlers({
+      adminGuard: testAdminGuard,
       isEnabled: () => enabled,
       peerConfigManager: cfg,
       pinnedCertStore: { removePin: vi.fn() } as any,

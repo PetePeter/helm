@@ -19,6 +19,8 @@ import { profileClient } from '../../../ipc/clients.js';
 import { useCopiedFlash } from '../../../composables/useCopiedFlash.js';
 import { ALLOW_PRESETS } from '../../../lib/mobile-allow-presets.js';
 import { getPeerStatusColor } from '../../../state-colors.js';
+import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
+import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 import QrCode from './QrCode.vue';
 
 const {
@@ -35,6 +37,7 @@ const {
   lan,
   setLanConfig,
 } = useMobileDevices();
+const { isAdmin, loadRole } = useActiveProfileRole();
 
 const expandedId = ref<string | null>(null);
 const newPattern = ref<Record<string, string>>({});
@@ -50,19 +53,27 @@ const profiles = ref<UserProfile[]>([]);
 const profileError = ref('');
 let stopProfileRegistryChanged: (() => void) | undefined;
 
-onMounted(() => {
-  ensureSubscribed();
-  void loadApkRelease();
-  void loadProfiles();
+onMounted(async () => {
+  await loadRole();
+  if (isAdmin.value) ensureSubscribed();
+  void loadApkRelease().catch(() => undefined);
+  await loadProfiles();
   stopProfileRegistryChanged = profileClient.profileOnRegistryChanged(() => { void loadProfiles(); });
 });
 onUnmounted(() => stopProfileRegistryChanged?.());
 
 async function loadProfiles(): Promise<void> {
-  profiles.value = await profileClient.profileList();
+  try {
+    profiles.value = await profileClient.profileList();
+    profileError.value = '';
+  } catch {
+    profiles.value = [];
+    profileError.value = 'Could not load profiles';
+  }
 }
 
 async function onProfileChange(device: MobileDeviceItem, event: Event): Promise<void> {
+  if (!isAdmin.value) return;
   const profileId = (event.target as HTMLSelectElement).value;
   profileError.value = '';
   const result = await profileClient.profileBindDevice(device.id, profileId);
@@ -81,10 +92,12 @@ async function onProfileChange(device: MobileDeviceItem, event: Event): Promise<
  * intermediate ports are real ports that a user never asked to open.
  */
 function toggleLan(enabled: boolean): void {
+  if (!isAdmin.value) return;
   void setLanConfig({ enabled, port: lan.value.port });
 }
 
 function commitPort(): void {
+  if (!isAdmin.value) return;
   const port = Number.parseInt(portDraft.value, 10);
   portDraft.value = '';
   if (!Number.isInteger(port) || port < 1 || port > 65535) return;
@@ -117,14 +130,17 @@ function lastSeenLabel(device: MobileDeviceItem): string {
 }
 
 function toggleExpanded(id: string): void {
+  if (!isAdmin.value) return;
   expandedId.value = expandedId.value === id ? null : id;
 }
 
 function onToggleEnabled(device: MobileDeviceItem, event: Event): void {
+  if (!isAdmin.value) return;
   void setEnabled(device.id, (event.target as HTMLInputElement).checked);
 }
 
 function onRevoke(device: MobileDeviceItem): void {
+  if (!isAdmin.value) return;
   // Revocation is irreversible — the phone must pair again from scratch — so it
   // takes a second click rather than a single mis-aimed one.
   if (confirmRevokeId.value !== device.id) {
@@ -137,6 +153,7 @@ function onRevoke(device: MobileDeviceItem): void {
 
 /** Debounced allow-list save (500ms), matching the peers editor. */
 function scheduleAllowSave(id: string, allow: string[]): void {
+  if (!isAdmin.value) return;
   const existing = saveTimers.get(id);
   if (existing) clearTimeout(existing);
   saveTimers.set(id, setTimeout(() => {
@@ -146,6 +163,7 @@ function scheduleAllowSave(id: string, allow: string[]): void {
 }
 
 function addPattern(device: MobileDeviceItem): void {
+  if (!isAdmin.value) return;
   const pattern = (newPattern.value[device.id] ?? '').trim();
   if (!pattern) return;
   if (device.allow.includes(pattern)) { newPattern.value[device.id] = ''; return; }
@@ -154,11 +172,17 @@ function addPattern(device: MobileDeviceItem): void {
 }
 
 function removePattern(device: MobileDeviceItem, pattern: string): void {
+  if (!isAdmin.value) return;
   scheduleAllowSave(device.id, device.allow.filter((p) => p !== pattern));
 }
 
 function applyPreset(device: MobileDeviceItem, globs: string[]): void {
+  if (!isAdmin.value) return;
   scheduleAllowSave(device.id, [...globs]);
+}
+
+function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
+  return profiles.value.find(profile => profile.id === device.userProfileId);
 }
 </script>
 
@@ -199,6 +223,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
           <input
             type="checkbox"
             :checked="lan.enabled"
+            :disabled="!isAdmin"
             @change="toggleLan(($event.target as HTMLInputElement).checked)"
           />
           <span>Enabled</span>
@@ -219,11 +244,13 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
           inputmode="numeric"
           :placeholder="String(lan.port)"
           :value="portDraft"
+          :disabled="!isAdmin"
           @input="portDraft = ($event.target as HTMLInputElement).value"
           @keyup.enter="commitPort()"
           @blur="commitPort()"
         />
       </div>
+      <AdminOnlyHint :show="!isAdmin" />
 
       <template v-if="lan.enabled">
         <template v-if="lan.pairingAddresses.length > 0">
@@ -235,6 +262,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
               v-for="address in lan.pairingAddresses"
               :key="address"
               class="mobile-lan-chip"
+              :disabled="!isAdmin"
               @click="copyAddress(address)"
             >
               {{ copiedAddress === address ? 'Copied' : address }}
@@ -251,6 +279,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
               v-for="address in lan.addresses"
               :key="address"
               class="mobile-lan-chip"
+              :disabled="!isAdmin"
               @click="copyAddress(address)"
             >
               {{ copiedAddress === address ? 'Copied' : address }}
@@ -266,10 +295,11 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
     <section class="mobile-section settings-span">
       <div class="mobile-section-head">
         <h3 class="mobile-section-title">Paired phones and tablets</h3>
-        <button class="btn btn-primary mobile-pair-btn" @click="startPairing()">
+        <button class="btn btn-primary mobile-pair-btn" :disabled="!isAdmin" @click="startPairing()">
           Pair a phone
         </button>
       </div>
+      <AdminOnlyHint :show="!isAdmin" />
 
       <p v-if="devices.length === 0" class="mobile-empty">
         No phones paired yet. Open Helm on your phone, put it into pairing mode, then
@@ -287,10 +317,12 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
             <select
               :value="device.userProfileId"
               :aria-label="`Profile for ${device.name}`"
+              :disabled="!isAdmin"
               @change="onProfileChange(device, $event)"
             >
-              <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+              <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}{{ profile.isAdmin ? ' · Admin' : '' }}</option>
             </select>
+            <span v-if="profileForDevice(device)?.isAdmin" class="mobile-admin-badge">Admin</span>
           </label>
 
           <span class="mobile-spacer"></span>
@@ -300,23 +332,26 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
               class="mobile-enable-input"
               type="checkbox"
               :checked="device.enabled"
+              :disabled="!isAdmin"
               @change="onToggleEnabled(device, $event)"
             />
             <span class="mobile-toggle-label">{{ device.enabled ? 'On' : 'Off' }}</span>
           </label>
 
-          <button class="btn btn-secondary" @click="toggleExpanded(device.id)">
+          <button class="btn btn-secondary" :disabled="!isAdmin" @click="toggleExpanded(device.id)">
             {{ expandedId === device.id ? 'Done' : 'Permissions' }}
           </button>
 
           <button
             class="btn btn-danger"
             :class="{ 'mobile-revoke-armed': confirmRevokeId === device.id }"
+            :disabled="!isAdmin"
             @click="onRevoke(device)"
           >
             {{ confirmRevokeId === device.id ? 'Confirm revoke' : 'Revoke' }}
           </button>
         </div>
+        <AdminOnlyHint :show="!isAdmin" />
 
         <div v-if="expandedId === device.id" class="mobile-allow-editor">
           <div class="mobile-presets">
@@ -325,6 +360,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
               v-for="preset in ALLOW_PRESETS"
               :key="preset.label"
               class="btn btn-secondary"
+              :disabled="!isAdmin"
               @click="applyPreset(device, preset.globs)"
             >
               {{ preset.label }}
@@ -340,6 +376,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
               <button
                 class="mobile-glob-remove"
                 :aria-label="`Remove ${pattern}`"
+                :disabled="!isAdmin"
                 @click="removePattern(device, pattern)"
               >×</button>
             </span>
@@ -351,10 +388,12 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
               class="input mobile-glob-input"
               type="text"
               placeholder="session_* "
+              :disabled="!isAdmin"
               @keyup.enter="addPattern(device)"
             />
-            <button class="btn btn-secondary" @click="addPattern(device)">Add</button>
+            <button class="btn btn-secondary" :disabled="!isAdmin" @click="addPattern(device)">Add</button>
           </div>
+          <AdminOnlyHint :show="!isAdmin" />
         </div>
       </div>
       <p v-if="profileError" class="mobile-error" role="alert">{{ profileError }}</p>
@@ -436,6 +475,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
 .mobile-row-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mobile-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .mobile-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
+.mobile-admin-badge { padding: 2px 6px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); font-size: var(--font-size-sm); }
 .mobile-seen { font-size: 0.76rem; color: var(--text-secondary); }
 .mobile-profile-label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 0.76rem; }
 .mobile-profile-label select { max-width: 150px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.76rem; }
