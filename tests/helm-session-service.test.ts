@@ -3,11 +3,12 @@
  */
 
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HelmSessionService } from '../src/mcp/services/helm-session-service.js';
 import { SessionManager } from '../src/session/manager.js';
+import { ProjectStore } from '../src/session/project-store.js';
 
 let contextDir: string;
 
@@ -133,6 +134,40 @@ describe('HelmSessionService.listSessions', () => {
     const result = service.listSessions(undefined, 'proj-1');
     expect(result).toHaveLength(2);
     expect(result.map((r) => r.id).sort()).toEqual(['s1', 's2']);
+  });
+});
+
+describe('HelmSessionService.spawnCli profile cwd', () => {
+  it('rejects a configured MCP directory outside the caller profile project folders', () => {
+    const project = join(contextDir, 'profile-two-project');
+    const outside = join(contextDir, 'profile-one-project');
+    mkdirSync(project);
+    mkdirSync(outside);
+    const projectStore = new ProjectStore();
+    projectStore.resolveForPath(project);
+    const sessionManager = new SessionManager({
+      userProfileId: '2',
+      sessionsFile: join(contextDir, 'sessions.yaml'),
+      projectStore,
+    });
+    const ptyManager = { spawn: vi.fn(() => ({ pid: 7 })), write: vi.fn(), has: vi.fn(() => true) };
+    const configLoader = {
+      ...makeConfigLoader(),
+      getWorkingDirectories: vi.fn(() => [{ path: outside, name: 'outside' }]),
+      resolveCliType: vi.fn(() => ({ id: 'cli', config: { name: 'CLI', spawnCommand: 'cli' } })),
+    };
+    const service = new HelmSessionService(
+      sessionManager,
+      ptyManager as any,
+      configLoader as any,
+      { getForDirectory: vi.fn(() => []) } as any,
+      projectStore,
+    );
+
+    expect(() => service.spawnCli('cli', outside, 'outside')).toThrow(
+      new Error(`Cannot spawn in cwd "${outside}": it is outside the profile's project folders.`),
+    );
+    expect(ptyManager.spawn).not.toHaveBeenCalled();
   });
 });
 

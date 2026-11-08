@@ -11,6 +11,7 @@ import { ScheduledTaskManager, MAX_TIMER_DELAY_MS, DIRECT_TASK_PTY_WAIT_MS } fro
 import { normalizeProjectPath } from '../src/session/project-identity.js';
 import { saveScheduledTasks } from '../src/session/persistence.js';
 import { DEFAULT_DREAM_PROMPT } from '../src/types/dreaming.js';
+import { ProjectStore } from '../src/session/project-store.js';
 
 /** The raw directory the tests schedule into, and the shape it is stored in. */
 const TEST_DIR = 'X:\\\\coding\\\\test';
@@ -46,8 +47,12 @@ import type { ProjectRecord } from '../src/types/project.js';
 // ─── Fakes for dependencies ─────────────────────────────────────────────────────
 
 class FakeSessionManager {
+  private readonly projectStore = new ProjectStore();
   private sessions = new Map<string, Record<string, unknown> & { id: string; cliType: string; workingDir: string }>();
   private activeSessionId: string | null = null;
+
+  constructor() { this.projectStore.resolveForPath(TEST_DIR); }
+  getSpawnCwdContext() { return { userProfileId: '1', projectStore: this.projectStore }; }
 
   spawn(cliType: string, workingDir: string, env?: Record<string, string>): string {
     const id = `session-${Date.now()}`;

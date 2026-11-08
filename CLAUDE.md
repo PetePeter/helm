@@ -129,6 +129,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/file-structure.md](docs/file-structure.md) | Complete directory tree with per-file descriptions |
 | [docs/build-and-test.md](docs/build-and-test.md) | Build commands, output paths, build notes, tech stack details |
 | [docs/config-system.md](docs/config-system.md) | Profile YAML, binding types, sequence parser syntax, stick/dpad config |
+| [docs/user-profiles.md](docs/user-profiles.md) | Profile-owned ProjectStores and spawn cwd limits; deeper folder limits come from per-profile CLI sandbox flags |
 | [docs/css-architecture.md](docs/css-architecture.md) | CSS ownership, global exceptions, tokens, primitives, and selection states |
 | [docs/config-boundary.md](docs/config-boundary.md) | Where writable config/logs/temp live, seeding, legacy migration |
 | [docs/self-update.md](docs/self-update.md) | Launch-time GitHub release check, silent NSIS self-update + relaunch |

@@ -426,7 +426,7 @@ export function registerIPCHandlers(
     recordTurn: (sessionId, history) => profileComposition.recordAutoMemoryTurn(sessionId, history),
   });
   registerApiSessionHost(apiSessionHost);
-  profileComposition.registerAutoMemoryServices(apiSessionHost, getTempDir(dirname ?? process.cwd()));
+  profileComposition.registerAutoMemoryServices(apiSessionHost);
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
   const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, {
     // The user asked for it outright: never second-guessed as redundant.

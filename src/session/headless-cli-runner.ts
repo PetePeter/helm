@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import { stripAnsi } from '../utils/strip-ansi.js';
 import { fillHeadlessCommand, headlessCommandProblem } from './headless-command.js';
+import { assertCwdInProfileProjects, type ProfileSpawnCwdContext } from './profile-spawn-cwd.js';
 import type { PtyManager } from './pty-manager.js';
 import type { RecordingModel, SilentRunBackend, SilentRunRequest } from './silent-model-runner.js';
 
@@ -39,8 +40,10 @@ const NOT_A_SESSION = {
 
 export interface HeadlessCliRunnerDeps {
   pty: Pick<PtyManager, 'spawn' | 'kill'>;
-  /** Holds the prompt and reply files of a run, and is its working directory. */
-  workDir: string;
+  /** The per-profile identity and ProjectStore that own this runner. */
+  profileRuntime: ProfileSpawnCwdContext;
+  /** Returns a per-run work directory inside one of the runtime's project folders. */
+  getWorkDir: (runId: string) => string;
   timeoutMs?: number;
 }
 
@@ -66,23 +69,23 @@ export class HeadlessCliRunner implements SilentRunBackend<CliModel> {
 
   private async runOnce(command: string, env: Record<string, string> | undefined, request: SilentRunRequest): Promise<string> {
     const id = `headless-${randomUUID()}`;
+    const workDir = this.deps.getWorkDir(id);
+    assertCwdInProfileProjects(this.deps.profileRuntime, workDir);
     // Named relative to the working directory: see fillHeadlessCommand.
     const files = { promptFile: `${id}.prompt.txt`, outputFile: `${id}.reply.txt` };
-    const inWorkDir = (name: string): string => join(this.deps.workDir, name);
+    const inWorkDir = (name: string): string => join(workDir, name);
     try {
-      await mkdir(this.deps.workDir, { recursive: true });
+      await mkdir(workDir, { recursive: true });
       await writeFile(inWorkDir(files.promptFile), request.system ? `${request.system}\n\n${request.prompt}` : request.prompt, 'utf8');
       // The shell outlives the command it was typed into: make it leave, and say how the command went.
       const line = `${fillHeadlessCommand(command, files)} && exit 0 || exit 1`;
-      const { exitCode, tail } = await this.untilExit(id, line, env, request.signal);
+      const { exitCode, tail } = await this.untilExit(id, line, env, request.signal, workDir);
       if (exitCode !== 0) throw new Error(`Headless run exited with code ${exitCode}: ${tail}`);
       return await readFile(inWorkDir(files.outputFile), 'utf8');
     } finally {
-      // A killed CLI can hold its reply file for a moment longer.
-      for (const file of [files.promptFile, files.outputFile].map(inWorkDir)) {
-        await rm(file, { force: true, maxRetries: 5, retryDelay: 200 })
-          .catch((error) => logger.warn(`[AutoMemory] Could not remove ${file}: ${error}`));
-      }
+      // A killed CLI can briefly hold its files; retry before leaving scratch data in a user project.
+      await rm(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+        .catch((error) => logger.warn(`[AutoMemory] Could not remove ${workDir}: ${error}`));
     }
   }
 
@@ -91,6 +94,7 @@ export class HeadlessCliRunner implements SilentRunBackend<CliModel> {
     line: string,
     env: Record<string, string> | undefined,
     signal: AbortSignal | undefined,
+    cwd: string,
   ): Promise<{ exitCode: number; tail: string }> {
     const timeoutMs = this.deps.timeoutMs ?? HEADLESS_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
@@ -116,7 +120,7 @@ export class HeadlessCliRunner implements SilentRunBackend<CliModel> {
         const pty = this.deps.pty.spawn({
           sessionId: id,
           rawCommand: line,
-          cwd: this.deps.workDir,
+          cwd,
           env: { ...env, ...NOT_A_SESSION },
           headless: true,
         });

@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { normalizeProjectPath } from '../src/session/project-identity.js';
+import { ProjectStore } from '../src/session/project-store.js';
 
 const handlers = new Map<string, Function>();
 vi.mock('electron', () => ({
@@ -90,6 +91,8 @@ describe('pty:spawn resume logic', () => {
 
     ptyManager = new MockPtyManager();
     sessions = new Map();
+    const projectStore = new ProjectStore();
+    projectStore.resolveForPath('/work');
     sessionManager = {
       addSession: vi.fn((info: any) => sessions.set(info.id, info)),
       getSession: vi.fn((id: string) => sessions.get(id) || null),
@@ -97,6 +100,7 @@ describe('pty:spawn resume logic', () => {
       updateSession: vi.fn((id: string, updates: any) => Object.assign(sessions.get(id) ?? {}, updates)),
       removeSession: vi.fn(),
       on: vi.fn(),
+      getSpawnCwdContext: () => ({ userProfileId: '1', projectStore }),
     };
     configLoader = {
       getCliTypeEntry: vi.fn(),

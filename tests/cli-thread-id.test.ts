@@ -19,10 +19,14 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 
 let persisted: SessionInfo[] = [];
-vi.mock('../src/session/persistence.js', () => ({
-  saveSessions: (sessions: SessionInfo[]) => { persisted = sessions.map(s => ({ ...s })); },
-  loadSessions: () => persisted.map(s => ({ ...s })),
-}));
+vi.mock('../src/session/persistence.js', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    saveSessions: (sessions: SessionInfo[]) => { persisted = sessions.map(s => ({ ...s })); },
+    loadSessions: () => persisted.map(s => ({ ...s })),
+  };
+});
 
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
   RECYCLE_BIN_WINDOW_MS: 30 * 24 * 60 * 60 * 1000,
@@ -31,6 +35,7 @@ vi.mock('../src/session/recycle-bin-persistence.js', () => ({
 }));
 
 const { SessionManager } = await import('../src/session/manager.js');
+const { ProjectStore } = await import('../src/session/project-store.js');
 const { saveSessions, loadSessions } = await import('../src/session/session-persistence.js');
 const { RecycleBinManager, recordRemovedSession } = await import('../src/session/recycle-bin-manager.js');
 const { spawnConfiguredSession } = await import('../src/session/configured-session-spawn.js');
@@ -101,7 +106,9 @@ describe('{cliThreadId} resume resolution', () => {
   beforeEach(() => {
     persisted = [];
     rawCommands = [];
-    sessionManager = new SessionManager();
+    const projectStore = new ProjectStore();
+    projectStore.resolveForPath(process.cwd());
+    sessionManager = new SessionManager({ userProfileId: '1', sessionsFile: 'unused-in-memory-sessions.yaml', projectStore });
   });
 
   const resume = (resumeThreadId?: string): string | undefined => {

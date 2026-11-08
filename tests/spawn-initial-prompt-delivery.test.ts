@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawnConfiguredSession } from '../src/session/configured-session-spawn.js';
 import { PtyManager, type PtyFactory, type PtyProcess } from '../src/session/pty-manager.js';
 import { promptSubmitSignal } from '../src/session/prompt-submit-signal.js';
+import { ProjectStore } from '../src/session/project-store.js';
 
 class RedrawingPtyProcess implements PtyProcess {
   pid = 4321;
@@ -30,6 +31,11 @@ class RedrawingPtyProcess implements PtyProcess {
 
 class InMemorySessionManager {
   private readonly sessions = new Map<string, any>();
+  private readonly projectStore = new ProjectStore();
+
+  constructor() { this.projectStore.resolveForPath(process.cwd()); }
+
+  getSpawnCwdContext() { return { userProfileId: '1', projectStore: this.projectStore }; }
 
   addSession(session: any): void {
     this.sessions.set(session.id, { ...session, activityLevel: 'idle' });

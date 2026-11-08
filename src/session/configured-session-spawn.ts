@@ -13,6 +13,7 @@ import { toHeaderSafeName } from '../utils/header-safe-name.js';
 import { normalizeProjectPath } from './project-identity.js';
 import { getApiSessionHost } from './api/api-session-host.js';
 import { getComfyUiSessionHost } from './comfyui/comfyui-session-host.js';
+import { assertCwdInProfileProjects, getDefaultProfileProjectCwd } from './profile-spawn-cwd.js';
 
 /** Pause before writing the submit suffix so bracketed/paste-aware CLIs can settle. */
 const SUBMIT_DELAY_MS = 200;
@@ -63,6 +64,9 @@ export interface ConfiguredSessionSpawnResult {
 }
 
 export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): ConfiguredSessionSpawnResult {
+  const profileRuntime = params.sessionManager.getSpawnCwdContext?.();
+  const cwd = params.cwd ?? getDefaultProfileProjectCwd(profileRuntime ?? {});
+  assertCwdInProfileProjects(profileRuntime ?? {}, cwd);
   const now = Date.now();
   const sessionId = params.sessionId ?? randomUUID();
   // Resolve once, up front: the session records the canonical uuid, never the
@@ -85,7 +89,7 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   const cliThreadId = isResume
     ? params.resumeThreadId ?? params.sessionManager.getSession(sessionId)?.cliThreadId
     : undefined;
-  const normalizedCwd = params.cwd ? normalizeProjectPath(params.cwd) : undefined;
+  const normalizedCwd = normalizeProjectPath(cwd);
   if (cfg?.api && cfg?.comfyUi) throw new Error('A tool type cannot be both API and ComfyUI');
 
   // An API tool has no CLI: Helm hosts the agent loop and adopts it like a Remote row.

@@ -9,6 +9,7 @@ import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
 import { SkillManager } from '../src/session/skill-manager.js';
 import { SkillAnalyticsManager } from '../src/session/skill-analytics-manager.js';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
+import { ProjectStore } from '../src/session/project-store.js';
 import { logger } from '../src/utils/logger.js';
 import { unusedPlanAttachmentManager } from './helpers/plan-attachment-manager.js';
 
@@ -33,6 +34,8 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
     })),
   };
   const getAllSessions = vi.fn(() => [{ id: 's1', name: 'Claude', cliType: 'claude-code' }]);
+  const projectStore = new ProjectStore();
+  projectStore.resolveForPath('/work');
   const sessionManager = {
     getSession: vi.fn((id: string) => ({ id, name: 'Claude', cliType: 'claude-code' })),
     getAllSessions,
@@ -40,6 +43,7 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
     addSession: vi.fn(),
     updateSession: vi.fn(),
     removeSession: vi.fn(),
+    getSpawnCwdContext: () => ({ userProfileId: '1', projectStore }),
   };
   const planManager = {
     getForDirectory: vi.fn(() => []),

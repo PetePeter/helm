@@ -12,14 +12,18 @@ import { HelmSessionService } from '../src/mcp/services/helm-session-service.js'
 import { spawnConfiguredSession } from '../src/session/configured-session-spawn.js';
 import { proxyAuthContext } from '../src/mcp/peer/proxy-identity.js';
 import { mobileAuthContext } from '../src/mobile/mobile-identity.js';
+import { ProjectStore } from '../src/session/project-store.js';
 
 function makeService(added: Array<Record<string, unknown>>) {
   const localCreator = { id: 'local-session', role: 'worker' };
+  const projectStore = new ProjectStore();
+  projectStore.resolveForPath('/repo/main');
   const sessionManager = {
     getAllSessions: vi.fn(() => []),
     getSession: vi.fn((id: string) => id === localCreator.id ? localCreator : null),
     hasSession: vi.fn(() => false),
     addSession: vi.fn((info: Record<string, unknown>) => { added.push(info); }),
+    getSpawnCwdContext: () => ({ userProfileId: '1', projectStore }),
     updateSession: vi.fn((_id: string, updates: Record<string, unknown>) => {
       const session = added.find(item => item.id === _id);
       if (session) Object.assign(session, updates);
@@ -105,11 +109,16 @@ describe('HelmSessionService.spawnCli — peer origin', () => {
 describe('spawnConfiguredSession — peer origin', () => {
   function harness() {
     const addSession = vi.fn();
+    const projectStore = new ProjectStore();
+    projectStore.resolveForPath('/repo/main');
     return {
       addSession,
       params: {
         ptyManager: { spawn: vi.fn(() => ({ pid: 7 })), write: vi.fn() } as any,
-        sessionManager: { addSession, updateSession: vi.fn(), hasSession: vi.fn(() => false) } as any,
+        sessionManager: {
+          addSession, updateSession: vi.fn(), hasSession: vi.fn(() => false),
+          getSpawnCwdContext: () => ({ userProfileId: '1', projectStore }),
+        } as any,
         sessionId: 'sess-peer',
         cliType: 'claude-code',
         // No configLoader in this harness, so the command must be explicit —

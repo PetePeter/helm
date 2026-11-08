@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { spawnConfiguredSession } from '../src/session/configured-session-spawn.js';
 import { normalizeProjectPath as norm } from '../src/session/project-identity.js';
 import { PtyManager, type PtyFactory, type PtyProcess } from '../src/session/pty-manager.js';
+import { ProjectStore } from '../src/session/project-store.js';
+
+function spawnCwdContext(userProfileId = '1') {
+  const projectStore = new ProjectStore();
+  projectStore.resolveForPath(process.cwd());
+  return { userProfileId, projectStore };
+}
 
 class FakePtyProcess implements PtyProcess {
   pid = 4321;
@@ -14,7 +21,9 @@ class FakePtyProcess implements PtyProcess {
 }
 
 class InMemorySessionManager {
+  private readonly profileContext = spawnCwdContext();
   sessions = new Map<string, any>();
+  getSpawnCwdContext() { return this.profileContext; }
   addSession(session: any): void { this.sessions.set(session.id, session); }
   hasSession(id: string): boolean { return this.sessions.has(id); }
   getSession(id: string): any { return this.sessions.get(id); }
@@ -67,6 +76,7 @@ describe('spawnConfiguredSession', () => {
       updateSession,
       hasSession,
       getSession: () => undefined,
+      getSpawnCwdContext: () => spawnCwdContext(),
     };
 
     const result = spawnConfiguredSession({
@@ -106,6 +116,7 @@ describe('spawnConfiguredSession', () => {
       updateSession,
       hasSession,
       getSession: () => undefined,
+      getSpawnCwdContext: () => spawnCwdContext(),
     };
 
     spawnConfiguredSession({
@@ -132,7 +143,13 @@ describe('spawnConfiguredSession', () => {
     const addSession = vi.fn();
     spawnConfiguredSession({
       ptyManager: { spawn: vi.fn().mockReturnValue({ pid: 1 }), write: vi.fn() } as any,
-      sessionManager: { addSession, updateSession: vi.fn(), hasSession: () => false, getSession: () => undefined } as any,
+      sessionManager: {
+        addSession,
+        updateSession: vi.fn(),
+        hasSession: () => false,
+        getSession: () => undefined,
+        getSpawnCwdContext: () => spawnCwdContext(),
+      } as any,
       sessionId: 'op',
       command: 'claude',
       role: 'operator',
@@ -174,6 +191,7 @@ describe('spawnConfiguredSession — API tools', () => {
         sessionManager: {
           addSession, updateSession: vi.fn(), hasSession: () => false, getSession: () => undefined,
           getUserProfileId: () => '2',
+          getSpawnCwdContext: () => spawnCwdContext('2'),
         } as any,
         configLoader: configLoader as any,
         cliType: 'api-type',

@@ -18,6 +18,7 @@ import { spawnConfiguredSession } from '../src/session/configured-session-spawn.
 import { ScheduledTaskManager } from '../src/session/scheduled-task-manager.js';
 import { saveScheduledTasks } from '../src/session/persistence.js';
 import { HelmSessionService } from '../src/mcp/services/helm-session-service.js';
+import { ProjectStore } from '../src/session/project-store.js';
 
 /**
  * Scheduled-task persistence resolves to one process-wide config path, so this
@@ -54,6 +55,12 @@ function loadedLoader(): ConfigLoader {
     list: () => [{ id: 'p1', name: 'test', canonicalPath: TEST_DIR, alternatePaths: [] }],
   } as any);
   return loader;
+}
+
+function projectStoreForTestDir(): ProjectStore {
+  const projectStore = new ProjectStore();
+  projectStore.resolveForPath(TEST_DIR);
+  return projectStore;
 }
 
 /** The uuid key of the CLI type that was migrated from `slug`. */
@@ -178,6 +185,7 @@ describe('ConfigLoader.resolveCliType', () => {
 describe('spawnConfiguredSession — cliType resolution', () => {
   function harness() {
     const added: Array<Record<string, unknown>> = [];
+    const projectStore = projectStoreForTestDir();
     return {
       added,
       ptyManager: { spawn: vi.fn(() => ({ pid: 99 })), write: vi.fn() } as any,
@@ -185,6 +193,7 @@ describe('spawnConfiguredSession — cliType resolution', () => {
         addSession: vi.fn((info: Record<string, unknown>) => { added.push(info); }),
         updateSession: vi.fn(),
         hasSession: vi.fn(() => false),
+        getSpawnCwdContext: () => ({ userProfileId: '1', projectStore }),
       } as any,
     };
   }
@@ -239,12 +248,14 @@ describe('spawnConfiguredSession — cliType resolution', () => {
 
 describe('MCP session_create — cliType resolution', () => {
   function makeService(loader: ConfigLoader, added: Array<Record<string, unknown>>) {
+    const projectStore = projectStoreForTestDir();
     const sessionManager = {
       getAllSessions: vi.fn(() => []),
       getSession: vi.fn(() => null),
       hasSession: vi.fn(() => false),
       addSession: vi.fn((info: Record<string, unknown>) => { added.push(info); }),
       updateSession: vi.fn(),
+      getSpawnCwdContext: () => ({ userProfileId: '1', projectStore }),
     };
     const ptyManager = { spawn: vi.fn(() => ({ pid: 7 })), write: vi.fn(), has: vi.fn(() => true) };
     return new HelmSessionService(
@@ -295,7 +306,9 @@ describe('MCP session_create — cliType resolution', () => {
 
 describe('ScheduledTaskManager — cliType resolution', () => {
   class FakeSessionManager {
+    private readonly profileContext = { userProfileId: '1', projectStore: projectStoreForTestDir() };
     added: Array<Record<string, unknown>> = [];
+    getSpawnCwdContext() { return this.profileContext; }
     addSession(info: Record<string, unknown>) { this.added.push(info); }
     getSession(id: string) { return this.added.find((s) => s.id === id); }
     getActiveSession() { return null; }
@@ -349,6 +362,33 @@ describe('ScheduledTaskManager — cliType resolution', () => {
     expect(ptyManager.spawned).toHaveLength(1);
     expect(ptyManager.spawned[0].rawCommand).toContain('claude --session-id');
     expect(sessionManager.added[0].cliType).toBe(id);
+  });
+
+  it('rejects a scheduled spawn outside its profile project folders', async () => {
+    const loader = loadedLoader();
+    const sessionManager = new FakeSessionManager();
+    const ptyManager = new FakePtyManager();
+    manager = new ScheduledTaskManager(
+      sessionManager as any, ptyManager as any,
+      { getItem: () => undefined } as any, loader as any,
+    );
+    const outside = path.join(path.dirname(TEST_DIR), 'outside-profile-project');
+    const task = manager.createTask({
+      title: 'Outside',
+      planIds: [],
+      initialPrompt: 'go',
+      cliType: 'claude-code',
+      scheduledTime: new Date(Date.now() - 1000),
+      dirPath: outside,
+    });
+
+    manager.start();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(manager.getTask(task.id)?.status).toBe('failed');
+    expect(manager.getTask(task.id)?.error?.toLowerCase()).toContain(outside.toLowerCase());
+    expect(manager.getTask(task.id)?.error).toContain('outside the profile\'s project folders');
+    expect(ptyManager.spawned).toHaveLength(0);
   });
 
   it('rejects an unknown CLI type at create time rather than executing a uuid', async () => {

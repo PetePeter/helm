@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
+import { ProjectStore } from '../src/session/project-store.js';
 
 /**
  * Scheduled-task persistence resolves to one process-wide config path — the
@@ -54,8 +55,11 @@ import type { ProjectRecord } from '../src/types/project.js';
 const TEST_DIR = 'X:\\coding\\dream-test';
 
 class FakeSessionManager {
+  private readonly projectStore = new ProjectStore();
   private sessions = new Map<string, Record<string, unknown> & { id: string; cliType: string }>();
   private activeSessionId: string | null = null;
+  constructor() { this.projectStore.resolveForPath(TEST_DIR); }
+  getSpawnCwdContext() { return { userProfileId: '1', projectStore: this.projectStore }; }
   hasSession(id: string) { return this.sessions.has(id); }
   updateSession(id: string, patch: Record<string, unknown>) { Object.assign(this.sessions.get(id)!, patch); }
   getSession(id: string) { return this.sessions.get(id); }

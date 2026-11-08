@@ -1,4 +1,5 @@
 import { dirname, join } from 'node:path';
+import { statSync } from 'node:fs';
 import type { ConfigLoader } from '../config/loader.js';
 import type { UserProfileStore } from '../config/user-profile-store.js';
 import { HandoverDelivery } from '../session/handover-delivery.js';
@@ -133,7 +134,7 @@ export class ProfileRuntimeComposition {
     }
   }
 
-  registerAutoMemoryServices(apiSessionHost: ApiSessionHost, tempDir: string): void {
+  registerAutoMemoryServices(apiSessionHost: ApiSessionHost): void {
     if (this.recordingModelRunners.size > 0) throw new Error('Auto-memory services are already registered');
 
     for (const runtime of this.registry.all()) {
@@ -152,9 +153,16 @@ export class ProfileRuntimeComposition {
           api: apiSilentBackend(apiSessionHost),
           cli: new HeadlessCliRunner({
             pty: this.ptyManager,
-            workDir: runtime.userProfileId === '1'
-              ? join(tempDir, 'headless')
-              : join(tempDir, 'headless', runtime.userProfileId),
+            profileRuntime: runtime,
+            getWorkDir: runId => {
+              const projectDir = runtime.projectStore.list()
+                .flatMap(project => [project.canonicalPath, ...(project.alternatePaths ?? [])])
+                .find(path => {
+                  try { return statSync(path).isDirectory(); }
+                  catch { return false; }
+                });
+              return projectDir ? join(projectDir, '.helm-headless', runId) : '';
+            },
           }),
         },
       });

@@ -17,6 +17,7 @@ import * as path from 'node:path';
 import { HeadlessCliRunner } from '../src/session/headless-cli-runner.js';
 import { PtyManager } from '../src/session/pty-manager.js';
 import { SessionManager } from '../src/session/manager.js';
+import { ProjectStore } from '../src/session/project-store.js';
 
 const STUB = `
 import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
@@ -52,6 +53,7 @@ describe('HeadlessCliRunner', () => {
   let stub: string;
   let marker: string;
   let pty: PtyManager;
+  let profileRuntime: { userProfileId: string; projectStore: ProjectStore };
   let events: string[];
   let savedEnv: Record<string, string | undefined>;
 
@@ -59,11 +61,21 @@ describe('HeadlessCliRunner', () => {
     `node "${stub}" ${mode}${withMarker ? ` "${marker}"` : ''} < "{promptFile}" > "{outputFile}"`;
   const model = (headlessCommand: string | undefined, id = 'cli-a', env?: Record<string, string>) =>
     ({ id, kind: 'cli' as const, headlessCommand, env });
-  const runner = (timeoutMs = 20_000) => new HeadlessCliRunner({ pty, workDir: path.join(dir, 'work'), timeoutMs });
-  const leftovers = (): string[] => fs.existsSync(path.join(dir, 'work')) ? fs.readdirSync(path.join(dir, 'work')) : [];
+  const runner = (timeoutMs = 20_000) => new HeadlessCliRunner({
+    pty,
+    profileRuntime,
+    getWorkDir: runId => path.join(dir, '.helm-headless', runId),
+    timeoutMs,
+  });
+  const leftovers = (): string[] => fs.existsSync(path.join(dir, '.helm-headless'))
+    ? fs.readdirSync(path.join(dir, '.helm-headless'))
+    : [];
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-headless-'));
+    const projectStore = new ProjectStore();
+    projectStore.resolveForPath(dir);
+    profileRuntime = { userProfileId: '1', projectStore };
     stub = path.join(dir, 'stub-cli.mjs');
     marker = path.join(dir, 'marker.log');
     fs.writeFileSync(stub, STUB, 'utf8');
@@ -167,7 +179,12 @@ describe('HeadlessCliRunner', () => {
     const abort = new AbortController();
     const spawned: string[] = [];
     const watched = { spawn: (options: Parameters<PtyManager['spawn']>[0]) => { spawned.push(options.sessionId); return pty.spawn(options); }, kill: (id: string) => pty.kill(id) };
-    const run = new HeadlessCliRunner({ pty: watched, workDir: path.join(dir, 'work'), timeoutMs: 20_000 })
+    const run = new HeadlessCliRunner({
+      pty: watched,
+      profileRuntime,
+      getWorkDir: runId => path.join(dir, '.helm-headless', runId),
+      timeoutMs: 20_000,
+    })
       .run(model(command('hang')), { prompt: 'p'.repeat(4_000_000), signal: abort.signal });
     // The pass has left the queue and is on the disk, not yet in a PTY.
     await new Promise((resolve) => setImmediate(resolve));
@@ -210,7 +227,12 @@ describe('HeadlessCliRunner', () => {
 
   it('keeps the user\'s directory names out of the shell line', async () => {
     // cmd.exe expands %VAR% even inside quotes; a unix shell runs $(...) there.
-    const odd = new HeadlessCliRunner({ pty, workDir: path.join(dir, 'odd %PATH% $(name) dir'), timeoutMs: 20_000 });
+    const odd = new HeadlessCliRunner({
+      pty,
+      profileRuntime,
+      getWorkDir: runId => path.join(dir, 'odd %PATH% $(name) dir', runId),
+      timeoutMs: 20_000,
+    });
 
     await expect(odd.run(model(command('echo')), { prompt: 'p' })).resolves.toBe('REPLY<p>');
   }, 30_000);

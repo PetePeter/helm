@@ -28,6 +28,7 @@ export class SessionManager extends EventEmitter {
 
   private readonly projectStore?: ProjectStore;
   private readonly userProfileId: string;
+  private readonly hasExplicitProfileIdentity: boolean;
   private readonly sessionsFile?: string;
 
   constructor(options?: { userProfileId: string; sessionsFile: string; projectStore?: ProjectStore });
@@ -36,18 +37,27 @@ export class SessionManager extends EventEmitter {
     super();
     if (optionsOrProjectStore && 'userProfileId' in optionsOrProjectStore) {
       this.userProfileId = optionsOrProjectStore.userProfileId;
+      this.hasExplicitProfileIdentity = Boolean(optionsOrProjectStore.userProfileId.trim());
       this.sessionsFile = optionsOrProjectStore.sessionsFile;
       this.projectStore = optionsOrProjectStore.projectStore;
     } else {
       // Existing standalone consumers use an in-memory manager. Production
       // runtimes always inject both identity and persistence paths.
       this.userProfileId = '1';
+      this.hasExplicitProfileIdentity = false;
       this.projectStore = optionsOrProjectStore;
     }
   }
 
   getUserProfileId(): string {
     return this.userProfileId;
+  }
+
+  getSpawnCwdContext(): { userProfileId?: string; projectStore?: ProjectStore } {
+    return {
+      ...(this.hasExplicitProfileIdentity ? { userProfileId: this.userProfileId } : {}),
+      ...(this.projectStore ? { projectStore: this.projectStore } : {}),
+    };
   }
 
   /**
