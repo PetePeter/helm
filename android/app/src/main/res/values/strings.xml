@@ -279,6 +279,13 @@
     <string name="logs_export_saved">Log saved to %1$s</string>
     <string name="logs_export_empty">Nothing logged yet</string>
     <string name="logs_export_failed">Could not save the log: %1$s</string>
+    <string name="settings_glyph">⚙</string>
+    <string name="settings_menu_description">Settings</string>
+    <string name="settings_menu_description_muted">Settings, notifications muted</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="wireless_adb_label">Wireless debugging</string>
+    <string name="wireless_adb_ip">IP: %1$s</string>
+    <string name="wireless_adb_toggle_failed">Could not change wireless debugging.</string>
 
     <string name="control_overflow_glyph">⋮</string>
     <string name="control_action_snapshot">Terminal snapshot</string>

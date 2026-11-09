@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,7 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -202,25 +200,8 @@ fun HelmAppBar(
      */
     onOverflow: (() -> Unit)? = null,
     overflowGlyphRes: Int = R.string.control_overflow_glyph,
-    /**
-     * Export the log to Downloads. It sits immediately after the link badge
-     * because the two are read together: what the user reports is almost always
-     * "it says Linked but nothing arrives", and the evidence for that sentence
-     * is one tap away from the words that prompted it.
-     */
-    onExportLogs: (() -> Unit)? = null,
-    /**
-     * The master notification switch, when a screen offers it — only the session
-     * list does, because that is the screen the user is on when the buzzing
-     * becomes too much.
-     *
-     * A bell that changes glyph rather than a Material Switch: the bar is a row
-     * of equal-weight glyph actions, and a switch would be the only control in
-     * the app that renders its own state as a track. [notificationsEnabled] is
-     * the state it draws, hoisted like every other piece of state here.
-     */
-    notificationsEnabled: Boolean = true,
-    onToggleNotifications: (() -> Unit)? = null,
+    /** Settings owned by the root surface; other headers keep their existing actions. */
+    settings: SettingsMenuActions? = null,
 ) {
     Row(
         modifier = modifier
@@ -326,42 +307,7 @@ fun HelmAppBar(
                 onOpenDesktops = onLinkClick,
             )
         }
-        if (onToggleNotifications != null) {
-            Box(
-                modifier = Modifier
-                    .size(HelmSize.TouchTarget)
-                    .clickable(onClick = onToggleNotifications),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(
-                        if (notificationsEnabled) R.string.notifications_glyph_on
-                        else R.string.notifications_glyph_off,
-                    ),
-                    // Accent when live, Faint when silenced: the state must be
-                    // readable at a glance without counting bell strokes.
-                    color = if (notificationsEnabled) HelmColors.Accent else HelmColors.Faint,
-                    style = MaterialTheme.typography.titleLarge,
-                )
-            }
-        }
-        if (onExportLogs != null) {
-            Box(
-                modifier = Modifier
-                    .size(HelmSize.TouchTarget)
-                    .clickable(onClick = onExportLogs),
-                contentAlignment = Alignment.Center,
-            ) {
-                // A real diagnostic icon, not a glyph in a Text. The earlier
-                // down-arrow read as navigation rather than exporting the log.
-                Icon(
-                    painter = painterResource(R.drawable.ic_bug_report),
-                    contentDescription = stringResource(R.string.logs_export_description),
-                    tint = HelmColors.Dim,
-                    modifier = Modifier.size(HelmSize.Icon),
-                )
-            }
-        }
+        settings?.let { SettingsMenu(actions = it) }
         if (onOverflow != null) {
             // Same centred touch-target box as the back affordance: sizing
             // the glyph Text directly left blank space after it, so the

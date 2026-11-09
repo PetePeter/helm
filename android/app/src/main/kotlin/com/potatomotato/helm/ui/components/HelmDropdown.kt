@@ -6,8 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
@@ -64,13 +67,16 @@ import com.potatomotato.helm.ui.theme.HelmSize
  * surfaces); [selected] marks where you already are — with a check AND the
  * accent, because a colour alone cannot carry that for a colour-blind reader.
  * [separatorBefore] groups unlike things in one menu, such as a list of modes
- * followed by a way out to another screen.
+ * followed by a way out to another screen. [supportingText] adds a quiet second
+ * line, and [switchChecked] renders a stateful switch at the row's trailing edge.
  */
 data class HelmDropdownItem(
     val label: String,
     val glyph: String? = null,
     val selected: Boolean = false,
     val separatorBefore: Boolean = false,
+    val supportingText: String? = null,
+    val switchChecked: Boolean? = null,
 )
 
 /**
@@ -111,9 +117,14 @@ fun HelmDropdown(
                         color = HelmColors.Separator,
                     )
                 }
+                val selectItem = {
+                    expanded = false
+                    onSelect(index)
+                }
                 DropdownMenuItem(
                     text = {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
                         ) {
@@ -124,13 +135,35 @@ fun HelmDropdown(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
-                            Text(
-                                text = item.label,
-                                color = if (item.selected) HelmColors.Accent else HelmColors.Txt,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            if (item.selected) {
-                                Spacer(Modifier.weight(1f))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.label,
+                                    color = if (item.selected) HelmColors.Accent else HelmColors.Txt,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                item.supportingText?.let { supportingText ->
+                                    Text(
+                                        text = supportingText,
+                                        color = HelmColors.Dim,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    trailingIcon = when {
+                        item.switchChecked != null -> {
+                            {
+                                Switch(
+                                    checked = item.switchChecked,
+                                    onCheckedChange = { selectItem() },
+                                )
+                            }
+                        }
+                        item.selected -> {
+                            {
                                 Text(
                                     text = stringResource(R.string.context_glyph_check),
                                     color = HelmColors.Accent,
@@ -138,11 +171,9 @@ fun HelmDropdown(
                                 )
                             }
                         }
+                        else -> null
                     },
-                    onClick = {
-                        expanded = false
-                        onSelect(index)
-                    },
+                    onClick = selectItem,
                 )
             }
         }

@@ -10,6 +10,7 @@ import com.potatomotato.helm.ui.components.LoadNote
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.components.LoadViews
 import com.potatomotato.helm.ui.components.ProjectPicker
+import com.potatomotato.helm.ui.components.SettingsMenuActions
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -73,9 +74,12 @@ internal fun PhoneRootContent(state: PhoneScaffoldState, actions: PhoneScaffoldA
             },
             onSelectContextItem = { actions.root.onSelectHomeTab(HomeTab.entries[it]) },
             onLinkClick = actions.root.onLinkClick,
-            onExportLogs = actions.root.onExportLogs,
-            notificationsEnabled = state.notificationsEnabled,
-            onToggleNotifications = actions.root.onToggleNotifications,
+            settings = SettingsMenuActions(
+                notificationsEnabled = state.notificationsEnabled,
+                onToggleNotifications = actions.root.onToggleNotifications,
+                onExportLogs = actions.root.onExportLogs,
+                onOpenDesktops = actions.root.onLinkClick,
+            ),
         )
         Box(modifier = Modifier.weight(1f)) {
             when (state.homeState.homeTab) {

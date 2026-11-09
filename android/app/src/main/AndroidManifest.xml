@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
       The phone is the BLE PERIPHERAL: it advertises and serves a GATT server;
@@ -55,6 +56,11 @@
     <!-- Wi-Fi/Ethernet availability callbacks trigger a LAN dial the moment a
          network comes up (lan/NetworkWatcher.kt). Normal permission. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- WHY: wireless debugging is a protected global setting; if access is denied,
+         the menu sends the user to system Developer options instead of writing. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
