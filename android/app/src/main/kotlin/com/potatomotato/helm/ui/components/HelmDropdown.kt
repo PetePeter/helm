@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
+import com.potatomotato.helm.ui.keyboard.keyboardPttEvents
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSpacing
@@ -104,6 +105,7 @@ fun HelmDropdown(
             // The menu's own surface. Without this it inherits `surface`, which
             // in this theme is a shade off true black — a popup with no edge.
             modifier = Modifier
+                .keyboardPttEvents()
                 .background(HelmColors.Surface2)
                 .border(HelmSize.Hairline, HelmColors.Line, MenuShape)
                 .widthIn(min = MenuMinWidth),

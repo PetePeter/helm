@@ -1,6 +1,7 @@
 package com.potatomotato.helm.ui.components
 
 import com.potatomotato.helm.data.WirelessAdbState
+import com.potatomotato.helm.voice.PttKeyBinding
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -24,6 +25,7 @@ class SettingsMenuModelTest {
         assertEquals(
             listOf(
                 SettingsMenuAction.Notifications,
+                SettingsMenuAction.PttBinding,
                 SettingsMenuAction.WirelessAdb,
                 SettingsMenuAction.ExportLog,
                 SettingsMenuAction.Desktops,
@@ -31,8 +33,9 @@ class SettingsMenuModelTest {
             rows.map { it.action },
         )
         assertEquals(false, rows[0].switchChecked)
-        assertEquals(true, rows[1].switchChecked)
-        assertEquals("192.0.2.7", rows[1].supportingText)
+        assertEquals(PttKeyBinding.AltSpace, rows[1].pttBinding)
+        assertEquals(true, rows[2].switchChecked)
+        assertEquals("192.0.2.7", rows[2].supportingText)
     }
 
     @Test
@@ -43,7 +46,7 @@ class SettingsMenuModelTest {
         ).rows
 
         assertEquals(
-            listOf(SettingsMenuAction.Notifications, SettingsMenuAction.ExportLog, SettingsMenuAction.Desktops),
+            listOf(SettingsMenuAction.Notifications, SettingsMenuAction.PttBinding, SettingsMenuAction.ExportLog, SettingsMenuAction.Desktops),
             rows.map { it.action },
         )
     }
@@ -63,8 +66,17 @@ class SettingsMenuModelTest {
         assertNull(enabledWithoutIp.supportingText)
     }
 
+    @Test
+    fun `PTT binding row shows the persisted choice`() {
+        val binding = model(notificationsEnabled = true, pttBinding = PttKeyBinding.Backtick)
+            .rows.first { it.action == SettingsMenuAction.PttBinding }
+
+        assertEquals(PttKeyBinding.Backtick, binding.pttBinding)
+    }
+
     private fun model(
         notificationsEnabled: Boolean,
         wirelessAdb: WirelessAdbState = WirelessAdbState(supported = true, enabled = false, localIp = null),
-    ) = settingsMenuModel(notificationsEnabled, wirelessAdb)
+        pttBinding: PttKeyBinding = PttKeyBinding.AltSpace,
+    ) = settingsMenuModel(notificationsEnabled, wirelessAdb, pttBinding)
 }

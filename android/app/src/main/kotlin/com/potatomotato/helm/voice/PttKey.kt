@@ -72,6 +72,49 @@ sealed interface PttKey {
             else -> Start(target)
         }
 
+        /** One press entry for MyKey broadcasts, the Red Key, and keyboard bindings. */
+        fun press(context: Context, down: Boolean) {
+            val action = decide(
+                down = down,
+                liveCall = VoiceCallService.call.value != null,
+                target = target,
+            )
+            HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: ${action::class.simpleName}")
+            held = down
+            when (action) {
+                is Start -> {
+                    if (!unlocked(context)) return
+                    pendingStart = action.targetId
+                    bringForward(context)
+                }
+                Open -> if (unlocked(context)) bringForward(context)
+                is Hold -> VoiceCallService.setPttKeyHeld(context, action.held)
+            }
+        }
+
+        /** The operator key's lock rule: a phone just used may call over the lock screen. */
+        private fun unlocked(context: Context): Boolean {
+            val press = KeyPress.gate(
+                locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked,
+                inCall = false,
+                now = SystemClock.elapsedRealtime(),
+                callEndedAt = OperatorKey.callEndedAt,
+                screenOffAt = OperatorKey.screenOffAt,
+            )
+            if (press !is KeyPress.Open) {
+                HelmLog.i(HelmLog.UI, "PTT key ignored: locked too long, unlock first")
+                PttKey.say(context, context.getString(R.string.ptt_unlock_first))
+                return false
+            }
+            OperatorKey.overLockScreen = press.overLockScreen
+            return true
+        }
+
+        private fun bringForward(context: Context) = context.startActivity(
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        )
+
         /** One spoken line with no call to speak it in: on the media stream, then released. */
         fun say(context: Context, text: String) {
             var tts: TextToSpeech? = null
@@ -108,44 +151,6 @@ class PttKeyReceiver : BroadcastReceiver() {
             PttKey.ACTION_UP -> false
             else -> return
         }
-        val action = PttKey.decide(
-            down = down,
-            liveCall = VoiceCallService.call.value != null,
-            target = PttKey.target,
-        )
-        HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: ${action::class.simpleName}")
-        PttKey.held = down
-        when (action) {
-            is PttKey.Start -> {
-                if (!unlocked(context)) return
-                PttKey.pendingStart = action.targetId
-                bringForward(context)
-            }
-            PttKey.Open -> if (unlocked(context)) bringForward(context)
-            is PttKey.Hold -> VoiceCallService.setPttKeyHeld(context, action.held)
-        }
+        PttKey.press(context, down)
     }
-
-    /** The operator key's lock rule: a phone just used may call over the lock screen. */
-    private fun unlocked(context: Context): Boolean {
-        val press = KeyPress.gate(
-            locked = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked,
-            inCall = false,
-            now = SystemClock.elapsedRealtime(),
-            callEndedAt = OperatorKey.callEndedAt,
-            screenOffAt = OperatorKey.screenOffAt,
-        )
-        if (press !is KeyPress.Open) {
-            HelmLog.i(HelmLog.UI, "PTT key ignored: locked too long, unlock first")
-            PttKey.say(context, context.getString(R.string.ptt_unlock_first))
-            return false
-        }
-        OperatorKey.overLockScreen = press.overLockScreen
-        return true
-    }
-
-    private fun bringForward(context: Context) = context.startActivity(
-        Intent(context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-    )
 }

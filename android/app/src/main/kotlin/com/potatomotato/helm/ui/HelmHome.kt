@@ -47,9 +47,13 @@ import com.potatomotato.helm.save.AndroidLogFiles
 import com.potatomotato.helm.ui.artifacts.ArtifactEdit
 import com.potatomotato.helm.ui.call.rememberDialer
 import com.potatomotato.helm.voice.VoiceCallService
+import com.potatomotato.helm.voice.sharedPttKeyBindingStore
 import com.potatomotato.helm.ui.operator.operatorSummary
 import com.potatomotato.helm.ui.components.HomeTab
 import com.potatomotato.helm.ui.control.ActionNoticeBar
+import com.potatomotato.helm.ui.control.rememberSessionActionDialogState
+import com.potatomotato.helm.ui.keyboard.KeyboardFocusState
+import com.potatomotato.helm.ui.keyboard.KeyboardWorkspaceHost
 import com.potatomotato.helm.ui.operator.withoutOperator
 import com.potatomotato.helm.ui.plans.TaskLinks
 import com.potatomotato.helm.ui.plans.PlanScope
@@ -57,7 +61,6 @@ import com.potatomotato.helm.ui.plans.PlanSpawn
 import com.potatomotato.helm.ui.tablet.LayoutChooser
 import com.potatomotato.helm.ui.tablet.TabletLayout
 import com.potatomotato.helm.ui.tablet.TabletScaffold
-import androidx.compose.ui.input.key.type
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -65,6 +68,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val keyboardFocus = remember { KeyboardFocusState() }
+    val pttBindingStore = remember(context) { sharedPttKeyBindingStore(context) }
+    val keyboardActionDialogs = rememberSessionActionDialogState()
     val saveableStateHolder = rememberSaveableStateHolder()
     val linkState by HelmLink.state.collectAsState()
     val sessions by client.sessions.state.sessions.collectAsState()
@@ -455,16 +461,25 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             val layout = LayoutChooser.forWidth(maxWidth.value.toInt())
             val tabletSessions = layout != TabletLayout.Phone &&
                 homeState.homeTab == HomeTab.Sessions && homeState.destination == Destination.Thread
-            if (tabletSessions) {
-                TabletScaffold(phoneState, phoneActions, layout)
-            } else {
-                PhoneScaffold(phoneState, phoneActions)
-            }
-            PhoneOverlays(
+            KeyboardWorkspaceHost(
                 state = phoneState,
                 actions = phoneActions,
-                atRoot = phoneState.open == null && homeState.destination == Destination.Thread,
-            )
+                layout = layout,
+                focus = keyboardFocus,
+                bindingStore = pttBindingStore,
+                actionDialogs = keyboardActionDialogs,
+            ) {
+                if (tabletSessions) {
+                    TabletScaffold(phoneState, phoneActions, layout)
+                } else {
+                    PhoneScaffold(phoneState, phoneActions)
+                }
+                PhoneOverlays(
+                    state = phoneState,
+                    actions = phoneActions,
+                    atRoot = phoneState.open == null && homeState.destination == Destination.Thread,
+                )
+            }
         }
     }
 }

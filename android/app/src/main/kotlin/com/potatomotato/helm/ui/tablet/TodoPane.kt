@@ -16,12 +16,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.data.SessionTodo
 import com.potatomotato.helm.ui.components.Hairline
+import com.potatomotato.helm.ui.keyboard.LocalKeyboardFocusState
+import com.potatomotato.helm.ui.keyboard.keyboardFocusTarget
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
 @Composable
 internal fun TodoPane(todos: List<SessionTodo>, modifier: Modifier = Modifier) {
-    Column(modifier = modifier.fillMaxSize().background(HelmColors.Surface)) {
+    val keyboardFocus = LocalKeyboardFocusState.current
+    Column(
+        modifier = modifier.fillMaxSize()
+            .keyboardFocusTarget(keyboardFocus?.todoPaneRequester)
+            .background(HelmColors.Surface),
+    ) {
         Hairline()
         Text(
             text = "✓ ${todos.size} open",

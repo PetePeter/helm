@@ -1,6 +1,7 @@
 package com.potatomotato.helm.ui.chat
 
 import android.content.Context
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -57,6 +58,10 @@ import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmType
+import com.potatomotato.helm.ui.keyboard.KeyCommand
+import com.potatomotato.helm.ui.keyboard.KeyMap
+import com.potatomotato.helm.ui.keyboard.toKeyStroke
+import com.potatomotato.helm.voice.PttKeyBinding
 
 @Composable
 internal fun Composer(
@@ -89,6 +94,7 @@ internal fun Composer(
             ComposerDraft(
                 draft = draft,
                 onDraft = onDraft,
+                onSend = { onSend(draft.text) },
                 modifier = Modifier.weight(1f).heightIn(
                     min = if (horizontalActions) HelmSize.MicButton else STACKED_CONTROLS_HEIGHT,
                 ),
@@ -152,6 +158,7 @@ private fun ComposerNote(messageRes: Int) {
 private fun ComposerDraft(
     draft: TextFieldValue,
     onDraft: (TextFieldValue) -> Unit,
+    onSend: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -173,7 +180,19 @@ private fun ComposerDraft(
             onValueChange = onDraft,
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
             cursorBrush = SolidColor(HelmColors.Accent),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                if (KeyMap.command(
+                        stroke = event.toKeyStroke(),
+                        binding = PttKeyBinding.AltSpace,
+                        composerFocused = true,
+                    ) == KeyCommand.SendComposer
+                ) {
+                    onSend()
+                    true
+                } else {
+                    false
+                }
+            },
         )
     }
 }

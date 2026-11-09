@@ -33,6 +33,8 @@ import com.potatomotato.helm.data.sessionListState
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.PrimaryButton
+import com.potatomotato.helm.ui.keyboard.LocalKeyboardFocusState
+import com.potatomotato.helm.ui.keyboard.keyboardFocusTarget
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
@@ -71,8 +73,13 @@ fun SessionListScreen(
     // set is rebuilt on read, so duplicates cannot accumulate.
     var collapsedList by rememberSaveable { mutableStateOf(listOf<String>()) }
     val collapsed = collapsedList.toSet()
+    val keyboardFocus = LocalKeyboardFocusState.current
 
-    Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
+    Column(
+        modifier = modifier.fillMaxSize()
+            .keyboardFocusTarget(keyboardFocus?.sessionListRequester)
+            .background(HelmColors.Bg),
+    ) {
         // Only while there is nothing to pair WITH: once a desktop is connected
         // (or connecting) the button is an answer to a question already answered,
         // and it was crowding the list on every poll.

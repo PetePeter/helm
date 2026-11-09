@@ -4,13 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,13 +24,14 @@ import com.potatomotato.helm.ui.HomeAppBar
 import com.potatomotato.helm.ui.PhoneScaffoldActions
 import com.potatomotato.helm.ui.PhoneScaffoldState
 import com.potatomotato.helm.ui.SessionTabBody
+import com.potatomotato.helm.ui.components.TodoSheet
+import com.potatomotato.helm.ui.keyboard.LocalKeyboardFocusState
+import com.potatomotato.helm.ui.keyboard.keyboardFocusTarget
 import com.potatomotato.helm.ui.sessions.SessionListScreen
 import com.potatomotato.helm.ui.sessions.SessionRows
 import com.potatomotato.helm.ui.theme.HelmColors
-import com.potatomotato.helm.ui.theme.HelmSpacing
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 internal fun TabletScaffold(
     state: PhoneScaffoldState,
     actions: PhoneScaffoldActions,
@@ -45,14 +40,19 @@ internal fun TabletScaffold(
     val appContext = LocalContext.current.applicationContext
     val heightStore = remember(appContext) { SharedPreferencesTabletPaneHeightStore(appContext) }
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
-    var todosOpen by rememberSaveable { mutableStateOf(false) }
+    var fallbackTodosOpen by rememberSaveable { mutableStateOf(false) }
+    val keyboardFocus = LocalKeyboardFocusState.current
+    val todosOpen = keyboardFocus?.todosSheetOpen ?: fallbackTodosOpen
+    val setTodosOpen: (Boolean) -> Unit = { open ->
+        if (keyboardFocus != null) keyboardFocus.todosSheetOpen = open else fallbackTodosOpen = open
+    }
     val shellState = TabletShellState(pickerOpen, todosOpen)
     val session = state.open
     val atRoot = session == null && state.homeState.destination == com.potatomotato.helm.ui.Destination.Thread
     LaunchedEffect(layout) {
         if (layout == TabletLayout.Expanded) {
             pickerOpen = false
-            todosOpen = false
+            setTodosOpen(false)
         }
     }
     BackHandler(enabled = atRoot) { state.homeState.backAtRoot(state.homeState.leaving) }
@@ -60,11 +60,15 @@ internal fun TabletScaffold(
     BackHandler(enabled = layout == TabletLayout.Collapsed && (session != null || pickerOpen || todosOpen)) {
         val back = shellState.back()
         pickerOpen = back.state.pickerOpen
-        todosOpen = back.state.todosOpen
+        setTodosOpen(back.state.todosOpen)
         if (back.clearSessionSelection) state.homeState.clearSessionSelection()
     }
 
-    Box(modifier = state.modifier.fillMaxSize()) {
+    Box(
+        modifier = state.modifier.fillMaxSize().keyboardFocusTarget(
+            keyboardFocus?.sessionListRequester.takeIf { layout == TabletLayout.Collapsed },
+        ),
+    ) {
         TabletShellFrame(
             topBar = {
                 HomeAppBar(
@@ -101,7 +105,7 @@ internal fun TabletScaffold(
                                     onPickSession = { id ->
                                         val selection = shellState.pickSession(id)
                                         pickerOpen = selection.state.pickerOpen
-                                        todosOpen = selection.state.todosOpen
+                                        setTodosOpen(selection.state.todosOpen)
                                         state.homeState.selectSession(selection.sessionId)
                                     },
                                     onOpenTodos = {},
@@ -111,7 +115,7 @@ internal fun TabletScaffold(
                     } else {
                         CollapsedSession(state, actions, session, shellState) { next ->
                             pickerOpen = next.pickerOpen
-                            todosOpen = next.todosOpen
+                            setTodosOpen(next.todosOpen)
                         }
                     }
                     TabletLayout.Expanded -> ExpandedSession(state, actions, heightStore, shellState)
@@ -120,16 +124,7 @@ internal fun TabletScaffold(
         )
 
         if (layout == TabletLayout.Collapsed && todosOpen && session != null) {
-            ModalBottomSheet(
-                onDismissRequest = { todosOpen = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = HelmColors.Surface,
-            ) {
-                TodoPane(
-                    todos = session.todos,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(bottom = HelmSpacing.Xl),
-                )
-            }
+            TodoSheet(todos = session.todos, onDismiss = { setTodosOpen(false) })
         }
     }
 }

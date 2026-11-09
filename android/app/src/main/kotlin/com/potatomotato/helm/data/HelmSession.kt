@@ -86,7 +86,7 @@ data class HelmSession(
     fun statusIcons(nowMs: Long): String = listOfNotNull(
         "🔒".takeIf { locked },
         "❄️".takeIf { frozen },
-        "⏰".takeIf { (keepWarmUntilEpochMs ?: 0L) > nowMs },
+        "⏰".takeIf { isKeepWarmEnabled(keepWarmUntilEpochMs, nowMs) },
     ).joinToString(" ")
 
     /**
@@ -121,6 +121,10 @@ data class HelmSession(
     val groupLabel: String
         get() = machineName?.let { "🖥 $it" } ?: projectLabel
 }
+
+/** True only while the desktop-clock keep-warm deadline is still in the future. */
+internal fun isKeepWarmEnabled(untilEpochMs: Long?, nowMs: Long): Boolean =
+    untilEpochMs?.let { it > nowMs } == true
 
 enum class CacheStage { Fresh, Warn, Expired, Frozen }
 

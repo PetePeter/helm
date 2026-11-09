@@ -14,10 +14,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import com.potatomotato.helm.ui.keyboard.LocalKeyboardFocusState
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -48,6 +50,12 @@ fun ScrimDialog(
     body: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val keyboardFocus = LocalKeyboardFocusState.current
+    DisposableEffect(keyboardFocus) {
+        keyboardFocus?.registerInWindowModal()
+        onDispose { keyboardFocus?.unregisterInWindowModal() }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()

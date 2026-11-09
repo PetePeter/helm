@@ -44,6 +44,7 @@ import com.potatomotato.helm.telecom.HelmTelecom
 import com.potatomotato.helm.voice.MicMode
 import com.potatomotato.helm.voice.PttKey
 import com.potatomotato.helm.voice.VoiceCallService
+import com.potatomotato.helm.voice.sharedPttKeyBindingStore
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.PermissionRationale
@@ -55,6 +56,7 @@ import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmTheme
 import com.potatomotato.helm.ui.tablet.LayoutChooser
+import com.potatomotato.helm.ui.keyboard.KeyboardPttEvents
 
 /**
  * Shell. It owns only what must happen before there is anything to show: the
@@ -62,6 +64,9 @@ import com.potatomotato.helm.ui.tablet.LayoutChooser
  * prompt, which has to interrupt. Everything past that is [HelmHome].
  */
 class MainActivity : ComponentActivity() {
+    private var redKeyHeld = false
+    private val keyboardPttBindingStore by lazy { sharedPttKeyBindingStore(applicationContext) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Declared, not inherited. API 35 forces edge-to-edge on regardless of
         // this call, so saying it out loud is the difference between a layout
@@ -126,7 +131,18 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         showOverLockScreen(false)
         // The key-up of a held talk key never reaches a stopped activity.
-        if (VoiceCallService.call.value?.state?.pttHeld == true) VoiceCallService.setPttKeyHeld(this, false)
+        if (PttKey.held || VoiceCallService.call.value?.state?.pttHeld == true) {
+            redKeyHeld = false
+            KeyboardPttEvents.clearHeldKey()
+            PttKey.press(this, false)
+        }
+    }
+
+    /** PTT enters here before window focus, so a dialog cannot swallow the release. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (dispatchRedKey(event)) return true
+        if (KeyboardPttEvents.handle(this, event, keyboardPttBindingStore)) return true
+        return super.dispatchKeyEvent(event)
     }
 
     /**
@@ -135,16 +151,26 @@ class MainActivity : ComponentActivity() {
      * an accessibility service, and Play Protect blocks sideloaded apps that
      * declare one.
      */
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (!isTalkKey(keyCode)) return super.onKeyDown(keyCode, event)
-        if (event.repeatCount == 0) VoiceCallService.setPttKeyHeld(this, true)
-        return true
-    }
-
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        if (!isTalkKey(keyCode)) return super.onKeyUp(keyCode, event)
-        VoiceCallService.setPttKeyHeld(this, false)
-        return true
+    private fun dispatchRedKey(event: KeyEvent): Boolean {
+        if (event.keyCode != KeyEvent.KEYCODE_SEARCH) return false
+        return when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (redKeyHeld) return true
+                if (!isTalkKey(event.keyCode)) return false
+                if (event.repeatCount == 0) {
+                    redKeyHeld = true
+                    PttKey.press(this, true)
+                }
+                true
+            }
+            KeyEvent.ACTION_UP -> {
+                if (!redKeyHeld && !isTalkKey(event.keyCode)) return false
+                redKeyHeld = false
+                PttKey.press(this, false)
+                true
+            }
+            else -> false
+        }
     }
 
     private fun isTalkKey(keyCode: Int): Boolean =

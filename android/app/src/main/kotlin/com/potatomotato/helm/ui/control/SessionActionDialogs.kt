@@ -46,6 +46,7 @@ import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.SCRIM_ALPHA
+import com.potatomotato.helm.ui.keyboard.keyboardPttEvents
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -60,6 +61,8 @@ internal class SessionActionDialogState {
         private set
     var switching by mutableStateOf(false)
         private set
+
+    val isOpen: Boolean get() = confirmation != null || renaming || switching
 
     fun select(entry: SessionActionEntry): SessionAction? {
         if (!entry.permitted) return null
@@ -208,9 +211,11 @@ private fun ScreenLevelActionDialog(onDismiss: () -> Unit, content: @Composable 
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect { dialogWindow?.setDimAmount(0f) }
-        content()
+        Box(Modifier.fillMaxSize().keyboardPttEvents()) {
+            val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+            SideEffect { dialogWindow?.setDimAmount(0f) }
+            content()
+        }
     }
 }
 

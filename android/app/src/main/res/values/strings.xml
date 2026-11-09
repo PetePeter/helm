@@ -288,6 +288,12 @@
     <string name="settings_menu_description">Settings</string>
     <string name="settings_menu_description_muted">Settings, notifications muted</string>
     <string name="settings_notifications">Notifications</string>
+    <string name="settings_ptt_binding">Push-to-talk key</string>
+    <string name="settings_ptt_binding_title">Push-to-talk key</string>
+    <string name="settings_ptt_binding_alt_space">Alt + Space (default)</string>
+    <string name="settings_ptt_binding_right_control">Right Ctrl</string>
+    <string name="settings_ptt_binding_backtick">Backtick (`)</string>
+    <string name="settings_ptt_binding_cancel">Cancel</string>
     <string name="wireless_adb_label">Wireless debugging</string>
     <string name="wireless_adb_ip">IP: %1$s</string>
     <string name="wireless_adb_toggle_failed">Could not change wireless debugging.</string>

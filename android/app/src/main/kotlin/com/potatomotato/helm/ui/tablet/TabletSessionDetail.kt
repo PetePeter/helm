@@ -8,6 +8,7 @@ import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.ContextHistory
 import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.HelmSession
+import com.potatomotato.helm.data.isKeepWarmEnabled
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.ui.SessionTabScaffold
 import com.potatomotato.helm.ui.components.SessionTab
@@ -40,7 +41,7 @@ internal fun TabletSessionDetail(
     body: @Composable () -> Unit,
 ) {
     val nowMs = rememberEtaNow(listOfNotNull(session.eta))
-    val keepWarm = (session.keepWarmUntilEpochMs ?: 0L) > System.currentTimeMillis()
+    val keepWarm = isKeepWarmEnabled(session.keepWarmUntilEpochMs, System.currentTimeMillis())
     val actionModel = remember(keepWarm, session.frozen, capabilities) {
         sessionActions(keepWarm, session.frozen, capabilities)
     }
