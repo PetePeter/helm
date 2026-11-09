@@ -2,57 +2,31 @@ package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
-import com.potatomotato.helm.data.ArtifactIntent
 import com.potatomotato.helm.data.ArtifactUploads
-import com.potatomotato.helm.data.TimeAsk
 import com.potatomotato.helm.data.TimeRepository
-import com.potatomotato.helm.data.isFrozenRefusal
-import com.potatomotato.helm.data.StagedAttachment
-import com.potatomotato.helm.data.attachmentSliceBytes
 import com.potatomotato.helm.data.CapabilityCache
-import com.potatomotato.helm.data.AttachmentPulls
-import com.potatomotato.helm.data.ChatAttachment
-import com.potatomotato.helm.data.HelmArtifactAttachment
-import com.potatomotato.helm.data.PullState
-import com.potatomotato.helm.data.PullTarget
-import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.ChatRepository
 import com.potatomotato.helm.data.ContextRepository
 import com.potatomotato.helm.data.ControlRepository
 import com.potatomotato.helm.data.PlanRepository
-import com.potatomotato.helm.data.PlanStatus
-import com.potatomotato.helm.data.PlanWriteKind
 import com.potatomotato.helm.data.PlanWrites
 import com.potatomotato.helm.data.SequenceRepository
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
-import com.potatomotato.helm.data.SessionWire
 import com.potatomotato.helm.data.ShareFlow
 import com.potatomotato.helm.ble.HelmLink
-import com.potatomotato.helm.ble.RANK_LAN
 import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AlertRouter
-import com.potatomotato.helm.save.SavedFile
-import com.potatomotato.helm.wire.JsonNull
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.wire.MobileCallInterruption
-import com.potatomotato.helm.data.ArtifactRules
-
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-
 import org.json.JSONObject
 import com.potatomotato.helm.wire.MobileRecord
+
 
 /**
  * HelmClient — what the phone DOES with an authenticated link.
@@ -80,35 +54,40 @@ import com.potatomotato.helm.wire.MobileRecord
  */
 class HelmClient(
     /** Returns false when there is no authenticated link to carry the bytes. */
-    private val send: (ByteArray) -> Boolean,
-    private val now: () -> Long = System::currentTimeMillis,
-    private val scheduler: ChannelScheduler,
+    internal val send: (ByteArray) -> Boolean,
+    internal val now: () -> Long = System::currentTimeMillis,
+    internal val scheduler: ChannelScheduler,
     /**
      * Bytes the link has taken but not yet put on the wire — the backpressure
      * an upload paces itself against. See [HelmLink.pendingBytes] for why the
      * link has to be asked rather than inferred from [send]'s return value.
      */
-    private val linkPending: () -> Long = { HelmLink.pendingBytes },
+    internal val linkPending: () -> Long = { HelmLink.pendingBytes },
     /**
      * Where a file's slices are pumped. Its own scope, because that pump is the
      * one thing here that BLOCKS: it waits on the radio between slices, and the
      * inbound path it used to run on must never wait for anything.
      */
-    private val uploadScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
-    val sessions: SessionRepository = SessionRepository(),
-    val chats: ChatRepository = ChatRepository(),
-    val capabilities: CapabilityCache = CapabilityCache(),
-    val control: ControlRepository = ControlRepository(),
-    val artifacts: ArtifactRepository = ArtifactRepository(),
-    val plans: PlanRepository = PlanRepository(),
-    val sequences: SequenceRepository = SequenceRepository(),
-    val planWrites: PlanWrites = PlanWrites(),
-    val contexts: ContextRepository = ContextRepository(),
-    val time: TimeRepository = TimeRepository(),
-    val alerts: AlertRouter = AlertRouter(),
-    val uploads: ArtifactUploads = ArtifactUploads(),
-    val shares: ShareFlow = ShareFlow(),
+    internal val uploadScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    sessions: SessionRepository = SessionRepository(),
+    chats: ChatRepository = ChatRepository(),
+    capabilities: CapabilityCache = CapabilityCache(),
+    control: ControlRepository = ControlRepository(),
+    artifacts: ArtifactRepository = ArtifactRepository(),
+    plans: PlanRepository = PlanRepository(),
+    sequences: SequenceRepository = SequenceRepository(),
+    planWrites: PlanWrites = PlanWrites(),
+    contexts: ContextRepository = ContextRepository(),
+    time: TimeRepository = TimeRepository(),
+    alerts: AlertRouter = AlertRouter(),
+    uploads: ArtifactUploads = ArtifactUploads(),
+    shares: ShareFlow = ShareFlow(),
 ) {
+    val sessions = SessionClient(this, sessions, chats, alerts, control)
+    val artifacts = ArtifactClient(this, artifacts, uploads, shares, control, chats)
+    val plans = PlanClient(this, plans, sequences, planWrites, contexts)
+    val workspace = WorkspaceClient(this, capabilities, control, time, contexts)
+
     /**
      * Where a pushed LAN address list lands (P-0752).
      *
@@ -136,97 +115,15 @@ class HelmClient(
      */
     var linkedDesktop: () -> String = { "" }
 
-    /**
-     * The wire protocol the live link negotiated — 0 with no link. Uploads are a
-     * protocol-4 feature, so the editor's attach toolbar greys from THIS rather
-     * than from this build's own maximum: a protocol-3 desktop links fine and
-     * simply has no upload half to offer.
-     */
-    var negotiatedProtocol: () -> Int = { 0 }
-
-    /**
-     * A staged file's bytes, opened fresh for one upload attempt. Settable like
-     * [saveAttachment] — the staged copy lives in a Context-owned cache dir and
-     * this client is built before there is a Context. Null means the copy is
-     * gone (the system swept the cache mid-upload), which fails the chip rather
-     * than the link.
-     */
-    var openStagedAttachment: (StagedAttachment) -> java.io.InputStream? = { null }
-
-    /**
-     * Copy a pick into the app's own cache and measure it — size and whole-file
-     * sha256 — returning the staged file, or null when the pick could not be
-     * read. Suspends because the copy is disk I/O a tap must not do on the main
-     * thread. Settable for the same Context reason as [openStagedAttachment].
-     */
-    var stageAttachment: suspend (source: String, displayName: String, mimeType: String?) -> StagedAttachment? =
-        { _, _, _ -> null }
-
     /** Outstanding calls, oldest first, with optional deadlines that own their cleanup. */
     private val pending = LinkedHashMap<String, PendingCall>()
+
     private var sequence = 0L
-    private var shareSequence = 0L
-    private val shareLock = Any()
-    @Volatile private var activeShare: ActiveShare? = null
-    private var sessionRefreshInFlight = false
-    private var sessionRefreshQueued = false
-
-    /** Whether a screen showing sessions is visible right now. See [watchSessions]. */
-    private var sessionsWatched = false
-
-    /**
-     * Whether the held list may be behind Helm's. True until a fetch is issued,
-     * and again whenever Helm says the list moved, a fetch fails, or the link
-     * changes — a new link is a Helm that may have restarted.
-     */
-    private var sessionsStale = true
-
-    /**
-     * Whether the chat cursor has been reported on THIS link. The report rides
-     * the link-up hook first, but the hook is not guaranteed: after a failed
-     * handshake attempt the relink that follows can come up usable without
-     * `onLinked` ever firing (observed on real hardware — `__mobile_tools__`
-     * crosses, `__chat_cursor__` never does), and the threads stay empty for
-     * the whole process. [refreshStaleSessions] is the one pass that
-     * demonstrably runs whenever a screen is up, so an unreported cursor
-     * re-sends there within one interval. A duplicate report is harmless: the
-     * desktop replays from the same seq and [ChatRepository] dedupes by seq.
-     *
-     * The report also goes STALE after [CURSOR_REPORT_FRESH_MS]: a journal
-     * replay streamed over BLE can outrun a link that drops mid-stream, and the
-     * desktop — having answered the report — never sends the rest. Saying the
-     * cursor again after five minutes heals that hole on the next pass instead
-     * of at the next app restart, for the cost of a replay [ChatRepository]
-     * dedupes to nothing.
-     */
-    private var chatCursorReported = false
-
-    /** When [now] last stamped the report as issued — the freshness clock. */
-    private var chatCursorReportedAt = 0L
 
     private data class PendingCall(
         val onOutcome: (Outcome) -> Unit,
         val deadline: Cancellable?,
     )
-
-    /** A desktop's answer to a slot-open: where to send the bytes and how big a slice may be. */
-    private data class UploadOffer(
-        val uploadId: String,
-        val maxSliceBytes: Long,
-        val total: Long,
-    )
-
-    private class ActiveShare(
-        val attemptId: Long,
-        val sessionName: String,
-        val onLanded: ((String) -> Unit)?,
-    ) {
-        var offer: UploadOffer? = null
-        var job: Job? = null
-        var waitPrompt: Cancellable? = null
-        var cancelRequested = false
-        var cancelRequestPending = false
-    }
 
     /** How a call ended. A denial and a dead link are both [Failed] — by design. */
     sealed interface Outcome {
@@ -234,1697 +131,29 @@ class HelmClient(
         data class Failed(val message: String) : Outcome
     }
 
-    /**
-     * A screen showing sessions came into view, or left it.
-     *
-     * This is what replaced the two-second poll. The list is fetched when it is
-     * [sessionsStale] AND someone is looking; Helm then says once when it moves
-     * (a `changes` record), which makes it stale again. A phone in a pocket
-     * therefore hears at most one notice and asks for nothing.
-     */
-    fun watchSessions(watching: Boolean) {
-        sessionsWatched = watching
-        refreshStaleSessions()
-    }
-
-    /**
-     * Fetch the list if it is stale and on screen. Safe to call on a timer: it
-     * puts nothing on the wire while the list is fresh, and nothing while there
-     * is no usable link. That is how a fetch the link refused gets retried
-     * without any hook having to fire.
-     */
-    fun refreshStaleSessions() {
-        if (!sessionsWatched) return
-        // The chat cursor used to ride the session poll, which is gone. This
-        // pass is its heir: a no-op while the report is fresh, and the one
-        // request that still runs whenever a screen is up and the link usable.
-        reportChatCursorIfNeeded()
-        if (sessionsStale) refreshSessions()
-    }
-
-    /**
-     * Ask for the session list — everything on a first fetch, only what moved
-     * after that. At most one request crosses the link at a time; callers that
-     * arrive while it waits ask for one reconciliation afterward.
-     */
-    fun refreshSessions(): Boolean {
-        reportChatCursorIfNeeded()
-        if (sessionRefreshInFlight) {
-            sessionRefreshQueued = true
-            return true
-        }
-        sessionRefreshInFlight = true
-        // Fresh from the moment the request is ISSUED, not answered: a notice
-        // that lands while it is in flight must be able to mark it stale again.
-        sessionsStale = false
-        return call(METHOD_SESSION_LIST, sessionListParams()) { outcome ->
-            sessionRefreshInFlight = false
-            try {
-                // A failed refresh leaves the previous list standing: stale data
-                // is more useful than an empty lie.
-                if (outcome !is Outcome.Ok) {
-                    // A denial is an ANSWER, and asking again gets the same one;
-                    // only a new link can change it. Everything else — no link,
-                    // a timeout — is a fetch that still has to happen.
-                    if ((outcome as Outcome.Failed).message == MOBILE_DENY_MESSAGE) sessions.denied()
-                    else sessionsStale = true
-                    return@call
-                }
-                val changes = SessionWire.parseChanges(outcome.result)
-                if (changes == null) {
-                    HelmLog.w(HelmLog.CLIENT, "session_list answered ok but did not decode; the list is unchanged")
-                    sessions.undecodable()
-                    return@call
-                }
-                HelmLog.i(
-                    HelmLog.CLIENT,
-                    "session_list decoded ${changes.sessions.size} sessions, ${changes.removed.size} removed, " +
-                        "full=${changes.full}; the list held ${sessions.sessions.value.size} before the merge",
-                )
-                sessions.applyChanges(changes)
-                chats.retainSessions(sessions.sessions.value.mapTo(HashSet()) { it.id })
-                HelmLog.i(HelmLog.CLIENT, "the list holds ${sessions.sessions.value.size} after the merge")
-            } finally {
-                // A queued refresh is reconciliation, not a retry of only success.
-                refreshQueuedSessions()
-            }
-        }
-    }
-
-    /**
-     * `since` is ALWAYS sent: its presence is what selects the delta reply and
-     * tells Helm this phone wants to be told when the list moves. With no
-     * cursor it is 0 and no epoch, which Helm answers with the whole list.
-     */
-    private fun sessionListParams(): Map<String, Any> {
-        val cursor = sessions.cursor ?: return linkedMapOf("since" to 0L)
-        return linkedMapOf("since" to cursor.seq, "epoch" to cursor.epoch)
-    }
-
-    /**
-     * Helm says a feed moved. Only the session list is mirrored this way so far.
-     * A seq this phone already holds is its own fetch echoing back, not news.
-     */
-    private fun onChanges(record: MobileRecord.Changes) {
-        if (record.kind != SESSIONS_CHANGE_KIND) return
-        if (record.seq <= (sessions.cursor?.seq ?: -1L)) return
-        sessionsStale = true
-        refreshStaleSessions()
-    }
-
-    /**
-     * Reply into a session. The message appears immediately and is settled when
-     * the call comes back, so the user can see the difference between "sent" and
-     * "the desktop never answered".
-     */
-    fun sendChat(
-        sessionId: String,
-        text: String,
-        comfyProfileId: String? = null,
-        comfyImageSizeId: String? = null,
-        comfyInputImagePath: String? = null,
-        comfyInputAttachmentIds: List<String> = emptyList(),
-        interruption: MobileCallInterruption? = null,
-    ): Boolean {
-        val key = chats.sending(sessionId, text, now(), comfyProfileId, comfyImageSizeId, comfyInputImagePath, comfyInputAttachmentIds)
-        return issueText(
-            sessionId, text, key, comfyProfileId, comfyImageSizeId,
-            comfyInputImagePath, comfyInputAttachmentIds, interruption,
-        )
-    }
-
-    /**
-     * Send a FAILED message again — the ↻ under the bubble.
-     *
-     * The repository swaps the dead attempt for a fresh optimistic one (a retry
-     * is a new arrival, not a resurrection of the old row), and the wire ask
-     * settles THAT new message: the bubble the user pressed is already gone, so
-     * there is never a moment with two rows both claiming to be in flight.
-     * [text] comes from the bubble the retry was pressed on; the repository
-     * remains the authority on whether the attempt really failed.
-     */
-    fun resendChat(sessionId: String, key: String, text: String): Boolean {
-        val comfyProfileId = chats.comfyProfileId(sessionId, key)
-        val comfyImageSizeId = chats.comfyImageSizeId(sessionId, key)
-        val comfyInputImagePath = chats.comfyInputImagePath(sessionId, key)
-        val comfyInputAttachmentIds = chats.comfyInputAttachmentIds(sessionId, key)
-        val newKey = chats.retry(sessionId, key, now()) ?: return false
-        return issueText(
-            sessionId, text, key = newKey, comfyProfileId = comfyProfileId,
-            comfyImageSizeId = comfyImageSizeId, comfyInputImagePath = comfyInputImagePath,
-            comfyInputAttachmentIds = comfyInputAttachmentIds,
-        )
-    }
-
-    /**
-     * Thaw a frozen session, then (when [retry] names a refused bubble) send its
-     * text again. The list is refreshed either way so the ❄ and banner clear.
-     */
-    fun unfreeze(sessionId: String, retry: Pair<String, String>? = null): Boolean =
-        call(METHOD_SESSION_SET_FROZEN, linkedMapOf("sessionId" to sessionId, "frozen" to false)) { outcome ->
-            if (outcome is Outcome.Ok) retry?.let { (key, text) -> resendChat(sessionId, key, text) }
-            refreshSessions()
-        }
-
-    /** Change keep-warm on the desktop and reconcile the ⏰ row status. */
-    fun keepWarm(sessionId: String, on: Boolean): Boolean =
-        act(
-            if (on) SessionAction.KeepWarmOn else SessionAction.KeepWarmOff,
-            METHOD_SESSION_SET_KEEP_WARM,
-            linkedMapOf("sessionId" to sessionId, "on" to on),
-        ) { outcome -> if (outcome is Outcome.Ok) refreshSessions() }
-
-    /** Freeze or unfreeze a session from the session action sheet. */
-    fun setFrozen(sessionId: String, frozen: Boolean): Boolean =
-        act(
-            if (frozen) SessionAction.Freeze else SessionAction.Unfreeze,
-            METHOD_SESSION_SET_FROZEN,
-            linkedMapOf("sessionId" to sessionId, "frozen" to frozen),
-        ) { outcome -> if (outcome is Outcome.Ok) refreshSessions() }
-
-    /** One `session_send_text` ask, settling the optimistic row named by [key]. */
-    private fun issueText(
-        sessionId: String,
-        text: String,
-        key: String,
-        comfyProfileId: String? = null,
-        comfyImageSizeId: String? = null,
-        comfyInputImagePath: String? = null,
-        comfyInputAttachmentIds: List<String> = emptyList(),
-        interruption: MobileCallInterruption? = null,
-    ): Boolean {
-        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "text" to text)
-        comfyProfileId?.let { params["comfyProfileId"] = it }
-        comfyImageSizeId?.let { params["comfyImageSizeId"] = it }
-        comfyInputImagePath?.let { params["comfyInputImagePath"] = it }
-        if (text.trim() != "/cancel" && comfyInputAttachmentIds.isNotEmpty()) {
-            params["comfyInputAttachmentIds"] = comfyInputAttachmentIds
-        }
-        // The call id is chosen HERE rather than inside [call] because the
-        // desktop derives the echo's originId from it — this end must know it to
-        // recognise its own words when the journal replays them back.
-        val id = nextCallId()
-        val issued = call(METHOD_SESSION_SEND_TEXT, params, id = id, interruption = interruption) { outcome ->
-            chats.settle(
-                sessionId, key, outcome is Outcome.Ok,
-                frozen = outcome is Outcome.Failed && isFrozenRefusal(outcome.message),
-            )
-        }
-        if (issued) {
-            // Only a call the link actually carried is registered: the desktop
-            // journals only what it accepted, so claiming an echo for an unsent
-            // call would drop somebody else's history.
-            chats.sent("$machineId:$id", sessionId, key)
-        } else {
-            chats.settle(sessionId, key, delivered = false)
-        }
-        return issued
-    }
-
-    /**
-     * Delete chat rows — one (the bubble's ✕) or a selection. They go from the
-     * thread at once; the desktop is then told which of them it holds, so its
-     * journal, the other phones and — for an API-tool session — the model's
-     * history drop them too. Fire-and-forget: a failed call leaves the desktop's
-     * copy, which is what an unsent delete has always meant.
-     */
-    fun deleteChats(sessionId: String, keys: Set<String>) {
-        val items = chats.removeMany(sessionId, keys)
-        if (items.isEmpty()) return
-        val wire = items.map { item ->
-            if (item.seq != null) linkedMapOf<String, Any>("seq" to item.seq)
-            else linkedMapOf<String, Any>("originId" to item.originId!!)
-        }
-        call(METHOD_CHAT_DELETE, linkedMapOf<String, Any>("sessionId" to sessionId, "items" to wire)) { outcome ->
-            if (outcome is Outcome.Failed) HelmLog.w(HelmLog.CLIENT, "chat delete not applied on the desktop: ${outcome.message}")
-        }
-    }
-
-    /**
-     * Ask the gate what this device may do. The answer drives the greying on the
-     * control sheet, so it is asked for rather than assumed — a hardcoded list
-     * would eventually claim a permission the desktop had revoked.
-     */
-    fun refreshCapabilities(): Boolean = call(METHOD_MOBILE_TOOLS) { outcome ->
-        // A refused or unanswered discovery leaves the surface UNKNOWN rather
-        // than empty: "we could not ask" must not render as "you may not".
-        if (outcome is Outcome.Ok) capabilities.apply(outcome.result) else capabilities.forget()
-    }
-
-    /**
-     * Where an incoming RING goes (the operator calling). Set by the Android
-     * shell; null — tests, or before wiring — degrades to an ordinary alert.
-     * Returns false when it will not ring (a call is already live), and the
-     * ring degrades to an ordinary alert the same way.
-     */
-    @Volatile
-    var ringer: ((MobileRecord.Chat) -> Boolean)? = null
-
-    /**
-     * Where a TRANSFER goes (a session handing the live call to another). Set
-     * by the Android shell. Never an alert: with no call to move there is
-     * nothing to tell the user.
-     */
-    @Volatile
-    var transferrer: ((MobileRecord.Chat) -> Unit)? = null
-
-    /**
-     * Restart Helm on the linked desktop — the user's restart, answered in-gate
-     * (`RESERVED_RESTART_HELM_METHOD`), never the AI's handover-gated tool.
-     * [onOutcome] gets null on success, else the desktop's reason.
-     */
-    fun restartHelm(resume: Boolean, onOutcome: (String?) -> Unit): Boolean =
-        call(METHOD_RESTART_HELM, linkedMapOf<String, Any>("resume" to resume)) { outcome ->
-            onOutcome((outcome as? Outcome.Failed)?.message)
-        }
-
-    /** [sessionId]'s ring was answered here: Helm drops that session's one retry. Best-effort. */
-    fun ringAnswered(sessionId: String): Boolean =
-        call(METHOD_RING_ANSWERED, linkedMapOf<String, Any>("sessionId" to sessionId)) { }
-
-    /**
-     * Directories Helm knows about, for the spawn form. A failure is STATE, not
-     * a log line: an unanswered fetch used to leave the form hinting "waiting
-     * for the directory list" forever, which reads as patience when the truth is
-     * the call already died.
-     */
-    fun refreshDirectories(machineId: String? = null): Boolean {
-        control.directoriesRequested(machineId)
-        val answer: (Outcome) -> Unit = { outcome ->
-            // A late answer for a machine the user already left is not this list.
-            if (control.wantsDirectoriesOf(machineId)) {
-                when (outcome) {
-                    is Outcome.Ok -> if (!control.directoriesArrived(outcome.result)) {
-                        control.directoriesFailed(UNREADABLE_LIST)
-                    }
-                    is Outcome.Failed -> control.directoriesFailed(outcome.message)
-                }
-            }
-        }
-        if (machineId == null) return call(METHOD_DIRECTORY_LIST, onOutcome = answer)
-        // Another machine's folders: its own directory_list, relayed by the desktop.
-        // No `args`: directory_list takes none, and the desktop defaults a missing one to {}.
-        val params = linkedMapOf<String, Any>("peer" to machineId, "tool" to METHOD_DIRECTORY_LIST)
-        return call(METHOD_PEER_CALL, params, onOutcome = answer)
-    }
-
-    /**
-     * The fleet peers a session can be spawned on, for the spawn form's machine
-     * row. A refusal is not an error: it just means this desktop is the only choice.
-     */
-    fun refreshMachines(): Boolean = call(METHOD_PEER_LIST) { outcome ->
-        when (outcome) {
-            is Outcome.Ok -> if (!control.machinesArrived(outcome.result)) control.machinesUnavailable()
-            is Outcome.Failed -> control.machinesUnavailable()
-        }
-    }
-
-    /**
-     * The full CLI catalogue, for the spawn form. A refused or failed call is
-     * left to the form's fallback (harvesting the running sessions) rather than
-     * an error state: the fallback is a real feature, not a degraded one.
-     */
-    fun refreshClis(machineId: String? = null): Boolean {
-        control.clisRequested(machineId)
-        val answer: (Outcome) -> Unit = { outcome ->
-            // A late answer for a machine the user already left is not this list.
-            if (outcome is Outcome.Ok && control.wantsClisOf(machineId)) control.clisArrived(outcome.result)
-        }
-        if (machineId == null) return call(METHOD_TOOL_LIST, onOutcome = answer)
-        // Another machine's CLIs: its own catalogue, relayed like its folders.
-        val params = linkedMapOf<String, Any>("peer" to machineId, "tool" to METHOD_TOOL_LIST)
-        return call(METHOD_PEER_CALL, params, onOutcome = answer)
-    }
-
-    /**
-     * Pull the terminal tail on demand — never a stream. [lines] is bounded HERE,
-     * before any bytes reach the radio: the desktop buffer holds at most
-     * [MAX_SNAPSHOT_LINES], and asking for more would spend the link's budget on
-     * text that does not exist.
-     *
-     * The desktop returns xterm's rendered screen, so this app never grows a
-     * second escape-code parser or treats cursor updates as printed text.
-     */
-    fun readTerminal(sessionId: String, lines: Int): Boolean {
-        if (lines !in 1..MAX_SNAPSHOT_LINES) {
-            control.snapshotFailed("Ask for 1 to $MAX_SNAPSHOT_LINES lines")
-            return false
-        }
-        control.snapshotRequested(lines)
-        return readTerminal(sessionId, lines, SNAPSHOT_MODE)
-    }
-
-    /**
-     * Prefer the rendered screen. Older desktops can reject `screen`, and
-     * desktops whose xterm buffer API is not enabled cannot render it, so retry
-     * those known compatibility failures with their cleaned text tail.
-     */
-    private fun readTerminal(sessionId: String, lines: Int, mode: String): Boolean {
-        val params = linkedMapOf<String, Any>(
-            "sessionId" to sessionId,
-            // A NUMBER on the wire. The desktop reads it with a typeof check and
-            // silently ignores a quoted one, which would answer the default tail
-            // while this screen said otherwise.
-            "lines" to lines,
-            "mode" to mode,
-            "stripBlankLines" to false,
-        )
-        val issued = call(METHOD_READ_TERMINAL, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> control.snapshotArrived(outcome.result, lines)
-                is Outcome.Failed -> {
-                    if (mode == SNAPSHOT_MODE && (
-                            outcome.message.contains(LEGACY_SCREEN_MODE_ERROR) ||
-                                outcome.message.contains(PROPOSED_SCREEN_API_ERROR)
-                            )
-                    ) {
-                        readTerminal(sessionId, lines, LEGACY_SNAPSHOT_MODE)
-                    } else {
-                        control.snapshotFailed(outcome.message)
-                    }
-                }
-            }
-        }
-        return issued
-    }
-
-    /** Compact a session. Nothing to show but the outcome. */
-    fun compact(sessionId: String): Boolean =
-        act(SessionAction.Compact, METHOD_SESSION_COMPACT, linkedMapOf("sessionId" to sessionId))
-
-    fun clear(sessionId: String): Boolean =
-        act(SessionAction.Clear, METHOD_SESSION_CLEAR, linkedMapOf("sessionId" to sessionId))
-
-    fun quickCompact(sessionId: String): Boolean =
-        act(SessionAction.HelmCompact, METHOD_SESSION_QUICK_COMPACT, linkedMapOf("sessionId" to sessionId))
-
-    fun cloneSession(sessionId: String): Boolean =
-        act(SessionAction.Clone, METHOD_SESSION_CLONE, linkedMapOf("sessionId" to sessionId))
-
-    fun switchCli(sessionId: String, cliType: String): Boolean =
-        act(SessionAction.SwitchCli, METHOD_SESSION_SWITCH_CLI, linkedMapOf("sessionId" to sessionId, "cliType" to cliType))
-
-    fun stop(sessionId: String): Boolean =
-        act(SessionAction.Stop, METHOD_SESSION_SEND_INPUT, linkedMapOf("sessionId" to sessionId, "sequence" to "{Esc}"))
-
-    /**
-     * The artifacts of one session, for the artifacts screen. Like the terminal
-     * tail, this is PULLED when the screen asks for it, never streamed: the list
-     * is a bounded answer and the link's budget belongs to the user's taps.
-     */
-    fun refreshArtifacts(sessionId: String): Boolean {
-        artifacts.listRequested(sessionId)
-        return call(METHOD_SESSION_ARTIFACT_LIST, linkedMapOf("sessionId" to sessionId)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    // A shape the app cannot read is a failure the screen shows,
-                    // never a calm empty list that quietly means "no answer".
-                    if (!artifacts.listArrived(sessionId, outcome.result)) {
-                        artifacts.listFailed(sessionId, UNREADABLE_ARTIFACTS)
-                    }
-                is Outcome.Failed -> artifacts.listFailed(sessionId, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * One artifact's body — the version asked for, or the latest when [version]
-     * is null. The desktop sends exactly ONE version's content per answer, so
-     * version paging on the detail screen is a re-ask, not a local cache walk.
-     * The session id rides along to the repository because the read cache is
-     * per-session: the same artifact id in two sessions is two bodies, and a
-     * cached answer from the wrong session would be a convincing lie.
-     */
-    fun readArtifact(sessionId: String, artifactId: String, version: Int?): Boolean {
-        artifacts.readRequested(sessionId, artifactId, version)
-        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
-        if (version != null) params["version"] = version
-        return call(METHOD_SESSION_ARTIFACT_GET, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!artifacts.readArrived(sessionId, artifactId, version, outcome.result)) {
-                        artifacts.readFailed(artifactId, UNREADABLE_ARTIFACT)
-                    }
-                is Outcome.Failed -> artifacts.readFailed(artifactId, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * Mint a NEW markdown artifact for the session. `kind` rides as `md` on the
-     * wire — the desktop's session-addressed create refuses anything else
-     * (markdown-only in v1) — so the phone never authors a kind of its own.
-     *
-     * The body is budgeted HERE, before any bytes reach the radio, against the
-     * same 128KiB frame the desktop caps its answers with: a request the link
-     * cannot carry dies as a torn link, not as a refusal.
-     */
-    fun createArtifact(
-        sessionId: String,
-        title: String,
-        content: String,
-        attachmentKeys: List<String> = emptyList(),
-        intent: ArtifactIntent? = ArtifactIntent.Normal,
-    ): Boolean {
-        if (!ArtifactRules.fitsCreate(title, content)) {
-            control.noticed(SessionAction.CreateArtifact, ActionOutcome.Failed(TOO_LARGE))
-            return false
-        }
-        val params = linkedMapOf<String, Any>(
-            "sessionId" to sessionId,
-            "title" to ArtifactRules.title(title),
-            "kind" to CREATE_KIND,
-            "content" to content,
-        )
-        intent?.let { params["intent"] = it.wireValue }
-        return act(
-            SessionAction.CreateArtifact,
-            METHOD_SESSION_ARTIFACT_CREATE,
-            params,
-        ) { outcome ->
-            if (outcome is Outcome.Ok) {
-                val artifactId = idIn(outcome.result)
-                if (attachmentKeys.isEmpty() || artifactId == null) {
-                    control.artifactLanded(SessionAction.CreateArtifact, artifactId)
-                } else {
-                    // THE one deferral in this client: the notice that moves the
-                    // user waits until the staged files have crossed too. An
-                    // editor that closed on create would strand a half-sent
-                    // attachment with nowhere to show its failure.
-                    beginArtifactUploads(SessionAction.CreateArtifact, sessionId, artifactId)
-                }
-            }
-        }
-    }
-
-    /**
-     * Which action the staged-file chain is finishing, so the notice that lands
-     * when the last commit answers names what the user actually did.
-     *
-     * A field rather than an argument threaded through the chain because a retry
-     * tap arrives long after the chain began and has to land under the same
-     * heading; the repository already keeps the artifact and session for the same
-     * reason.
-     */
-    private var uploadAction: SessionAction = SessionAction.CreateArtifact
-
-    /**
-     * Whether the chain's end should navigate (the create/revise landing). A
-     * replace started from inside the editor must NOT: the user is mid-edit, and
-     * being thrown to the detail screen would discard the body they are typing.
-     */
-    private var landOnFinish: Boolean = true
-
-    /**
-     * Swap an existing attachment for a newly picked file, in the one order that
-     * cannot lose data: upload + commit the new file first, and delete the old
-     * one only once that commit has answered Ok (see the commit handler). An
-     * upload that fails leaves the original untouched and a retryable chip.
-     *
-     * If a chain is already running the replacement just joins its queue — two
-     * chains at once would interleave slices on the link.
-     */
-    fun replaceArtifactAttachment(
-        sessionId: String,
-        artifactId: String,
-        oldAttachmentId: String,
-        staged: StagedAttachment,
-    ): Boolean {
-        if (!uploads.stageReplacement(staged, oldAttachmentId)) return false
-        artifacts.attachmentEditStarted(oldAttachmentId)
-        if (uploads.anyUploading()) return true
-        landOnFinish = false
-        uploads.beginUploads(artifactId, sessionId)
-        startArtifactUploads(sessionId, artifactId)
-        return true
-    }
-
-    /**
-     * Start the staged-file chain against an artifact that now EXISTS.
-     *
-     * The one entry point for both halves of the editor: a create reaches it once
-     * the new id lands, a revise reaches it with the id it was already editing.
-     * Revise had no attachment path at all before this — staged files were
-     * silently dropped on submit, which looked exactly like an upload that failed
-     * without saying so.
-     */
-    fun beginArtifactUploads(action: SessionAction, sessionId: String, artifactId: String) {
-        uploadAction = action
-        landOnFinish = true
-        uploads.beginUploads(artifactId, sessionId)
-        startArtifactUploads(sessionId, artifactId)
-    }
-
-    /**
-     * Send the staged files of one create, one at a time, in staged order.
-     *
-     * Serial is a constraint, not a taste: the link's frame budget is small and
-     * its round trips expensive, and interleaving two files would spend both on
-     * progress nobody can read. Each file's chain is
-     * open-a-slot → stream slices → commit, and the next file starts only when
-     * this one's commit has ANSWERED — so a failure leaves exactly one chip to
-     * explain itself.
-     */
-    private fun startArtifactUploads(sessionId: String, artifactId: String) {
-        val next = uploads.pendingKeys().firstOrNull()
-        if (next == null) {
-            finishArtifactUploads(sessionId, artifactId)
-        } else {
-            sendArtifactAttachment(sessionId, artifactId, next)
-        }
-    }
-
-    /**
-     * Try the failed files again, first staged first. The editor's retry tap
-     * lands here; the repository remains the authority on what is still owed —
-     * this never re-sends a file the desktop has already committed.
-     */
-    fun retryArtifactUploads(): Boolean {
-        val artifactId = uploads.targetArtifactId ?: return false
-        val sessionId = uploads.targetSessionId ?: return false
-        if (uploads.pendingKeys().isEmpty()) return false
-        return sendArtifactAttachment(sessionId, artifactId, uploads.pendingKeys().first())
-    }
-
-    /**
-     * One file's chain, first half: open a slot on the desktop. The offer that
-     * comes back names the slot the raw slices address — the slices carry NO
-     * session, artifact or filename authority beyond that id, which is why the
-     * desktop can refuse a slice from any other device without guessing.
-     */
-    private fun sendArtifactAttachment(sessionId: String, artifactId: String, key: String): Boolean {
-        val staged = uploads.stagedAttachment(key)
-        if (staged == null) {
-            uploads.uploadFailed(key, STAGE_GONE)
-            return false
-        }
-        uploads.uploadStarted(key, staged.sizeBytes)
-        val params = linkedMapOf<String, Any>(
-            "sessionId" to sessionId,
-            "artifactId" to artifactId,
-            "filename" to staged.filename,
-            "sizeBytes" to staged.sizeBytes,
-            "sha256" to staged.sha256,
-        )
-        staged.mimeType?.takeIf { it.isNotBlank() }?.let { params["contentType"] = it }
-        return call(METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> {
-                    val offer = uploadOffer(outcome.result)
-                    if (offer == null) {
-                        uploads.uploadFailed(key, UNREADABLE_UPLOAD_OFFER)
-                    } else {
-                        streamArtifactUpload(sessionId, artifactId, key, staged, offer)
-                    }
-                }
-                is Outcome.Failed -> uploads.uploadFailed(key, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * One file's chain, middle: the bytes, as raw blob records addressed to the
-     * slot. Slice budget comes from the desktop's offer, clipped to a local
-     * ceiling so a generous offer can never push a frame past what this link's
-     * transports carry — the advertised number is the RECEIVER's tolerance, not
-     * a promise about our own radio.
-     *
-     * The file is re-read from zero on every attempt, and every attempt opens a
-     * NEW slot: a retry after a failed commit cannot know how much of the old
-     * slot survived, and an append into a slot of unknown depth is how a file
-     * arrives plausible and wrong.
-     */
-    private fun streamArtifactUpload(
-        sessionId: String,
-        artifactId: String,
-        key: String,
-        staged: StagedAttachment,
-        offer: UploadOffer,
-    ) {
-        // LAUNCHED, not run here. This is called from the inbound path — the
-        // collector that delivers every frame the desktop sends — and a file's
-        // worth of slices took that path hostage for the whole transfer, so
-        // nothing else the desktop said could be heard meanwhile. It also has to
-        // be able to WAIT (see [awaitFlushed]), which the inbound path must not.
-        uploadScope.launch { streamArtifactUploadSlices(sessionId, artifactId, key, staged, offer) }
-    }
-
-    private suspend fun streamArtifactUploadSlices(
-        sessionId: String,
-        artifactId: String,
-        key: String,
-        staged: StagedAttachment,
-        offer: UploadOffer,
-    ) {
-        val failure = pumpSlices(staged, offer) { sent -> uploads.uploadProgress(key, sent) }
-        if (failure != null) {
-            uploads.uploadFailed(key, failure)
-            return
-        }
-        // One file's chain, last half: the commit. The desktop verifies the size
-        // and the sha256 declared at slot-open against what actually arrived —
-        // the slices themselves are silent, so this is the only moment the
-        // phone learns whether the file exists on the other end.
-        val issued = call(
-            METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT,
-            linkedMapOf("uploadId" to offer.uploadId),
-        ) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> {
-                    uploads.uploadDone(key, attachmentIdIn(outcome.result))
-                    retireReplaced(sessionId, artifactId, key)
-                    startArtifactUploads(sessionId, artifactId)
-                }
-                is Outcome.Failed -> uploads.uploadFailed(key, outcome.message)
-            }
-        }
-        // A commit the link refused to carry fails the chip here rather than
-        // leaving it Uploading against a slot the desktop will evict.
-        if (!issued) uploads.uploadFailed(key, NOT_LINKED)
-    }
-
-    /**
-     * The bytes of one staged file, as raw blob records addressed to an open
-     * slot — shared by artifact attachments and share-to-Helm, which differ
-     * only in how the slot is opened and committed. Returns null when every
-     * slice left the phone, or the reason it could not.
-     */
-    private suspend fun pumpSlices(
-        staged: StagedAttachment,
-        offer: UploadOffer,
-        onProgress: (Long) -> Unit,
-    ): String? {
-        val input = openStagedAttachment(staged) ?: return STAGE_GONE
-        input.use { stream ->
-            val buffer = ByteArray(sliceBudget(offer.maxSliceBytes))
-            var offset = 0L
-            while (offset < staged.sizeBytes) {
-                val want = minOf(buffer.size.toLong(), staged.sizeBytes - offset).toInt()
-                var filled = 0
-                while (filled < want) {
-                    val read = stream.read(buffer, filled, want - filled)
-                    if (read < 0) break
-                    filled += read
-                }
-                if (filled <= 0) return STAGE_SHORT
-                val chunk = if (filled == buffer.size) buffer else buffer.copyOf(filled)
-                val last = offset + filled >= staged.sizeBytes
-                val frame = MobileEnvelope.encodeBlobUpload(
-                    id = offer.uploadId,
-                    filename = staged.filename,
-                    mimeType = staged.mimeType?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME,
-                    offset = offset,
-                    total = staged.sizeBytes,
-                    eof = last,
-                    bytes = chunk,
-                )
-                val before = linkPending()
-                if (!send(frame)) return NOT_LINKED
-                // Wait for the link to actually carry it before queueing more.
-                // The percentage is reported from HERE, never from the send
-                // above: over Bluetooth a send only enqueues, so a loop that
-                // believed itself would drain a 10MB file into the queue in
-                // milliseconds, show 100% at once, and then sit there for the
-                // several minutes the radio really takes.
-                awaitFlushed(base = offset, sliceBytes = filled, floor = before, onProgress = onProgress)
-                offset += filled
-                onProgress(offset)
-            }
-        }
-        return null
-    }
-
-    /**
-     * Share one staged file into [sessionId] (share-to-Helm). The same
-     * open → slices → commit chain as an artifact attachment, against the
-     * `session_share_file_*` pair: the desktop writes the file to its inbox and
-     * sends "Attached: <name> at <path>" to the session's CLI as a phone prompt.
-     * Progress and the outcome land on [shares].
-     *
-     * With [onLanded] it is a CHAT attachment instead: the commit sends `draft:false`
-     * (nothing sent to the CLI), and the desktop path is handed back for the
-     * composer to carry.
-     */
-    fun shareFile(
-        sessionId: String,
-        sessionName: String,
-        staged: StagedAttachment,
-        onLanded: ((path: String) -> Unit)? = null,
-    ): Boolean {
-        val attemptId = synchronized(shareLock) { ++shareSequence }
-        if (!shares.start(attemptId, staged.sizeBytes)) return false
-        val active = ActiveShare(attemptId, sessionName, onLanded)
-        synchronized(shareLock) {
-            activeShare = active
-            active.waitPrompt = scheduler.schedule(SHARE_WAIT_PROMPT_MS) {
-                shares.askToContinue(attemptId)
-            }
-        }
-        val params = linkedMapOf<String, Any>(
-            "sessionId" to sessionId,
-            "filename" to staged.filename,
-            "sizeBytes" to staged.sizeBytes,
-            "sha256" to staged.sha256,
-        )
-        staged.mimeType?.takeIf { it.isNotBlank() }?.let { params["contentType"] = it }
-        val issued = call(METHOD_SESSION_SHARE_FILE_ADD, params, requestDeadlineMs = null) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> {
-                    val offer = uploadOffer(outcome.result)
-                    if (offer == null) {
-                        failShare(active, UNREADABLE_UPLOAD_OFFER)
-                    } else {
-                        val shouldCancel = synchronized(shareLock) {
-                            if (activeShare !== active) return@call
-                            active.offer = offer
-                            active.cancelRequested
-                        }
-                        if (shouldCancel) {
-                            cancelRemoteShare(active, offer)
-                        } else {
-                            val job = uploadScope.launch { streamShare(active, staged, offer) }
-                            synchronized(shareLock) {
-                                if (activeShare === active && !active.cancelRequested) active.job = job
-                                else job.cancel()
-                            }
-                        }
-                    }
-                }
-                is Outcome.Failed -> failShare(active, outcome.message)
-            }
-        }
-        if (!issued) failShare(active, NOT_LINKED)
-        return issued
-    }
-
-    private suspend fun streamShare(
-        active: ActiveShare,
-        staged: StagedAttachment,
-        offer: UploadOffer,
-    ) {
-        try {
-            val failure = pumpSlices(staged, offer) { sent -> shares.progress(active.attemptId, sent) }
-            if (failure != null) {
-                cancelRemoteShare(active, offer)
-                failShare(active, failure)
-                return
-            }
-            val params = linkedMapOf<String, Any>("uploadId" to offer.uploadId)
-            if (active.onLanded != null) params["draft"] = false
-            val issued = call(
-                METHOD_SESSION_SHARE_FILE_COMMIT,
-                params,
-                requestDeadlineMs = null,
-            ) { outcome ->
-                when (outcome) {
-                    is Outcome.Ok -> finishShareSuccess(active, outcome.result)
-                    is Outcome.Failed -> failShare(active, outcome.message)
-                }
-            }
-            if (!issued) failShare(active, NOT_LINKED)
-        } catch (cancelled: CancellationException) {
-            val requested = synchronized(shareLock) { active.cancelRequested }
-            if (!requested) {
-                cancelRemoteShare(active, offer)
-                failShare(active, LINK_LOST)
-            }
-        } catch (failure: Exception) {
-            cancelRemoteShare(active, offer)
-            failShare(active, failure.message ?: SHARE_FAILED)
-        }
-    }
-
-    /** Continue is UI-only: the same upload request keeps running. */
-    fun continueShareWait(attemptId: Long) {
-        shares.continueWaiting(attemptId)
-    }
-
-    /** Stop the local pump and ask Helm to drop the slot (or report a racing commit). */
-    fun cancelShare(attemptId: Long) {
-        val active = synchronized(shareLock) {
-            activeShare?.takeIf { it.attemptId == attemptId && !it.cancelRequested }?.also {
-                it.cancelRequested = true
-                it.job?.cancel()
-                shares.cancelling(attemptId)
-            }
-        } ?: return
-        active.offer?.let { cancelRemoteShare(active, it) }
-    }
-
-    private fun cancelRemoteShare(active: ActiveShare, offer: UploadOffer) {
-        val issue = synchronized(shareLock) {
-            if (activeShare !== active || active.cancelRequestPending) false
-            else {
-                active.cancelRequestPending = true
-                true
-            }
-        }
-        if (!issue) return
-
-        call(
-            METHOD_SESSION_SHARE_FILE_CANCEL,
-            linkedMapOf("uploadId" to offer.uploadId),
-            requestDeadlineMs = null,
-        ) { outcome ->
-            when (outcome) {
-                is Outcome.Failed -> failShare(active, outcome.message)
-                is Outcome.Ok -> {
-                    val result = json(outcome.result)
-                    val receipt = result?.optJSONObject("receipt")
-                    if (result?.optBoolean("committed") == true && receipt != null) {
-                        finishShareSuccess(active, receipt)
-                    } else {
-                        finishShareCancelled(active)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun finishShareSuccess(active: ActiveShare, result: Any?) {
-        val path = json(result)?.opt("path") as? String
-        shares.done(active.attemptId, active.sessionName)
-        path?.let { active.onLanded?.invoke(it) }
-        retireShare(active)
-    }
-
-    private fun finishShareCancelled(active: ActiveShare) {
-        shares.cancelled(active.attemptId)
-        retireShare(active)
-    }
-
-    private fun failShare(active: ActiveShare, message: String) {
-        shares.failed(active.attemptId, message)
-        retireShare(active)
-    }
-
-    private fun retireShare(active: ActiveShare) {
-        synchronized(shareLock) {
-            if (activeShare === active) {
-                active.waitPrompt?.cancel()
-                activeShare = null
-            }
-        }
-    }
-
-    /**
-     * Block until the slice just sent has left the phone, reporting what has
-     * really gone as it drains.
-     *
-     * [floor] is what was already pending before the slice was handed over, so
-     * the wait is for THIS slice and not for the queue to reach zero. The
-     * reported figure interpolates inside the slice: a slice is up to a megabyte
-     * and a Bluetooth link takes minutes over one, so a bar that moved only at
-     * slice boundaries would be indistinguishable from a frozen one.
-     *
-     * POLLED rather than pushed. A drained-to-here callback would have to be
-     * threaded from the GATT queue through HelmLink to here, fire on a binder
-     * thread, and be unsubscribed on every failure path — all to learn a number
-     * that is already readable. The cost is one cheap read per tick of a
-     * transfer measured in minutes.
-     *
-     * Returns when the slice is gone OR when the link discarded its queue (a
-     * dropped link empties it): both leave nothing of this slice pending, and
-     * the commit that follows is what tells the user which one happened.
-     */
-    private suspend fun awaitFlushed(base: Long, sliceBytes: Int, floor: Long, onProgress: (Long) -> Unit) {
-        val queued = (linkPending() - floor).coerceAtLeast(0L)
-        // Nothing waiting means the transport flushes as it sends — LAN does —
-        // and there is nothing to wait for.
-        if (queued <= 0L) return
-        while (true) {
-            pause(FLUSH_POLL_MS)
-            val outstanding = (linkPending() - floor).coerceAtLeast(0L)
-            if (outstanding <= 0L) return
-            val gone = (queued - outstanding) * sliceBytes / queued
-            onProgress(base + gone)
-        }
-    }
-
-    /**
-     * Sleep on the class's OWN clock — [scheduler] — rather than on `delay`.
-     *
-     * Every other deadline here is already the scheduler's, so a test that can
-     * drive a call timeout can drive this too, and the pacing loop above stays
-     * as testable as the rest of the file instead of needing wall time.
-     */
-    private suspend fun pause(delayMs: Long) = suspendCancellableCoroutine { continuation ->
-        val armed = scheduler.schedule(delayMs) { continuation.resume(Unit) }
-        continuation.invokeOnCancellation { armed.cancel() }
-    }
-
-    /** The whole stage landed: NOW the edit moves the user, like a bare one would. */
-    private fun finishArtifactUploads(sessionId: String, artifactId: String) {
-        if (landOnFinish) control.artifactLanded(uploadAction, artifactId)
-        refreshArtifacts(sessionId)
-    }
-
-    /**
-     * Revise an artifact the session owns. Only the CHANGED fields ride
-     * `session_artifact_update`: a new body appends a version, a new title
-     * renames (the desktop adds no version for a title-only call). No
-     * follow-up ask is made: returning to the detail screen re-pulls the body
-     * the way every visit does, and that re-pull is the reconciliation.
-     *
-     * Staged files ride a revise exactly as they ride a create, against the id
-     * being edited. A revise that ONLY adds files skips the update call and
-     * starts the upload chain straight away.
-     */
-    fun reviseArtifact(
-        sessionId: String,
-        artifactId: String,
-        revision: ArtifactRules.Revision,
-        attachmentKeys: List<String> = emptyList(),
-        intent: ArtifactIntent? = null,
-    ): Boolean {
-        if (revision.changesText && !ArtifactRules.fitsRevise(revision)) {
-            control.noticed(SessionAction.ReviseArtifact, ActionOutcome.Failed(TOO_LARGE))
-            return false
-        }
-        if (!revision.changesText && revision.newTitle == null && intent != null) {
-            val params = linkedMapOf<String, Any>(
-                "sessionId" to sessionId,
-                "artifactId" to artifactId,
-                "intent" to intent.wireValue,
-            )
-            return act(SessionAction.SetArtifactIntent, METHOD_SESSION_ARTIFACT_SET_INTENT, params) { outcome ->
-                if (outcome is Outcome.Ok) {
-                    if (attachmentKeys.isEmpty()) control.artifactLanded(SessionAction.ReviseArtifact, artifactId)
-                    else beginArtifactUploads(SessionAction.ReviseArtifact, sessionId, artifactId)
-                }
-            }
-        }
-        if (!revision.changesText && intent == null) {
-            if (attachmentKeys.isEmpty()) return false
-            beginArtifactUploads(SessionAction.ReviseArtifact, sessionId, artifactId)
-            return true
-        }
-        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
-        revision.newBody?.let { params["content"] = it }
-        revision.newTitle?.let { params["title"] = it }
-        intent?.let { params["intent"] = it.wireValue }
-        return act(SessionAction.ReviseArtifact, METHOD_SESSION_ARTIFACT_UPDATE, params) { outcome ->
-            if (outcome is Outcome.Ok) {
-                if (attachmentKeys.isEmpty()) {
-                    control.artifactLanded(SessionAction.ReviseArtifact, artifactId)
-                } else {
-                    // Same deferral a create makes: the notice that closes the
-                    // editor waits for the last commit, so a failed upload still
-                    // has a chip to explain itself on.
-                    beginArtifactUploads(SessionAction.ReviseArtifact, sessionId, artifactId)
-                }
-            }
-        }
-    }
-
-    /**
-     * Delete exactly ONE artifact. There is no bulk delete on the wire and this
-     * app offers none; the artifacts screen confirms before this call exists.
-     */
-    fun deleteArtifact(sessionId: String, artifactId: String): Boolean =
-        act(
-            SessionAction.DeleteArtifact,
-            METHOD_SESSION_ARTIFACT_DELETE,
-            linkedMapOf("sessionId" to sessionId, "artifactId" to artifactId),
-        ) { outcome ->
-            if (outcome is Outcome.Ok) control.artifactLanded(SessionAction.DeleteArtifact, artifactId)
-        }
-
-    /**
-     * Fetch one artifact as a FILE — `{filename, mimeType, base64, …}` — rather
-     * than inline content. The outcome is deliberately NOT noticed on `Ok`: the
-     * bytes have not been saved yet, and the notice that says "saved" waits for
-     * the device sink. A refusal or a dead link IS noticed like any other
-     * action, because those are verdicts the user must be able to read.
-     */
-    fun downloadArtifact(sessionId: String, artifactId: String, version: Int? = null): Boolean {
-        artifacts.downloadRequested(artifactId)
-        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
-        if (version != null) params["version"] = version
-        return fetchArtifactFile(artifactId, params)
-    }
-
-    /**
-     * Fetch one artifact's ATTACHMENT — a binary file the desktop stores beside
-     * the artifact and the list names as metadata — by the same
-     * `session_artifact_download` tool, with `attachmentId` instead of `version`
-     * (the desktop refuses the two together).
-     *
-     * SLICED, exactly like a chat attachment, and for a reason that was once a
-     * bug: the desktop always slices an attachment and DEFAULTS the length to one
-     * slice budget, so a single ask with no offset answers the first slice and
-     * nothing more. This screen used to save that answer as if it were the whole
-     * file, which is how a multi-megabyte image arrived truncated and opened
-     * corrupt. An artifact BODY download stays single-shot — it has its own
-     * inline cap and is answered whole.
-     */
-    fun downloadArtifactAttachment(
-        sessionId: String,
-        artifactId: String,
-        attachment: HelmArtifactAttachment,
-        previewOnly: Boolean = false,
-    ): Boolean = pullAttachment(
-        sessionId,
-        artifacts.attachmentPulls,
-        PullTarget(
-            key = artifactAttachmentKey(artifactId, attachment.id),
-            artifactId = artifactId,
-            attachmentId = attachment.id,
-            filename = attachment.filename,
-            // The desktop's content type is a hint it may never have had; a file
-            // with no type still saves, as the generic one.
-            mimeType = attachment.contentType?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME,
-            sizeBytes = attachment.sizeBytes,
-            sha256 = attachment.sha256,
-            generatedMedia = attachment.generatedMedia,
-            previewOnly = previewOnly,
-        ),
-    )
-
-    /** Load an artifact image for the gallery without adding it to Downloads. */
-    fun previewArtifactAttachment(
-        sessionId: String,
-        artifactId: String,
-        attachment: HelmArtifactAttachment,
-    ): Boolean = downloadArtifactAttachment(sessionId, artifactId, attachment, previewOnly = true)
-
-    /**
-     * Where a pulled chat attachment is written, and what to call the place it
-     * landed. A settable port for the same reason [onLanAddresses] is one: the
-     * device sink needs a Context and this client is built before there is one.
-     * The default refuses, so a build that never wires it fails legibly on the
-     * tile rather than pretending to have saved something.
-     */
-    var saveAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> SavedFile = { _, _, _ ->
-        throw IllegalStateException(NO_FILE_SINK)
-    }
-
-    /** Temporary image previews use app cache; explicit downloads use [saveAttachment]. */
-    var savePreviewAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> SavedFile = { _, _, _ ->
-        throw IllegalStateException(NO_FILE_SINK)
-    }
-
-    /**
-     * Fetch a chat attachment, slice by slice, and save it when the last one
-     * lands.
-     *
-     * The loop lives here rather than in the screen because a transfer outruns
-     * its composable: scrolling the tile away or leaving the thread must not
-     * restart a fetch that is halfway across a BLE link. Each slice's answer
-     * asks for the next one — no timer, no concurrency, and therefore no way
-     * for two slices to be in flight writing into one buffer.
-     *
-     * Returns false when there is nothing to start: no link, or a fetch for
-     * this message is already running.
-     */
-    fun pullChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean =
-        pullAttachment(
-            sessionId,
-            chats.attachmentPulls,
-            PullTarget(
-                key = key,
-                artifactId = attachment.artifactId,
-                attachmentId = attachment.attachmentId,
-                filename = attachment.filename,
-                mimeType = attachment.mimeType,
-                sizeBytes = attachment.sizeBytes,
-                sha256 = attachment.sha256,
-                generatedMedia = attachment.generatedMedia,
-            ),
-        )
-
-    /**
-     * Fetch ANY attachment, slice by slice, and save it when the last one lands.
-     *
-     * [pulls] is which set of rows is watching — a chat thread's or an artifact
-     * screen's. Nothing below this line knows the difference, which is the point:
-     * the slicing rules are hard-won (out-of-order answers, duplicate answers,
-     * resume-at-the-gap) and a second copy of them would be a second chance to
-     * get them wrong.
-     */
-    fun pullAttachment(sessionId: String, pulls: AttachmentPulls, target: PullTarget): Boolean {
-        if (!pulls.pullStarted(target.key, target.sizeBytes, target.sha256, target.generatedMedia)) return false
-        return fillPipeline(sessionId, pulls, target)
-    }
-
-    /**
-     * Keep the window full. Called to start, and again as each answer lands.
-     *
-     * The driver decides what may be asked for; this only issues it. That keeps
-     * the one rule that matters — how much is in flight — in the place that can
-     * be tested without a link.
-     */
-    private fun fillPipeline(sessionId: String, pulls: AttachmentPulls, target: PullTarget): Boolean {
-        var issued = false
-        while (true) {
-            // Sized against the transport that owns the link right now: LAN
-            // preempts BLE mid-transfer, and a slice sized for the wrong one is
-            // refused, not merely slow.
-            val sliceBytes = attachmentSliceBytes(HelmLink.holderRank, RANK_LAN)
-            val offset = pulls.nextAsk(target.key, sliceBytes) ?: return issued
-            issued = true
-            if (!requestSlice(sessionId, pulls, target, offset, sliceBytes)) return issued
-        }
-    }
-
-    private fun requestSlice(
-        sessionId: String,
-        pulls: AttachmentPulls,
-        target: PullTarget,
-        offset: Long,
-        sliceBytes: Int,
-    ): Boolean = call(
-        METHOD_SESSION_ARTIFACT_DOWNLOAD,
-        linkedMapOf(
-            "sessionId" to sessionId,
-            "artifactId" to target.artifactId,
-            "attachmentId" to target.attachmentId,
-            "offset" to offset,
-            "length" to sliceBytes,
-        ),
-    ) { outcome ->
-        when (outcome) {
-            is Outcome.Ok -> takeSlice(sessionId, pulls, target, offset, outcome.result)
-            is Outcome.Failed -> pulls.pullFailed(target.key, outcome.message)
-        }
-    }
-
-    /**
-     * One slice's answer, which arrives as RAW BYTES in a [MobileRecord.Blob] —
-     * no base64, no JSON around the body. An answer of any other shape is a
-     * failure, not an empty slice: treating it as empty would leave the loop
-     * asking for the same offset forever.
-     */
-    private fun takeSlice(
-        sessionId: String,
-        pulls: AttachmentPulls,
-        target: PullTarget,
-        offset: Long,
-        result: Any?,
-    ) {
-        val blob = result as? MobileRecord.Blob
-        if (blob == null) {
-            HelmLog.w(HelmLog.CLIENT, "an attachment slice did not arrive as a binary record")
-            pulls.pullFailed(target.key, UNREADABLE_DOWNLOAD)
-            return
-        }
-
-        val whole = pulls.sliceArrived(target.key, offset, blob.bytes, blob.eof)
-        if (whole == null) {
-            // More to come. Top the window back up — a slot just freed.
-            if (pulls.pullState(target.key) is PullState.Pulling) {
-                fillPipeline(sessionId, pulls, target)
-            }
-            return
-        }
-
-        try {
-            // The desktop's own filename for the slice wins where it has one: it
-            // is the name the file was stored under, and the metadata row may be
-            // older than a rename.
-            val name = blob.filename.takeIf { it.isNotBlank() } ?: target.filename
-            val saved = if (target.previewOnly) {
-                savePreviewAttachment(name, target.mimeType, whole)
-            } else {
-                saveAttachment(name, target.mimeType, whole)
-            }
-            pulls.pullSaved(target.key, saved.location, saved.uri, previewOnly = target.previewOnly)
-        } catch (error: Exception) {
-            HelmLog.w(HelmLog.CLIENT, "a pulled attachment could not be written to storage")
-            pulls.pullFailed(target.key, error.message ?: NO_FILE_SINK)
-        }
-    }
-
-    /**
-     * Bin ONE attachment without binning the artifact that holds it — the single
-     * path for the editor's delete, a replace's second half, and a chat tile's
-     * delete. On Ok the cached artifact row loses it at once (and a re-pull
-     * reconciles); on failure the row stays and records why. [onDeleted] is for
-     * callers with their own mirror to prune, like the chat tile.
-     */
-    fun deleteArtifactAttachment(
-        sessionId: String,
-        artifactId: String,
-        attachmentId: String,
-        onDeleted: () -> Unit = {},
-    ): Boolean {
-        artifacts.attachmentEditStarted(attachmentId)
-        return act(
-            SessionAction.DeleteArtifact,
-            METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE,
-            linkedMapOf(
-                "sessionId" to sessionId,
-                "artifactId" to artifactId,
-                "attachmentId" to attachmentId,
-            ),
-        ) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> {
-                    artifacts.attachmentRemoved(sessionId, artifactId, attachmentId)
-                    onDeleted()
-                }
-                is Outcome.Failed -> artifacts.attachmentEditFailed(attachmentId, outcome.message)
-            }
-        }
-    }
-
-    /** A chat tile's delete: the artifact attachment, then the tile that showed it. */
-    fun deleteChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean =
-        deleteArtifactAttachment(sessionId, attachment.artifactId, attachment.attachmentId) {
-            chats.remove(sessionId, key)
-        }
-
-    /**
-     * A replacement's commit answered Ok: only NOW is the old file deleted. The
-     * chip retires once the delete lands, and the list re-pull shows the swap.
-     */
-    private fun retireReplaced(sessionId: String, artifactId: String, key: String) {
-        val old = uploads.replaces(key) ?: return
-        deleteArtifactAttachment(sessionId, artifactId, old) {
-            uploads.unstage(key)
-            refreshArtifacts(sessionId)
-        }
-    }
-
-    /** One `session_artifact_download` ask; [artifactId] is who the answer belongs to. */
-    private fun fetchArtifactFile(artifactId: String, params: Map<String, Any>): Boolean =
-        call(METHOD_SESSION_ARTIFACT_DOWNLOAD, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!artifacts.downloadArrived(artifactId, outcome.result)) {
-                        artifacts.downloadFailed(artifactId, UNREADABLE_DOWNLOAD)
-                    }
-                is Outcome.Failed -> {
-                    control.noticed(SessionAction.SaveArtifact, outcomeFor(outcome))
-                    artifacts.downloadFailed(artifactId, outcome.message)
-                }
-            }
-        }
-
-    /**
-     * Rename a session. The list is the only place the new name shows, so success
-     * pulls it the way a close does; the notice bar says the rest.
-     */
-    fun renameSession(sessionId: String, newName: String): Boolean =
-        act(SessionAction.Rename, METHOD_SESSION_RENAME, linkedMapOf("sessionId" to sessionId, "newName" to newName)) { outcome ->
-            if (outcome is Outcome.Ok) refreshSessions()
-        }
-
-    /**
-     * Close a session. Expect a refusal for anything this phone did not create:
-     * the gate lets a device close only its own sessions, and the permitted-tools
-     * cache cannot see that rule. The refusal is reported as a rule, not a fault.
-     */
-    fun closeSession(sessionId: String): Boolean =
-        act(SessionAction.Close, METHOD_SESSION_CLOSE, linkedMapOf("sessionId" to sessionId)) { outcome ->
-            if (outcome is Outcome.Ok) refreshSessions()
-        }
-
-    /**
-     * Spawn a session. The one CREATING action, and the only one this phone
-     * will then own.
-     *
-     * A blank name is OMITTED from the wire rather than sent empty:
-     * `session_create` treats the name as optional and the desktop names the
-     * session after the CLI type. The created session id is recorded on success
-     * so the UI can open the thread; everything else about the outcome is the
-     * notice bar's to say.
-     *
-     * [initialPrompt] is the plan spawner's first instruction; the desktop
-     * delivers it once the CLI has started, so the phone never times it.
-     */
-    fun spawn(
-        dirPath: String,
-        cliType: String,
-        name: String,
-        initialPrompt: String? = null,
-        machineId: String? = null,
-    ): Boolean {
-        // Two taps are two sessions: the flag rises on the first, so a repeat
-        // that beat the button's recomposition is refused here.
-        if (control.spawnInFlight.value) return false
-        val params = linkedMapOf<String, Any>("dirPath" to dirPath, "cliType" to cliType)
-        if (name.isNotBlank()) params["name"] = name.trim()
-        if (!initialPrompt.isNullOrBlank()) params["initialPrompt"] = initialPrompt
-        // On another machine: the desktop starts it there and opens it as its own
-        // Remote row, whose LOCAL id comes back — so the thread opens the same way.
-        val method = if (machineId == null) METHOD_SESSION_CREATE else METHOD_PEER_SPAWN
-        if (machineId != null) params["peer"] = machineId
-        control.spawnStarted()
-        return act(SessionAction.Spawn, method, params) { outcome ->
-            // Every outcome path settles — act() delivers the verdict whatever it
-            // was, including the no-link failure that answers before anything was
-            // sent — so the flag cannot outlive the tap that raised it.
-            control.spawnSettled()
-            if (outcome is Outcome.Ok) {
-                control.spawnCreated(idIn(outcome.result))
-                refreshSessions()
-            }
-        }
-    }
-
-    // ------------------------------------------------- plans, sequences, contexts
-
-    /**
-     * The plans of one directory as BOARD ROWS — `plan_summary`, never the
-     * full-record list. The summary carries status, ids, title and edges and
-     * leaves every description behind, which is what keeps the answer small
-     * enough for this link to finish delivering it. The prose arrives one plan
-     * at a time from [readPlan] when the reader opens one.
-     *
-     * The writes (P-0812) live further down and refresh this board on success.
-     *
-     * ACTIVE IS FIXED, not a parameter: a finished plan is noise on a phone, and
-     * asking for all of them is what cost the link the reply in the first place.
-     */
-    fun refreshPlans(dirPath: String): Boolean {
-        plans.listRequested(dirPath)
-        val params = linkedMapOf<String, Any>("dirPath" to dirPath, "filter" to FILTER_ACTIVE)
-        return call(METHOD_PLAN_SUMMARY, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!plans.listArrived(dirPath, outcome.result)) {
-                        plans.listFailed(dirPath, UNREADABLE_PLANS)
-                    }
-                is Outcome.Failed -> plans.listFailed(dirPath, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * One plan in full. The id rides as `uuid`, which is the only form the
-     * desktop's `plan_get` takes — a P-00xx humanId would be refused, and the
-     * board already holds the UUID for every row it drew.
-     */
-    fun readPlan(planId: String): Boolean {
-        plans.detailRequested(planId)
-        return call(METHOD_PLAN_GET, linkedMapOf("uuid" to planId)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!plans.detailArrived(planId, outcome.result)) {
-                        plans.detailFailed(planId, UNREADABLE_PLAN)
-                    }
-                is Outcome.Failed -> plans.detailFailed(planId, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * One plan's effective context refs — its own bindings merged with those
-     * inherited from its sequence. Refs only: the bodies are a `context_get`
-     * away, fetched when the reader opens one, which is why this answer stays
-     * small enough to pull on every visit.
-     */
-    fun refreshPlanContexts(planId: String): Boolean {
-        plans.contextRefsRequested(planId)
-        return call(METHOD_PLAN_CONTEXT_LIST, linkedMapOf("planId" to planId)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!plans.contextRefsArrived(planId, outcome.result)) {
-                        plans.contextRefsFailed(planId, UNREADABLE_PLAN_CONTEXTS)
-                    }
-                is Outcome.Failed -> plans.contextRefsFailed(planId, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * The sequence lanes of one directory, including the member plan ids the
-     * desktop computes per answer. `sequence_list` also accepts a `planId`; only
-     * the directory form is sent, because the board groups a whole directory and
-     * asking per plan would be one call per row.
-     */
-    fun refreshSequences(dirPath: String): Boolean {
-        sequences.listRequested(dirPath)
-        return call(METHOD_SEQUENCE_LIST, linkedMapOf("dirPath" to dirPath)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!sequences.listArrived(dirPath, outcome.result)) {
-                        sequences.listFailed(dirPath, UNREADABLE_SEQUENCES)
-                    }
-                is Outcome.Failed -> sequences.listFailed(dirPath, outcome.message)
-            }
-        }
-    }
-
-    /** One sequence lane in full. The id rides as `id`, as `sequence_get` takes it. */
-    fun readSequence(sequenceId: String): Boolean {
-        sequences.detailRequested(sequenceId)
-        return call(METHOD_SEQUENCE_GET, linkedMapOf("id" to sequenceId)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!sequences.detailArrived(sequenceId, outcome.result)) {
-                        sequences.detailFailed(sequenceId, UNREADABLE_SEQUENCE)
-                    }
-                is Outcome.Failed -> sequences.detailFailed(sequenceId, outcome.message)
-            }
-        }
-    }
-
-    // ------------------------------------------------- plan and sequence writes (P-0812)
-    //
-    // Every write follows ONE rule: the desktop's answer is only ever a verdict,
-    // never data this app parses into a cache. Success re-pulls the small
-    // summary/list answers the screens already read; failure touches nothing but
-    // [planWrites], so a refused or dropped write leaves every cache as it was.
-    // None of these tools answers with more than one record, so none risks the
-    // oversized reply that once broke the link.
-
-    /** A new plan in [dirPath]. `type` is omitted when unset — the desktop treats it as optional. */
-    fun createPlan(dirPath: String, title: String, description: String, type: String?, autoImplement: Boolean): Boolean {
-        val params = linkedMapOf<String, Any>("dirPath" to dirPath, "title" to title.trim(), "description" to description)
-        if (!type.isNullOrBlank()) params["type"] = type
-        params["autoImplement"] = autoImplement
-        return write(PlanWriteKind.CreatePlan, METHOD_PLAN_CREATE, params) { refreshBoard(dirPath) }
-    }
-
-    /** Title and description only; the other plan_update fields stay the desktop's. */
-    fun updatePlan(dirPath: String, planId: String, title: String, description: String): Boolean =
-        write(
-            PlanWriteKind.UpdatePlan,
-            METHOD_PLAN_UPDATE,
-            linkedMapOf("uuid" to planId, "title" to title.trim(), "description" to description),
-        ) { refreshPlanAndBoard(dirPath, planId) }
-
-    /** Planning/ready and the other non-terminal states. Done is [completePlan]; undone is [reopenPlan]. */
-    fun setPlanState(dirPath: String, planId: String, status: PlanStatus): Boolean =
-        write(
-            PlanWriteKind.SetState,
-            METHOD_PLAN_SET_STATE,
-            linkedMapOf("uuid" to planId, "status" to status.wire),
-        ) { refreshPlanAndBoard(dirPath, planId) }
-
-    fun acceptPlanSuggestion(dirPath: String, planId: String): Boolean =
-        write(PlanWriteKind.AcceptSuggestion, METHOD_PLAN_ACCEPT_SUGGESTION, linkedMapOf("uuid" to planId)) {
-            refreshPlanAndBoard(dirPath, planId)
-        }
-
-    fun rejectPlanSuggestion(dirPath: String, planId: String): Boolean =
-        write(PlanWriteKind.RejectSuggestion, METHOD_PLAN_REJECT_SUGGESTION, linkedMapOf("uuid" to planId)) {
-            plans.planDeleted(planId)
-            refreshBoard(dirPath)
-        }
-
-    /**
-     * Mark done. The desktop demands [documentation] (10+ chars) and only
-     * completes a coding/review plan; its refusal text is shown as-is rather
-     * than second-guessed here.
-     */
-    fun completePlan(dirPath: String, planId: String, documentation: String): Boolean =
-        write(
-            PlanWriteKind.Complete,
-            METHOD_PLAN_COMPLETE,
-            linkedMapOf("uuid" to planId, "documentation" to documentation.trim()),
-        ) { refreshPlanAndBoard(dirPath, planId) }
-
-    fun reopenPlan(dirPath: String, planId: String): Boolean =
-        write(PlanWriteKind.Reopen, METHOD_PLAN_REOPEN, linkedMapOf("uuid" to planId)) {
-            refreshPlanAndBoard(dirPath, planId)
-        }
-
-    /** One plan. The screen confirms first; success purges it at once rather than waiting for the list. */
-    fun deletePlan(dirPath: String, planId: String): Boolean =
-        write(PlanWriteKind.DeletePlan, METHOD_PLAN_DELETE, linkedMapOf("uuid" to planId)) {
-            plans.planDeleted(planId)
-            refreshBoard(dirPath)
-        }
-
-    /** Put a plan in a lane, or take it out of any lane with a null [sequenceId]. */
-    fun assignSequence(dirPath: String, planId: String, sequenceId: String?): Boolean =
-        write(
-            PlanWriteKind.AssignSequence,
-            METHOD_SEQUENCE_ASSIGN,
-            linkedMapOf<String, Any>("planId" to planId, "sequenceId" to (sequenceId ?: JsonNull)),
-        ) { refreshPlanAndBoard(dirPath, planId) }
-
-    fun createSequence(dirPath: String, title: String, missionStatement: String): Boolean {
-        val params = linkedMapOf<String, Any>("dirPath" to dirPath, "title" to title.trim())
-        if (missionStatement.isNotBlank()) params["missionStatement"] = missionStatement
-        return write(PlanWriteKind.CreateSequence, METHOD_SEQUENCE_CREATE, params) { refreshLanes(dirPath) }
-    }
-
-    /** Title and mission only; sharedMemory is legacy and order belongs to the desktop canvas. */
-    fun updateSequence(dirPath: String, sequenceId: String, title: String, missionStatement: String): Boolean =
-        write(
-            PlanWriteKind.UpdateSequence,
-            METHOD_SEQUENCE_UPDATE,
-            linkedMapOf("id" to sequenceId, "title" to title.trim(), "missionStatement" to missionStatement),
-        ) {
-            readSequence(sequenceId)
-            refreshLanes(dirPath)
-        }
-
-    fun deleteSequence(dirPath: String, sequenceId: String): Boolean =
-        write(PlanWriteKind.DeleteSequence, METHOD_SEQUENCE_DELETE, linkedMapOf("id" to sequenceId)) {
-            sequences.sequenceDeleted(sequenceId)
-            // Members lose their lane on the desktop; the board must regroup.
-            refreshBoard(dirPath)
-            refreshCleanupCounts(dirPath)
-        }
-
-    /** The counts the Sequences tab shows before "Clear unused" is offered. Read-only. */
-    fun refreshCleanupCounts(dirPath: String): Boolean {
-        sequences.cleanupRequested(dirPath)
-        return call(METHOD_PLAN_CLEANUP_COUNTS, linkedMapOf("dirPath" to dirPath)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!sequences.cleanupArrived(dirPath, outcome.result)) {
-                        sequences.cleanupFailed(dirPath, UNREADABLE_CLEANUP)
-                    }
-                is Outcome.Failed -> sequences.cleanupFailed(dirPath, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * The desktop's "Clear unused", in the desktop's ORDER: empty sequences
-     * first, because deleting one releases its context bindings — which is what
-     * makes contexts bound only to it unreferenced — then unreferenced contexts.
-     * The second call only runs if the first succeeded; either failure is the
-     * one verdict the user reads.
-     */
-    fun clearUnused(dirPath: String): Boolean {
-        planWrites.started(PlanWriteKind.ClearUnused)
-        return call(METHOD_SEQUENCE_CLEAR_EMPTY, linkedMapOf("dirPath" to dirPath)) { first ->
-            when (first) {
-                is Outcome.Failed -> planWrites.failed(PlanWriteKind.ClearUnused, first.message)
-                is Outcome.Ok -> clearUnreferencedContexts(dirPath)
-            }
-        }
-    }
-
-    /** Step two of [clearUnused]; only ever run after the empty sequences are gone. */
-    private fun clearUnreferencedContexts(dirPath: String) {
-        refreshSequences(dirPath)
-        call(METHOD_CONTEXT_CLEAR_UNREFERENCED, linkedMapOf("dirPath" to dirPath)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> planWrites.succeeded(PlanWriteKind.ClearUnused)
-                is Outcome.Failed -> planWrites.failed(PlanWriteKind.ClearUnused, outcome.message)
-            }
-            refreshCleanupCounts(dirPath)
-        }
-    }
-
-    /** One write: raise in-flight, send, and on the verdict either refresh or record the failure. */
-    private fun write(
-        kind: PlanWriteKind,
-        method: String,
-        params: Map<String, Any>,
-        onSuccess: () -> Unit,
-    ): Boolean {
-        planWrites.started(kind)
-        return call(method, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> {
-                    planWrites.succeeded(kind)
-                    onSuccess()
-                }
-                is Outcome.Failed -> planWrites.failed(kind, outcome.message)
-            }
-        }
-    }
-
-    private fun refreshBoard(dirPath: String) {
-        refreshPlans(dirPath)
-        refreshSequences(dirPath)
-    }
-
-    private fun refreshPlanAndBoard(dirPath: String, planId: String) {
-        readPlan(planId)
-        refreshBoard(dirPath)
-    }
-
-    /** Lanes changed: the list and the cleanup counts both describe them. */
-    private fun refreshLanes(dirPath: String) {
-        refreshSequences(dirPath)
-        refreshCleanupCounts(dirPath)
-    }
-
-    /**
-     * The projects Helm tracks. A BARE call — `project_list` takes no arguments —
-     * and the prerequisite for every context ask, since a context node is
-     * addressed by its project.
-     */
-    fun refreshProjects(): Boolean {
-        contexts.projectsRequested()
-        return call(METHOD_PROJECT_LIST) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!contexts.projectsArrived(outcome.result)) {
-                        contexts.projectsFailed(UNREADABLE_PROJECTS)
-                    }
-                is Outcome.Failed -> contexts.projectsFailed(outcome.message)
-            }
-        }
-    }
-
-    /**
-     * The user's own statistics (docs/time-tracking.md). A phone-only gate method,
-     * not an AI tool: nothing an agent can call reads this data.
-     */
-    fun refreshTime(ask: TimeAsk): Boolean {
-        time.requested(ask)
-        val params = linkedMapOf<String, Any>("view" to ask.view.wire, "period" to ask.period.wire, "anchor" to ask.anchorEpochMs)
-        if (ask.view == com.potatomotato.helm.data.TimeView.Timesheet) ask.projectKey?.let { params["projectKey"] = it }
-        return call(METHOD_TIMESHEET, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> if (!time.arrived(ask, outcome.result)) time.failed(ask, UNREADABLE_TIME)
-                is Outcome.Failed -> time.failed(ask, outcome.message)
-            }
-        }
-    }
-
-    /** The context nodes of one project, bodies included — the desktop's list carries them. */
-    fun refreshContexts(projectId: String): Boolean {
-        contexts.listRequested(projectId)
-        return call(METHOD_CONTEXT_LIST, linkedMapOf("projectId" to projectId)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!contexts.listArrived(projectId, outcome.result)) {
-                        contexts.listFailed(projectId, UNREADABLE_CONTEXTS)
-                    }
-                is Outcome.Failed -> contexts.listFailed(projectId, outcome.message)
-            }
-        }
-    }
-
-    /**
-     * One context node in full. Asked for even though the list carries content,
-     * because a ref from `plan_context_list` names a node the project list may
-     * not have been pulled for — a ref is an id, not a row.
-     */
-    fun readContext(contextId: String): Boolean {
-        contexts.detailRequested(contextId)
-        return call(METHOD_CONTEXT_GET, linkedMapOf("id" to contextId)) { outcome ->
-            when (outcome) {
-                is Outcome.Ok ->
-                    if (!contexts.detailArrived(contextId, outcome.result)) {
-                        contexts.detailFailed(contextId, UNREADABLE_CONTEXT)
-                    }
-                is Outcome.Failed -> contexts.detailFailed(contextId, outcome.message)
-            }
-        }
-    }
+    /** Everything outstanding fails when the link goes. Nothing waits forever. */
+    fun onLinkLost() {
+        val abandoned = pending.values.toList()
+        if (abandoned.isNotEmpty()) {
+            HelmLog.w(HelmLog.CLIENT, "the link went; failing ${abandoned.size} calls that will never be answered")
+        }
+        pending.clear()
+        abandoned.forEach {
+            it.deadline?.cancel()
+            it.onOutcome(Outcome.Failed(LINK_LOST))
+        }
+        sessions.onLinkLost()
+        // The permitted surface is forgotten with the link so a reconnect re-asks.
+        // An allow-list edited on the desktop while the phone was away must not
+        // keep a revoked action looking available.
+        workspace.capabilities.forget()
+        // Same reasoning for why the list is empty: a denial belonged to the link
+        // that carried it. Held sessions stay — only the explanation is dropped.
+        sessions.state.forget()
+    }
+
+    /** A newly usable channel reports the held chat cursor and refreshes sessions. */
+    fun onLinkUp(): Boolean = sessions.onLinkUp()
 
     /** One decrypted application message. Never throws: the link outlives its payloads. */
     fun onInbound(payload: ByteArray) {
@@ -1935,11 +164,11 @@ class HelmClient(
         }
         HelmLog.d(HelmLog.WIRE) { "inbound ${record.javaClass.simpleName} of ${payload.size} bytes" }
         when (record) {
-            is MobileRecord.Result -> settle(record.id, Outcome.Ok(record.result))
+            is MobileRecord.Result -> settle(record.id, HelmClient.Outcome.Ok(record.result))
             // A download's answer. Correlated and settled exactly like a result —
             // the caller that asked knows it asked for bytes.
-            is MobileRecord.Blob -> settle(record.id, Outcome.Ok(record))
-            is MobileRecord.Failure -> settle(record.id, Outcome.Failed(record.message))
+            is MobileRecord.Blob -> settle(record.id, HelmClient.Outcome.Ok(record))
+            is MobileRecord.Failure -> settle(record.id, HelmClient.Outcome.Failed(record.message))
             // THE ONE place a chat record is split. A kind-bearing record is an
             // EVENT Helm is reporting, not something an agent said: routing it
             // into the thread would grow a conversation the desktop never had,
@@ -1951,14 +180,14 @@ class HelmClient(
             is MobileRecord.Chat ->
                 when (record.kind) {
                     null -> {
-                        chats.receive(linkedDesktop(), record)
-                        alerts.onMessage(record)
+                        sessions.chats.receive(linkedDesktop(), record)
+                        sessions.alerts.onMessage(record)
                     }
                     // A delete made elsewhere: the thread's business only, never a buzz.
-                    ChatRepository.DELETED_KIND -> chats.receive(linkedDesktop(), record)
-                    RING_KIND -> if (ringer?.invoke(record) != true) alerts.onAlert(record)
-                    TRANSFER_KIND -> transferrer?.invoke(record)
-                    else -> alerts.onAlert(record)
+                    ChatRepository.DELETED_KIND -> sessions.chats.receive(linkedDesktop(), record)
+                    HelmClient.RING_KIND -> if (sessions.ringer?.invoke(record) != true) sessions.alerts.onAlert(record)
+                    HelmClient.TRANSFER_KIND -> sessions.transferrer?.invoke(record)
+                    else -> sessions.alerts.onAlert(record)
                 }
 
             // Where this desktop can be reached over the network. Accepted ONLY
@@ -1968,7 +197,7 @@ class HelmClient(
             // off reaches a phone that is connected right now.
             is MobileRecord.Lan -> onLanAddresses(record.addresses)
 
-            is MobileRecord.Changes -> onChanges(record)
+            is MobileRecord.Changes -> sessions.onChanges(record)
 
             // A `call` inbound is Helm asking the PHONE to do something, which it
             // never does — the phone has no gate of its own to answer through.
@@ -2000,98 +229,6 @@ class HelmClient(
         waiting.onOutcome(outcome)
     }
 
-
-    /** Everything outstanding fails when the link goes. Nothing waits forever. */
-    fun onLinkLost() {
-        val abandoned = pending.values.toList()
-        if (abandoned.isNotEmpty()) {
-            HelmLog.w(HelmLog.CLIENT, "the link went; failing ${abandoned.size} calls that will never be answered")
-        }
-        pending.clear()
-        abandoned.forEach {
-            it.deadline?.cancel()
-            it.onOutcome(Outcome.Failed(LINK_LOST))
-        }
-        sessionRefreshInFlight = false
-        sessionRefreshQueued = false
-        // Whatever Helm owed this phone by way of a change notice went with the
-        // link, so the list is stale until the next link is asked.
-        sessionsStale = true
-        // The cursor belongs to the link: the next usable link must hear it
-        // again, whether it arrives via the link-up hook or the session poll.
-        // This is the TRANSPORT-loss half only; [onLinkUp] clears it per
-        // handshake, which covers the channels this hook never sees.
-        chatCursorReported = false
-        // The permitted surface is forgotten with the link so a reconnect re-asks.
-        // An allow-list edited on the desktop while the phone was away must not
-        // keep a revoked action looking available.
-        capabilities.forget()
-        // Same reasoning for why the list is empty: a denial belonged to the link
-        // that carried it. Held sessions stay — only the explanation is dropped.
-        sessions.forget()
-    }
-
-    /**
-     * The link just became usable. Report the seq of the last chat message this
-     * phone holds, so the desktop can replay everything after it — the catch-up
-     * that covers both a phone that was out of range and an app restart whose
-     * threads are gone. The answer carries nothing this app acts on: the replay
-     * arrives afterwards as ordinary `chat` records, deduped by seq in
-     * [ChatRepository.receive].
-     *
-     * Sent FIRST on link up, ahead of the session refresh: the journal replay
-     * and the session list are independent, and the cursor is the one request
-     * whose answer cannot be re-derived later by a poll.
-     *
-     * THE FLAG IS CLEARED HERE, not only in [onLinkLost]. The cursor belongs to
-     * the HANDSHAKE, not to the transport: this hook fires once per established
-     * SecureChannel, whereas the loss hook fires only when the TRANSPORT changes
-     * (HelmPairing wires it to `HelmLink.onLinkChanged`). A channel re-made over
-     * a transport that never went down — a desktop restart, a re-handshake after
-     * a stumble — therefore left the flag standing and the phone never re-asked,
-     * which is the reconnect with permanently empty threads. Re-reporting is
-     * free: the desktop replays from the same seq and [ChatRepository] dedupes.
-     */
-    fun onLinkUp(): Boolean {
-        chatCursorReported = false
-        val reported = reportChatCursorIfNeeded()
-        // A new channel may be a restarted Helm that owes this phone no notice.
-        sessionsStale = true
-        refreshStaleSessions()
-        return reported
-    }
-
-    /**
-     * Report the cursor if this link has not heard it yet — or has not heard it
-     * lately ([CURSOR_REPORT_FRESH_MS]). The flag moves only when the link
-     * actually carried the call — and it moves BACK if the call then failed: a
-     * report whose answer died with the link was never heard by the desktop, so
-     * the next poll must say it again (observed as the empty threads after one
-     * reconnect: cursor sent, link dropped before the replay, flag left
-     * standing). Staleness reads the same stamp the flag does, so a report
-     * known to have failed re-says immediately regardless of the clock.
-     */
-    private fun reportChatCursorIfNeeded(): Boolean {
-        if (chatCursorReported && now() - chatCursorReportedAt < CURSOR_REPORT_FRESH_MS) return true
-        val desktopId = linkedDesktop()
-        val issued = call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq(desktopId))) { outcome ->
-            if (outcome is Outcome.Failed) chatCursorReported = false
-            // A recreated journal numbers from 1 again: reset, and say the
-            // cursor again so Helm replays from zero. An older Helm sends no
-            // epoch and keeps today's behaviour.
-            val answer = json((outcome as? Outcome.Ok)?.result)
-            val epoch = answer?.opt("epoch") as? String
-            val latestSeq = (answer?.opt("latestSeq") as? Number)?.toLong()
-            if (epoch != null && latestSeq != null && chats.adoptJournal(desktopId, epoch, latestSeq)) {
-                chatCursorReported = false
-                reportChatCursorIfNeeded()
-            }
-        }
-        chatCursorReported = issued
-        if (issued) chatCursorReportedAt = now()
-        return issued
-    }
-
     /**
      * Issue one control action and record how it ended, so every outcome is
      * something the user can read. A refusal is told apart from a dead link
@@ -2100,7 +237,8 @@ class HelmClient(
      * notice, for the few actions whose result carries state onward (the spawn's
      * created session, the create's minted artifact).
      */
-    private fun act(
+    internal fun act(
+        control: ControlRepository,
         action: SessionAction,
         method: String,
         params: Map<String, Any>,
@@ -2111,7 +249,7 @@ class HelmClient(
     }
 
     /** One verdict per outcome shape; Refused needs the deny text byte-exact. */
-    private fun outcomeFor(outcome: Outcome): ActionOutcome = when {
+    internal fun outcomeFor(outcome: Outcome): ActionOutcome = when {
         outcome is Outcome.Ok -> ActionOutcome.Done
         (outcome as Outcome.Failed).message == MOBILE_DENY_MESSAGE -> ActionOutcome.Refused
         else -> ActionOutcome.Failed(outcome.message)
@@ -2123,39 +261,12 @@ class HelmClient(
      * same for the artifact it minted; anything else is null, because navigating
      * to a guessed id is worse than staying put.
      */
-    private fun idIn(result: Any?): String? =
+    internal fun idIn(result: Any?): String? =
         (result as? JSONObject)?.opt("id") as? String
 
-    /** A slot-open answer: `{uploadId, maxSliceBytes, total}`. */
-    private fun uploadOffer(result: Any?): UploadOffer? {
-        json(result)?.let { json ->
-            val uploadId = json.opt("uploadId") as? String ?: return null
-            val maxSlice = (json.opt("maxSliceBytes") as? Number)?.toLong() ?: return null
-            val total = (json.opt("total") as? Number)?.toLong() ?: return null
-            return UploadOffer(uploadId, maxSlice, total)
-        }
-        return null
-    }
+    internal fun json(result: Any?): JSONObject? = result as? JSONObject
 
-    /**
-     * The committed attachment's id. The commit answer is
-     * `{artifactId, attachment:{id,…}}`; the attachment id is all this app does
-     * with it, and an answer of an unexpected shape still counts as DONE — the
-     * desktop verified the bytes, which is what the chip is claiming.
-     */
-    private fun attachmentIdIn(result: Any?): String =
-        json(result)?.let { json ->
-            (json.optJSONObject("attachment")?.opt("id") as? String)
-                ?: (json.opt("id") as? String)
-        }.orEmpty()
-
-    private fun json(result: Any?): JSONObject? = result as? JSONObject
-
-    /** The offer clipped to what this phone will put in one frame. */
-    private fun sliceBudget(advertised: Long): Int =
-        minOf(advertised, MAX_UPLOAD_SLICE_BYTES.toLong()).toInt().coerceIn(1, MAX_FRAME_BYTES)
-
-    private fun call(
+    internal fun call(
         method: String,
         params: Map<String, Any>? = null,
         id: String? = null,
@@ -2186,7 +297,7 @@ class HelmClient(
     }
 
     /** Monotonic call ids — the same "p<n>" the desktop's audit already sees. */
-    private fun nextCallId(): String = "p${sequence++}"
+    internal fun nextCallId(): String = "p${sequence++}"
 
     /**
      * The pending map is bounded because nothing else bounds it: Helm answers
@@ -2203,12 +314,6 @@ class HelmClient(
         }
     }
 
-    private fun refreshQueuedSessions() {
-        if (!sessionRefreshQueued) return
-        sessionRefreshQueued = false
-        refreshSessions()
-    }
-
     companion object {
         /**
          * The desktop buffer holds this many lines; asking for more spends the
@@ -2223,20 +328,20 @@ class HelmClient(
          */
         const val MOBILE_DENY_MESSAGE = "Tool not permitted"
 
-        private const val METHOD_SESSION_LIST = "session_list"
-        private const val METHOD_SESSION_SEND_TEXT = "session_send_text"
-        private const val METHOD_SESSION_SET_FROZEN = "session_set_frozen"
-        private const val METHOD_SESSION_SET_KEEP_WARM = "session_set_keep_warm"
+        internal const val METHOD_SESSION_LIST = "session_list"
+        internal const val METHOD_SESSION_SEND_TEXT = "session_send_text"
+        internal const val METHOD_SESSION_SET_FROZEN = "session_set_frozen"
+        internal const val METHOD_SESSION_SET_KEEP_WARM = "session_set_keep_warm"
 
         /**
          * The gate's reserved chat-cursor meta-method (see the desktop's
          * `RESERVED_CHAT_CURSOR_METHOD`). In-gate answered, never dispatched —
          * which is also why it needs no allow-list entry.
          */
-        private const val METHOD_CHAT_CURSOR = "__chat_cursor__"
+        internal const val METHOD_CHAT_CURSOR = "__chat_cursor__"
 
         /** Reserved meta-method: delete journal messages by seq / originId (desktop `RESERVED_CHAT_DELETE_METHOD`). */
-        private const val METHOD_CHAT_DELETE = "__chat_delete__"
+        internal const val METHOD_CHAT_DELETE = "__chat_delete__"
 
         /**
          * How long a reported chat cursor stays believed before the next poll
@@ -2245,83 +350,83 @@ class HelmClient(
          * next poll instead of the next app restart. Cheap by design: the
          * desktop replays from the same seq and [ChatRepository] dedupes.
          */
-        private const val CURSOR_REPORT_FRESH_MS = 5 * 60 * 1000L
+        internal const val CURSOR_REPORT_FRESH_MS = 5 * 60 * 1000L
 
         /** The gate's reserved meta-method — answered in-gate, never dispatched. */
-        private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
-        private const val METHOD_RESTART_HELM = "__restart_helm__"
-        private const val METHOD_RING_ANSWERED = "__ring_answered__"
-        private const val METHOD_TIMESHEET = "__timesheet__"
+        internal const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
+        internal const val METHOD_RESTART_HELM = "__restart_helm__"
+        internal const val METHOD_RING_ANSWERED = "__ring_answered__"
+        internal const val METHOD_TIMESHEET = "__timesheet__"
         /** The `changes` record kind for the session list; `SESSIONS_CHANGE_KIND` on the desktop. */
-        private const val SESSIONS_CHANGE_KIND = "sessions"
-        private const val RING_KIND = "ring"
-        private const val TRANSFER_KIND = "transfer"
-        private const val METHOD_DIRECTORY_LIST = "directory_list"
-        private const val METHOD_PEER_LIST = "peer_list"
-        private const val METHOD_PEER_CALL = "peer_call"
-        private const val METHOD_PEER_SPAWN = "peer_spawn"
-        private const val METHOD_READ_TERMINAL = "session_read_terminal"
-        private const val METHOD_SESSION_COMPACT = "session_compact"
-        private const val METHOD_SESSION_CLEAR = "session_clear"
-        private const val METHOD_SESSION_QUICK_COMPACT = "session_quick_compact"
-        private const val METHOD_SESSION_SWITCH_CLI = "session_switch_cli"
-        private const val METHOD_SESSION_CLONE = "session_clone"
-        private const val METHOD_SESSION_SEND_INPUT = "session_send_input"
-        private const val METHOD_SESSION_CLOSE = "session_close"
-        private const val METHOD_SESSION_RENAME = "session_rename"
-        private const val METHOD_SESSION_CREATE = "session_create"
+        internal const val SESSIONS_CHANGE_KIND = "sessions"
+        internal const val RING_KIND = "ring"
+        internal const val TRANSFER_KIND = "transfer"
+        internal const val METHOD_DIRECTORY_LIST = "directory_list"
+        internal const val METHOD_PEER_LIST = "peer_list"
+        internal const val METHOD_PEER_CALL = "peer_call"
+        internal const val METHOD_PEER_SPAWN = "peer_spawn"
+        internal const val METHOD_READ_TERMINAL = "session_read_terminal"
+        internal const val METHOD_SESSION_COMPACT = "session_compact"
+        internal const val METHOD_SESSION_CLEAR = "session_clear"
+        internal const val METHOD_SESSION_QUICK_COMPACT = "session_quick_compact"
+        internal const val METHOD_SESSION_SWITCH_CLI = "session_switch_cli"
+        internal const val METHOD_SESSION_CLONE = "session_clone"
+        internal const val METHOD_SESSION_SEND_INPUT = "session_send_input"
+        internal const val METHOD_SESSION_CLOSE = "session_close"
+        internal const val METHOD_SESSION_RENAME = "session_rename"
+        internal const val METHOD_SESSION_CREATE = "session_create"
 
         /** A session's artifacts: list, read, and the writes this app gates per tool. */
-        private const val METHOD_SESSION_ARTIFACT_LIST = "session_artifact_list"
-        private const val METHOD_SESSION_ARTIFACT_GET = "session_artifact_get"
-        private const val METHOD_SESSION_ARTIFACT_CREATE = "session_artifact_create"
-        private const val METHOD_SESSION_ARTIFACT_UPDATE = "session_artifact_update"
-        private const val METHOD_SESSION_ARTIFACT_SET_INTENT = "session_artifact_set_intent"
-        private const val METHOD_SESSION_ARTIFACT_DOWNLOAD = "session_artifact_download"
-        private const val METHOD_SESSION_ARTIFACT_DELETE = "session_artifact_delete"
-        private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE = "session_artifact_attachment_delete"
+        internal const val METHOD_SESSION_ARTIFACT_LIST = "session_artifact_list"
+        internal const val METHOD_SESSION_ARTIFACT_GET = "session_artifact_get"
+        internal const val METHOD_SESSION_ARTIFACT_CREATE = "session_artifact_create"
+        internal const val METHOD_SESSION_ARTIFACT_UPDATE = "session_artifact_update"
+        internal const val METHOD_SESSION_ARTIFACT_SET_INTENT = "session_artifact_set_intent"
+        internal const val METHOD_SESSION_ARTIFACT_DOWNLOAD = "session_artifact_download"
+        internal const val METHOD_SESSION_ARTIFACT_DELETE = "session_artifact_delete"
+        internal const val METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE = "session_artifact_attachment_delete"
 
         /**
          * The upload half (protocol 4). `add` opens a slot; raw slices fill it;
          * `commit` reports success. Share uploads also have an explicit cancel
          * so the phone can stop the transfer and release an unfinished slot.
          */
-        private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD = "session_artifact_attachment_add"
-        private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT = "session_artifact_attachment_commit"
+        internal const val METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD = "session_artifact_attachment_add"
+        internal const val METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT = "session_artifact_attachment_commit"
 
         /** Share-to-Helm: the same slot protocol, sent to a session's CLI as a prompt. */
-        private const val METHOD_SESSION_SHARE_FILE_ADD = "session_share_file_add"
-        private const val METHOD_SESSION_SHARE_FILE_COMMIT = "session_share_file_commit"
-        private const val METHOD_SESSION_SHARE_FILE_CANCEL = "session_share_file_cancel"
+        internal const val METHOD_SESSION_SHARE_FILE_ADD = "session_share_file_add"
+        internal const val METHOD_SESSION_SHARE_FILE_COMMIT = "session_share_file_commit"
+        internal const val METHOD_SESSION_SHARE_FILE_CANCEL = "session_share_file_cancel"
 
         /** The local ceiling on one upload slice, inside this link's frame cap. */
-        private const val MAX_UPLOAD_SLICE_BYTES = 64 * 1024
+        internal const val MAX_UPLOAD_SLICE_BYTES = 64 * 1024
 
         /** The secure channel's own frame ceiling, mirrored from crypto/Frames.kt. */
-        private const val MAX_FRAME_BYTES = 1024 * 1024
+        internal const val MAX_FRAME_BYTES = 1024 * 1024
 
         /** When a staged file never named a type. */
-        private const val DEFAULT_MIME = "application/octet-stream"
+        internal const val DEFAULT_MIME = "application/octet-stream"
 
         /**
          * How often an in-flight slice asks the link how far it has got. Slow
          * enough to cost nothing on a transfer measured in minutes, fast enough
          * that the bar moves rather than steps.
          */
-        private const val FLUSH_POLL_MS = 100L
+        internal const val FLUSH_POLL_MS = 100L
 
         /** Ask whether to keep waiting once the upload has run for a minute. */
-        private const val SHARE_WAIT_PROMPT_MS = 60_000L
+        internal const val SHARE_WAIT_PROMPT_MS = 60_000L
 
         /** The staged copy vanished before its upload could read it. */
-        private const val STAGE_GONE = "The staged file is no longer readable — attach it again"
+        internal const val STAGE_GONE = "The staged file is no longer readable — attach it again"
 
         /** The staged copy ended before it had given the bytes it declared. */
-        private const val STAGE_SHORT = "The staged file changed while it was being sent"
+        internal const val STAGE_SHORT = "The staged file changed while it was being sent"
 
         /** A slot-open answer of a shape this app cannot read. */
-        private const val UNREADABLE_UPLOAD_OFFER = "Helm answered with an upload slot this app could not read"
-        private const val SHARE_FAILED = "The file share failed"
+        internal const val UNREADABLE_UPLOAD_OFFER = "Helm answered with an upload slot this app could not read"
+        internal const val SHARE_FAILED = "The file share failed"
 
         /**
          * Helm's planning surface: reads and, since P-0812, single-record writes
@@ -2336,73 +441,73 @@ class HelmClient(
          * the write methods are not — a name that is never written cannot be
          * called by accident.
          */
-        private const val METHOD_PLAN_SUMMARY = "plan_summary"
+        internal const val METHOD_PLAN_SUMMARY = "plan_summary"
 
         /**
          * The only filter this app ever sends. Done plans are noise on a phone
          * and their descriptions are what killed the link in UAT.
          */
-        private const val FILTER_ACTIVE = "active"
-        private const val METHOD_PLAN_GET = "plan_get"
-        private const val METHOD_PLAN_CONTEXT_LIST = "plan_context_list"
-        private const val METHOD_SEQUENCE_LIST = "sequence_list"
-        private const val METHOD_SEQUENCE_GET = "sequence_get"
-        private const val METHOD_PLAN_CREATE = "plan_create"
-        private const val METHOD_PLAN_UPDATE = "plan_update"
-        private const val METHOD_PLAN_SET_STATE = "plan_set_state"
-        private const val METHOD_PLAN_ACCEPT_SUGGESTION = "plan_accept_suggestion"
-        private const val METHOD_PLAN_REJECT_SUGGESTION = "plan_reject_suggestion"
-        private const val METHOD_PLAN_COMPLETE = "plan_complete"
-        private const val METHOD_PLAN_REOPEN = "plan_reopen"
-        private const val METHOD_PLAN_DELETE = "plan_delete"
-        private const val METHOD_SEQUENCE_ASSIGN = "sequence_assign"
-        private const val METHOD_SEQUENCE_CREATE = "sequence_create"
-        private const val METHOD_SEQUENCE_UPDATE = "sequence_update"
-        private const val METHOD_SEQUENCE_DELETE = "sequence_delete"
-        private const val METHOD_PLAN_CLEANUP_COUNTS = "plan_cleanup_counts"
-        private const val METHOD_SEQUENCE_CLEAR_EMPTY = "sequence_clear_empty"
-        private const val METHOD_CONTEXT_CLEAR_UNREFERENCED = "context_clear_unreferenced"
-        private const val UNREADABLE_CLEANUP = "Helm answered with cleanup counts this app could not read"
-        private const val METHOD_CONTEXT_LIST = "context_list"
-        private const val METHOD_CONTEXT_GET = "context_get"
-        private const val METHOD_PROJECT_LIST = "project_list"
+        internal const val FILTER_ACTIVE = "active"
+        internal const val METHOD_PLAN_GET = "plan_get"
+        internal const val METHOD_PLAN_CONTEXT_LIST = "plan_context_list"
+        internal const val METHOD_SEQUENCE_LIST = "sequence_list"
+        internal const val METHOD_SEQUENCE_GET = "sequence_get"
+        internal const val METHOD_PLAN_CREATE = "plan_create"
+        internal const val METHOD_PLAN_UPDATE = "plan_update"
+        internal const val METHOD_PLAN_SET_STATE = "plan_set_state"
+        internal const val METHOD_PLAN_ACCEPT_SUGGESTION = "plan_accept_suggestion"
+        internal const val METHOD_PLAN_REJECT_SUGGESTION = "plan_reject_suggestion"
+        internal const val METHOD_PLAN_COMPLETE = "plan_complete"
+        internal const val METHOD_PLAN_REOPEN = "plan_reopen"
+        internal const val METHOD_PLAN_DELETE = "plan_delete"
+        internal const val METHOD_SEQUENCE_ASSIGN = "sequence_assign"
+        internal const val METHOD_SEQUENCE_CREATE = "sequence_create"
+        internal const val METHOD_SEQUENCE_UPDATE = "sequence_update"
+        internal const val METHOD_SEQUENCE_DELETE = "sequence_delete"
+        internal const val METHOD_PLAN_CLEANUP_COUNTS = "plan_cleanup_counts"
+        internal const val METHOD_SEQUENCE_CLEAR_EMPTY = "sequence_clear_empty"
+        internal const val METHOD_CONTEXT_CLEAR_UNREFERENCED = "context_clear_unreferenced"
+        internal const val UNREADABLE_CLEANUP = "Helm answered with cleanup counts this app could not read"
+        internal const val METHOD_CONTEXT_LIST = "context_list"
+        internal const val METHOD_CONTEXT_GET = "context_get"
+        internal const val METHOD_PROJECT_LIST = "project_list"
 
         /** The ONLY kind the session-addressed create accepts; the desktop maps it to 'markdown'. */
-        private const val CREATE_KIND = "md"
+        internal const val CREATE_KIND = "md"
 
         /** Same failure, for the download — an unreadable answer is not a file. */
-        private const val UNREADABLE_DOWNLOAD = "Helm answered with a file this app could not read"
-        private const val NO_FILE_SINK = "This build cannot write files to the device"
+        internal const val UNREADABLE_DOWNLOAD = "Helm answered with a file this app could not read"
+        internal const val NO_FILE_SINK = "This build cannot write files to the device"
 
         /** Refused client-side, before the link is asked to carry bytes it cannot. */
-        private const val TOO_LARGE = "That would not fit the link — trim it, or write it on the desktop"
+        internal const val TOO_LARGE = "That would not fit the link — trim it, or write it on the desktop"
         /** The full CLI catalogue, for the spawn form. Gated like every dispatch — a read-only tool, so a refusal just falls back to the harvested list. */
-        private const val METHOD_TOOL_LIST = "tool_list"
+        internal const val METHOD_TOOL_LIST = "tool_list"
 
         /** `ok` on the wire carrying a shape the app cannot read, for the fetch the spawn form waits on. */
-        private const val UNREADABLE_LIST = "Helm answered with a directory list this app could not read"
+        internal const val UNREADABLE_LIST = "Helm answered with a directory list this app could not read"
 
         /** Same failure, for the artifacts screen — an unreadable answer is not an empty list. */
-        private const val UNREADABLE_ARTIFACTS = "Helm answered with an artifact list this app could not read"
-        private const val UNREADABLE_ARTIFACT = "Helm answered with an artifact this app could not read"
+        internal const val UNREADABLE_ARTIFACTS = "Helm answered with an artifact list this app could not read"
+        internal const val UNREADABLE_ARTIFACT = "Helm answered with an artifact this app could not read"
 
         /** Same failure, for each planning surface — an unreadable answer is not an empty one. */
-        private const val UNREADABLE_PLANS = "Helm answered with a plan list this app could not read"
-        private const val UNREADABLE_PLAN = "Helm answered with a plan this app could not read"
-        private const val UNREADABLE_PLAN_CONTEXTS =
+        internal const val UNREADABLE_PLANS = "Helm answered with a plan list this app could not read"
+        internal const val UNREADABLE_PLAN = "Helm answered with a plan this app could not read"
+        internal const val UNREADABLE_PLAN_CONTEXTS =
             "Helm answered with a plan's context list this app could not read"
-        private const val UNREADABLE_SEQUENCES = "Helm answered with a sequence list this app could not read"
-        private const val UNREADABLE_SEQUENCE = "Helm answered with a sequence this app could not read"
-        private const val UNREADABLE_TIME = "Helm answered with a timesheet this app could not read"
-        private const val UNREADABLE_CONTEXTS = "Helm answered with a context list this app could not read"
-        private const val UNREADABLE_CONTEXT = "Helm answered with a context this app could not read"
-        private const val UNREADABLE_PROJECTS = "Helm answered with a project list this app could not read"
+        internal const val UNREADABLE_SEQUENCES = "Helm answered with a sequence list this app could not read"
+        internal const val UNREADABLE_SEQUENCE = "Helm answered with a sequence this app could not read"
+        internal const val UNREADABLE_TIME = "Helm answered with a timesheet this app could not read"
+        internal const val UNREADABLE_CONTEXTS = "Helm answered with a context list this app could not read"
+        internal const val UNREADABLE_CONTEXT = "Helm answered with a context this app could not read"
+        internal const val UNREADABLE_PROJECTS = "Helm answered with a project list this app could not read"
 
         /** Cleaned server-side; the phone has no ANSI parser and must not grow one. */
-        private const val SNAPSHOT_MODE = "screen"
-        private const val LEGACY_SNAPSHOT_MODE = "stripped"
-        private const val LEGACY_SCREEN_MODE_ERROR = "mode must be one of raw, stripped, or both"
-        private const val PROPOSED_SCREEN_API_ERROR =
+        internal const val SNAPSHOT_MODE = "screen"
+        internal const val LEGACY_SNAPSHOT_MODE = "stripped"
+        internal const val LEGACY_SCREEN_MODE_ERROR = "mode must be one of raw, stripped, or both"
+        internal const val PROPOSED_SCREEN_API_ERROR =
             "You must set the allowProposedApi option to true to use proposed API"
 
         /** Comfortably more than a screen can issue before the first answers. */
@@ -2412,6 +517,6 @@ class HelmClient(
         const val LINK_LOST = "The link dropped before Helm answered"
         const val ABANDONED = "Too many calls are waiting for an answer"
         const val REQUEST_TIMED_OUT = "Helm did not answer before the request timed out"
-        private const val REQUEST_DEADLINE_MS = 10_000L
+        internal const val REQUEST_DEADLINE_MS = 10_000L
     }
 }

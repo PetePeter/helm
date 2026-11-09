@@ -206,13 +206,13 @@ private enum class Destination {
 fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val linkState by HelmLink.state.collectAsState()
-    val sessions by client.sessions.sessions.collectAsState()
-    val contextObservations by client.sessions.contextObservations.collectAsState()
-    val reach by client.sessions.reach.collectAsState()
-    val threads by client.chats.threads.collectAsState()
-    val pulls by client.chats.pulls.collectAsState()
-    val excludedComfyReferenceIds by client.chats.excludedComfyReferenceIds.collectAsState()
-    val unreadCounts by client.chats.unreadCounts.collectAsState()
+    val sessions by client.sessions.state.sessions.collectAsState()
+    val contextObservations by client.sessions.state.contextObservations.collectAsState()
+    val reach by client.sessions.state.reach.collectAsState()
+    val threads by client.sessions.chats.threads.collectAsState()
+    val pulls by client.sessions.chats.pulls.collectAsState()
+    val excludedComfyReferenceIds by client.sessions.chats.excludedComfyReferenceIds.collectAsState()
+    val unreadCounts by client.sessions.chats.unreadCounts.collectAsState()
     val contextHistories = remember(threads, sessions, contextObservations) {
         sessions.mapNotNull { session ->
             ContextGraph.fromThread(
@@ -222,40 +222,40 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             )?.let { session.id to it }
         }.toMap()
     }
-    val capabilities by client.capabilities.state.collectAsState()
-    val snapshot by client.control.snapshot.collectAsState()
-    val requestedLines by client.control.requestedLines.collectAsState()
-    val notice by client.control.notice.collectAsState()
-    val directories by client.control.directories.collectAsState()
-    val directoriesError by client.control.directoriesError.collectAsState()
-    val clis by client.control.clis.collectAsState()
-    val createdSessionId by client.control.createdSessionId.collectAsState()
-    val spawnInFlight by client.control.spawnInFlight.collectAsState()
-    val spawnMachines by client.control.spawnMachines.collectAsState()
-    val artifactList by client.artifacts.list.collectAsState()
-    val artifactRead by client.artifacts.read.collectAsState()
-    val artifactSave by client.artifacts.save.collectAsState()
-    val artifactPulls by client.artifacts.attachmentPulls.pulls.collectAsState()
-    val artifactLanding by client.control.artifactLanding.collectAsState()
+    val capabilities by client.workspace.capabilities.state.collectAsState()
+    val snapshot by client.workspace.control.snapshot.collectAsState()
+    val requestedLines by client.workspace.control.requestedLines.collectAsState()
+    val notice by client.workspace.control.notice.collectAsState()
+    val directories by client.workspace.control.directories.collectAsState()
+    val directoriesError by client.workspace.control.directoriesError.collectAsState()
+    val clis by client.workspace.control.clis.collectAsState()
+    val createdSessionId by client.workspace.control.createdSessionId.collectAsState()
+    val spawnInFlight by client.workspace.control.spawnInFlight.collectAsState()
+    val spawnMachines by client.workspace.control.spawnMachines.collectAsState()
+    val artifactList by client.artifacts.state.list.collectAsState()
+    val artifactRead by client.artifacts.state.read.collectAsState()
+    val artifactSave by client.artifacts.state.save.collectAsState()
+    val artifactPulls by client.artifacts.state.attachmentPulls.pulls.collectAsState()
+    val artifactLanding by client.workspace.control.artifactLanding.collectAsState()
     // The staged files of the artifact create in flight, and where each has got
     // to. Owned by the client, not the editor, for the same reason every
     // transfer on this link is: an upload outruns its screen.
-    val stagedAttachments by client.uploads.staged.collectAsState()
-    val attachmentErrors by client.artifacts.attachmentErrors.collectAsState()
-    val uploadStates by client.uploads.states.collectAsState()
-    val notificationsEnabled by client.alerts.enabled.collectAsState()
+    val stagedAttachments by client.artifacts.uploads.staged.collectAsState()
+    val attachmentErrors by client.artifacts.state.attachmentErrors.collectAsState()
+    val uploadStates by client.artifacts.uploads.states.collectAsState()
+    val notificationsEnabled by client.sessions.alerts.enabled.collectAsState()
     val desktops by HelmPairing.desktops.collectAsState()
-    val planListState by client.plans.list.collectAsState()
-    val planDetailState by client.plans.detail.collectAsState()
-    val planContextsState by client.plans.contextRefs.collectAsState()
-    val sequenceListState by client.sequences.list.collectAsState()
-    val sequenceDetailState by client.sequences.detail.collectAsState()
-    val planWriteState by client.planWrites.state.collectAsState()
-    val cleanupState by client.sequences.cleanup.collectAsState()
-    val projectsState by client.contexts.projects.collectAsState()
-    val contextListState by client.contexts.list.collectAsState()
-    val contextDetailState by client.contexts.detail.collectAsState()
-    val timeState by client.time.state.collectAsState()
+    val planListState by client.plans.state.list.collectAsState()
+    val planDetailState by client.plans.state.detail.collectAsState()
+    val planContextsState by client.plans.state.contextRefs.collectAsState()
+    val sequenceListState by client.plans.sequences.list.collectAsState()
+    val sequenceDetailState by client.plans.sequences.detail.collectAsState()
+    val planWriteState by client.plans.writes.state.collectAsState()
+    val cleanupState by client.plans.sequences.cleanup.collectAsState()
+    val projectsState by client.plans.contexts.projects.collectAsState()
+    val contextListState by client.plans.contexts.list.collectAsState()
+    val contextDetailState by client.plans.contexts.detail.collectAsState()
+    val timeState by client.workspace.time.state.collectAsState()
     // The Time tab's ask. Not saveable (a data class); losing the page on a
     // rotation only means landing back on this week's totals.
     var timeAsk by remember { mutableStateOf(TimeAsk(TimePeriod.Day, System.currentTimeMillis(), null)) }
@@ -416,7 +416,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     LaunchedEffect(onScreenThread, where) {
         val reading = where == Destination.Thread ||
             where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
-        client.chats.reading(onScreenThread?.takeIf { reading })
+        client.sessions.chats.reading(onScreenThread?.takeIf { reading })
     }
 
     val open = sessions.firstOrNull { it.id == openSessionId }
@@ -463,7 +463,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // retry per link transition, which is exactly one per chance of succeeding.
     LaunchedEffect(homeTab, openSessionId, linkState) {
         val unasked = projectsState is ProjectList.Idle || projectsState is ProjectList.Failed
-        if (openSessionId == null && (homeTab == HomeTab.Plans || homeTab == HomeTab.Contexts) && unasked) client.refreshProjects()
+        if (openSessionId == null && (homeTab == HomeTab.Plans || homeTab == HomeTab.Contexts) && unasked) client.workspace.refreshProjects()
     }
 
     // The plan, sequence and context surfaces pull ON ARRIVAL, the artifacts
@@ -480,31 +480,31 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             // Two asks, because they are two answers: the rows, and the lanes
             // the rows group into. Either may land first. The frontier is not a
             // third ask — the rows carry the edges it is read from.
-            client.refreshPlans(planDirPath)
-            client.refreshSequences(planDirPath)
+            client.plans.refreshPlans(planDirPath)
+            client.plans.refreshSequences(planDirPath)
         }
         if (showingSequences && planDirPath != null) {
-            client.refreshSequences(planDirPath)
-            client.refreshCleanupCounts(planDirPath)
+            client.plans.refreshSequences(planDirPath)
+            client.plans.refreshCleanupCounts(planDirPath)
         }
-        if (showingContexts && contextProjectId != null) client.refreshContexts(contextProjectId)
+        if (showingContexts && contextProjectId != null) client.plans.refreshContexts(contextProjectId)
     }
 
     // A detail screen pulls the thing it names, whichever surface opened it.
     LaunchedEffect(where, openPlanId) {
         val planId = openPlanId
         if (where == Destination.PlanDetail && planId != null) {
-            client.readPlan(planId)
-            client.refreshPlanContexts(planId)
+            client.plans.readPlan(planId)
+            client.plans.refreshPlanContexts(planId)
         }
     }
     LaunchedEffect(where, openSequenceId) {
         val sequenceId = openSequenceId
-        if (where == Destination.SequenceDetail && sequenceId != null) client.readSequence(sequenceId)
+        if (where == Destination.SequenceDetail && sequenceId != null) client.plans.readSequence(sequenceId)
     }
     LaunchedEffect(where, openContextId) {
         val contextId = openContextId
-        if (where == Destination.ContextDetail && contextId != null) client.readContext(contextId)
+        if (where == Destination.ContextDetail && contextId != null) client.plans.readContext(contextId)
     }
 
     // The permitted surface is asked for when a control surface needs it and is
@@ -517,19 +517,19 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         val artifactsShowing = (where == Destination.Thread && tab == SessionTab.Artifacts) ||
             where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
         if ((where == Destination.Sheet || listShowing || artifactsShowing) && capabilities is Capabilities.Unknown) {
-            client.refreshCapabilities()
+            client.workspace.refreshCapabilities()
         }
     }
     LaunchedEffect(where, tab, openSessionId) {
         when {
             // Switch CLI's picker lists this desktop's CLIs.
-            where == Destination.Sheet -> if (clis.isEmpty() || !client.control.wantsClisOf(null)) client.refreshClis()
+            where == Destination.Sheet -> if (clis.isEmpty() || !client.workspace.control.wantsClisOf(null)) client.workspace.refreshClis()
             where == Destination.Spawn -> {
                 // The form opens on this desktop: a list left over from another
                 // machine is not its folders.
-                if (directories.isEmpty() || !client.control.wantsDirectoriesOf(null)) client.refreshDirectories()
-                if (clis.isEmpty() || !client.control.wantsClisOf(null)) client.refreshClis()
-                client.refreshMachines()
+                if (directories.isEmpty() || !client.workspace.control.wantsDirectoriesOf(null)) client.workspace.refreshDirectories()
+                if (clis.isEmpty() || !client.workspace.control.wantsClisOf(null)) client.workspace.refreshClis()
+                client.workspace.refreshMachines()
             }
             // The artifacts screens pull on arrival, like a snapshot pull: a
             // fresh ask every visit, never a stream and never a stale cache.
@@ -537,10 +537,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             // their own — returning from one re-pulls what it changed. Switching
             // TO the tab is an arrival; switching away and back pulls again.
             where == Destination.Thread && tab == SessionTab.Artifacts ->
-                openSessionId?.let { client.refreshArtifacts(it) }
+                openSessionId?.let { client.artifacts.refreshArtifacts(it) }
             where == Destination.ArtifactDetail ->
                 if (openSessionId != null && openArtifactId != null) {
-                    client.readArtifact(openSessionId!!, openArtifactId!!, version = null)
+                    client.artifacts.readArtifact(openSessionId!!, openArtifactId!!, version = null)
                 }
             else -> {}
         }
@@ -562,7 +562,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         lastCallTarget = to
         if (to == null || from == null || to == from || callScreenTarget != from) return@LaunchedEffect
         var waits = 0
-        while (client.sessions.sessions.value.none { it.id == to } && waits < CREATED_SESSION_WAITS) {
+        while (client.sessions.state.sessions.value.none { it.id == to } && waits < CREATED_SESSION_WAITS) {
             delay(SESSION_WAIT_STEP_MS)
             waits++
         }
@@ -576,12 +576,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         // No refreshSessions() here on purpose: the spawn's own answer already
         // refreshed the list, and Helm announces the new row besides. This only
         // watches what is held.
-        while (client.sessions.sessions.value.none { it.id == id } && waits < CREATED_SESSION_WAITS) {
+        while (client.sessions.state.sessions.value.none { it.id == id } && waits < CREATED_SESSION_WAITS) {
             delay(SESSION_WAIT_STEP_MS)
             waits++
         }
-        client.control.clearCreatedSession(id)
-        if (client.sessions.sessions.value.any { it.id == id }) {
+        client.workspace.control.clearCreatedSession(id)
+        if (client.sessions.state.sessions.value.any { it.id == id }) {
             openSessionId = id
             // A newly-created session is an opening just like tapping a list
             // row; never inherit the previous session's artifact tab/detail.
@@ -600,7 +600,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // outcomes both navigate and a rotation does not drag anyone anywhere.
     LaunchedEffect(artifactLanding) {
         val landing = artifactLanding ?: return@LaunchedEffect
-        client.control.consumeArtifactLanding()
+        client.workspace.control.consumeArtifactLanding()
         when (landing.action) {
             SessionAction.CreateArtifact -> {
                 val id = landing.artifactId
@@ -619,7 +619,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 // defers it until then) — so this is where the chips retire.
                 // Waiting chips of a plain create go with them: they described
                 // one create, which is over.
-                client.uploads.clear()
+                client.artifacts.uploads.clear()
             }
             SessionAction.ReviseArtifact -> {
                 editingArtifactId = null
@@ -646,7 +646,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             try {
                 context.startActivity(intent)
             } catch (error: ActivityNotFoundException) {
-                client.control.noticed(
+                client.workspace.control.noticed(
                     SessionAction.SaveArtifact,
                     ActionOutcome.Failed(context.getString(R.string.chat_attachment_no_viewer)),
                 )
@@ -663,12 +663,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 artifactFiles.save(ready.file.filename, ready.file.mimeType, ready.file.bytes)
             }
             // Done first: saveLanded changes artifactSave, which cancels this effect.
-            client.control.noticed(SessionAction.SaveArtifact, ActionOutcome.Done)
-            client.artifacts.saveLanded(ready.file.artifactId, path.location)
+            client.workspace.control.noticed(SessionAction.SaveArtifact, ActionOutcome.Done)
+            client.artifacts.state.saveLanded(ready.file.artifactId, path.location)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            client.artifacts.saveFailed(
+            client.artifacts.state.saveFailed(
                 ready.file.artifactId,
                 error.message ?: CANNOT_WRITE_FILE,
             )
@@ -725,7 +725,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     staging.discard(picked)
                     attachNote(R.string.artifacts_attach_too_large)
                 }
-                else -> client.uploads.stage(picked)
+                else -> client.artifacts.uploads.stage(picked)
             }
         }
         Unit
@@ -761,7 +761,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         staging.discard(picked)
                         attachNote(R.string.artifacts_attach_too_large)
                     }
-                    else -> client.replaceArtifactAttachment(sessionId, artifactId, oldId, picked)
+                    else -> client.artifacts.replaceArtifactAttachment(sessionId, artifactId, oldId, picked)
                 }
             }
         }
@@ -780,7 +780,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             is Capabilities.Known -> METHOD_ATTACHMENT_ADD in caps.tools
             else -> null
         },
-        negotiatedProtocol = client.negotiatedProtocol(),
+        negotiatedProtocol = client.artifacts.negotiatedProtocol(),
         linked = linkState == LinkState.Linked,
     )
 
@@ -788,7 +788,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // without a draft, whose desktop path lands in the composer instead.
     var chatInsert by remember { mutableStateOf<((String) -> Unit)?>(null) }
     var chatAttachSession by remember { mutableStateOf<HelmSession?>(null) }
-    val shareState by client.shares.state.collectAsState()
+    val shareState by client.artifacts.shares.state.collectAsState()
     LaunchedEffect(shareState) {
         when (val current = shareState) {
             is ShareState.Failed -> if (chatAttachSession != null) {
@@ -819,7 +819,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             }
             val support = uploadSupport(
                 toolPermitted = (capabilities as? Capabilities.Known)?.let { METHOD_SHARE_ADD in it.tools },
-                negotiatedProtocol = client.negotiatedProtocol(),
+                negotiatedProtocol = client.artifacts.negotiatedProtocol(),
                 linked = linkState == LinkState.Linked,
             )
             val refusal = shareRefusal(staged.sizeBytes, HelmLink.holderRank, support)
@@ -829,7 +829,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 return@launch
             }
             Toast.makeText(context, context.getString(R.string.chat_attach_sending, staged.filename), Toast.LENGTH_SHORT).show()
-            client.shareFile(session.id, session.name, staged) { path ->
+            client.artifacts.shareFile(session.id, session.name, staged) { path ->
                 // The answer lands on the link's thread; the draft is main-thread state.
                 scope.launch(Dispatchers.Main) {
                     chatAttachSession = null
@@ -867,15 +867,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     )
     val refreshPlanBoard: () -> Unit = {
         planDirPath?.let { dir ->
-            client.refreshPlans(dir)
-            client.refreshSequences(dir)
+            client.plans.refreshPlans(dir)
+            client.plans.refreshSequences(dir)
         }
         Unit
     }
     // Plan/sequence writes (P-0812). Each needs the board's directory so the
     // client can re-pull it on success; with no directory there is no board.
     val createPlan: (String, String, String?, Boolean) -> Unit = { title, description, type, autoImplement ->
-        planDirPath?.let { dir -> client.createPlan(dir, title, description, type, autoImplement) }
+        planDirPath?.let { dir -> client.plans.createPlan(dir, title, description, type, autoImplement) }
     }
     // A confirmed delete leaves nothing to show; go back rather than sit on a
     // detail screen for a plan or lane that no longer exists.
@@ -887,17 +887,17 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         if (done.kind == PlanWriteKind.DeleteSequence && where == Destination.SequenceDetail) where = Destination.Thread
     }
     val refreshLanes: () -> Unit = {
-        planDirPath?.let { dir -> client.refreshSequences(dir) }
+        planDirPath?.let { dir -> client.plans.refreshSequences(dir) }
         Unit
     }
     val refreshContextNodes: () -> Unit = {
-        contextProjectId?.let { id -> client.refreshContexts(id) }
+        contextProjectId?.let { id -> client.plans.refreshContexts(id) }
         Unit
     }
     val listedArtifacts = when (val listed = artifactList) {
         is ArtifactList.Ready -> listed.artifacts
         is ArtifactList.Refreshing -> listed.cached
-        else -> openSessionId?.let { client.artifacts.cachedArtifacts(it) }.orEmpty()
+        else -> openSessionId?.let { client.artifacts.state.cachedArtifacts(it) }.orEmpty()
     }
 
     // One chat surface, two homes: the open session's Chat tab and the Helm
@@ -905,9 +905,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // belongs to, so it works from either.
     val sessionChat: @Composable (String, ((Int) -> Boolean)?, Int, Int) -> Unit = { sessionId, onSwipeSession, earlierUnread, laterUnread ->
         val artifactsForChat = when (val listed = artifactList) {
-            is ArtifactList.Ready -> if (listed.sessionId == sessionId) listed.artifacts else client.artifacts.cachedArtifacts(sessionId)
-            is ArtifactList.Refreshing -> if (listed.sessionId == sessionId) listed.cached else client.artifacts.cachedArtifacts(sessionId)
-            else -> client.artifacts.cachedArtifacts(sessionId)
+            is ArtifactList.Ready -> if (listed.sessionId == sessionId) listed.artifacts else client.artifacts.state.cachedArtifacts(sessionId)
+            is ArtifactList.Refreshing -> if (listed.sessionId == sessionId) listed.cached else client.artifacts.state.cachedArtifacts(sessionId)
+            else -> client.artifacts.state.cachedArtifacts(sessionId)
         }
         val comfyGallery = buildList {
             artifactsForChat.filter { it.title == "Chat files" }.forEach { artifact ->
@@ -945,49 +945,49 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             earlierUnreadSessions = earlierUnread,
             laterUnreadSessions = laterUnread,
             messages = threads[sessionId].orEmpty(),
-            onSend = { text -> client.sendChat(sessionId, text) },
+            onSend = { text -> client.sessions.sendChat(sessionId, text) },
             onSendWithProfile = { text, profileId, imageSizeId, inputImagePath, inputAttachmentIds ->
-                client.sendChat(sessionId, text, profileId, imageSizeId, inputImagePath, inputAttachmentIds)
+                client.sessions.sendChat(sessionId, text, profileId, imageSizeId, inputImagePath, inputAttachmentIds)
             },
             // Retry re-issues over the wire (the repository swaps the dead
             // row). Delete removes the rows here and tells the desktop which of
             // them it holds, so its journal (and an API session's history) drop
             // them too.
-            onRetry = { key, text -> client.resendChat(sessionId, key, text) },
+            onRetry = { key, text -> client.sessions.resendChat(sessionId, key, text) },
             session = sessions.firstOrNull { it.id == sessionId },
-            onUnfreeze = { retry -> client.unfreeze(sessionId, retry) },
-            onDelete = { keys -> client.deleteChats(sessionId, keys) },
+            onUnfreeze = { retry -> client.sessions.unfreeze(sessionId, retry) },
+            onDelete = { keys -> client.sessions.deleteChats(sessionId, keys) },
             onTerminal = {
                 openSessionId = sessionId
                 where = Destination.Snapshot
-                client.readTerminal(sessionId, requestedLines)
+                client.sessions.readTerminal(sessionId, requestedLines)
             },
             pulls = pulls,
             onPull = { key, attachment ->
-                client.pullChatAttachment(sessionId, key, attachment)
+                client.artifacts.pullChatAttachment(sessionId, key, attachment)
             },
-            onCancelPull = { key -> client.chats.pullCancelled(key) },
+            onCancelPull = { key -> client.sessions.chats.pullCancelled(key) },
             onDeleteAttachment = { key, attachment ->
-                client.deleteChatAttachment(sessionId, key, attachment)
+                client.artifacts.deleteChatAttachment(sessionId, key, attachment)
             },
             onOpenAttachment = openAttachment,
             comfyGallery = comfyGallery,
             excludedComfyReferenceIds = excludedComfyReferenceIds[sessionId].orEmpty(),
             comfyGalleryPulls = artifactPulls,
             onComfyReferenceSelection = { known, included ->
-                client.chats.setComfyReferenceSelection(sessionId, known, included)
+                client.sessions.chats.setComfyReferenceSelection(sessionId, known, included)
             },
             onDeleteGalleryAttachment = { attachment ->
-                client.deleteArtifactAttachment(sessionId, attachment.artifactId, attachment.attachmentId) {
-                    client.chats.removeAttachmentReference(sessionId, attachment.artifactId, attachment.attachmentId)
-                    client.refreshArtifacts(sessionId)
+                client.artifacts.deleteArtifactAttachment(sessionId, attachment.artifactId, attachment.attachmentId) {
+                    client.sessions.chats.removeAttachmentReference(sessionId, attachment.artifactId, attachment.attachmentId)
+                    client.artifacts.refreshArtifacts(sessionId)
                 }
             },
             onGalleryDownload = { attachment ->
-                client.downloadArtifactAttachment(sessionId, attachment.artifactId, attachment.toHelmArtifactAttachment())
+                client.artifacts.downloadArtifactAttachment(sessionId, attachment.artifactId, attachment.toHelmArtifactAttachment())
             },
             onGalleryPreview = { attachment ->
-                client.previewArtifactAttachment(sessionId, attachment.artifactId, attachment.toHelmArtifactAttachment())
+                client.artifacts.previewArtifactAttachment(sessionId, attachment.artifactId, attachment.toHelmArtifactAttachment())
             },
             onGallerySavePreview = { attachment, uri ->
                 scope.launch {
@@ -998,7 +998,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 ?: error(CANNOT_WRITE_FILE)
                             artifactFiles.save(attachment.filename, attachment.mimeType, bytes)
                         }
-                        client.artifacts.attachmentPulls.pullSaved(
+                        client.artifacts.state.attachmentPulls.pullSaved(
                             artifactAttachmentKey(attachment.artifactId, attachment.attachmentId),
                             saved.location,
                             saved.uri,
@@ -1015,7 +1015,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     }
                 }
             },
-            onRefreshComfyGallery = { client.refreshArtifacts(sessionId); Unit },
+            onRefreshComfyGallery = { client.artifacts.refreshArtifacts(sessionId); Unit },
             call = liveCall?.takeIf { it.targetId == sessionId },
             // One call at a time: while another session is on a call, this one cannot ring.
             onCall = if (liveCall == null) {
@@ -1064,7 +1064,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        notice?.let { ActionNoticeBar(notice = it, onDismiss = client.control::clearNotice) }
+        notice?.let { ActionNoticeBar(notice = it, onDismiss = client.workspace.control::clearNotice) }
 
         Box(modifier = Modifier.fillMaxSize()) {
             when {
@@ -1089,7 +1089,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onRestart = { resume ->
                             val sent = context.getString(R.string.desktops_restart_sent)
                             // The answer lands on the link's thread; a Toast needs main.
-                            val issued = client.restartHelm(resume) { failure ->
+                            val issued = client.workspace.restartHelm(resume) { failure ->
                                 scope.launch(Dispatchers.Main) {
                                     Toast.makeText(context, failure ?: sent, Toast.LENGTH_LONG).show()
                                 }
@@ -1127,17 +1127,17 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         spawnInFlight = spawnInFlight,
                         machines = spawnMachines,
                         onMachine = { machineId ->
-                            client.refreshClis(machineId)
-                            client.refreshDirectories(machineId)
+                            client.workspace.refreshClis(machineId)
+                            client.workspace.refreshDirectories(machineId)
                         },
                         onSpawn = { dirPath, cliType, name, machineId ->
                             // Navigation is decided by the OUTCOME, not by the
                             // tap: success arrives as createdSessionId above,
                             // failure as the notice bar's to say — so the form
                             // keeps its choices instead of leaving on faith.
-                            client.spawn(dirPath, cliType, name, planSpawn?.prompt, machineId)
+                            client.sessions.spawn(dirPath, cliType, name, planSpawn?.prompt, machineId)
                         },
-                        onRetryDirectories = { machineId -> client.refreshDirectories(machineId) },
+                        onRetryDirectories = { machineId -> client.workspace.refreshDirectories(machineId) },
                         onBack = toThread,
                         plan = planSpawn,
                     )
@@ -1174,8 +1174,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             ),
                             onRefresh = {
                                 openPlanId?.let { planId ->
-                                    client.readPlan(planId)
-                                    client.refreshPlanContexts(planId)
+                                    client.plans.readPlan(planId)
+                                    client.plans.refreshPlanContexts(planId)
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -1194,18 +1194,18 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         )
                         SequenceDetail(
                             sequence = sequence,
-                            onRefresh = { openSequenceId?.let { client.readSequence(it) } },
+                            onRefresh = { openSequenceId?.let { client.plans.readSequence(it) } },
                             write = planWriteState,
-                            onDismissWrite = client.planWrites::dismiss,
+                            onDismissWrite = client.plans.writes::dismiss,
                             onEdit = { title, mission ->
                                 val dir = planDirPath
                                 val id = openSequenceId
-                                if (dir != null && id != null) client.updateSequence(dir, id, title, mission)
+                                if (dir != null && id != null) client.plans.updateSequence(dir, id, title, mission)
                             },
                             onDelete = {
                                 val dir = planDirPath
                                 val id = openSequenceId
-                                if (dir != null && id != null) client.deleteSequence(dir, id)
+                                if (dir != null && id != null) client.plans.deleteSequence(dir, id)
                             },
                             modifier = Modifier.weight(1f),
                         )
@@ -1223,7 +1223,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         )
                         ContextDetail(
                             context = contextNode,
-                            onRefresh = { openContextId?.let { client.readContext(it) } },
+                            onRefresh = { openContextId?.let { client.plans.readContext(it) } },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -1248,7 +1248,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onLinkClick = { where = Destination.Desktops },
                         onExportLogs = exportLogs,
                         notificationsEnabled = notificationsEnabled,
-                        onToggleNotifications = { client.alerts.setEnabled(!notificationsEnabled) },
+                        onToggleNotifications = { client.sessions.alerts.setEnabled(!notificationsEnabled) },
                     )
                     Box(modifier = Modifier.weight(1f)) {
                         when (homeTab) {
@@ -1310,7 +1310,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 projects = LoadViews.projects(projectsState),
                                 project = project,
                                 onSelectProject = { chosenProjectId = it.id },
-                                onRetryProjects = { client.refreshProjects() },
+                                onRetryProjects = { client.workspace.refreshProjects() },
                                 noProjectText = stringResource(R.string.plans_no_project),
                             ) {
                                 PlanList(
@@ -1326,7 +1326,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     taskLinks = taskLinks,
                                     onRefresh = refreshPlanBoard,
                                     write = planWriteState,
-                                    onDismissWrite = client.planWrites::dismiss,
+                                    onDismissWrite = client.plans.writes::dismiss,
                                     onCreate = createPlan,
                                 )
                             }
@@ -1335,14 +1335,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 ask = timeAsk,
                                 view = LoadViews.time(timeState, timeAsk),
                                 onAsk = { timeAsk = it },
-                                onFetch = { client.refreshTime(it) },
+                                onFetch = { client.workspace.refreshTime(it) },
                             )
 
                             HomeTab.Contexts -> ProjectScoped(
                                 projects = LoadViews.projects(projectsState),
                                 project = project,
                                 onSelectProject = { chosenProjectId = it.id },
-                                onRetryProjects = { client.refreshProjects() },
+                                onRetryProjects = { client.workspace.refreshProjects() },
                                 noProjectText = stringResource(R.string.contexts_no_project),
                             ) {
                                 ContextList(
@@ -1364,7 +1364,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         snapshot = snapshot,
                         requestedLines = requestedLines,
                         linkState = linkState,
-                        onPull = { lines -> client.readTerminal(open.id, lines) },
+                        onPull = { lines -> client.sessions.readTerminal(open.id, lines) },
                         onBack = toThread,
                     )
                 }
@@ -1376,7 +1376,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         // shows a failure, and the chain itself must finish —
                         // the landing that closes the editor arrives later.
                         if (uploadStates.values.none { it is AttachmentUploadState.Uploading }) {
-                            client.uploads.clear()
+                            client.artifacts.uploads.clear()
                         }
                         where = if (editingArtifactId == null) {
                             Destination.Thread
@@ -1411,16 +1411,16 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         },
                         onAttachFiles = { filesLauncher.launch(ANY_MIME) },
                         onOpenStaged = openStagedFile,
-                        onRemoveStaged = client.uploads::unstage,
-                        onRetryStaged = { client.retryArtifactUploads() },
+                        onRemoveStaged = client.artifacts.uploads::unstage,
+                        onRetryStaged = { client.artifacts.retryArtifactUploads() },
                         attachmentErrors = attachmentErrors,
                         onDeleteExisting = { attachmentId ->
                             val artifactId = editingArtifactId
                             if (artifactId != null) {
                                 // The cache prunes on Ok; the re-pull reconciles
                                 // anything else the desktop changed meanwhile.
-                                client.deleteArtifactAttachment(open.id, artifactId, attachmentId) {
-                                    client.refreshArtifacts(open.id)
+                                client.artifacts.deleteArtifactAttachment(open.id, artifactId, attachmentId) {
+                                    client.artifacts.refreshArtifacts(open.id)
                                 }
                             }
                         },
@@ -1434,11 +1434,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 // The staged keys ride the create; the client
                                 // chains the uploads and lands the notice only
                                 // when the last commit has answered.
-                                client.createArtifact(
+                                client.artifacts.createArtifact(
                                     open.id,
                                     title,
                                     content,
-                                    client.uploads.pendingKeys(),
+                                    client.artifacts.uploads.pendingKeys(),
                                     intent.takeIf { intentSupported && it != com.potatomotato.helm.data.ArtifactIntent.Normal },
                                 )
                             } else {
@@ -1447,11 +1447,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 // artifact already exists, so the keys ride the
                                 // same chain a create's do.
                                 if (artifactId != null && edit is ArtifactEdit.Revision) {
-                                    client.reviseArtifact(
+                                    client.artifacts.reviseArtifact(
                                         open.id,
                                         artifactId,
                                         ArtifactRules.Revision(edit.artifact.title, edit.shown, title, content),
-                                        client.uploads.pendingKeys(),
+                                        client.artifacts.uploads.pendingKeys(),
                                         intent.takeIf { intentSupported && it != edit.intent },
                                     )
                                 }
@@ -1480,7 +1480,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         capabilities = capabilities,
                         linkState = linkState,
                         onPull = { version ->
-                            openSessionId?.let { session -> client.readArtifact(session, openArtifactId!!, version) }
+                            openSessionId?.let { session -> client.artifacts.readArtifact(session, openArtifactId!!, version) }
                         },
                         onRevise = {
                             editingArtifactId = openArtifactId
@@ -1493,19 +1493,19 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         },
                         onDownload = {
                             openSessionId?.let { session ->
-                                client.downloadArtifact(session, openArtifactId!!, version = null)
+                                client.artifacts.downloadArtifact(session, openArtifactId!!, version = null)
                             }
                         },
                         attachmentPulls = artifactPulls,
                         onDownloadAttachment = { attachment ->
                             openSessionId?.let { session ->
-                                client.downloadArtifactAttachment(session, openArtifactId!!, attachment)
+                                client.artifacts.downloadArtifactAttachment(session, openArtifactId!!, attachment)
                             }
                         },
                         onOpenAttachment = openAttachment,
                         onDelete = {
                             openSessionId?.let { session ->
-                                client.deleteArtifact(session, openArtifactId!!)
+                                client.artifacts.deleteArtifact(session, openArtifactId!!)
                             }
                         },
                         onBack = toThread,
@@ -1657,7 +1657,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     taskLinks = taskLinks,
                                     onRefresh = refreshPlanBoard,
                                     write = planWriteState,
-                                    onDismissWrite = client.planWrites::dismiss,
+                                    onDismissWrite = client.plans.writes::dismiss,
                                     onCreate = createPlan,
                                 )
                             }
@@ -1674,9 +1674,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     onRefresh = refreshLanes,
                                     cleanup = cleanupState,
                                     write = planWriteState,
-                                    onDismissWrite = client.planWrites::dismiss,
-                                    onCreate = { title, mission -> client.createSequence(planDirPath, title, mission) },
-                                    onClearUnused = { client.clearUnused(planDirPath) },
+                                    onDismissWrite = client.plans.writes::dismiss,
+                                    onCreate = { title, mission -> client.plans.createSequence(planDirPath, title, mission) },
+                                    onClearUnused = { client.plans.clearUnused(planDirPath) },
                                 )
                             }
                         }
@@ -1701,16 +1701,16 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         where = when (action) {
                             SessionAction.Snapshot -> Destination.Snapshot
                             SessionAction.Spawn -> Destination.Spawn
-                            SessionAction.Compact -> Destination.Thread.also { client.compact(open.id) }
-                            SessionAction.Clear -> Destination.Thread.also { client.clear(open.id) }
-                            SessionAction.HelmCompact -> Destination.Thread.also { client.quickCompact(open.id) }
-                            SessionAction.Clone -> Destination.Thread.also { client.cloneSession(open.id) }
-                            SessionAction.Stop -> Destination.Thread.also { client.stop(open.id) }
-                            SessionAction.KeepWarmOn -> Destination.Thread.also { client.keepWarm(open.id, true) }
-                            SessionAction.KeepWarmOff -> Destination.Thread.also { client.keepWarm(open.id, false) }
-                            SessionAction.Freeze -> Destination.Thread.also { client.setFrozen(open.id, true) }
-                            SessionAction.Unfreeze -> Destination.Thread.also { client.setFrozen(open.id, false) }
-                            SessionAction.Close -> Destination.Thread.also { client.closeSession(open.id) }
+                            SessionAction.Compact -> Destination.Thread.also { client.sessions.compact(open.id) }
+                            SessionAction.Clear -> Destination.Thread.also { client.sessions.clear(open.id) }
+                            SessionAction.HelmCompact -> Destination.Thread.also { client.sessions.quickCompact(open.id) }
+                            SessionAction.Clone -> Destination.Thread.also { client.sessions.cloneSession(open.id) }
+                            SessionAction.Stop -> Destination.Thread.also { client.sessions.stop(open.id) }
+                            SessionAction.KeepWarmOn -> Destination.Thread.also { client.sessions.keepWarm(open.id, true) }
+                            SessionAction.KeepWarmOff -> Destination.Thread.also { client.sessions.keepWarm(open.id, false) }
+                            SessionAction.Freeze -> Destination.Thread.also { client.sessions.setFrozen(open.id, true) }
+                            SessionAction.Unfreeze -> Destination.Thread.also { client.sessions.setFrozen(open.id, false) }
+                            SessionAction.Close -> Destination.Thread.also { client.sessions.closeSession(open.id) }
                             // Rename never reaches here — it is answered by
                             // onRename below, because it carries a name. The
                             // artifact actions never reach here either: their
@@ -1727,18 +1727,18 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         // count the chip row already shows (the smallest one before
                         // the first choice): arriving on an empty terminal screen
                         // and having to choose again is a step nobody wants.
-                        if (action == SessionAction.Snapshot) client.readTerminal(open.id, requestedLines)
+                        if (action == SessionAction.Snapshot) client.sessions.readTerminal(open.id, requestedLines)
                     },
                     // Back to the thread rather than staying on the sheet: the
                     // notice bar says how it ended and the app bar shows the new
                     // name, which is the same landing every other action gets.
                     onRename = { name ->
-                        client.renameSession(open.id, name)
+                        client.sessions.renameSession(open.id, name)
                         where = Destination.Thread
                     },
                     clis = clis,
                     onSwitchCli = { cliType ->
-                        client.switchCli(open.id, cliType)
+                        client.sessions.switchCli(open.id, cliType)
                         where = Destination.Thread
                     },
                 )
@@ -1803,8 +1803,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             if (chatAttachSession != null) {
                 ShareWaitDialog(
                     state = shareState as? ShareState.Sending,
-                    onContinue = client::continueShareWait,
-                    onCancel = client::cancelShare,
+                    onContinue = client.artifacts::continueShareWait,
+                    onCancel = client.artifacts::cancelShare,
                 )
             }
         }
@@ -1941,14 +1941,14 @@ private fun WatchSessions(client: HelmClient, active: Boolean) {
     LaunchedEffect(lifecycle, active) {
         if (!active) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            client.watchSessions(true)
+            client.sessions.watchSessions(true)
             try {
                 while (true) {
                     delay(STALE_SESSIONS_RETRY_MS)
-                    client.refreshStaleSessions()
+                    client.sessions.refreshStaleSessions()
                 }
             } finally {
-                client.watchSessions(false)
+                client.sessions.watchSessions(false)
             }
         }
     }
@@ -1963,11 +1963,11 @@ private fun ReportViewedChat(client: HelmClient, viewedChat: String?) {
     LaunchedEffect(client, lifecycle, viewedChat, windowFocused) {
         if (!windowFocused) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            client.alerts.viewed(viewedChat)
+            client.sessions.alerts.viewed(viewedChat)
             try {
                 awaitCancellation()
             } finally {
-                client.alerts.viewed(null)
+                client.sessions.alerts.viewed(null)
             }
         }
     }
@@ -2043,14 +2043,14 @@ private fun planDetailActions(
         lanes = lanes,
         capabilities = capabilities,
         write = write,
-        onDismissWrite = client.planWrites::dismiss,
-        onEdit = { title, description -> withPlan { dir, id -> client.updatePlan(dir, id, title, description) }() },
-        onSetState = { status -> withPlan { dir, id -> client.setPlanState(dir, id, status) }() },
-        onAcceptSuggestion = withPlan { dir, id -> client.acceptPlanSuggestion(dir, id) },
-        onRejectSuggestion = withPlan { dir, id -> client.rejectPlanSuggestion(dir, id) },
-        onComplete = { documentation -> withPlan { dir, id -> client.completePlan(dir, id, documentation) }() },
-        onReopen = withPlan { dir, id -> client.reopenPlan(dir, id) },
-        onAssign = { laneId -> withPlan { dir, id -> client.assignSequence(dir, id, laneId) }() },
-        onDelete = withPlan { dir, id -> client.deletePlan(dir, id) },
+        onDismissWrite = client.plans.writes::dismiss,
+        onEdit = { title, description -> withPlan { dir, id -> client.plans.updatePlan(dir, id, title, description) }() },
+        onSetState = { status -> withPlan { dir, id -> client.plans.setPlanState(dir, id, status) }() },
+        onAcceptSuggestion = withPlan { dir, id -> client.plans.acceptPlanSuggestion(dir, id) },
+        onRejectSuggestion = withPlan { dir, id -> client.plans.rejectPlanSuggestion(dir, id) },
+        onComplete = { documentation -> withPlan { dir, id -> client.plans.completePlan(dir, id, documentation) }() },
+        onReopen = withPlan { dir, id -> client.plans.reopenPlan(dir, id) },
+        onAssign = { laneId -> withPlan { dir, id -> client.plans.assignSequence(dir, id, laneId) }() },
+        onDelete = withPlan { dir, id -> client.plans.deletePlan(dir, id) },
     )
 }

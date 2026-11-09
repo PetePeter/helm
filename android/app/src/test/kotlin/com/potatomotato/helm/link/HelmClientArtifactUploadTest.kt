@@ -52,7 +52,7 @@ class HelmClientArtifactUploadTest {
         // chain stays assertable; the waiting is the scheduler's, not a clock's.
         uploadScope = CoroutineScope(Dispatchers.Unconfined),
     ).apply {
-        openStagedAttachment = { staged -> files[staged.key]?.let { ByteArrayInputStream(it) } }
+        artifacts.openStagedAttachment = { staged -> files[staged.key]?.let { ByteArrayInputStream(it) } }
     }
 
     @Test
@@ -62,12 +62,12 @@ class HelmClientArtifactUploadTest {
         stage("a")
         stage("b")
 
-        client.createArtifact("s1", "title", "body", client.uploads.pendingKeys())
+        client.artifacts.createArtifact("s1", "title", "body", client.artifacts.uploads.pendingKeys())
 
         // The create went out first, and NOTHING navigated yet: the landing is
         // the deferred one.
         assertEquals("session_artifact_create", methodOf(sent.first()))
-        assertNull(client.control.artifactLanding.value)
+        assertNull(client.workspace.control.artifactLanding.value)
 
         // File a: slot open…
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
@@ -88,7 +88,7 @@ class HelmClientArtifactUploadTest {
         assertEquals("01020304", blob.bytes.toHex())
         assertTrue(blob.eof)
         assertEquals("session_artifact_attachment_commit", methodOf(sent[3]))
-        assertTrue(client.uploads.states.value["a"] is AttachmentUploadState.Uploading)
+        assertTrue(client.artifacts.uploads.states.value["a"] is AttachmentUploadState.Uploading)
 
         // …file b, only after a's commit ANSWERED.
         client.onInbound(
@@ -99,7 +99,7 @@ class HelmClientArtifactUploadTest {
         )
         assertEquals(
             AttachmentUploadState.Done("att-a"),
-            client.uploads.states.value["a"],
+            client.artifacts.uploads.states.value["a"],
         )
         assertEquals("session_artifact_attachment_add", methodOf(sent.last()))
         assertEquals("b.jpg", paramsOf(sent.last()).getString("filename"))
@@ -107,11 +107,11 @@ class HelmClientArtifactUploadTest {
         finishFile("b", "slot-b", "att-b")
 
         // Everything landed: NOW the create navigates, exactly like a bare one.
-        val landing = client.control.artifactLanding.value
+        val landing = client.workspace.control.artifactLanding.value
         assertNotNull("the deferred landing must arrive", landing)
         assertEquals(SessionAction.CreateArtifact, landing?.action)
         assertEquals("artifact-9", landing?.artifactId)
-        assertTrue(client.uploads.allDone())
+        assertTrue(client.artifacts.uploads.allDone())
     }
 
     @Test
@@ -119,7 +119,7 @@ class HelmClientArtifactUploadTest {
         files["a"] = byteArrayOf(1, 2, 3)
         val landed = mutableListOf<String>()
 
-        client.shareFile("s1", "work", stagedFile("a"), onLanded = { landed += it })
+        client.artifacts.shareFile("s1", "work", stagedFile("a"), onLanded = { landed += it })
         assertEquals("session_share_file_add", methodOf(sent[0]))
         client.onInbound(resultFor(callIdOf(sent[0]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
 
@@ -135,7 +135,7 @@ class HelmClientArtifactUploadTest {
     fun `a failed commit fails its chip and a retry reopens a fresh slot`() {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")
-        client.createArtifact("s1", "t", "b", client.uploads.pendingKeys())
+        client.artifacts.createArtifact("s1", "t", "b", client.artifacts.uploads.pendingKeys())
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
         client.onInbound(resultFor(callIdOf(sent[1]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
 
@@ -144,14 +144,14 @@ class HelmClientArtifactUploadTest {
 
         assertEquals(
             "upload checksum mismatch",
-            (client.uploads.states.value["a"] as AttachmentUploadState.Failed).message,
+            (client.artifacts.uploads.states.value["a"] as AttachmentUploadState.Failed).message,
         )
-        assertFalse(client.uploads.allDone())
-        assertNull("a failed chain must not navigate", client.control.artifactLanding.value)
+        assertFalse(client.artifacts.uploads.allDone())
+        assertNull("a failed chain must not navigate", client.workspace.control.artifactLanding.value)
 
         // The retry opens a NEW slot and re-sends the WHOLE file — a retry that
         // appended into a slot of unknown depth would land plausible and wrong.
-        assertTrue(client.retryArtifactUploads())
+        assertTrue(client.artifacts.retryArtifactUploads())
         assertEquals("session_artifact_attachment_add", methodOf(sent[4]))
         client.onInbound(resultFor(callIdOf(sent[4]), """{"uploadId":"slot-a2","maxSliceBytes":64,"total":3}"""))
         val blob = MobileEnvelope.decode(sent[5])
@@ -164,14 +164,14 @@ class HelmClientArtifactUploadTest {
                 """{"artifactId":"artifact-9","attachment":{"id":"att-a"}}""",
             ),
         )
-        assertEquals(SessionAction.CreateArtifact, client.control.artifactLanding.value?.action)
+        assertEquals(SessionAction.CreateArtifact, client.workspace.control.artifactLanding.value?.action)
     }
 
     @Test
     fun `a staged copy that vanished fails its chip instead of stalling the chain`() {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")
-        client.createArtifact("s1", "t", "b", client.uploads.pendingKeys())
+        client.artifacts.createArtifact("s1", "t", "b", client.artifacts.uploads.pendingKeys())
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
         assertEquals("session_artifact_attachment_add", methodOf(sent[1]))
 
@@ -181,9 +181,9 @@ class HelmClientArtifactUploadTest {
         client.onInbound(resultFor(callIdOf(sent[1]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
 
         assertTrue(
-            (client.uploads.states.value["a"] as AttachmentUploadState.Failed).message.contains("staged"),
+            (client.artifacts.uploads.states.value["a"] as AttachmentUploadState.Failed).message.contains("staged"),
         )
-        assertNull("a failed chain must not navigate", client.control.artifactLanding.value)
+        assertNull("a failed chain must not navigate", client.workspace.control.artifactLanding.value)
     }
 
     /**
@@ -197,7 +197,7 @@ class HelmClientArtifactUploadTest {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")
 
-        client.reviseArtifact("s1", "artifact-9", revised("# v2"), client.uploads.pendingKeys())
+        client.artifacts.reviseArtifact("s1", "artifact-9", revised("# v2"), client.artifacts.uploads.pendingKeys())
 
         assertEquals("session_artifact_update", methodOf(sent.first()))
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
@@ -207,7 +207,7 @@ class HelmClientArtifactUploadTest {
         assertEquals("session_artifact_attachment_add", methodOf(sent[1]))
         assertEquals("artifact-9", paramsOf(sent[1]).getString("artifactId"))
         // And the editor has not moved yet — the landing waits for the commit.
-        assertNull(client.control.artifactLanding.value)
+        assertNull(client.workspace.control.artifactLanding.value)
 
         client.onInbound(resultFor(callIdOf(sent[1]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
         val blob = MobileEnvelope.decode(sent[2]) as MobileRecord.Blob
@@ -220,9 +220,9 @@ class HelmClientArtifactUploadTest {
         )
 
         // The notice names what the user DID — revised, not created.
-        assertEquals(SessionAction.ReviseArtifact, client.control.artifactLanding.value?.action)
-        assertEquals("artifact-9", client.control.artifactLanding.value?.artifactId)
-        assertTrue(client.uploads.allDone())
+        assertEquals(SessionAction.ReviseArtifact, client.workspace.control.artifactLanding.value?.action)
+        assertEquals("artifact-9", client.workspace.control.artifactLanding.value?.artifactId)
+        assertTrue(client.artifacts.uploads.allDone())
     }
 
     private fun revised(body: String) = ArtifactRules.Revision("Doc", "# v1", "Doc", body)
@@ -232,7 +232,7 @@ class HelmClientArtifactUploadTest {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")
 
-        assertTrue(client.reviseArtifact("s1", "artifact-9", revised("# v1"), client.uploads.pendingKeys()))
+        assertTrue(client.artifacts.reviseArtifact("s1", "artifact-9", revised("# v1"), client.artifacts.uploads.pendingKeys()))
 
         assertEquals("session_artifact_attachment_add", methodOf(sent.first()))
         assertEquals("artifact-9", paramsOf(sent.first()).getString("artifactId"))
@@ -241,16 +241,16 @@ class HelmClientArtifactUploadTest {
         client.onInbound(
             resultFor(callIdOf(sent[2]), """{"artifactId":"artifact-9","attachment":{"id":"att-a"}}"""),
         )
-        assertEquals(SessionAction.ReviseArtifact, client.control.artifactLanding.value?.action)
+        assertEquals(SessionAction.ReviseArtifact, client.workspace.control.artifactLanding.value?.action)
     }
 
     @Test
     fun `a revise with nothing staged lands immediately, as it always did`() {
-        client.reviseArtifact("s1", "artifact-9", revised("# v2"), client.uploads.pendingKeys())
+        client.artifacts.reviseArtifact("s1", "artifact-9", revised("# v2"), client.artifacts.uploads.pendingKeys())
 
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
 
-        assertEquals(SessionAction.ReviseArtifact, client.control.artifactLanding.value?.action)
+        assertEquals(SessionAction.ReviseArtifact, client.workspace.control.artifactLanding.value?.action)
         assertEquals(1, sent.size)
     }
 
@@ -258,13 +258,13 @@ class HelmClientArtifactUploadTest {
     fun `a retry after a revise re-sends the whole file into a fresh slot`() {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")
-        client.reviseArtifact("s1", "artifact-9", revised("# v2"), client.uploads.pendingKeys())
+        client.artifacts.reviseArtifact("s1", "artifact-9", revised("# v2"), client.artifacts.uploads.pendingKeys())
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
         client.onInbound(resultFor(callIdOf(sent[1]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
 
         client.onInbound(errorFor(callIdOf(sent[3]), "upload checksum mismatch"))
 
-        assertTrue(client.retryArtifactUploads())
+        assertTrue(client.artifacts.retryArtifactUploads())
         assertEquals("session_artifact_attachment_add", methodOf(sent[4]))
         client.onInbound(resultFor(callIdOf(sent[4]), """{"uploadId":"slot-a2","maxSliceBytes":64,"total":3}"""))
         // From zero, into the NEW slot: an append into a slot of unknown depth is
@@ -280,7 +280,7 @@ class HelmClientArtifactUploadTest {
     // ------------------------------------------------------------- the harness
 
     private fun stage(key: String) {
-        assertTrue(client.uploads.stage(stagedFile(key)))
+        assertTrue(client.artifacts.uploads.stage(stagedFile(key)))
     }
 
     private fun stagedFile(key: String) = StagedAttachment(
@@ -299,7 +299,7 @@ class HelmClientArtifactUploadTest {
     fun `deleting an attachment sends the delete tool and prunes the cached row`() {
         seedList()
 
-        client.deleteArtifactAttachment("s1", "artifact-9", "att-old")
+        client.artifacts.deleteArtifactAttachment("s1", "artifact-9", "att-old")
 
         assertEquals("session_artifact_attachment_delete", methodOf(sent.last()))
         val params = paramsOf(sent.last())
@@ -309,18 +309,18 @@ class HelmClientArtifactUploadTest {
 
         client.onInbound(resultFor(callIdOf(sent.last()), """{"ok":true}"""))
         assertEquals(listOf("att-keep"), cachedAttachmentIds())
-        assertTrue(client.artifacts.attachmentErrors.value.isEmpty())
+        assertTrue(client.artifacts.state.attachmentErrors.value.isEmpty())
     }
 
     @Test
     fun `a refused delete keeps the row and records why`() {
         seedList()
 
-        client.deleteArtifactAttachment("s1", "artifact-9", "att-old")
+        client.artifacts.deleteArtifactAttachment("s1", "artifact-9", "att-old")
         client.onInbound(errorFor(callIdOf(sent.last()), "attachment locked"))
 
         assertEquals(listOf("att-old", "att-keep"), cachedAttachmentIds())
-        assertEquals("attachment locked", client.artifacts.attachmentErrors.value["att-old"])
+        assertEquals("attachment locked", client.artifacts.state.attachmentErrors.value["att-old"])
     }
 
     @Test
@@ -329,7 +329,7 @@ class HelmClientArtifactUploadTest {
         files["n"] = byteArrayOf(9, 9)
         val before = sent.size
 
-        assertTrue(client.replaceArtifactAttachment("s1", "artifact-9", "att-old", stagedFile("n")))
+        assertTrue(client.artifacts.replaceArtifactAttachment("s1", "artifact-9", "att-old", stagedFile("n")))
 
         // Upload first — no delete may precede the commit.
         assertEquals("session_artifact_attachment_add", methodOf(sent[before]))
@@ -345,7 +345,7 @@ class HelmClientArtifactUploadTest {
         client.onInbound(resultFor(callIdOf(delete), """{"ok":true}"""))
         assertEquals(listOf("att-keep"), cachedAttachmentIds())
         // The editor stays put: a replace is not a create/revise landing.
-        assertNull(client.control.artifactLanding.value)
+        assertNull(client.workspace.control.artifactLanding.value)
     }
 
     @Test
@@ -354,18 +354,18 @@ class HelmClientArtifactUploadTest {
         files["n"] = byteArrayOf(9, 9)
         val before = sent.size
 
-        client.replaceArtifactAttachment("s1", "artifact-9", "att-old", stagedFile("n"))
+        client.artifacts.replaceArtifactAttachment("s1", "artifact-9", "att-old", stagedFile("n"))
         client.onInbound(resultFor(callIdOf(sent.last()), """{"uploadId":"slot-n","maxSliceBytes":64,"total":2}"""))
         client.onInbound(errorFor(callIdOf(sent.last()), "upload checksum mismatch"))
 
-        assertTrue(client.uploads.states.value["n"] is AttachmentUploadState.Failed)
+        assertTrue(client.artifacts.uploads.states.value["n"] is AttachmentUploadState.Failed)
         assertTrue(sent.drop(before).none { isCall(it, "session_artifact_attachment_delete") })
         assertEquals(listOf("att-old", "att-keep"), cachedAttachmentIds())
     }
 
     /** Put one artifact with two attachments into the list cache, as a real list answer would. */
     private fun seedList() {
-        client.refreshArtifacts("s1")
+        client.artifacts.refreshArtifacts("s1")
         client.onInbound(
             resultFor(
                 callIdOf(sent.last { isCall(it, "session_artifact_list") }),
@@ -376,7 +376,7 @@ class HelmClientArtifactUploadTest {
     }
 
     private fun cachedAttachmentIds(): List<String> =
-        client.artifacts.cachedArtifacts("s1").single().attachments.map { it.id }
+        client.artifacts.state.cachedArtifacts("s1").single().attachments.map { it.id }
 
     private fun isCall(frame: ByteArray, method: String): Boolean =
         runCatching { methodOf(frame) == method }.getOrDefault(false)

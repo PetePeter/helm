@@ -78,9 +78,9 @@ class ShareActivity : ComponentActivity() {
         val client = HelmPairing.client
         // A cold start from the share sheet: the link service may not be up yet.
         if (BlePermissions.allGranted(this)) HelmLinkService.start(this)
-        if (savedInstanceState == null) client.shares.reset()
-        client.refreshSessions()
-        client.refreshCapabilities()
+        if (savedInstanceState == null) client.artifacts.shares.reset()
+        client.sessions.refreshSessions()
+        client.workspace.refreshCapabilities()
         setContent {
             HelmTheme {
                 ShareScreen(
@@ -129,9 +129,9 @@ private fun ShareScreen(
     onLanded: (sessionId: String, path: String) -> Unit,
     onClose: () -> Unit,
 ) {
-    val sessions by client.sessions.sessions.collectAsState()
-    val state by client.shares.state.collectAsState()
-    val capabilities by client.capabilities.state.collectAsState()
+    val sessions by client.sessions.state.sessions.collectAsState()
+    val state by client.artifacts.shares.state.collectAsState()
+    val capabilities by client.workspace.capabilities.state.collectAsState()
     val linkState by HelmLink.state.collectAsState()
     var file by remember { mutableStateOf<StagedAttachment?>(null) }
     var unreadable by remember { mutableStateOf(source == null) }
@@ -147,11 +147,11 @@ private fun ShareScreen(
         file?.let { staged ->
             val support = uploadSupport(
                 toolPermitted = (capabilities as? Capabilities.Known)?.let { METHOD_SHARE_ADD in it.tools },
-                negotiatedProtocol = client.negotiatedProtocol(),
+                negotiatedProtocol = client.artifacts.negotiatedProtocol(),
                 linked = linkState == LinkState.Linked,
             )
             val refusal = shareRefusal(staged.sizeBytes, HelmLink.holderRank, support)
-            if (refusal != null) client.shares.failed(refusal) else client.shareFile(session.id, session.name, staged) { path -> onLanded(session.id, path) }
+            if (refusal != null) client.artifacts.shares.failed(refusal) else client.artifacts.shareFile(session.id, session.name, staged) { path -> onLanded(session.id, path) }
         }
     }
 
@@ -224,7 +224,7 @@ private fun ShareScreen(
             }
             is ShareState.Failed -> Footer {
                 Text(text = current.message, style = MaterialTheme.typography.titleMedium, color = HelmColors.Txt)
-                GhostButton(text = "Pick another session", onClick = client.shares::reset)
+                GhostButton(text = "Pick another session", onClick = client.artifacts.shares::reset)
                 PrimaryButton(text = "Close", onClick = onClose)
             }
             is ShareState.Cancelled -> Footer {
@@ -236,8 +236,8 @@ private fun ShareScreen(
     BackHandler(enabled = state is ShareState.Sending) { }
     ShareWaitDialog(
         state = state as? ShareState.Sending,
-        onContinue = client::continueShareWait,
-        onCancel = client::cancelShare,
+        onContinue = client.artifacts::continueShareWait,
+        onCancel = client.artifacts::cancelShare,
     )
 }
 

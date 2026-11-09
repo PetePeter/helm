@@ -304,7 +304,7 @@ class VoiceCallService : Service() {
                 // The instant "heard you": the reply is seconds away, silence reads as deaf.
                 cue()
                 HelmLog.d(HelmLog.UI) { "call sending ${text.length} chars" }
-                targetId?.let { client.sendChat(it, text, interruption = interruption) } ?: false
+                targetId?.let { client.sessions.sendChat(it, text, interruption = interruption) } ?: false
             },
             sendFailedLine = getString(R.string.call_send_failed),
             turnTimer = { delayMs, fire ->
@@ -352,7 +352,7 @@ class VoiceCallService : Service() {
         // An answered ring that really became a call: tell Helm, so it does not
         // ring again in 10 minutes. Only here — a call that never started (no
         // mic grant) leaves the retry armed.
-        if (opening != null) client.ringAnswered(target)
+        if (opening != null) client.workspace.ringAnswered(target)
     }
 
     /**
@@ -361,7 +361,7 @@ class VoiceCallService : Service() {
      */
     private fun line(target: String) = object : CallLine {
         override fun place(answer: (ready: Boolean) -> Unit): CallRefusal? {
-            val name = HelmPairing.client.sessions.find(target)?.name.orEmpty()
+            val name = HelmPairing.client.sessions.state.find(target)?.name.orEmpty()
             return HelmTelecom.place(this@VoiceCallService, target, name) { created ->
                 if (created) takeAudio()
                 answer(created)
@@ -390,9 +390,9 @@ class VoiceCallService : Service() {
         val call = controller ?: return
         val client = HelmPairing.client
         feedJob?.cancel()
-        val feed = CallFeed(client.chats.thread(target))
+        val feed = CallFeed(client.sessions.chats.thread(target))
         feedJob = scope.launch {
-            client.chats.threads.map { it[target].orEmpty() }.distinctUntilChanged().collect { thread ->
+            client.sessions.chats.threads.map { it[target].orEmpty() }.distinctUntilChanged().collect { thread ->
                 val events = feed.next(thread)
                 if (events.replies.isNotEmpty()) {
                     HelmLog.i(HelmLog.UI, "call target replied ${events.replies.size} line(s); queued to speak")
@@ -492,7 +492,7 @@ class VoiceCallService : Service() {
         }
 
     private fun startForegroundWith(target: String?) {
-        val name = target?.let { HelmPairing.client.sessions.find(it)?.name ?: it }.orEmpty()
+        val name = target?.let { HelmPairing.client.sessions.state.find(it)?.name ?: it }.orEmpty()
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )

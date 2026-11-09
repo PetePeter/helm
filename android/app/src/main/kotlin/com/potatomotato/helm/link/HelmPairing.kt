@@ -120,17 +120,17 @@ object HelmPairing {
         // they are attached here rather than constructed with the client — the
         // same shape as HelmLink.sender. Settings first: the router adopts what
         // the user chose before any alert can arrive to be judged against it.
-        client.alerts.useSettings(FileNotificationSettings(File(context.filesDir, NOTIFY_DIRECTORY)))
-        client.alerts.port = AndroidNotifications(context)
+        client.sessions.alerts.useSettings(FileNotificationSettings(File(context.filesDir, NOTIFY_DIRECTORY)))
+        client.sessions.alerts.port = AndroidNotifications(context)
         val ring = IncomingRing(context)
-        client.ringer = { record -> ring.ring(record) { client.alerts.onAlert(record) } }
-        client.transferrer = { VoiceCallService.transfer(context, it.fromSessionId, it.sessionId, it.text) }
+        client.sessions.ringer = { record -> ring.ring(record) { client.sessions.alerts.onAlert(record) } }
+        client.sessions.transferrer = { VoiceCallService.transfer(context, it.fromSessionId, it.sessionId, it.text) }
         // The unread counts, persisted the same late way: the store needs a
         // Context and the client above predates one.
-        client.chats.useUnreadStore(PrefsUnreadStore(context))
+        client.sessions.chats.useUnreadStore(PrefsUnreadStore(context))
         // The threads and their catch-up cursor, restored before the link comes
         // up so the first link-up report asks Helm for only the gap.
-        client.chats.useChatStore(FileChatStore(File(context.filesDir, CHAT_STORE_FILE)))
+        client.sessions.chats.useChatStore(FileChatStore(File(context.filesDir, CHAT_STORE_FILE)))
         // The machineId the desktop prefixes onto an echoed reply's originId —
         // without it this phone cannot recognise its own words in a replay.
         client.machineId = PhoneIdentity.machineId(context)
@@ -138,18 +138,18 @@ object HelmPairing {
         // Where a pulled chat file lands. Downloads, like an artifact download:
         // a file the user cannot find in the place they look for files has not
         // really arrived. Attached late for the same Context reason as above.
-        client.saveAttachment = AndroidArtifactFiles(context)::save
-        client.savePreviewAttachment = AndroidAttachmentPreviews(context)::save
+        client.artifacts.saveAttachment = AndroidArtifactFiles(context)::save
+        client.artifacts.savePreviewAttachment = AndroidAttachmentPreviews(context)::save
         // Where the attach toolbar's greying reads the negotiated protocol from.
         // A lookup, not a captured number: the version changes when the transport
         // swaps, and a stale 4 would offer uploads to a desktop that has none.
-        client.negotiatedProtocol = { controller?.protocolVersion ?: 0 }
+        client.artifacts.negotiatedProtocol = { controller?.protocolVersion ?: 0 }
         // Staging copies a pick into a Context-owned cache dir; the stream port
         // is what an upload attempt reopens it with. Both need the Context, so
         // they attach here like saveAttachment above.
         val staging = AndroidAttachmentStaging(context)
-        client.stageAttachment = staging::stage
-        client.openStagedAttachment = staging::open
+        client.artifacts.stageAttachment = staging::stage
+        client.artifacts.openStagedAttachment = staging::open
         val keys = DeviceKeyStore(context)
         store = keys
         chosen = context.applicationContext.getSharedPreferences(CHOSEN_PREFS, Context.MODE_PRIVATE)

@@ -60,7 +60,7 @@ class HelmClientUploadBackpressureTest {
         linkPending = { backlog },
         uploadScope = CoroutineScope(Dispatchers.Unconfined),
     ).apply {
-        openStagedAttachment = { ByteArrayInputStream(file) }
+        artifacts.openStagedAttachment = { ByteArrayInputStream(file) }
     }
 
     @Test
@@ -101,7 +101,7 @@ class HelmClientUploadBackpressureTest {
         backlog = 0
         scheduler.runNext()
 
-        val state = client.uploads.states.value.getValue("a")
+        val state = client.artifacts.uploads.states.value.getValue("a")
         assertTrue("a dead link must fail the chip, not hang it", state is AttachmentUploadState.Failed)
     }
 
@@ -110,7 +110,7 @@ class HelmClientUploadBackpressureTest {
     /** Stage one file, create the artifact, and answer through to the offer. */
     private fun openSlot(maxSliceBytes: Int) {
         assertTrue(
-            client.uploads.stage(
+            client.artifacts.uploads.stage(
                 StagedAttachment(
                     key = "a",
                     source = "content://test/a",
@@ -122,7 +122,7 @@ class HelmClientUploadBackpressureTest {
                 ),
             ),
         )
-        client.createArtifact("s1", "t", "b", client.uploads.pendingKeys())
+        client.artifacts.createArtifact("s1", "t", "b", client.artifacts.uploads.pendingKeys())
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
         client.onInbound(
             resultFor(
@@ -146,7 +146,7 @@ class HelmClientUploadBackpressureTest {
         sent.mapNotNull { MobileEnvelope.decode(it) as? MobileRecord.Blob }
 
     private fun sentBytes(): Long =
-        (client.uploads.states.value.getValue("a") as AttachmentUploadState.Uploading).sent
+        (client.artifacts.uploads.states.value.getValue("a") as AttachmentUploadState.Uploading).sent
 
     private fun methodOf(frame: ByteArray): String =
         JSONObject(String(frame, Charsets.UTF_8)).getString("method")

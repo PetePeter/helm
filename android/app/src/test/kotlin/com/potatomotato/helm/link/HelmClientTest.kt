@@ -68,32 +68,32 @@ class HelmClientTest {
 
     @Test
     fun `a session list result lands in the repository`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
 
         client.onInbound(resultFor(lastCallId(), """[{"id":"s1","name":"work","activityLevel":"active"}]"""))
 
-        val session = client.sessions.sessions.value.single()
+        val session = client.sessions.state.sessions.value.single()
         assertEquals("work", session.name)
         assertEquals(SessionState.Active, session.activity)
     }
 
     @Test
     fun `a refresh that fails leaves the previous list standing`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         client.onInbound(resultFor(lastCallId(), """[{"id":"s1","name":"work"}]"""))
 
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals(listOf("s1"), client.sessions.sessions.value.map { it.id })
+        assertEquals(listOf("s1"), client.sessions.state.sessions.value.map { it.id })
     }
 
     @Test
     fun `session refreshes coalesce while a previous refresh is waiting`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         val first = lastCallId()
-        client.refreshSessions()
-        client.refreshSessions()
+        client.sessions.refreshSessions()
+        client.sessions.refreshSessions()
 
         // Two records: the chat cursor this link had not heard, then the list.
         assertEquals(2, sent.size)
@@ -106,9 +106,9 @@ class HelmClientTest {
 
     @Test
     fun `a queued refresh still runs after the first refresh fails`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         val first = lastCallId()
-        client.refreshSessions()
+        client.sessions.refreshSessions()
 
         client.onInbound(errorFor(first, "desktop busy"))
 
@@ -118,7 +118,7 @@ class HelmClientTest {
 
     @Test
     fun `a call deadline settles it and a late answer cannot apply it`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         // Answer the cursor the refresh carried; its deadline stub still sits in
         // the queue, so drain BOTH deadlines — the list call's settle is the one
         // under test, and the late answer must find nothing to apply to.
@@ -129,24 +129,24 @@ class HelmClientTest {
         scheduler.runNext()
         client.onInbound(resultFor(id, """[{"id":"late","name":"late"}]"""))
 
-        assertTrue(client.sessions.sessions.value.isEmpty())
+        assertTrue(client.sessions.state.sessions.value.isEmpty())
         assertTrue(scheduler.cancelled > 0)
     }
 
     @Test
     fun `a successful close requests one immediate reconciled session list`() {
-        client.closeSession("s1")
+        client.sessions.closeSession("s1")
         client.onInbound(resultFor(lastCallId(), "null"))
 
         // Close, then the reconcile's cursor + list.
         assertEquals(3, sent.size)
         client.onInbound(resultFor(lastCallId(), "[]"))
-        assertTrue(client.sessions.sessions.value.isEmpty())
+        assertTrue(client.sessions.state.sessions.value.isEmpty())
     }
 
     @Test
     fun `enabling keep warm calls the desktop tool and refreshes session status`() {
-        client.keepWarm("s1", true)
+        client.sessions.keepWarm("s1", true)
 
         val call = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_set_keep_warm", call.getString("method"))
@@ -155,13 +155,13 @@ class HelmClientTest {
 
         client.onInbound(resultFor(call.getString("id"), "{}"))
 
-        assertEquals(SessionAction.KeepWarmOn, client.control.notice.value?.action)
+        assertEquals(SessionAction.KeepWarmOn, client.workspace.control.notice.value?.action)
         assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
     }
 
     @Test
     fun `disabling keep warm sends false for the chosen session`() {
-        client.keepWarm("s1", false)
+        client.sessions.keepWarm("s1", false)
 
         val call = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_set_keep_warm", call.getString("method"))
@@ -170,19 +170,19 @@ class HelmClientTest {
 
         client.onInbound(resultFor(call.getString("id"), "{}"))
 
-        assertEquals(SessionAction.KeepWarmOff, client.control.notice.value?.action)
+        assertEquals(SessionAction.KeepWarmOff, client.workspace.control.notice.value?.action)
     }
 
     @Test
     fun `freezing sends session_set_frozen for the selected session`() {
-        client.setFrozen("s1", true)
+        client.sessions.setFrozen("s1", true)
 
         val call = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_set_frozen", call.getString("method"))
         assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
         assertTrue(call.getJSONObject("params").getBoolean("frozen"))
 
-        client.setFrozen("s1", false)
+        client.sessions.setFrozen("s1", false)
         val thaw = JSONObject(String(sent.last(), Charsets.UTF_8))
         assertEquals("session_set_frozen", thaw.getString("method"))
         assertEquals("s1", thaw.getJSONObject("params").getString("sessionId"))
@@ -191,7 +191,7 @@ class HelmClientTest {
 
     @Test
     fun `a rename sends the arguments session_rename needs and reconciles the list`() {
-        client.renameSession("s1", "kitchen")
+        client.sessions.renameSession("s1", "kitchen")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_rename", record.getString("method"))
@@ -211,7 +211,7 @@ class HelmClientTest {
 
     @Test
     fun `a rename refusal is a rule, not a dropped link`() {
-        client.renameSession("s1", "kitchen")
+        client.sessions.renameSession("s1", "kitchen")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
@@ -220,7 +220,7 @@ class HelmClientTest {
 
     @Test
     fun `a successful spawn requests one immediate reconciled session list`() {
-        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = "")
         client.onInbound(resultFor(lastCallId(), """{"id":"s2"}"""))
 
         // The reconcile rides the refresh path, so it carries the cursor too.
@@ -230,7 +230,7 @@ class HelmClientTest {
 
     @Test
     fun `a spawn on another machine is peer_spawn with the peer, and records the local row it opened`() {
-        client.spawn(dirPath = "/there", cliType = "claudecode", name = "fix", machineId = "p1")
+        client.sessions.spawn(dirPath = "/there", cliType = "claudecode", name = "fix", machineId = "p1")
 
         val record = JSONObject(String(sent.last(), Charsets.UTF_8))
         assertEquals("peer_spawn", record.getString("method"))
@@ -241,12 +241,12 @@ class HelmClientTest {
         assertEquals("fix", params.getString("name"))
 
         client.onInbound(resultFor(lastCallId(), """{"id":"remote-9"}"""))
-        assertEquals("remote-9", client.control.createdSessionId.value)
+        assertEquals("remote-9", client.workspace.control.createdSessionId.value)
     }
 
     @Test
     fun `another machine's directories come from its own directory_list through peer_call`() {
-        client.refreshDirectories(machineId = "p1")
+        client.workspace.refreshDirectories(machineId = "p1")
 
         val record = JSONObject(String(sent.last(), Charsets.UTF_8))
         assertEquals("peer_call", record.getString("method"))
@@ -255,40 +255,40 @@ class HelmClientTest {
         assertEquals("directory_list", params.getString("tool"))
 
         client.onInbound(resultFor(lastCallId(), """[{"dirPath":"/there/app","name":"app"}]"""))
-        assertEquals(listOf("/there/app"), client.control.directories.value.map { it.path })
+        assertEquals(listOf("/there/app"), client.workspace.control.directories.value.map { it.path })
     }
 
     @Test
     fun `another machine's CLIs come from its own tool_list, and replace this desktop's at once`() {
-        client.refreshClis()
+        client.workspace.refreshClis()
         client.onInbound(resultFor(lastCallId(), """[{"cliType":"win-uuid","name":"Claude"}]"""))
 
-        client.refreshClis(machineId = "p1")
+        client.workspace.refreshClis(machineId = "p1")
         // Never offer this desktop's CLI ids for another machine, even while waiting.
-        assertTrue(client.control.clis.value.isEmpty())
+        assertTrue(client.workspace.control.clis.value.isEmpty())
         val record = JSONObject(String(sent.last(), Charsets.UTF_8))
         assertEquals("peer_call", record.getString("method"))
         assertEquals("p1", record.getJSONObject("params").getString("peer"))
         assertEquals("tool_list", record.getJSONObject("params").getString("tool"))
 
         client.onInbound(resultFor(lastCallId(), """[{"cliType":"mac-uuid","name":"Claude"}]"""))
-        assertEquals(listOf("mac-uuid"), client.control.clis.value.map { it.cliType })
+        assertEquals(listOf("mac-uuid"), client.workspace.control.clis.value.map { it.cliType })
     }
 
     @Test
     fun `a late CLI list for a machine the user already left is dropped`() {
-        client.refreshClis(machineId = "p1")
+        client.workspace.refreshClis(machineId = "p1")
         val stale = lastCallId()
-        client.refreshClis()
+        client.workspace.refreshClis()
 
         client.onInbound(resultFor(stale, """[{"cliType":"mac-uuid","name":"Claude"}]"""))
 
-        assertTrue(client.control.clis.value.isEmpty())
+        assertTrue(client.workspace.control.clis.value.isEmpty())
     }
 
     @Test
     fun `spawn machines are the online peers that let this desktop call them`() {
-        client.refreshMachines()
+        client.workspace.refreshMachines()
         assertEquals("peer_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
 
         client.onInbound(
@@ -302,33 +302,33 @@ class HelmClientTest {
                 ]}""",
             ),
         )
-        assertEquals(listOf(SpawnMachine("p1", "Box")), client.control.spawnMachines.value)
+        assertEquals(listOf(SpawnMachine("p1", "Box")), client.workspace.control.spawnMachines.value)
     }
 
     @Test
     fun `a refused peer_list leaves no machines rather than an error`() {
-        client.refreshMachines()
+        client.workspace.refreshMachines()
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
-        assertTrue(client.control.spawnMachines.value.isEmpty())
+        assertTrue(client.workspace.control.spawnMachines.value.isEmpty())
     }
 
     @Test
     fun `a spawn is in flight from the tap until an answer comes back`() {
-        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = "")
 
-        assertTrue(client.control.spawnInFlight.value)
+        assertTrue(client.workspace.control.spawnInFlight.value)
 
         client.onInbound(resultFor(lastCallId(), """{"id":"s2"}"""))
 
-        assertFalse(client.control.spawnInFlight.value)
+        assertFalse(client.workspace.control.spawnInFlight.value)
     }
 
     @Test
     fun `a second tap while a spawn is in flight sends nothing`() {
-        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = "")
         val before = sent.size
 
-        assertFalse(client.spawn(dirPath = "/work", cliType = "claudecode", name = ""))
+        assertFalse(client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = ""))
 
         // Two taps are two sessions: the repeat must never reach the desktop.
         assertEquals(before, sent.size)
@@ -336,44 +336,44 @@ class HelmClientTest {
 
     @Test
     fun `a refused spawn is still settled`() {
-        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = "")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertFalse(client.control.spawnInFlight.value)
+        assertFalse(client.workspace.control.spawnInFlight.value)
     }
 
     @Test
     fun `a spawn with no link never raises the flag at all`() {
         linked = false
 
-        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = "")
 
         // The call never crossed, so no answer is coming; the flag that greys the
         // button must not outlive a tap that already failed.
-        assertFalse(client.control.spawnInFlight.value)
+        assertFalse(client.workspace.control.spawnInFlight.value)
     }
 
     @Test
     fun `a result is delivered to the call that asked for it and nothing else`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         val first = lastCallId()
-        client.sendChat("s1", "carry on")
+        client.sessions.sendChat("s1", "carry on")
         val second = lastCallId()
 
         // Answer the chat call; the list call is still outstanding and untouched.
         client.onInbound(resultFor(second, "null"))
 
-        assertEquals(Delivery.Sent, client.chats.thread("s1").single().delivery)
-        assertTrue(client.sessions.sessions.value.isEmpty())
+        assertEquals(Delivery.Sent, client.sessions.chats.thread("s1").single().delivery)
+        assertTrue(client.sessions.state.sessions.value.isEmpty())
 
         client.onInbound(resultFor(first, """[{"id":"s1","name":"work"}]"""))
-        assertEquals(1, client.sessions.sessions.value.size)
+        assertEquals(1, client.sessions.state.sessions.value.size)
     }
 
     @Test
     fun `a ComfyUI chat send carries its selected reference attachment ids`() {
-        client.sendChat("s1", "", "qwen", null, null, listOf("ref-1", "ref-2"))
+        client.sessions.sendChat("s1", "", "qwen", null, null, listOf("ref-1", "ref-2"))
 
         val sentCall = JSONObject(String(sent.last(), Charsets.UTF_8))
         val params = sentCall.getJSONObject("params")
@@ -389,7 +389,7 @@ class HelmClientTest {
         client.onInbound(ByteArray(0))
         client.onInbound("not json at all".toByteArray())
 
-        assertTrue(client.sessions.sessions.value.isEmpty())
+        assertTrue(client.sessions.state.sessions.value.isEmpty())
     }
 
     @Test
@@ -397,9 +397,9 @@ class HelmClientTest {
         client.onInbound(chatBytes(sessionId = "s1", text = "the build is green", at = 5))
         client.onInbound(chatBytes(sessionId = "s2", text = "elsewhere", at = 6))
 
-        assertEquals("the build is green", client.chats.thread("s1").single().text)
-        assertEquals(1, client.chats.thread("s2").size)
-        assertFalse(client.chats.thread("s1").single().fromPhone)
+        assertEquals("the build is green", client.sessions.chats.thread("s1").single().text)
+        assertEquals(1, client.sessions.chats.thread("s2").size)
+        assertFalse(client.sessions.chats.thread("s1").single().fromPhone)
     }
 
     /** Regression: a second desktop's live pushes were dropped under the first one's higher seq. */
@@ -413,16 +413,16 @@ class HelmClientTest {
         client.onLinkUp()
         client.onInbound(chatBytes(sessionId = "mac-s", text = "from the mac", at = 2, seq = 11))
 
-        assertEquals("from the mac", client.chats.thread("mac-s").single().text)
-        assertEquals(11L, client.chats.lastSeq("mac"))
-        assertEquals(500L, client.chats.lastSeq("box"))
+        assertEquals("from the mac", client.sessions.chats.thread("mac-s").single().text)
+        assertEquals(11L, client.sessions.chats.lastSeq("mac"))
+        assertEquals(500L, client.sessions.chats.lastSeq("box"))
     }
 
     @Test
     fun `a ring the ringer declines (a call is already live) becomes an ordinary alert`() {
         val port = FakeNotificationPort()
-        client.alerts.port = port
-        client.ringer = { false }
+        client.sessions.alerts.port = port
+        client.sessions.ringer = { false }
 
         client.onInbound(chatBytes(sessionId = "op", text = "P-0850 finished", at = 7, kind = "ring"))
 
@@ -432,41 +432,41 @@ class HelmClientTest {
     @Test
     fun `a transfer goes to the transferrer, never the shade or the thread`() {
         val port = FakeNotificationPort()
-        client.alerts.port = port
+        client.sessions.alerts.port = port
         val moves = mutableListOf<MobileRecord.Chat>()
-        client.transferrer = { moves += it }
+        client.sessions.transferrer = { moves += it }
 
         client.onInbound(chatBytes(sessionId = "s2", text = "Now talking to work.", at = 7, kind = "transfer"))
 
         assertEquals(listOf("s2"), moves.map { it.sessionId })
-        assertTrue(client.chats.thread("s2").isEmpty())
+        assertTrue(client.sessions.chats.thread("s2").isEmpty())
         assertEquals(null, port.showing("s2"))
     }
 
     @Test
     fun `a ring goes to the ringer, not the shade or the thread`() {
         val port = FakeNotificationPort()
-        client.alerts.port = port
+        client.sessions.alerts.port = port
         val rings = mutableListOf<MobileRecord.Chat>()
-        client.ringer = { rings += it; true }
+        client.sessions.ringer = { rings += it; true }
 
         client.onInbound(chatBytes(sessionId = "op", text = "P-0850 finished", at = 7, kind = "ring"))
 
         assertEquals(listOf("op" to "P-0850 finished"), rings.map { it.sessionId to it.text })
-        assertTrue(client.chats.thread("op").isEmpty())
+        assertTrue(client.sessions.chats.thread("op").isEmpty())
         assertEquals(null, port.showing("op"))
     }
 
     @Test
     fun `a kind-bearing record notifies and never enters the thread`() {
         val port = FakeNotificationPort()
-        client.alerts.port = port
+        client.sessions.alerts.port = port
 
         client.onInbound(chatBytes(sessionId = "s1", text = "is idle", at = 7, kind = "idle"))
 
         // A fabricated agent line is the failure this split exists to prevent:
         // "is idle" as a chat bubble reads as something the CLI said.
-        assertTrue(client.chats.thread("s1").isEmpty())
+        assertTrue(client.sessions.chats.thread("s1").isEmpty())
         assertEquals("is idle", port.showing("s1")?.text)
     }
 
@@ -479,21 +479,21 @@ class HelmClientTest {
     @Test
     fun `a plain chat record lands in the thread and notifies`() {
         val port = FakeNotificationPort()
-        client.alerts.port = port
+        client.sessions.alerts.port = port
 
         client.onInbound(chatBytes(sessionId = "s1", text = "the build is green", at = 8))
 
-        assertEquals("the build is green", client.chats.thread("s1").single().text)
+        assertEquals("the build is green", client.sessions.chats.thread("s1").single().text)
         // It must appear ONCE in the thread — the notification is a second
         // surface, not a second message.
-        assertEquals(1, client.chats.thread("s1").size)
+        assertEquals(1, client.sessions.chats.thread("s1").size)
         assertEquals("the build is green", port.showing("s1")?.text)
         assertEquals(AlertKind.Message, port.showing("s1")?.kind)
     }
 
     @Test
     fun `a reply is sent as a gated session_send_text call, never a side channel`() {
-        client.sendChat("s1", "carry on")
+        client.sessions.sendChat("s1", "carry on")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("call", record.getString("t"))
@@ -504,20 +504,20 @@ class HelmClientTest {
 
     @Test
     fun `a reply shows immediately as sending and settles when Helm answers`() {
-        client.sendChat("s1", "carry on")
-        assertEquals(Delivery.Sending, client.chats.thread("s1").single().delivery)
+        client.sessions.sendChat("s1", "carry on")
+        assertEquals(Delivery.Sending, client.sessions.chats.thread("s1").single().delivery)
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
-        assertEquals(Delivery.Failed, client.chats.thread("s1").single().delivery)
+        assertEquals(Delivery.Failed, client.sessions.chats.thread("s1").single().delivery)
     }
 
     @Test
     fun `a reply with no link to carry it fails at once rather than hanging`() {
         linked = false
 
-        assertFalse(client.sendChat("s1", "carry on"))
-        assertEquals(Delivery.Failed, client.chats.thread("s1").single().delivery)
-        assertFalse(client.refreshSessions())
+        assertFalse(client.sessions.sendChat("s1", "carry on"))
+        assertEquals(Delivery.Failed, client.sessions.chats.thread("s1").single().delivery)
+        assertFalse(client.sessions.refreshSessions())
     }
 
     /**
@@ -528,31 +528,31 @@ class HelmClientTest {
     @Test
     fun `an echoed copy of this phone's own reply is dropped by its call id`() {
         client.machineId = "phone-machine"
-        client.sendChat("s1", "carry on")
+        client.sessions.sendChat("s1", "carry on")
         val callId = lastCallId()
         client.onInbound(resultFor(callId, "null"))
-        assertEquals(Delivery.Sent, client.chats.thread("s1").single().delivery)
+        assertEquals(Delivery.Sent, client.sessions.chats.thread("s1").single().delivery)
 
         client.onInbound(
             chatBytes(sessionId = "s1", text = "carry on", at = 6, seq = 1, originId = "phone-machine:$callId"),
         )
 
-        assertEquals(1, client.chats.thread("s1").size)
-        assertEquals(Delivery.Sent, client.chats.thread("s1").single().delivery)
+        assertEquals(1, client.sessions.chats.thread("s1").size)
+        assertEquals(Delivery.Sent, client.sessions.chats.thread("s1").single().delivery)
     }
 
     @Test
     fun `a call the link refused never claims its echo`() {
         client.machineId = "phone-machine"
         linked = false
-        client.sendChat("s1", "carry on")
+        client.sessions.sendChat("s1", "carry on")
         linked = true
 
         // p0 was never carried, so nothing was registered for it — an echo named
         // "phone-machine:p0" is somebody else's history and must still land.
         client.onInbound(chatBytes(sessionId = "s1", text = "carry on", at = 6, seq = 1, originId = "phone-machine:p0"))
 
-        assertEquals(2, client.chats.thread("s1").size)
+        assertEquals(2, client.sessions.chats.thread("s1").size)
     }
 
     @Test
@@ -563,18 +563,18 @@ class HelmClientTest {
             chatBytes(sessionId = "s1", text = "from tablet", at = 6, seq = 2, originId = "tablet-machine:p1"),
         )
 
-        assertTrue(client.chats.thread("s1").single().fromPhone)
+        assertTrue(client.sessions.chats.thread("s1").single().fromPhone)
     }
 
     @Test
     fun `a cursor report whose answer died with the link is said again`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         // The list answers; the cursor's answer never arrives (the link that
         // carried it dropped before the desktop acted on it).
         client.onInbound(resultFor(lastCallId(), "[]"))
         scheduler.runNext() // the cursor's deadline settles it as failed
 
-        client.refreshSessions()
+        client.sessions.refreshSessions()
 
         val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
         assertEquals(listOf("__chat_cursor__", "session_list", "__chat_cursor__", "session_list"), methods)
@@ -596,11 +596,11 @@ class HelmClientTest {
 
     @Test
     fun `everything outstanding fails when the link drops`() {
-        client.sendChat("s1", "carry on")
+        client.sessions.sendChat("s1", "carry on")
 
         client.onLinkLost()
 
-        assertEquals(Delivery.Failed, client.chats.thread("s1").single().delivery)
+        assertEquals(Delivery.Failed, client.sessions.chats.thread("s1").single().delivery)
     }
 
     @Test
@@ -614,13 +614,13 @@ class HelmClientTest {
 
         // The report is per-link: a poll on the same link sends only the list.
         client.onInbound(resultFor(firstCallId(), "null"))
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         assertEquals(2, sent.size)
         assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
 
         // The link goes and comes back without the hook firing at all.
         client.onLinkLost()
-        client.refreshSessions()
+        client.sessions.refreshSessions()
 
         val cursor = JSONObject(String(sent[2], Charsets.UTF_8))
         assertEquals("__chat_cursor__", cursor.getString("method"))
@@ -634,12 +634,12 @@ class HelmClientTest {
         // streaming over BLE can outrun a link that drops mid-stream, leaving
         // the phone holding a hole and the desktop believing it is done. The
         // poll must re-say the cursor once the report is old enough to doubt.
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         client.onInbound(resultFor(firstCallId(), "null"))
         client.onInbound(resultFor(lastCallId(), "[]"))
         clock += 6 * 60 * 1000L
 
-        client.refreshSessions()
+        client.sessions.refreshSessions()
 
         val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
         assertEquals(listOf("__chat_cursor__", "session_list", "__chat_cursor__", "session_list"), methods)
@@ -647,12 +647,12 @@ class HelmClientTest {
 
     @Test
     fun `a fresh cursor report is not repeated by the poll`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         client.onInbound(resultFor(firstCallId(), "null"))
         client.onInbound(resultFor(lastCallId(), "[]"))
         clock += 60_000L
 
-        client.refreshSessions()
+        client.sessions.refreshSessions()
 
         // Inside the freshness window the cursor is believed; only the list goes.
         val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
@@ -673,24 +673,24 @@ class HelmClientTest {
 
     /** Watch, and answer the first fetch with a whole list at [seq]. */
     private fun watchAndLoad(seq: Long, sessions: String) {
-        client.watchSessions(true)
+        client.sessions.watchSessions(true)
         client.onInbound(resultFor(lastCallId(), delta(seq, sessions, full = true)))
     }
 
     @Test
     fun `watching sessions fetches the whole list once and then asks for nothing`() {
-        client.watchSessions(true)
+        client.sessions.watchSessions(true)
 
         val first = sessionListCalls().single()
         assertEquals(0L, first.getJSONObject("params").getLong("since"))
         assertFalse(first.getJSONObject("params").has("epoch"))
 
         client.onInbound(resultFor(lastCallId(), delta(4, """[{"id":"s1","name":"work"}]""", full = true)))
-        repeat(30) { client.refreshStaleSessions() }
+        repeat(30) { client.sessions.refreshStaleSessions() }
 
         // The poll this replaced would have sent thirty more.
         assertEquals(1, sessionListCalls().size)
-        assertEquals(listOf("s1"), client.sessions.sessions.value.map { it.id })
+        assertEquals(listOf("s1"), client.sessions.state.sessions.value.map { it.id })
     }
 
     @Test
@@ -706,7 +706,7 @@ class HelmClientTest {
         client.onInbound(resultFor(lastCallId(), delta(5, """[{"id":"s2","name":"renamed"}]""")))
 
         // s1 was not in the reply and is untouched; s2 took its new value.
-        assertEquals(listOf("renamed", "work"), client.sessions.sessions.value.map { it.name })
+        assertEquals(listOf("renamed", "work"), client.sessions.state.sessions.value.map { it.name })
     }
 
     @Test
@@ -716,19 +716,19 @@ class HelmClientTest {
 
         client.onInbound(resultFor(lastCallId(), delta(5, removed = """["s1"]""")))
 
-        assertEquals(listOf("s2"), client.sessions.sessions.value.map { it.id })
+        assertEquals(listOf("s2"), client.sessions.state.sessions.value.map { it.id })
     }
 
     @Test
     fun `a notice that arrives while nobody is looking waits for the screen`() {
         watchAndLoad(4, """[{"id":"s1","name":"work"}]""")
-        client.watchSessions(false)
+        client.sessions.watchSessions(false)
 
         client.onInbound(changesNotice(5))
-        repeat(10) { client.refreshStaleSessions() }
+        repeat(10) { client.sessions.refreshStaleSessions() }
         assertEquals(1, sessionListCalls().size)
 
-        client.watchSessions(true)
+        client.sessions.watchSessions(true)
         assertEquals(2, sessionListCalls().size)
     }
 
@@ -754,25 +754,25 @@ class HelmClientTest {
     @Test
     fun `a fetch the link could not carry is made as soon as it can`() {
         linked = false
-        client.watchSessions(true)
-        client.refreshStaleSessions()
+        client.sessions.watchSessions(true)
+        client.sessions.refreshStaleSessions()
         assertTrue(sent.isEmpty())
 
         linked = true
-        client.refreshStaleSessions()
+        client.sessions.refreshStaleSessions()
 
         assertEquals(1, sessionListCalls().size)
     }
 
     @Test
     fun `a refused list is not asked for again and again`() {
-        client.watchSessions(true)
+        client.sessions.watchSessions(true)
         client.onInbound(errorFor(lastCallId(), HelmClient.MOBILE_DENY_MESSAGE))
 
-        repeat(10) { client.refreshStaleSessions() }
+        repeat(10) { client.sessions.refreshStaleSessions() }
 
         assertEquals(1, sessionListCalls().size)
-        assertEquals(Reach.Denied, client.sessions.reach.value)
+        assertEquals(Reach.Denied, client.sessions.state.reach.value)
     }
 
     @Test
@@ -797,7 +797,7 @@ class HelmClientTest {
             resultFor(lastCallId(), """{"epoch":"e2","seq":1,"full":true,"sessions":[{"id":"new","name":"new"}],"removed":[]}"""),
         )
 
-        assertEquals(listOf("new"), client.sessions.sessions.value.map { it.id })
+        assertEquals(listOf("new"), client.sessions.state.sessions.value.map { it.id })
         // seq 2 of the NEW epoch is news even though it is far below the old cursor.
         client.onInbound(changesNotice(2))
         assertEquals("e2", sessionListCalls().last().getJSONObject("params").getString("epoch"))
@@ -811,7 +811,7 @@ class HelmClientTest {
         client.onLinkLost()
         sent.clear()
 
-        client.refreshStaleSessions()
+        client.sessions.refreshStaleSessions()
 
         val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
         assertEquals(listOf("__chat_cursor__", "session_list"), methods)
@@ -819,7 +819,7 @@ class HelmClientTest {
 
     @Test
     fun `an answer that arrives after the link dropped is not applied twice`() {
-        client.sendChat("s1", "carry on")
+        client.sessions.sendChat("s1", "carry on")
         val id = lastCallId()
         client.onLinkLost()
 
@@ -827,55 +827,55 @@ class HelmClientTest {
 
         // Still Failed: the link-lost verdict stands, and the late result found
         // no pending entry to settle.
-        assertEquals(Delivery.Failed, client.chats.thread("s1").single().delivery)
+        assertEquals(Delivery.Failed, client.sessions.chats.thread("s1").single().delivery)
     }
 
     @Test
     fun `a flood of unanswered calls cannot grow without bound`() {
-        repeat(40) { client.sendChat("s1", "message $it") }
+        repeat(40) { client.sessions.sendChat("s1", "message $it") }
 
         // The oldest are abandoned to make room; the newest stay outstanding.
-        val thread = client.chats.thread("s1")
+        val thread = client.sessions.chats.thread("s1")
         assertEquals(Delivery.Failed, thread.first().delivery)
         assertEquals(Delivery.Sending, thread.last().delivery)
     }
 
     @Test
     fun `the permitted surface is asked for, never assumed`() {
-        client.refreshCapabilities()
+        client.workspace.refreshCapabilities()
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("__mobile_tools__", record.getString("method"))
 
         client.onInbound(resultFor(lastCallId(), """{"tools":[{"name":"session_compact"}]}"""))
-        assertTrue(client.capabilities.allows("session_compact"))
-        assertFalse(client.capabilities.allows("session_create"))
+        assertTrue(client.workspace.capabilities.allows("session_compact"))
+        assertFalse(client.workspace.capabilities.allows("session_create"))
     }
 
     @Test
     fun `a discovery that is refused leaves the surface unknown, not empty`() {
-        client.refreshCapabilities()
+        client.workspace.refreshCapabilities()
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
         // "We could not ask" must not render as "you may not": the sheet greys
         // either way, but only one of them may claim a permission verdict.
-        assertEquals(Capabilities.Unknown, client.capabilities.state.value)
+        assertEquals(Capabilities.Unknown, client.workspace.capabilities.state.value)
     }
 
     @Test
     fun `the surface is forgotten with the link so a reconnect re-asks`() {
-        client.refreshCapabilities()
+        client.workspace.refreshCapabilities()
         client.onInbound(resultFor(lastCallId(), """{"tools":[{"name":"session_close"}]}"""))
 
         client.onLinkLost()
 
-        assertEquals(Capabilities.Unknown, client.capabilities.state.value)
+        assertEquals(Capabilities.Unknown, client.workspace.capabilities.state.value)
     }
 
     @Test
     fun `a snapshot asks for a numeric line count and the rendered screen`() {
-        assertTrue(client.readTerminal("s1", 200))
+        assertTrue(client.sessions.readTerminal("s1", 200))
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         // A NUMBER, not "200": the desktop reads lines with a typeof check and
@@ -887,7 +887,7 @@ class HelmClientTest {
 
     @Test
     fun `a ComfyUI chat call carries model size and uploaded input image`() {
-        client.sendChat(
+        client.sessions.sendChat(
             "s1", "a landscape", comfyProfileId = "flux", comfyImageSizeId = "qhd-landscape",
             comfyInputImagePath = "C:\\Users\\oscar\\Helm\\tmp\\inbox\\one\\source.png",
         )
@@ -900,7 +900,7 @@ class HelmClientTest {
 
     @Test
     fun `a snapshot falls back to the cleaned tail when screen mode is unsupported`() {
-        assertTrue(client.readTerminal("s1", 200))
+        assertTrue(client.sessions.readTerminal("s1", 200))
         client.onInbound(errorFor(lastCallId(), "mode must be one of raw, stripped, or both"))
 
         val fallback = JSONObject(String(sent.last(), Charsets.UTF_8)).getJSONObject("params")
@@ -910,22 +910,22 @@ class HelmClientTest {
 
     @Test
     fun `a snapshot past the buffer never reaches the radio`() {
-        assertFalse(client.readTerminal("s1", HelmClient.MAX_SNAPSHOT_LINES + 1))
-        assertFalse(client.readTerminal("s1", 0))
+        assertFalse(client.sessions.readTerminal("s1", HelmClient.MAX_SNAPSHOT_LINES + 1))
+        assertFalse(client.sessions.readTerminal("s1", 0))
 
         assertTrue(sent.isEmpty())
-        assertTrue(client.control.snapshot.value is Snapshot.Failed)
+        assertTrue(client.workspace.control.snapshot.value is Snapshot.Failed)
     }
 
     @Test
     fun `a snapshot result lands as lines and a refusal lands as a failure`() {
-        client.readTerminal("s1", 50)
+        client.sessions.readTerminal("s1", 50)
         client.onInbound(resultFor(lastCallId(), """{"stripped":["$ ls","a.txt"]}"""))
-        assertEquals(Snapshot.Lines(listOf("$ ls", "a.txt"), 50), client.control.snapshot.value)
+        assertEquals(Snapshot.Lines(listOf("$ ls", "a.txt"), 50), client.workspace.control.snapshot.value)
 
-        client.readTerminal("s1", 50)
+        client.sessions.readTerminal("s1", 50)
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
-        assertTrue(client.control.snapshot.value is Snapshot.Failed)
+        assertTrue(client.workspace.control.snapshot.value is Snapshot.Failed)
     }
 
     @Test
@@ -934,9 +934,9 @@ class HelmClientTest {
         // can refuse for a reason the cache cannot see (an allow-list edited since,
         // a disabled device). That outcome must be READABLE, not a crash and not
         // silence, and it must not be confused with the link going.
-        client.capabilities.apply(JSONObject("""{"tools":[{"name":"session_close"}]}"""))
+        client.workspace.capabilities.apply(JSONObject("""{"tools":[{"name":"session_close"}]}"""))
 
-        client.closeSession("s1")
+        client.sessions.closeSession("s1")
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
         assertNotice(SessionAction.Close, ActionOutcome.Refused)
@@ -946,16 +946,16 @@ class HelmClientTest {
     fun `a control action with no link to carry it reports the link, not a refusal`() {
         linked = false
 
-        assertFalse(client.compact("s1"))
+        assertFalse(client.sessions.compact("s1"))
 
-        val notice = client.control.notice.value!!
+        val notice = client.workspace.control.notice.value!!
         assertEquals(SessionAction.Compact, notice.action)
         assertTrue(notice.outcome is ActionOutcome.Failed)
     }
 
     @Test
     fun `stop sends Esc to the session as terminal input`() {
-        client.stop("s1")
+        client.sessions.stop("s1")
 
         val call = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_send_input", call.getString("method"))
@@ -968,7 +968,7 @@ class HelmClientTest {
 
     @Test
     fun `clear asks Helm to clear the session's context`() {
-        client.clear("s1")
+        client.sessions.clear("s1")
 
         val call = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_clear", call.getString("method"))
@@ -980,7 +980,7 @@ class HelmClientTest {
 
     @Test
     fun `helm compact asks Helm to strip and reload the session's context`() {
-        client.quickCompact("s1")
+        client.sessions.quickCompact("s1")
 
         val call = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_quick_compact", call.getString("method"))
@@ -992,7 +992,7 @@ class HelmClientTest {
 
     @Test
     fun `switch cli carries the session and the picked cli type`() {
-        client.switchCli("s1", "codex")
+        client.sessions.switchCli("s1", "codex")
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).also {
             assertEquals("session_switch_cli", it.getString("method"))
@@ -1006,7 +1006,7 @@ class HelmClientTest {
 
     @Test
     fun `clone asks Helm to fork the session`() {
-        client.cloneSession("s1")
+        client.sessions.cloneSession("s1")
 
         val call = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_clone", call.getString("method"))
@@ -1018,7 +1018,7 @@ class HelmClientTest {
 
     @Test
     fun `spawn sends the arguments session_create needs and carries the created id back`() {
-        client.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
+        client.sessions.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         assertEquals("x:\\coding\\gamepad-cli-hub", params.getString("dirPath"))
@@ -1029,12 +1029,12 @@ class HelmClientTest {
         // opens the new thread.
         client.onInbound(resultFor(lastCallId(), """{"id":"s9"}"""))
         assertNotice(SessionAction.Spawn, ActionOutcome.Done)
-        assertEquals("s9", client.control.createdSessionId.value)
+        assertEquals("s9", client.workspace.control.createdSessionId.value)
     }
 
     @Test
     fun `a blank name is omitted from the wire so the desktop names the session`() {
-        client.spawn(dirPath = "/work", cliType = "claudecode", name = "  ")
+        client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = "  ")
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         assertEquals("/work", params.getString("dirPath"))
@@ -1044,19 +1044,19 @@ class HelmClientTest {
 
     @Test
     fun `a spawn answer that names no session does not pretend it did`() {
-        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        client.sessions.spawn(dirPath = "/work", cliType = "claudecode", name = "")
 
         client.onInbound(resultFor(lastCallId(), """"not an object""""))
 
         // Done is still Done — the session exists — but navigation must not
         // guess at an id that never arrived.
         assertNotice(SessionAction.Spawn, ActionOutcome.Done)
-        assertNull(client.control.createdSessionId.value)
+        assertNull(client.workspace.control.createdSessionId.value)
     }
 
     @Test
     fun `the CLI catalogue is asked for as a bare tool_list call`() {
-        client.refreshClis()
+        client.workspace.refreshClis()
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("tool_list", record.getString("method"))
@@ -1075,34 +1075,34 @@ class HelmClientTest {
                 HelmCli("claudecode", "Claude Code"),
                 HelmCli("codex", "codex"),
             ),
-            client.control.clis.value,
+            client.workspace.control.clis.value,
         )
     }
 
     @Test
     fun `a directory fetch that fails is state on the screen, not silence`() {
-        client.refreshDirectories()
+        client.workspace.refreshDirectories()
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", client.control.directoriesError.value)
+        assertEquals("Tool not permitted", client.workspace.control.directoriesError.value)
 
         // A retry supersedes the failure, and a good answer keeps it cleared.
-        client.refreshDirectories()
-        assertNull(client.control.directoriesError.value)
+        client.workspace.refreshDirectories()
+        assertNull(client.workspace.control.directoriesError.value)
         client.onInbound(resultFor(lastCallId(), """[{"dirPath":"/work","name":"Work"}]"""))
-        assertNull(client.control.directoriesError.value)
-        assertEquals(listOf(HelmDirectory("/work", "Work")), client.control.directories.value)
+        assertNull(client.workspace.control.directoriesError.value)
+        assertEquals(listOf(HelmDirectory("/work", "Work")), client.workspace.control.directories.value)
     }
 
     @Test
     fun `a denied session list is remembered as denied`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
 
         client.onInbound(errorFor(lastCallId(), HelmClient.MOBILE_DENY_MESSAGE))
 
         // The screen may now say the phone has no permissions granted yet.
-        assertEquals(Reach.Denied, client.sessions.reach.value)
+        assertEquals(Reach.Denied, client.sessions.state.reach.value)
     }
 
     @Test
@@ -1112,28 +1112,28 @@ class HelmClientTest {
         // them hunting a permissions setting that was never the problem.
         linked = false
 
-        assertFalse(client.refreshSessions())
+        assertFalse(client.sessions.refreshSessions())
 
-        assertEquals(Reach.Never, client.sessions.reach.value)
+        assertEquals(Reach.Never, client.sessions.state.reach.value)
     }
 
     @Test
     fun `an answer that arrived and could not be read says so instead of showing nothing`() {
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         client.onInbound(resultFor(lastCallId(), """[{"id":"s1","name":"work"}]"""))
 
-        client.refreshSessions()
+        client.sessions.refreshSessions()
         // `ok` on the wire carrying a shape parseList cannot read — the failure
         // this app is worst at, because it used to render as "no sessions".
         client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
 
-        assertEquals(Reach.Undecodable, client.sessions.reach.value)
-        assertEquals(listOf("s1"), client.sessions.sessions.value.map { it.id })
+        assertEquals(Reach.Undecodable, client.sessions.state.reach.value)
+        assertEquals(listOf("s1"), client.sessions.state.sessions.value.map { it.id })
     }
 
     @Test
     fun `the artifact list is asked for per session and lands in the repository`() {
-        client.refreshArtifacts("s1")
+        client.artifacts.refreshArtifacts("s1")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_artifact_list", record.getString("method"))
@@ -1146,23 +1146,23 @@ class HelmClientTest {
             ),
         )
 
-        val ready = client.artifacts.list.value as ArtifactList.Ready
+        val ready = client.artifacts.state.list.value as ArtifactList.Ready
         assertEquals("Report", ready.artifacts.single().title)
     }
 
     @Test
     fun `a failed artifact list is state on the screen, not silence`() {
-        client.refreshArtifacts("s1")
+        client.artifacts.refreshArtifacts("s1")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        val failed = client.artifacts.list.value as ArtifactList.Failed
+        val failed = client.artifacts.state.list.value as ArtifactList.Failed
         assertEquals("Tool not permitted", failed.message)
     }
 
     @Test
     fun `an artifact read asks for the session, the id and the version together`() {
-        client.readArtifact("s1", "a1", version = 3)
+        client.artifacts.readArtifact("s1", "a1", version = 3)
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         assertEquals("s1", params.getString("sessionId"))
@@ -1174,7 +1174,7 @@ class HelmClientTest {
 
     @Test
     fun `the version is omitted from the wire when the latest is wanted`() {
-        client.readArtifact("s1", "a1", version = null)
+        client.artifacts.readArtifact("s1", "a1", version = null)
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         assertFalse(params.has("version"))
@@ -1182,7 +1182,7 @@ class HelmClientTest {
 
     @Test
     fun `an artifact read result lands as metadata plus the one body`() {
-        client.readArtifact("s1", "a1", version = null)
+        client.artifacts.readArtifact("s1", "a1", version = null)
         client.onInbound(
             resultFor(
                 lastCallId(),
@@ -1191,25 +1191,25 @@ class HelmClientTest {
             ),
         )
 
-        val done = client.artifacts.read.value as ArtifactRead.Done
+        val done = client.artifacts.state.read.value as ArtifactRead.Done
         assertEquals("Report", done.read.artifact.title)
         assertEquals("# Report", done.read.content)
     }
 
     @Test
     fun `an unreadable artifact read says so instead of loading forever`() {
-        client.readArtifact("s1", "a1", version = null)
+        client.artifacts.readArtifact("s1", "a1", version = null)
 
         client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
 
-        assertTrue(client.artifacts.read.value is ArtifactRead.Failed)
+        assertTrue(client.artifacts.state.read.value is ArtifactRead.Failed)
     }
 
     // ---------------------------------------------------------- artifact writes
 
     @Test
     fun `a create asks for the markdown-only kind and names the session and body`() {
-        client.createArtifact("s1", "  Note  ", "# body")
+        client.artifacts.createArtifact("s1", "  Note  ", "# body")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_artifact_create", record.getString("method"))
@@ -1230,13 +1230,13 @@ class HelmClientTest {
         // screens navigate on — because two identical notices must both count.
         assertEquals(
             ArtifactLanding(SessionAction.CreateArtifact, "a9"),
-            client.control.artifactLanding.value,
+            client.workspace.control.artifactLanding.value,
         )
     }
 
     @Test
     fun `a create answer that names no artifact does not pretend it did`() {
-        client.createArtifact("s1", "Note", "# body")
+        client.artifacts.createArtifact("s1", "Note", "# body")
 
         client.onInbound(resultFor(lastCallId(), """"not an object""""))
 
@@ -1247,13 +1247,13 @@ class HelmClientTest {
         // still closes for the list, where the new row is one pull away.
         assertEquals(
             ArtifactLanding(SessionAction.CreateArtifact, null),
-            client.control.artifactLanding.value,
+            client.workspace.control.artifactLanding.value,
         )
     }
 
     @Test
     fun `a manifesto create carries intent over the session-addressed wire`() {
-        client.createArtifact("s1", "Rules", "Keep this", intent = ArtifactIntent.Manifesto)
+        client.artifacts.createArtifact("s1", "Rules", "Keep this", intent = ArtifactIntent.Manifesto)
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         assertEquals("manifesto", params.getString("intent"))
@@ -1263,13 +1263,13 @@ class HelmClientTest {
     fun `a body too big for the link is refused before the radio sees it`() {
         val big = "x".repeat(ArtifactRules.MAX_EDIT_ESCAPED_BYTES + 1)
 
-        assertFalse(client.createArtifact("s1", "Note", big))
-        assertEquals(SessionAction.CreateArtifact, client.control.notice.value!!.action)
-        assertTrue(client.control.notice.value!!.outcome is ActionOutcome.Failed)
+        assertFalse(client.artifacts.createArtifact("s1", "Note", big))
+        assertEquals(SessionAction.CreateArtifact, client.workspace.control.notice.value!!.action)
+        assertTrue(client.workspace.control.notice.value!!.outcome is ActionOutcome.Failed)
 
-        assertFalse(client.reviseArtifact("s1", "a1", body(big)))
-        assertEquals(SessionAction.ReviseArtifact, client.control.notice.value!!.action)
-        assertTrue(client.control.notice.value!!.outcome is ActionOutcome.Failed)
+        assertFalse(client.artifacts.reviseArtifact("s1", "a1", body(big)))
+        assertEquals(SessionAction.ReviseArtifact, client.workspace.control.notice.value!!.action)
+        assertTrue(client.workspace.control.notice.value!!.outcome is ActionOutcome.Failed)
 
         // An oversized frame tears the link — the one failure this app is worst
         // at — so an authored body that cannot fit never leaves the phone.
@@ -1278,7 +1278,7 @@ class HelmClientTest {
 
     @Test
     fun `a revise sends the session, the artifact and the new body, and adds no second ask`() {
-        client.reviseArtifact("s1", "a1", body("# v2"))
+        client.artifacts.reviseArtifact("s1", "a1", body("# v2"))
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_artifact_update", record.getString("method"))
@@ -1301,7 +1301,7 @@ class HelmClientTest {
 
     @Test
     fun `a rename sends the trimmed title, and an unchanged body stays off the wire`() {
-        client.reviseArtifact("s1", "a1", body("# v1", title = "  Renamed "))
+        client.artifacts.reviseArtifact("s1", "a1", body("# v1", title = "  Renamed "))
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         assertEquals("Renamed", params.getString("title"))
@@ -1310,13 +1310,13 @@ class HelmClientTest {
 
     @Test
     fun `a revise with nothing changed and nothing staged sends nothing`() {
-        assertFalse(client.reviseArtifact("s1", "a1", body("# v1")))
+        assertFalse(client.artifacts.reviseArtifact("s1", "a1", body("# v1")))
         assertTrue(sent.isEmpty())
     }
 
     @Test
     fun `a metadata-only intent revise sends no content or title`() {
-        client.reviseArtifact("s1", "a1", body("# v1"), intent = ArtifactIntent.Manifesto)
+        client.artifacts.reviseArtifact("s1", "a1", body("# v1"), intent = ArtifactIntent.Manifesto)
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_artifact_set_intent", record.getString("method"))
@@ -1328,7 +1328,7 @@ class HelmClientTest {
 
     @Test
     fun `a revise refusal is a rule, not a dropped link`() {
-        client.reviseArtifact("s1", "a1", body("# v2"))
+        client.artifacts.reviseArtifact("s1", "a1", body("# v2"))
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
@@ -1337,7 +1337,7 @@ class HelmClientTest {
 
     @Test
     fun `a delete is aimed at exactly one artifact and adds no second ask`() {
-        client.deleteArtifact("s1", "a1")
+        client.artifacts.deleteArtifact("s1", "a1")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_artifact_delete", record.getString("method"))
@@ -1355,7 +1355,7 @@ class HelmClientTest {
 
     @Test
     fun `a delete refusal is a rule, not a dropped link`() {
-        client.deleteArtifact("s1", "a1")
+        client.artifacts.deleteArtifact("s1", "a1")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
@@ -1364,7 +1364,7 @@ class HelmClientTest {
 
     @Test
     fun `a download fetches the file and stays quiet until it lands`() {
-        client.downloadArtifact("s1", "a1", version = null)
+        client.artifacts.downloadArtifact("s1", "a1", version = null)
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_artifact_download", record.getString("method"))
@@ -1383,48 +1383,48 @@ class HelmClientTest {
             ),
         )
 
-        val ready = client.artifacts.save.value as ArtifactSave.Ready
+        val ready = client.artifacts.state.save.value as ArtifactSave.Ready
         assertEquals("Perf-report.md", ready.file.filename)
         assertEquals("text/markdown", ready.file.mimeType)
         assertEquals("hello", String(ready.file.bytes, Charsets.UTF_8))
         // The bytes are on the phone, not on disk yet: a Done notice now would
         // claim a save that has not happened.
-        assertNull(client.control.notice.value)
+        assertNull(client.workspace.control.notice.value)
     }
 
     @Test
     fun `a download of one version asks for it as a number`() {
-        client.downloadArtifact("s1", "a1", version = 3)
+        client.artifacts.downloadArtifact("s1", "a1", version = 3)
 
         assertEquals(3, JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params").get("version"))
     }
 
     @Test
     fun `a refused download is a rule and leaves no file`() {
-        client.downloadArtifact("s1", "a1")
+        client.artifacts.downloadArtifact("s1", "a1")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
         assertNotice(SessionAction.SaveArtifact, ActionOutcome.Refused)
-        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
+        assertTrue(client.artifacts.state.save.value is ArtifactSave.Failed)
     }
 
     @Test
     fun `a download answer that is not a file says so`() {
-        client.downloadArtifact("s1", "a1")
+        client.artifacts.downloadArtifact("s1", "a1")
 
         client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
 
-        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
+        assertTrue(client.artifacts.state.save.value is ArtifactSave.Failed)
     }
 
     @Test
     fun `a download with no link to carry it fails the ask`() {
         linked = false
 
-        assertFalse(client.downloadArtifact("s1", "a1"))
+        assertFalse(client.artifacts.downloadArtifact("s1", "a1"))
 
-        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
+        assertTrue(client.artifacts.state.save.value is ArtifactSave.Failed)
     }
 
     // -------------------------------------------------------- artifact attachments
@@ -1448,7 +1448,7 @@ class HelmClientTest {
      */
     @Test
     fun `an attachment download asks for a slice, with an offset and a length`() {
-        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = 5))
+        client.artifacts.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = 5))
 
         val record = JSONObject(String(sent.first(), Charsets.UTF_8))
         assertEquals("session_artifact_download", record.getString("method"))
@@ -1471,7 +1471,7 @@ class HelmClientTest {
         // Three slices' worth over Bluetooth, which is the transport a test link
         // reports: one ask could only ever answer a third of it.
         val slice = ATTACHMENT_SLICE_BYTES_BLE
-        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = slice * 3L))
+        client.artifacts.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = slice * 3L))
 
         val offsets = sent.map { JSONObject(String(it, Charsets.UTF_8)).getJSONObject("params").getLong("offset") }
         assertTrue("a multi-slice file must take more than one ask", offsets.size > 1)
@@ -1484,13 +1484,13 @@ class HelmClientTest {
         val source = ByteArray(slice + 10) { (it % 251).toByte() }
         var saved: ByteArray? = null
         var savedName: String? = null
-        client.saveAttachment = { name, _, bytes ->
+        client.artifacts.saveAttachment = { name, _, bytes ->
             savedName = name
             saved = bytes
             SavedFile("Downloads/Helm/chart.png", "content://downloads/7")
         }
 
-        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = source.size.toLong()))
+        client.artifacts.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = source.size.toLong()))
         answerSlice(offsetOf(sent[0]), source, slice)
         answerSlice(offsetOf(sent[1]), source, slice)
 
@@ -1500,7 +1500,7 @@ class HelmClientTest {
         assertEquals("chart.png", savedName)
         assertEquals(
             PullState.Ready("Downloads/Helm/chart.png", "content://downloads/7"),
-            client.artifacts.attachmentPulls.pullState(attachmentKey),
+            client.artifacts.state.attachmentPulls.pullState(attachmentKey),
         )
     }
 
@@ -1508,35 +1508,35 @@ class HelmClientTest {
     fun `opening a gallery preview uses the cache sink and marks it as preview only`() {
         val source = byteArrayOf(1, 3, 5, 7, 9)
         var previewBytes: ByteArray? = null
-        client.saveAttachment = { _, _, _ -> error("a preview must not save to Downloads") }
-        client.savePreviewAttachment = { _, _, bytes ->
+        client.artifacts.saveAttachment = { _, _, _ -> error("a preview must not save to Downloads") }
+        client.artifacts.savePreviewAttachment = { _, _, bytes ->
             previewBytes = bytes
             SavedFile("Temporary preview", "content://previews/1")
         }
 
-        client.previewArtifactAttachment("s1", "a1", attachment(sizeBytes = source.size.toLong()))
+        client.artifacts.previewArtifactAttachment("s1", "a1", attachment(sizeBytes = source.size.toLong()))
         answerSlice(0, source, ATTACHMENT_SLICE_BYTES_BLE)
 
         assertTrue(source.contentEquals(previewBytes))
         assertEquals(
             PullState.Ready("Temporary preview", "content://previews/1", previewOnly = true),
-            client.artifacts.attachmentPulls.pullState(attachmentKey),
+            client.artifacts.state.attachmentPulls.pullState(attachmentKey),
         )
     }
 
     @Test
     fun `a refused attachment download says so on the row it belongs to`() {
-        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = 5))
+        client.artifacts.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = 5))
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
         assertEquals(
             PullState.Failed("Tool not permitted"),
-            client.artifacts.attachmentPulls.pullState(attachmentKey),
+            client.artifacts.state.attachmentPulls.pullState(attachmentKey),
         )
         // The body download's save state is a different machine and is untouched:
         // an attachment is not what the Save row is narrating.
-        assertEquals(ArtifactSave.Idle, client.artifacts.save.value)
+        assertEquals(ArtifactSave.Idle, client.artifacts.state.save.value)
     }
 
     /** Answer the ask at [offset] with the slice of [source] it named. */
@@ -1567,7 +1567,7 @@ class HelmClientTest {
 
     @Test
     fun `the artifact list hands the repository each artifact's attachments`() {
-        client.refreshArtifacts("s1")
+        client.artifacts.refreshArtifacts("s1")
 
         client.onInbound(
             resultFor(
@@ -1577,7 +1577,7 @@ class HelmClientTest {
             ),
         )
 
-        val ready = client.artifacts.list.value as ArtifactList.Ready
+        val ready = client.artifacts.state.list.value as ArtifactList.Ready
         val attachments = ready.artifacts.single().attachments
         assertEquals(listOf("att1"), attachments.map { it.id })
         assertEquals("chart.png", attachments.single().filename)
@@ -1587,7 +1587,7 @@ class HelmClientTest {
 
     @Test
     fun `a re-read of a body already read shows the cached body while it refreshes`() {
-        client.readArtifact("s1", "a1", version = null)
+        client.artifacts.readArtifact("s1", "a1", version = null)
         client.onInbound(
             resultFor(
                 lastCallId(),
@@ -1596,11 +1596,11 @@ class HelmClientTest {
             ),
         )
 
-        client.readArtifact("s1", "a1", version = null)
+        client.artifacts.readArtifact("s1", "a1", version = null)
 
         // The repository cached the answer; the re-ask surfaces it instead of a
         // blank Loading, and the fresh answer will overwrite it on arrival.
-        val refreshing = client.artifacts.read.value as ArtifactRead.Refreshing
+        val refreshing = client.artifacts.state.read.value as ArtifactRead.Refreshing
         assertEquals("# Report", refreshing.cached.content)
     }
 
@@ -1615,7 +1615,7 @@ class HelmClientTest {
      */
     @Test
     fun `the plan board asks for summaries, never the full-record list`() {
-        client.refreshPlans("/work")
+        client.plans.refreshPlans("/work")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("plan_summary", record.getString("method"))
@@ -1634,33 +1634,46 @@ class HelmClientTest {
             ),
         )
 
-        val ready = client.plans.list.value as PlanList.Ready
+        val ready = client.plans.state.list.value as PlanList.Ready
         assertEquals("Wire it", ready.plans.single().title)
         assertEquals(PlanStatus.Coding, ready.plans.single().status)
         assertEquals(listOf("P-0006"), ready.plans.single().blockedBy)
     }
 
     @Test
+    fun `inbound plan results reach the domain client through the core`() {
+        assertTrue(client.plans.refreshPlans("/work"))
+        val request = JSONObject(String(sent.single(), Charsets.UTF_8))
+
+        client.onInbound(
+            resultFor(request.getString("id"), """[{"id":"p1","title":"Wire it"}]"""),
+        )
+
+        val ready = client.plans.state.list.value as PlanList.Ready
+        assertEquals("p1", ready.plans.single().id)
+    }
+
+    @Test
     fun `a failed plan list is state on the screen, not silence`() {
-        client.refreshPlans("/work")
+        client.plans.refreshPlans("/work")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", (client.plans.list.value as PlanList.Failed).message)
+        assertEquals("Tool not permitted", (client.plans.state.list.value as PlanList.Failed).message)
     }
 
     @Test
     fun `an unreadable plan list says so instead of showing an empty board`() {
-        client.refreshPlans("/work")
+        client.plans.refreshPlans("/work")
 
         client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
 
-        assertTrue(client.plans.list.value is PlanList.Failed)
+        assertTrue(client.plans.state.list.value is PlanList.Failed)
     }
 
     @Test
     fun `one plan is asked for by uuid, the only form plan_get takes`() {
-        client.readPlan("p1")
+        client.plans.readPlan("p1")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("plan_get", record.getString("method"))
@@ -1670,21 +1683,21 @@ class HelmClientTest {
         client.onInbound(
             resultFor(lastCallId(), """{"id":"p1","dirPath":"/work","title":"Wire it","status":"review"}"""),
         )
-        assertEquals("Wire it", (client.plans.detail.value as PlanDetail.Ready).plan.title)
+        assertEquals("Wire it", (client.plans.state.detail.value as PlanDetail.Ready).plan.title)
     }
 
     @Test
     fun `a refused plan read is state on the screen`() {
-        client.readPlan("p1")
+        client.plans.readPlan("p1")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", (client.plans.detail.value as PlanDetail.Failed).message)
+        assertEquals("Tool not permitted", (client.plans.state.detail.value as PlanDetail.Failed).message)
     }
 
     @Test
     fun `a plan's effective context refs are asked for by planId`() {
-        client.refreshPlanContexts("p1")
+        client.plans.refreshPlanContexts("p1")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("plan_context_list", record.getString("method"))
@@ -1692,22 +1705,22 @@ class HelmClientTest {
         assertEquals("p1", record.getJSONObject("params").getString("planId"))
 
         client.onInbound(resultFor(lastCallId(), """[{"id":"c1","type":"Coding","source":"both"}]"""))
-        val ready = client.plans.contextRefs.value as PlanContextRefs.Ready
+        val ready = client.plans.state.contextRefs.value as PlanContextRefs.Ready
         assertEquals("both", ready.refs.single().source)
     }
 
     @Test
     fun `a refused plan context list is state on the screen`() {
-        client.refreshPlanContexts("p1")
+        client.plans.refreshPlanContexts("p1")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", (client.plans.contextRefs.value as PlanContextRefs.Failed).message)
+        assertEquals("Tool not permitted", (client.plans.state.contextRefs.value as PlanContextRefs.Failed).message)
     }
 
     @Test
     fun `sequences are asked for by directory, never one call per plan`() {
-        client.refreshSequences("/work")
+        client.plans.refreshSequences("/work")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("sequence_list", record.getString("method"))
@@ -1720,22 +1733,22 @@ class HelmClientTest {
             ),
         )
 
-        val ready = client.sequences.list.value as SequenceList.Ready
+        val ready = client.plans.sequences.list.value as SequenceList.Ready
         assertEquals(listOf("p1"), ready.sequences.single().memberPlanIds)
     }
 
     @Test
     fun `a failed sequence list is state on the screen`() {
-        client.refreshSequences("/work")
+        client.plans.refreshSequences("/work")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", (client.sequences.list.value as SequenceList.Failed).message)
+        assertEquals("Tool not permitted", (client.plans.sequences.list.value as SequenceList.Failed).message)
     }
 
     @Test
     fun `one sequence is asked for by id`() {
-        client.readSequence("seq1")
+        client.plans.readSequence("seq1")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("sequence_get", record.getString("method"))
@@ -1743,21 +1756,21 @@ class HelmClientTest {
         assertEquals("seq1", record.getJSONObject("params").getString("id"))
 
         client.onInbound(resultFor(lastCallId(), """{"id":"seq1","dirPath":"/work","title":"Lane"}"""))
-        assertEquals("Lane", (client.sequences.detail.value as SequenceDetail.Ready).sequence.title)
+        assertEquals("Lane", (client.plans.sequences.detail.value as SequenceDetail.Ready).sequence.title)
     }
 
     @Test
     fun `an unreadable sequence read says so instead of loading forever`() {
-        client.readSequence("seq1")
+        client.plans.readSequence("seq1")
 
         client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
 
-        assertTrue(client.sequences.detail.value is SequenceDetail.Failed)
+        assertTrue(client.plans.sequences.detail.value is SequenceDetail.Failed)
     }
 
     @Test
     fun `the project list is asked for as a bare project_list call`() {
-        client.refreshProjects()
+        client.workspace.refreshProjects()
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("project_list", record.getString("method"))
@@ -1767,23 +1780,23 @@ class HelmClientTest {
 
         assertEquals(
             listOf(HelmProject("proj1", "Helm", "/h")),
-            (client.contexts.projects.value as ProjectList.Ready).projects,
+            (client.plans.contexts.projects.value as ProjectList.Ready).projects,
         )
     }
 
     @Test
     fun `a failed project list is state on the screen`() {
-        client.refreshProjects()
+        client.workspace.refreshProjects()
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", (client.contexts.projects.value as ProjectList.Failed).message)
+        assertEquals("Tool not permitted", (client.plans.contexts.projects.value as ProjectList.Failed).message)
     }
 
     @Test
     fun `the timesheet is asked for over the phone-only gate method, never an AI tool`() {
         val ask = com.potatomotato.helm.data.TimeAsk(com.potatomotato.helm.data.TimePeriod.Week, 42L, "proj1")
-        client.refreshTime(ask)
+        client.workspace.refreshTime(ask)
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("__timesheet__", record.getString("method"))
@@ -1794,7 +1807,7 @@ class HelmClientTest {
         assertEquals("proj1", params.getString("projectKey"))
 
         client.onInbound(resultFor(lastCallId(), """{"projects":[]}"""))
-        assertTrue(client.time.state.value is com.potatomotato.helm.data.TimeState.Ready)
+        assertTrue(client.workspace.time.state.value is com.potatomotato.helm.data.TimeState.Ready)
     }
 
     @Test
@@ -1805,7 +1818,7 @@ class HelmClientTest {
             "ignored-while-viewing-tokens",
             view = com.potatomotato.helm.data.TimeView.Tokens,
         )
-        client.refreshTime(ask)
+        client.workspace.refreshTime(ask)
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("__timesheet__", record.getString("method"))
@@ -1819,7 +1832,7 @@ class HelmClientTest {
             "rows":[{"cliType":"codex","label":"Codex","tokens":[1200]}],"totals":[1200]},
             "chartModel":{"columns":[1],"labels":["Aug"],"series":[{"key":"cli:codex","label":"Codex",
             "color":"#123456","type":"bar","axis":"tokens","values":[1200]}]}}"""))
-        val state = client.time.state.value as com.potatomotato.helm.data.TimeState.Ready
+        val state = client.workspace.time.state.value as com.potatomotato.helm.data.TimeState.Ready
         val answer = state.answer as com.potatomotato.helm.data.TimeAnswer.Tokens
         assertEquals("Codex", answer.sheet.rows.single().label)
         assertEquals(listOf(1_200L), answer.sheet.totals)
@@ -1839,7 +1852,7 @@ class HelmClientTest {
 
     @Test
     fun `context nodes are asked for by projectId`() {
-        client.refreshContexts("proj1")
+        client.plans.refreshContexts("proj1")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("context_list", record.getString("method"))
@@ -1852,22 +1865,22 @@ class HelmClientTest {
             ),
         )
 
-        val ready = client.contexts.list.value as ContextList.Ready
+        val ready = client.plans.contexts.list.value as ContextList.Ready
         assertEquals(ContextPermission.Writable, ready.contexts.single().permission)
     }
 
     @Test
     fun `a failed context list is state on the screen`() {
-        client.refreshContexts("proj1")
+        client.plans.refreshContexts("proj1")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", (client.contexts.list.value as ContextList.Failed).message)
+        assertEquals("Tool not permitted", (client.plans.contexts.list.value as ContextList.Failed).message)
     }
 
     @Test
     fun `one context node is asked for by id and lands with its body`() {
-        client.readContext("c1")
+        client.plans.readContext("c1")
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("context_get", record.getString("method"))
@@ -1876,16 +1889,16 @@ class HelmClientTest {
         client.onInbound(
             resultFor(lastCallId(), """{"id":"c1","projectId":"proj1","title":"Notes","content":"Run it."}"""),
         )
-        assertEquals("Run it.", (client.contexts.detail.value as ContextDetail.Ready).context.content)
+        assertEquals("Run it.", (client.plans.contexts.detail.value as ContextDetail.Ready).context.content)
     }
 
     @Test
     fun `a refused context read is state on the screen`() {
-        client.readContext("c1")
+        client.plans.readContext("c1")
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals("Tool not permitted", (client.contexts.detail.value as ContextDetail.Failed).message)
+        assertEquals("Tool not permitted", (client.plans.contexts.detail.value as ContextDetail.Failed).message)
     }
 
     /**
@@ -1895,24 +1908,24 @@ class HelmClientTest {
      */
     @Test
     fun `an error routes to the surface that asked, and leaves the others alone`() {
-        client.refreshPlans("/work")
+        client.plans.refreshPlans("/work")
         val plansCall = lastCallId()
-        client.refreshContexts("proj1")
+        client.plans.refreshContexts("proj1")
         val contextsCall = lastCallId()
 
         client.onInbound(errorFor(contextsCall, "Tool not permitted"))
 
-        assertTrue(client.contexts.list.value is ContextList.Failed)
-        assertTrue(client.plans.list.value is PlanList.Loading)
+        assertTrue(client.plans.contexts.list.value is ContextList.Failed)
+        assertTrue(client.plans.state.list.value is PlanList.Loading)
 
         client.onInbound(resultFor(plansCall, """[{"id":"p1","title":"Wire it"}]"""))
-        assertTrue(client.plans.list.value is PlanList.Ready)
+        assertTrue(client.plans.state.list.value is PlanList.Ready)
     }
 
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */
     @Test
     fun `link up reports the chat cursor the phone holds, as a number param`() {
-        client.chats.receive(
+        client.sessions.chats.receive(
             "desk-1",
             com.potatomotato.helm.wire.MobileRecord.Chat(
                 sessionId = "s1", sessionName = "work", text = "kept", at = 1, seq = 12,
@@ -1929,7 +1942,7 @@ class HelmClientTest {
 
     @Test
     fun `link up reports the cursor of the desktop it linked to, not another desktop's`() {
-        client.chats.receive(
+        client.sessions.chats.receive(
             "box",
             com.potatomotato.helm.wire.MobileRecord.Chat(
                 sessionId = "box-s", sessionName = "work", text = "box", at = 1, seq = 500,
@@ -2034,7 +2047,7 @@ class HelmClientTest {
      * it — that nonce is the repository's business, not what these tests claim.
      */
     private fun assertNotice(action: SessionAction, outcome: ActionOutcome) {
-        with(client.control.notice.value!!) {
+        with(client.workspace.control.notice.value!!) {
             assertEquals(action, this.action)
             assertEquals(outcome, this.outcome)
         }

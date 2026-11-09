@@ -41,13 +41,13 @@ class ReplyReceiver : BroadcastReceiver() {
         val sessionName = intent.getStringExtra(AndroidNotifications.EXTRA_SESSION_NAME).orEmpty()
         val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(RESULT_KEY)?.toString().orEmpty()
 
-        val delivery = ReplyDelivery(HelmPairing.client::sendChat)
+        val delivery = ReplyDelivery(HelmPairing.client.sessions::sendChat)
         // The reply text is a PAYLOAD: the outcome and the session are logged,
         // never what the user typed. HelmLog's one rule.
         val outcome = delivery.reply(sessionId, text)
         HelmLog.i(HelmLog.NOTIFY, "reply to $sessionId: $outcome")
 
-        val router = HelmPairing.client.alerts
+        val router = HelmPairing.client.sessions.alerts
         when (outcome) {
             // Android has already collapsed the box into a spinner; taking the
             // row down is what tells the user it went.
