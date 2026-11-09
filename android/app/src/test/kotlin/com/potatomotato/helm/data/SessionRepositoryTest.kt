@@ -145,6 +145,54 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun `todos default empty and malformed rows are dropped in input order`() {
+        val old = SessionWire.parseList(listOf(summary("old")).toJsonArray())!!.single()
+        assertEquals(emptyList<SessionTodo>(), old.todos)
+
+        val todos = JSONArray()
+            .put("not an object")
+            .put(JSONObject().put("id", "missing-text").put("waiting", false))
+            .put(JSONObject().put("id", "first").put("text", "Review the wire field").put("waiting", false))
+            .put(JSONObject().put("id", "second").put("text", "Ask the user").put("waiting", true))
+            .put(JSONObject().put("id", "bad-waiting").put("text", "Malformed flag").put("waiting", "yes"))
+
+        val parsed = SessionWire.parseList(
+            listOf(summary("s1").put("todos", todos)).toJsonArray(),
+        )!!.single()
+
+        assertEquals(
+            listOf(
+                SessionTodo("first", "Review the wire field", false),
+                SessionTodo("second", "Ask the user", true),
+            ),
+            parsed.todos,
+        )
+    }
+
+    @Test
+    fun `todos carried by a session delta replace the held row`() {
+        val repository = SessionRepository()
+        repository.applySnapshot(SessionWire.parseList(listOf(summary("s1")).toJsonArray())!!)
+        val expected = listOf(SessionTodo("t1", "Ship the pane", true))
+        val reply = JSONObject(mapOf(
+            "epoch" to "e1",
+            "seq" to 2,
+            "full" to false,
+            "sessions" to listOf(
+                summary("s1").put("todos", JSONArray().put(JSONObject()
+                    .put("id", "t1")
+                    .put("text", "Ship the pane")
+                    .put("waiting", true))),
+            ).toJsonArray(),
+            "removed" to JSONArray(),
+        ))
+
+        repository.applyChanges(SessionWire.parseChanges(reply)!!)
+
+        assertEquals(expected, repository.find("s1")?.todos)
+    }
+
+    @Test
     fun `compact context parses tokens window and level while bad context degrades to absent`() {
         val parsed = SessionWire.parseList(
             JSONArray()

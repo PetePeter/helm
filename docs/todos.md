@@ -50,3 +50,5 @@ The stamp is runtime-only. A failed send withdraws it, and it expires after 10 m
 Lists are persisted per session. They survive restarts, compaction, and recycle-bin restores. A permanent session deletion, recycle-bin forget/expiry, or startup orphan cleanup removes its list.
 
 The renderer reads the list through IPC and receives live changes from MCP calls. Only the session's LLM can add, complete, delete, or clear items; the desktop pane has no editing controls.
+
+The phone reads open and waiting items from the optional `todos` field on each `session_list` row. Todo changes use the existing profile-scoped session change feed.

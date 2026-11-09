@@ -40,6 +40,12 @@ export interface SessionFeedSource {
   off?(event: 'session:removed', handler: (event: { sessionId: string }) => void): unknown;
 }
 
+/** The todo manager slice whose mutations change one session row. */
+export interface SessionTodoFeedSource {
+  on(event: 'todos:changed', handler: (event: { sessionId: string }) => void): unknown;
+  off?(event: 'todos:changed', handler: (event: { sessionId: string }) => void): unknown;
+}
+
 export interface SessionChangeFeedOptions {
   /** Identifies this process's sequence. Injected so tests can name it. */
   epoch?: string;
@@ -66,6 +72,7 @@ export class SessionChangeFeed extends EventEmitter {
     updated: (event: { id: string }) => void;
     removed: (event: { sessionId: string }) => void;
   }>();
+  private readonly todoSources = new Map<SessionTodoFeedSource, (event: { sessionId: string }) => void>();
 
   constructor(options: SessionChangeFeedOptions = {}) {
     super();
@@ -97,9 +104,26 @@ export class SessionChangeFeed extends EventEmitter {
     this.sources.delete(source);
   }
 
+  /** Follow one profile's TodoManager, moving only the row whose todos changed. */
+  attachTodos(source: SessionTodoFeedSource): void {
+    this.detachTodos(source);
+    const handler = (event: { sessionId: string }) => this.touch(event.sessionId);
+    source.on('todos:changed', handler);
+    this.todoSources.set(source, handler);
+  }
+
+  /** Stop following a todo manager and release its listener. */
+  detachTodos(source: SessionTodoFeedSource): void {
+    const handler = this.todoSources.get(source);
+    if (!handler) return;
+    source.off?.('todos:changed', handler);
+    this.todoSources.delete(source);
+  }
+
   /** Release every source and listener when the owning runtime is disposed. */
   dispose(): void {
     for (const source of this.sources.keys()) this.detach(source);
+    for (const source of this.todoSources.keys()) this.detachTodos(source);
     this.removeAllListeners();
     this.changedAt.clear();
     this.removedAt.clear();

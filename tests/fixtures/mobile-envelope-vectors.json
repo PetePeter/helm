@@ -47,8 +47,8 @@
     {
       "name": "result carrying an object",
       "direction": "helm-to-phone",
-      "bytesHex": "7b2276223a312c2274223a22726573756c74222c226964223a226331222c22726573756c74223a7b2273657373696f6e73223a5b7b226964223a227331222c226e616d65223a22776f726b227d5d7d7d",
-      "json": "{\"v\":1,\"t\":\"result\",\"id\":\"c1\",\"result\":{\"sessions\":[{\"id\":\"s1\",\"name\":\"work\"}]}}"
+      "bytesHex": "7b2276223a312c2274223a22726573756c74222c226964223a226331222c22726573756c74223a7b2273657373696f6e73223a5b7b226964223a227331222c226e616d65223a22776f726b222c22746f646f73223a5b7b226964223a227431222c2274657874223a22726576696577207769726520636f6e7472616374222c2277616974696e67223a747275657d5d7d5d7d7d",
+      "json": "{\"v\":1,\"t\":\"result\",\"id\":\"c1\",\"result\":{\"sessions\":[{\"id\":\"s1\",\"name\":\"work\",\"todos\":[{\"id\":\"t1\",\"text\":\"review wire contract\",\"waiting\":true}]}]}}"
     },
     {
       "name": "result carrying null",

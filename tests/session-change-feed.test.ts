@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { SessionChangeFeed } from '../src/session/session-change-feed';
 import { SessionManager } from '../src/session/manager';
+import { TodoManager } from '../src/session/todo-manager';
 
 function feedAt(epoch = 'e1', maxTombstones?: number): SessionChangeFeed {
   return new SessionChangeFeed({ epoch, maxTombstones });
@@ -149,5 +150,39 @@ describe('SessionChangeFeed following a SessionManager', () => {
     manager.addSession(session('after-dispose'), true);
 
     expect(feed.seq).toBe(0);
+  });
+});
+
+describe('SessionChangeFeed following a TodoManager', () => {
+  function todoManager() {
+    return new TodoManager({
+      load: () => null,
+      save: () => {},
+      remove: () => {},
+      list: () => [],
+    }, () => 'todo-1', () => 1);
+  }
+
+  it('moves only the owning session row and releases the listener on dispose', () => {
+    const todos = todoManager();
+    const profileFeed = feedAt();
+    const otherProfileFeed = feedAt();
+    otherProfileFeed.attachTodos(todoManager());
+    profileFeed.attachTodos(todos);
+    const start = { epoch: 'e1', seq: profileFeed.seq };
+
+    const added = todos.add('s1', 'Review the todo row');
+    expect(profileFeed.since(start)).toEqual({ full: false, changed: ['s1'], removed: [] });
+    expect(otherProfileFeed.seq).toBe(0);
+
+    const afterAdd = { epoch: 'e1', seq: profileFeed.seq };
+    todos.markDone('s1', added.id);
+    expect(profileFeed.since(afterAdd)).toEqual({ full: false, changed: ['s1'], removed: [] });
+    expect(otherProfileFeed.seq).toBe(0);
+
+    profileFeed.dispose();
+    todos.add('s2', 'After disposal');
+    expect(profileFeed.seq).toBe(0);
+    otherProfileFeed.dispose();
   });
 });

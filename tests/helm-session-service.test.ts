@@ -65,6 +65,27 @@ describe('HelmSessionService.listSessions', () => {
     expect(fresh.lastPromptAtEpochMs).toBeUndefined();
   });
 
+  it('serializes only bounded active todos and omits an empty list', () => {
+    const sessionManager = makeSessionManager([{ id: 's1', name: 'A', cliType: 'claude-code' }]);
+    const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, makeConfigLoader() as any, makePlanManager() as any);
+    const todo = (id: string, status: string, text = id) => ({ id, text, status, createdAt: 1 });
+    service.setSessionTodosLookup(() => [
+      todo('open', 'open', 'x'.repeat(250)),
+      todo('waiting', 'waiting', 'Ask the user'),
+      ...Array.from({ length: 51 }, (_, index) => todo(`todo-${index}`, 'open')),
+      todo('done', 'done'),
+    ] as any);
+
+    const summary = service.listSessions()[0];
+    expect(summary.todos).toHaveLength(50);
+    expect(summary.todos?.[0]).toEqual({ id: 'open', text: 'x'.repeat(200), waiting: false });
+    expect(summary.todos?.[1]).toEqual({ id: 'waiting', text: 'Ask the user', waiting: true });
+    expect(summary.todos?.some(item => item.id === 'done')).toBe(false);
+
+    service.setSessionTodosLookup(() => []);
+    expect(service.listSessions()[0]).not.toHaveProperty('todos');
+  });
+
   it('flags a CLI type with no prompt cache, so the phone shows no staleness', () => {
     const sessionManager = makeSessionManager([{ id: 's1', name: 'A', cliType: 'local', workingDir: '/r', lastPromptAt: 1000 } as any]);
     const config = makeConfigLoader();

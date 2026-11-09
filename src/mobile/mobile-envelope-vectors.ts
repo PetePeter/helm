@@ -141,7 +141,7 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
     })),
     vector('permitted-tools discovery call', 'phone-to-helm', encodeCall('c4', '__mobile_tools__')),
     vector('result carrying an object', 'helm-to-phone', encodeResult('c1', {
-      sessions: [{ id: 's1', name: 'work' }],
+      sessions: [{ id: 's1', name: 'work', todos: [{ id: 't1', text: 'review wire contract', waiting: true }] }],
     })),
     vector('result carrying null', 'helm-to-phone', encodeResult('c5', null)),
     vector('uniform denial error', 'helm-to-phone', encodeError('c2', -32000, 'Tool not permitted')),

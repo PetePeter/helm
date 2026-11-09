@@ -6,6 +6,7 @@ import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
 import type { TerminalReadMode, TerminalTail } from '../../session/terminal-output-buffer.js';
 import type { SessionInfo } from '../../types/session.js';
+import type { SessionTodo } from '../../types/todo.js';
 import type { SessionEtaInput } from '../../session/session-eta.js';
 import { createSessionEta } from '../../session/session-eta.js';
 import { etaWhereOf, type EtaTracker } from '../../session/eta-tracker.js';
@@ -37,6 +38,7 @@ export class HelmSessionService {
   private runtimeGroupManager: RuntimeGroupManager | null = null;
   private etaTracker: EtaTracker | null = null;
   private apiContextSizeLookup?: (sessionId: string) => ApiSessionContextSize;
+  private sessionTodosLookup?: (sessionId: string) => SessionTodo[];
 
   constructor(
     private readonly sessionManager: SessionManager,
@@ -60,6 +62,11 @@ export class HelmSessionService {
 
   setApiContextSizeLookup(lookup: (sessionId: string) => ApiSessionContextSize): void {
     this.apiContextSizeLookup = lookup;
+  }
+
+  /** Late-bound: includes the caller profile's active todos on each session row. */
+  setSessionTodosLookup(lookup: (sessionId: string) => SessionTodo[]): void {
+    this.sessionTodosLookup = lookup;
   }
 
   /** Late-bound: carries a session's artifacts to the session that continues it. */
@@ -412,6 +419,10 @@ export class HelmSessionService {
     const lastActiveMs = isActive ? Date.now() : (session.lastActiveAt ?? session.createdAt);
     const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
     const gitBranch = session.remote ? undefined : this.gitBranchResolver.get(session.workingDir);
+    const todos = this.sessionTodosLookup?.(session.id)
+      .filter(todo => todo.status === 'open' || todo.status === 'waiting')
+      .slice(0, 50)
+      .map(todo => ({ id: todo.id, text: todo.text.slice(0, 200), waiting: todo.status === 'waiting' }));
     return {
       id: session.id,
       name: session.name,
@@ -456,6 +467,7 @@ export class HelmSessionService {
       ...(session.comfyUiImageSizes ? { comfyUiImageSizes: session.comfyUiImageSizes } : {}),
       ...(session.subagentOf ? { subagentOf: session.subagentOf } : {}),
       ...(session.pendingSubagents ? { pendingSubagents: session.pendingSubagents } : {}),
+      ...(todos?.length ? { todos } : {}),
     };
   }
 

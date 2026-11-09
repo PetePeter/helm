@@ -5,6 +5,12 @@ import com.potatomotato.helm.wire.WireShape
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class SessionTodo(
+    val id: String,
+    val text: String,
+    val waiting: Boolean,
+)
+
 /**
  * One Helm session as the phone knows it — the subset of the desktop's
  * `SessionSummary` that screen 1 actually draws, and nothing more.
@@ -73,6 +79,8 @@ data class HelmSession(
     val gitBranch: String? = null,
     /** Desktop estimate of when the session may finish, including its learned range. */
     val eta: SessionEta? = null,
+    /** Open and waiting todos carried by the desktop session row. */
+    val todos: List<SessionTodo> = emptyList(),
 ) {
     /** Lock / frozen / keep-warm, as the desktop row shows them — every one that applies. */
     fun statusIcons(nowMs: Long): String = listOfNotNull(
@@ -257,8 +265,18 @@ object SessionWire {
             cacheExpireMinutes = (summary.opt("cacheExpireMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 60,
             noPromptCache = summary.opt("noPromptCache") == true,
             eta = parseEta(summary.optJSONObject("eta")),
+            todos = parseTodos(summary.optJSONArray("todos")),
         )
     }
+
+    private fun parseTodos(array: JSONArray?): List<SessionTodo> =
+        (0 until (array?.length() ?: 0)).mapNotNull { index ->
+            val todo = array?.optJSONObject(index) ?: return@mapNotNull null
+            val id = (todo.opt("id") as? String)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val text = (todo.opt("text") as? String)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val waiting = todo.opt("waiting") as? Boolean ?: return@mapNotNull null
+            SessionTodo(id, text, waiting)
+        }
 
     /**
      * The dot reads ACTIVITY, never pipeline state (invariant 8) — which is why

@@ -37,6 +37,7 @@ const TOOLS = ['session_todo_add', 'session_todo_done', 'session_todo_clear', 's
 
 describe('MCP session_todo_*', () => {
   let todos: InstanceType<typeof TodoManager>;
+  let service: InstanceType<typeof HelmControlService>;
   let call: (tool: string, args?: Record<string, unknown>, auth?: { sessionId?: string }) => Promise<any>;
 
   beforeEach(() => {
@@ -45,7 +46,7 @@ describe('MCP session_todo_*', () => {
     sessions.addSession(session('other', 'sibling'));
     todos = new TodoManager(memoryStore(), () => 'generated-id', () => 5000);
     const configLoader = { getCliTypeLabel: (ref: string) => ref, getCliTypeEntry: () => null, getCliTypes: () => [] };
-    const service = new HelmControlService({} as never, sessions, {} as never, configLoader as never, unusedPlanAttachmentManager());
+    service = new HelmControlService({} as never, sessions, {} as never, configLoader as never, unusedPlanAttachmentManager());
     service.setTodoManager(todos);
     const deps = { service, setPlanStateWithValidation: vi.fn(), completePlanWithValidation: vi.fn() };
     call = (tool, args = {}, auth = { sessionId: 'me' }) => callMcpTool(deps, tool, args, auth) as Promise<any>;
@@ -71,6 +72,16 @@ describe('MCP session_todo_*', () => {
     todos.add('other', 'Keep this');
     expect(await call('session_todo_clear')).toBe(0);
     expect(todos.list('other').map(todo => todo.text)).toEqual(['Keep this']);
+  });
+
+  it('moves only the owning session row on add and completion', async () => {
+    const cursor = { epoch: service.sessionChangeFeed.epoch, seq: service.sessionChangeFeed.seq };
+    const added = await call('session_todo_add', { text: 'Ship the pane' });
+    expect(service.sessionChangeFeed.since(cursor)).toEqual({ full: false, changed: ['me'], removed: [] });
+
+    const afterAdd = { epoch: service.sessionChangeFeed.epoch, seq: service.sessionChangeFeed.seq };
+    await call('session_todo_done', { id: added.id });
+    expect(service.sessionChangeFeed.since(afterAdd)).toEqual({ full: false, changed: ['me'], removed: [] });
   });
 
   it('never lets a caller address another session', async () => {

@@ -180,6 +180,8 @@ export interface SessionSummary {
   subagentOf?: string;
   /** Subagents this session is waiting on — clients show a 🔥 count. */
   pendingSubagents?: number;
+  /** Open and waiting todos, included only when at least one remains. */
+  todos?: Array<{ id: string; text: string; waiting: boolean }>;
 }
 
 export interface SessionContextSummary {
@@ -514,7 +516,10 @@ export class HelmControlService extends EventEmitter {
 
   /** Wire the TodoManager behind the caller-scoped session_todo_* MCP tools. */
   setTodoManager(manager: TodoManager): void {
+    if (this.todoManager && this.todoManager !== manager) this.sessionChangeFeed.detachTodos(this.todoManager);
     this.todoManager = manager;
+    this.sessionService.setSessionTodosLookup(sessionId => manager.list(sessionId));
+    this.sessionChangeFeed.attachTodos(manager);
   }
 
   /** Wire the ArtifactManager so the artifact_* MCP tools can produce session reports. */
