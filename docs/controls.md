@@ -84,6 +84,24 @@ router handles only shortcuts with a registered action. In a snap-out window,
 pane shortcuts are limited to that window's profile; session cycling and
 main-window actions are unavailable. See the [focus-context matrix](keyboard-routing.md#shortcut-focus-context-matrix).
 
+## Android hardware keyboard
+
+The Android workspace follows the desktop map for session navigation and actions, with mobile-specific tab keys. Talk to Helm stays desktop-only; hold the configurable PTT key (Alt+Space by default) to speak to the selected session.
+
+| Input | Android action |
+|-------|----------------|
+| Ctrl+Tab / Ctrl+Shift+Tab | Cycle sessions forward/back |
+| Ctrl+1–9, Ctrl+0 | Select sessions 1–10 |
+| Alt+1–9, Alt+0 | Run action-bar actions 1–10 |
+| Ctrl+Shift+J / A / P | Switch to Chat / Artifacts / Plans |
+| Ctrl+Shift+S / K | Focus Sessions / Todos |
+| Ctrl+Shift+N / R / W | Spawn / rename / close a session |
+| Enter / Ctrl+Enter | Add a composer newline / send the message |
+| Escape | Stop the selected session when no menu or dialog is open |
+| Hold Alt+Space | Push-to-talk; release to mute |
+
+Ctrl+Space, Ctrl+Shift+Space, and Meta-modified combinations are not consumed by the mobile key map.
+
 ## Keyboard Ownership
 
 Keyboard input is routed by a single capture-phase listener with an explicitly

@@ -5,9 +5,10 @@ session control away from the desk. It is a second client, not a viewer: it
 lists sessions, carries the chat, spawns and closes work, takes dictation and
 buzzes when something needs you.
 
-This document is the orientation — what the app is, how its pieces fit, and
-**why** each load-bearing decision went the way it did. It deliberately does
-not restate what already has a home:
+This document explains what the app does and why its transport and control
+choices exist. Its Android domain boundaries and adaptive phone/tablet layout
+are mapped in [mobile-tablet.md](mobile-tablet.md). It avoids restating details
+that already have a more specific home:
 
 | For | Read |
 |-----|------|
@@ -18,44 +19,15 @@ not restate what already has a home:
 | The call boundary — proxy identity, allow-list, audit | [mobile-gate.md](mobile-gate.md) |
 | ChatBroker fan-out and the wire records | [chat-fan-out.md](chat-fan-out.md) |
 | How the phone gets the APK | [apk-distribution.md](apk-distribution.md) |
+| Android domains and adaptive phone/tablet layout | [mobile-tablet.md](mobile-tablet.md) |
 
-## Shape
+## Adaptive workspace
 
-```mermaid
-graph TB
-    subgraph "Phone — Kotlin + Compose"
-        UI[Compose screens<br/>HelmHome owns navigation + session watching]
-        REPO[data/<br/>SessionRepository · ChatRepository · ArtifactRepository<br/>ControlRepository · CapabilityCache<br/>AttachmentPulls — every sliced fetch]
-        HC[link/HelmClient<br/>the ONE call-id correlation point]
-        PC[link/PairingController]
-        SCK[crypto/SecureChannel<br/>responder half only]
-        GATT[ble/GattServer + advertiser<br/>HelmLinkService foreground]
-    end
+One selected-session model serves phone and tablet. The layout follows current window width and changes live on resize or rotation: below 600dp stays phone, 600–839dp is a collapsed tablet, and 840dp and above expands the tablet workspace.
 
-    subgraph "Helm — TypeScript"
-        BLC[BleLinkClient<br/>noble central]
-        SC[SecureChannel<br/>initiator]
-        GATE[MobileGate]
-        MCP[Existing MCP dispatcher<br/>UNCHANGED]
-    end
+On a collapsed tablet, the session title opens the shared session picker and the open-todos chip opens a sheet. Expanded tablets keep the session list and the selected session's open/waiting todos in a split left pane; completed todos stay hidden.
 
-    UI --> REPO
-    REPO --> HC
-    HC --> PC --> SCK --> GATT
-    GATT <-.->|BLE GATT| BLC
-    BLC --> SC --> GATE --> MCP
-```
-
-Two rules hold that picture together:
-
-- **`HelmClient` is the only place a call id is correlated to its reply**, and
-  the only place an alert is split from a message. Nothing else may open a
-  second path to `HelmPairing.send`; a second path is how two views of the same
-  conversation start to disagree.
-- **`MobileGate` is the only way into Helm's tools.** A phone's chat reply is
-  itself a gated `session_send_text` call, and dictation sends down that same
-  path — there is no voice channel and no chat channel, only calls. That is what
-  makes "no path skips the gate" true by construction rather than by discipline.
+Session rows reserve a fixed slot for ETA before status icons, with overdue time in amber. The session-list header's settings cog groups notifications, local Wireless ADB, log export, desktop connections, and the PTT binding. The shared behavior and the reason for two presentations are mapped in [mobile-tablet.md](mobile-tablet.md).
 
 ## The screens
 

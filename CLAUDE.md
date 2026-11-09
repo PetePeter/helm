@@ -189,7 +189,8 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 |----------|---------|
 | [docs/chat-fan-out.md](docs/chat-fan-out.md) | Transport-agnostic chat — ChatBroker fan-out, ChatBridge, `chatBindings`, the mobile chat surface and its wire records |
 | [docs/apk-distribution.md](docs/apk-distribution.md) | Android APK delivery — GitHub release asset per tag, signer verification, version-pinned QR/URL, why R8 is off |
-| [docs/mobile-app.md](docs/mobile-app.md) | The Android companion — shape, screens, why BLE/Kotlin/peripheral/app-layer crypto, and the honest limitations |
+| [docs/mobile-app.md](docs/mobile-app.md) | Android companion behavior, transport rationale, and limitations |
+| [docs/mobile-tablet.md](docs/mobile-tablet.md) | Android domain boundaries and the shared phone/tablet workspace |
 | [docs/voice-operator.md](docs/voice-operator.md) | "Call Helm" — Android voice call to the operator/picked session, CallController state machine, audio routing FGS; the desktop "Helm" operator singleton (role=operator, route-only) |
 | [docs/mobile-ble-transport.md](docs/mobile-ble-transport.md) | Phone ↔ Helm BLE link — Helm as central, GATT characteristics, chunk framing, link ownership and online state, cross-language vectors |
 | [docs/mobile-lan-transport.md](docs/mobile-lan-transport.md) | Phone ↔ Helm LAN link — Helm listens, transport ranking (LAN preempts BLE), generations, address push over the authenticated channel |

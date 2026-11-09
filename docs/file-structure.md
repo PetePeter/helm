@@ -284,7 +284,8 @@ android/
     │   │   │   ├── AttachmentPulls.kt # THE sliced-download driver — chat tiles AND artifact rows (see docs/chat-fan-out.md)
     │   │   │   ├── ChatAttachmentPull.kt # AttachmentTransfer: gaps, out-of-order, resume-at-the-gap
     │   │   │   ├── ArtifactUploads.kt / ArtifactRules.kt       # Staged phone→desktop files; the 128KiB body budget
-    │   │   │   └── TransportPreference* / LanAddressStore* / DraftStore / UnreadStore / PairedDesktops
+    │   │   │   ├── TransportPreference* / LanAddressStore* / DraftStore / UnreadStore / PairedDesktops
+    │   │   │   └── TabletPaneHeightStore.kt / WirelessAdb.kt # Local tablet sizing and device setting
     │   │   ├── save/                  # Everything user-visible this app writes
     │   │   │   ├── DownloadFolder.kt        # `Downloads/Helm` — why a folder only we write into
     │   │   │   ├── MediaStoreDownloads.kt   # API 29+ writer: choose a free name, then claim it
@@ -292,7 +293,9 @@ android/
     │   │   │   ├── AndroidArtifactFiles.kt / AndroidLogFiles.kt  # Sinks + the pre-29 app-folder fallback
     │   │   │   └── AndroidAttachmentStaging.kt # Picked files staged for upload
     │   │   ├── link/
-    │   │   │   ├── HelmClient.kt        # The ONE call-id correlation point; upload + download chains
+    │   │   │   ├── HelmClient.kt        # The ONE call-id correlation point; shared upload + download chains
+    │   │   │   ├── SessionClient.kt / ArtifactClient.kt # Domain calls share the core and repositories
+    │   │   │   ├── PlanClient.kt / WorkspaceClient.kt   # Plan and workspace call surfaces
     │   │   │   ├── PairingController.kt # PSK choice, screen state, persist-on-confirm. No Android types
     │   │   │   ├── HelmLinkPipe.kt      # HelmLink as a BytePipe + the timeout's coroutine clock
     │   │   │   ├── LinkEnergyPolicy.kt  # Which radios are powered: one at a time when linked, 15 min search, then give up. No Android types
@@ -303,10 +306,16 @@ android/
     │   │   ├── notify/                # Alerts, notification channels, inline reply delivery
     │   │   ├── voice/                 # On-device speech only — no audio crosses the link
     │   │   ├── log/                   # HelmLog + rotating FileLogSink + LogExport
-    │   │   ├── ui/                    # Compose — HelmHome owns navigation; screens by feature
-    │   │   │   ├── sessions/ chat/ artifacts/ plans/ contexts/ sequences/ control/ pairing/
-    │   │   │   ├── components/        # Shared primitives (rows, dropdowns, markdown, dots)
-    │   │   │   └── theme/             # Colors, spacing, type — guarded by NoRawColorLiteralTest
+    │   │   ├── ui/                    # Compose presentation; one shared state/action model feeds both shells
+    │   │   │   ├── HelmHomeState.kt / HelmHomeEffects.kt / PhoneScaffold.kt / Phone*Content.kt
+    │   │   │   ├── SessionTabBody.kt / SessionTabScaffold.kt # Same session tabs on each shell
+    │   │   │   ├── tablet/             # LayoutChooser, TabletScaffold, picker, splitter, todos pane
+    │   │   │   ├── sessions/SessionRowsContent.kt # Shared session rows for list and picker
+    │   │   │   ├── control/SessionActions.kt / SessionActionBar.kt / SessionActionDialogs.kt
+    │   │   │   ├── keyboard/KeyMap.kt  # Workspace shortcuts and configurable PTT input
+    │   │   │   ├── components/         # ContextRing, SettingsMenu, TodoSheet, shared primitives
+    │   │   │   ├── chat/               # ChatScreen, composer, cache banners
+    │   │   │   └── theme/              # Colors, spacing, type — guarded by NoRawColorLiteralTest
     │   │   └── ble/
     │   │       ├── BleFraming.kt      # Chunker/reassembler — byte-for-byte port of ble-framing.ts
     │   │       ├── HelmGatt.kt        # Service/characteristic UUIDs, mirroring characteristics.ts

@@ -580,7 +580,7 @@
 
 <h3>The session list</h3>
 <ul>
-  <li>Each row: a <strong>context ring</strong> around the activity dot, the session name, its age, and a second line with <em>status &middot; CLI &middot; git branch &middot; mission</em> (the mission is what gets cut off first when the line is long)</li>
+  <li>Each row shows the <strong>context ring</strong>, name, age, and <em>status &middot; CLI &middot; git branch &middot; mission</em>. The ETA has a fixed slot before the status icons (overdue time is amber); selection uses the row surface, with no &#10132; marker</li>
   <li>The ring fills with context use: teal, then <strong>amber</strong> and <strong>red</strong> as in the desktop, and it <strong>heartbeats</strong> once the session is past its limit</li>
   <li>Lock, frozen and keep-warm icons sit in a fixed column after the name, and the unread count badge in its own column on the right, so every row lines up</li>
   <li>Long-press a row for session actions; tap a group header to fold it</li>
@@ -591,6 +591,39 @@
   <li>The header shows the same ring next to the session name. <strong>Tap the ring</strong> to see the context graph (tokens, window, and the amber and red lines)</li>
   <li>The Wi-Fi/Bluetooth link badge is shown on the session list, not repeated inside a session</li>
 </ul>
+
+<h3>Tablet layout</h3>
+<ul>
+  <li>At 600dp of current window width the session workspace becomes a collapsed tablet; at 840dp it expands. Rotation and resizing are handled live</li>
+  <li>In the collapsed layout, tap the session title to pick a session. Tap the <strong>&#10003; N open</strong> chip to see that session's pending todos</li>
+  <li>In the expanded layout, the session list and selected session's open/waiting todos share the left pane on a draggable splitter. Completed todos are hidden</li>
+  <li>The right pane keeps the session header, action bar, Chat / Artifacts / Plans / Sequences tabs, chat and composer together. The action bar uses the same actions as the phone's overflow sheet</li>
+  <li>Tap the context ring to open its context popover. Cache warning, expired and frozen banners appear above chat when relevant</li>
+</ul>
+
+<h3>Settings cog</h3>
+<ul>
+  <li>The cog in the session-list header groups Notifications, Wireless ADB, Export log, Desktops and the PTT key binding. A muted-notifications badge appears on the cog</li>
+  <li>Wireless ADB is local to the phone. Grant its setting permission once with <code>adb shell pm grant com.potatomotato.helm android.permission.WRITE_SECURE_SETTINGS</code></li>
+  <li>Without that grant, the app opens Developer options to Wireless debugging; the Wireless ADB row is hidden on Android 10</li>
+</ul>
+
+<h3>Hardware keyboard</h3>
+<table>
+  <thead><tr><th>Keys</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td>Ctrl+Tab / Ctrl+Shift+Tab</td><td>Cycle sessions forward / back</td></tr>
+    <tr><td>Ctrl+1&ndash;9 / Ctrl+0</td><td>Select sessions 1&ndash;10</td></tr>
+    <tr><td>Alt+1&ndash;9 / Alt+0</td><td>Run action-bar actions 1&ndash;10</td></tr>
+    <tr><td>Ctrl+Shift+J / A / P</td><td>Open Chat / Artifacts / Plans</td></tr>
+    <tr><td>Ctrl+Shift+S / K</td><td>Focus Sessions / Todos</td></tr>
+    <tr><td>Ctrl+Shift+N / R / W</td><td>Spawn / rename / close a session</td></tr>
+    <tr><td>Enter / Ctrl+Enter</td><td>Add a newline / send the composer message</td></tr>
+    <tr><td>Esc</td><td>Stop the selected session when no menu or dialog is open</td></tr>
+    <tr><td>Hold Alt+Space</td><td>Push-to-talk; release to mute. The binding is configurable in the cog</td></tr>
+  </tbody>
+</table>
+<p>The mobile map does not include desktop Talk to Helm. Ctrl+Space, Ctrl+Shift+Space and Meta-modified keys are not consumed.</p>
 
 <h3>Sharing a file to a session</h3>
 <table>
