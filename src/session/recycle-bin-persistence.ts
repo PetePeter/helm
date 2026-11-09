@@ -14,7 +14,7 @@ import type { RecycleBinEntry } from '../types/recycle-bin.js';
 import { atomicWriteFileSync, isRecord } from './persistence-utils.js';
 
 /** Retention window: entries older than this (by closedAt) are discarded. */
-export const RECYCLE_BIN_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+export const RECYCLE_BIN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function saveRecycleBin(entries: RecycleBinEntry[], filePath?: string): void {
   if (!filePath) return;

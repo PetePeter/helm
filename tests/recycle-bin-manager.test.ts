@@ -11,7 +11,7 @@ import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo, type SessionRemovedEvent } fr
 
 let diskStore: RecycleBinEntry[] = [];
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
-  RECYCLE_BIN_WINDOW_MS: 30 * 24 * 60 * 60 * 1000,
+  RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
   saveRecycleBin: (entries: RecycleBinEntry[]) => { diskStore = [...entries]; },
   loadRecycleBin: () => [...diskStore],
 }));
@@ -70,7 +70,7 @@ describe('RecycleBinManager', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it('prunes entries older than the 30-day window using the injected clock', () => {
+  it('prunes entries older than the 7-day window using the injected clock', () => {
     const fixedNow = 1_700_000_000_000;
     manager = new RecycleBinManager(() => fixedNow);
 

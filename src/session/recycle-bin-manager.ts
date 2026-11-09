@@ -1,5 +1,5 @@
 /**
- * RecycleBinManager — rolling 30-day bin of closed, recoverable sessions.
+ * RecycleBinManager — rolling 7-day bin of closed, recoverable sessions.
  *
  * Mirrors the rolling-window pattern of ScheduledTaskHistoryManager. In-memory
  * list is newest-first; on every append stale entries (older than

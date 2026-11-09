@@ -1,7 +1,7 @@
 # Recycle Bin (closed recoverable sessions)
 
 Closing a session that carried a `cliSessionName` (its CLI-internal resume UUID)
-snapshots it into a rolling **30-day** bin instead of losing it. Restoring reuses the
+snapshots it into a rolling **7-day** bin instead of losing it. Restoring reuses the
 normal spawn-with-resume flow, so a recovered session is indistinguishable from one
 resumed at startup.
 
@@ -16,7 +16,7 @@ effectively unreachable, even though nothing had actually been deleted.
 Ephemeral sessions (no `cliSessionName`) have nothing to come back to, so they are
 **never** recorded — a bin full of unrestorable rows is worse than no bin.
 
-The 30-day window mirrors the `ScheduledTaskHistoryManager` rolling-window pattern:
+The 7-day window mirrors the `ScheduledTaskHistoryManager` rolling-window pattern:
 prune on append, and defensively re-filter on load so the file cannot grow unbounded
 if pruning was ever skipped.
 
@@ -28,7 +28,7 @@ graph TB
         SR["session:removed<br/>(handlers.ts)"]
         RRS["recordRemovedSession()<br/>bookmark dir + append entry"]
         RBM["RecycleBinManager<br/>EventEmitter · injectable clock<br/>append/list/count/peek/forget/empty"]
-        RBP["recycle-bin-persistence<br/>recycle-bin.yaml · 30d prune"]
+        RBP["recycle-bin-persistence<br/>recycle-bin.yaml · 7d prune"]
         RBH["recycle-bin-handlers<br/>4 IPC channels"]
         AM["ArtifactManager"]
         SR -->|"resolve project + runtime group"| RRS --> RBM --> RBP
@@ -135,7 +135,7 @@ The session's [draft](draft.md) follows the same table: kept while the
 session is in the bin, deleted on Forget, Empty and expiry, reclaimed at startup.
 
 The `recycle-bin:expired` event exists because startup pruning only covers restarts;
-an entry that crosses the 30-day line while the app is running would otherwise leave
+an entry that crosses the 7-day line while the app is running would otherwise leave
 its artifacts stranded.
 
 ## Persistence
@@ -146,7 +146,7 @@ its artifacts stranded.
 | Shape | `{ entries: [...] }` |
 | Write | `atomicWriteFileSync` |
 | Load | Rejects a bad shape, then drops entries with `closedAt` outside the window |
-| Retention | `RECYCLE_BIN_WINDOW_MS = 30 * 24 * 60 * 60 * 1000` |
+| Retention | `RECYCLE_BIN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000` |
 | Ordering | In-memory newest-first (`unshift`); `list()` re-sorts by `closedAt` descending |
 | Clock | Injectable `now: () => number` for deterministic retention tests |
 
@@ -187,7 +187,7 @@ buildRecycleTree(entries, resolveProject, query)
   restarts (`renderer/tree-collapse-state.ts` — expanded ids only, in
   `localStorage`, namespaced per level so a project and a folder can share a key).
 - The search box filters across name / CLI / path and auto-hides emptied levels; the
-  header count switches to **"N shown · last 30 days"**.
+  header count switches to **"N shown · last 7 days"**.
 - Rows show name + a plain-text CLI badge, the full working-dir path (tooltip +
   ellipsis), an optional runtime-group chip, and
   `closed Xm ago · yyyy/mm/dd HH:mm`.

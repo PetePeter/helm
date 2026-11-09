@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
 
 let diskStore: RecycleBinEntry[] = [];
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
-  RECYCLE_BIN_WINDOW_MS: 30 * 24 * 60 * 60 * 1000,
+  RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
   saveRecycleBin: (entries: RecycleBinEntry[]) => { diskStore = [...entries]; },
   loadRecycleBin: () => [...diskStore],
 }));
@@ -140,7 +140,7 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
     });
     expect(art.count('s1')).toBe(1);
 
-    nowVal += 30 * 24 * 60 * 60 * 1000 + 1;
+    nowVal += 7 * 24 * 60 * 60 * 1000 + 1;
     clockBin.append({
       sessionId: 's2', name: 'c', cliType: 'claude-code', workingDir: 'X:\\work',
       cliSessionName: 'u2', closedAt: nowVal,
@@ -226,7 +226,7 @@ describe('recycle-bin handlers: draft lifecycle', () => {
 
   it('an entry that ages out of the bin takes its pad with it', () => {
     binSession('s1');
-    nowVal += 30 * 24 * 60 * 60 * 1000 + 1;
+    nowVal += 7 * 24 * 60 * 60 * 1000 + 1;
     binSession('s2');
 
     expect([...files.keys()]).toEqual(['s2']);

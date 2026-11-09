@@ -15,7 +15,7 @@ import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
   saveRecycleBin: vi.fn(),
   loadRecycleBin: vi.fn(() => []),
-  RECYCLE_BIN_WINDOW_MS: 30 * 24 * 60 * 60 * 1000,
+  RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
 }));
 
 vi.mock('../src/utils/logger.js', () => ({

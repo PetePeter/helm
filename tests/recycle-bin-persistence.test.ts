@@ -46,7 +46,7 @@ describe('recycle-bin persistence', () => {
     expect(loaded[0].cliSessionName).toBe('a1b2c3d4-e5f6-7890-abcd-ef0123456789');
   });
 
-  it('filters out entries older than the 30-day window on load', () => {
+  it('filters out entries older than the 7-day window on load', () => {
     const now = Date.now();
     saveRecycleBin([
       entry({ id: 'fresh', closedAt: now - 1000 }),

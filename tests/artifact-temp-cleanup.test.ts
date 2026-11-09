@@ -53,7 +53,7 @@ vi.mock('../src/utils/app-paths.js', async (importOriginal) => ({
 
 let diskStore: RecycleBinEntry[] = [];
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
-  RECYCLE_BIN_WINDOW_MS: 30 * 24 * 60 * 60 * 1000,
+  RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
   saveRecycleBin: (entries: RecycleBinEntry[]) => { diskStore = [...entries]; },
   loadRecycleBin: () => [...diskStore],
 }));
@@ -266,7 +266,7 @@ describe('recycle-bin handlers drain artifact temps', () => {
     binSession(bin, 's1', nowVal);
     expect(fs.existsSync(t1)).toBe(true);
 
-    nowVal += 30 * 24 * 60 * 60 * 1000 + 1;
+    nowVal += 7 * 24 * 60 * 60 * 1000 + 1;
     binSession(bin, 's2', nowVal); // append prunes the aged-out entry and fires expired
 
     expect(fs.existsSync(t1)).toBe(false);
