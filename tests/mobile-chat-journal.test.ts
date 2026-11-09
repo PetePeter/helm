@@ -160,3 +160,33 @@ describe('MobileChatJournal: the desktop operator chat feed', () => {
     expect(journal.sessionEntries('op').map(entry => entry.record.text)).toEqual(['hi', 'hello']);
   });
 });
+
+describe('MobileChatJournal epoch', () => {
+  it('a new journal has an epoch, and a reload keeps it', () => {
+    let saved: ChatJournalState | undefined;
+    const journal = new MobileChatJournal({ persist: (state) => { saved = state; } });
+    journal.append(record('one', 0));
+
+    const reloaded = new MobileChatJournal();
+    reloaded.hydrate(saved);
+
+    expect(journal.epoch).toMatch(/\S+/);
+    expect(saved?.epoch).toBe(journal.epoch);
+    expect(reloaded.epoch).toBe(journal.epoch);
+  });
+
+  it('two fresh journals never share an epoch — a recreated journal is a new numbering', () => {
+    expect(new MobileChatJournal().epoch).not.toBe(new MobileChatJournal().epoch);
+  });
+
+  it('a journal saved before epochs gets one on load, persisted, with its numbering kept', () => {
+    let saved: ChatJournalState | undefined;
+    const journal = new MobileChatJournal({ persist: (state) => { saved = state; } });
+
+    journal.hydrate({ nextSeq: 15, entries: [{ seq: 15, record: record('old', 0) }] });
+
+    expect(journal.latestSeq()).toBe(15);
+    expect(saved?.epoch).toBe(journal.epoch);
+    expect(saved?.nextSeq).toBe(15);
+  });
+});

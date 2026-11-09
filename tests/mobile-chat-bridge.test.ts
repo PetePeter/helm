@@ -389,6 +389,20 @@ describe('MobileChatBridge catch-up from a phone cursor', () => {
     expect(records[2]).toMatchObject({ t: 'chat', seq: 3 });
   });
 
+  it('answers the cursor with the journal epoch and latest seq, so a phone can spot a recreated journal', async () => {
+    await seedJournal();
+    links.online.add('phone-machine');
+
+    links.receive('phone-machine', encodeCall('k-epoch', '__chat_cursor__', { seq: 19610 }));
+    await vi.waitFor(() => expect(links.sent.length).toBe(1));
+
+    expect(links.records()[0]).toMatchObject({
+      t: 'result',
+      id: 'k-epoch',
+      result: { ok: true, epoch: `${journal.epoch}:1`, latestSeq: 3 },
+    });
+  });
+
   it('a cursor at zero — or absent, or unreadable — replays the whole journal', async () => {
     await seedJournal();
     links.online.add('phone-machine');
@@ -407,7 +421,7 @@ describe('MobileChatBridge catch-up from a phone cursor', () => {
     links.receive('phone-machine', encodeCall('k3', '__chat_cursor__', { seq: 3 }));
     await vi.waitFor(() => expect(links.sent).toHaveLength(1));
 
-    expect(links.records()).toEqual([{ v: 1, t: 'result', id: 'k3', result: { ok: true } }]);
+    expect(links.records()).toEqual([{ v: 1, t: 'result', id: 'k3', result: { ok: true, epoch: `${journal.epoch}:1`, latestSeq: 3 } }]);
   });
 
   it('each phone catches up against its own cursor over the one shared journal', async () => {
@@ -429,6 +443,23 @@ describe('MobileChatBridge catch-up from a phone cursor', () => {
     expect(decodeRecord(forTablet[0].payload)).toMatchObject({ t: 'result', id: 'k5' });
     expect(forTablet.slice(1).map(entry => (decodeRecord(entry.payload) as { text?: string }).text))
       .toEqual(['one', 'two', 'three']);
+  });
+
+  it('a device moved to another profile is answered with a new epoch, so it resets and replays that profile', async () => {
+    const tablet = deviceStore.add({
+      name: 'Tablet', machineId: 'tablet-machine', pskRef: 'secret-2', allow: [], userProfileId: '1',
+    });
+    links.online.add(tablet.machineId);
+    links.receive(tablet.machineId, encodeCall('k-before', '__chat_cursor__', { seq: 0 }));
+    await vi.waitFor(() => expect(links.sent.length).toBe(1));
+
+    deviceStore.update(tablet.id, { userProfileId: '2' });
+    links.receive(tablet.machineId, encodeCall('k-after', '__chat_cursor__', { seq: 0 }));
+    await vi.waitFor(() => expect(links.sent.length).toBe(2));
+
+    const [before, after] = links.records() as Array<{ result: { epoch: string } }>;
+    expect(before.result.epoch).toBe(`${journal.epoch}:1`);
+    expect(after.result.epoch).toBe(`${journal.epoch}:2`);
   });
 
   it('replays only entries owned by the requesting phone profile', async () => {
@@ -458,7 +489,7 @@ describe('MobileChatBridge catch-up from a phone cursor', () => {
 
     // Only the ack got through; no replayed record followed it, so the phone's
     // cursor stays at 1 and the next link up re-requests exactly the remainder.
-    expect(links.records()).toEqual([{ v: 1, t: 'result', id: 'k6', result: { ok: true } }]);
+    expect(links.records()).toEqual([{ v: 1, t: 'result', id: 'k6', result: { ok: true, epoch: `${journal.epoch}:1`, latestSeq: 3 } }]);
 
     links.failSendTo = null;
     links.failSendFromIndex = null;

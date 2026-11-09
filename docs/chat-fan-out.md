@@ -283,6 +283,34 @@ graph LR
     D --> F[__chat_cursor__ 0 → full journal]
 ```
 
+**Journal epoch.** The desktop journal can be recreated from nothing (a wiped
+config dir, an unreadable file) and then numbers from 1 again — while every
+phone's cursor still sits at the old high number and drops each new live record
+as a duplicate. So the journal carries an `epoch` (a UUID minted with it,
+persisted beside `nextSeq`; a file saved before epochs gets one on load), and
+the `__chat_cursor__` answer is `{ ok, epoch, latestSeq }`. The phone saves the
+epoch per desktop beside its cursor and resets that cursor to zero — then
+reports again, for a full replay — when the epoch differs from the saved one,
+or, with none saved yet, when its cursor is above `latestSeq`. A superseded
+epoch's row seqs are forgotten so a reused number is not mistaken for a held
+row. One epoch per desktop journal; the answer sends it as `<epoch>:<profileId>`
+of the asking device. The numbering is global across profiles, so a device moved
+to another profile holds a cursor past history it was never allowed to see —
+the changed answer resets it the same way, and the replay fills that profile's
+threads. A reset forgets row seqs, so switching back may show duplicates.
+
+```mermaid
+graph LR
+    R[__chat_cursor__ N] --> A{answer epoch = saved?}
+    A -- yes --> K[keep cursor]
+    A -- none saved --> L{N > latestSeq?}
+    L -- no --> K2[adopt epoch, keep cursor]
+    L -- yes --> Z[adopt epoch, cursor 0]
+    A -- different --> Z2[adopt epoch, cursor 0, drop row seqs]
+    Z --> RR[__chat_cursor__ 0 → full journal]
+    Z2 --> RR
+```
+
 Two deliberate edges:
 
 - **A refused send stops the stream.** The phone reports its cursor again on the

@@ -477,16 +477,24 @@ export class MobileChatBridge implements ChatBridge {
       logger.info(`[MobileChat] Dispatch completed ${record.method} id=${record.id} from ${machineId}`);
       // A download answers with FILE BYTES, which JSON can only carry as base64.
       // The gate has already run — this is purely how the ANSWER is written.
+      // The cursor call's MEANING is the replay it licenses; its answer names
+      // the journal's epoch and newest seq, so a phone whose cursor belongs to
+      // a recreated journal resets and asks again from zero. The device's
+      // profile rides in the epoch: a device moved to another profile resets
+      // the same way and replays the history it is now allowed to see. It runs
+      // only after the gate said yes, which is what keeps a disabled device
+      // from pulling the journal; see RESERVED_CHAT_CURSOR_METHOD.
+      const isCursor = record.method === RESERVED_CHAT_CURSOR_METHOD;
+      const answer = isCursor
+        ? { ...result as object, epoch: `${this.deps.journal.epoch}:${device.userProfileId}`, latestSeq: this.deps.journal.latestSeq() }
+        : result;
       this.answer(
         machineId,
         isArtifactDownloadBinary(result)
           ? encodeBlobResult({ id: record.id, ...result })
-          : encodeResult(record.id, result),
+          : encodeResult(record.id, answer),
       );
-      // The cursor call answers with nothing useful — its MEANING is the replay
-      // it licenses. It runs only after the gate said yes, which is what keeps
-      // a disabled device from pulling the journal; see RESERVED_CHAT_CURSOR_METHOD.
-      if (record.method === RESERVED_CHAT_CURSOR_METHOD) {
+      if (isCursor) {
         this.replayAfter(machineId, cursorIn(record.params));
       }
       if (record.method === RESERVED_CHAT_DELETE_METHOD) {

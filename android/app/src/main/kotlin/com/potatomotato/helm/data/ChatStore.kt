@@ -21,6 +21,8 @@ data class ChatSnapshot(
     val sentIds: List<String> = emptyList(),
     /** Attachment ids unchecked in each ComfyUI session gallery. */
     val excludedComfyReferenceIds: Map<String, List<String>> = emptyMap(),
+    /** The journal epoch each cursor counts in, per desktop machineId. */
+    val epochs: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -106,12 +108,15 @@ internal object ChatSnapshotJson {
      * replays its journal once, deduped the same way.
      * 4: session gallery checkbox state. Older snapshots start with all images
      * included, matching the first-use default.
+     * 5: journal epoch per desktop. Older snapshots load with none, and the
+     * first cursor answer adopts one (see ChatRepository.adoptJournal).
      */
-    private const val VERSION = 4
+    private const val VERSION = 5
 
     fun encode(snapshot: ChatSnapshot): JSONObject = JSONObject().apply {
         put("v", VERSION)
         put("cursors", JSONObject(snapshot.cursors))
+        put("epochs", JSONObject(snapshot.epochs))
         put("sentIds", JSONArray(snapshot.sentIds))
         put("excludedComfyReferenceIds", JSONObject().apply {
             for ((sessionId, ids) in snapshot.excludedComfyReferenceIds) put(sessionId, JSONArray(ids))
@@ -169,8 +174,12 @@ internal object ChatSnapshotJson {
             cursors = if (version >= 3) decodeCursors(json.getJSONObject("cursors")) else emptyMap(),
             sentIds = if (sentIds == null) emptyList() else (0 until sentIds.length()).map { sentIds.getString(it) },
             excludedComfyReferenceIds = if (version >= 4) decodeReferenceIds(json.optJSONObject("excludedComfyReferenceIds")) else emptyMap(),
+            epochs = if (version >= 5) decodeEpochs(json.getJSONObject("epochs")) else emptyMap(),
         )
     }
+
+    private fun decodeEpochs(json: JSONObject): Map<String, String> =
+        json.keys().asSequence().associateWith { json.getString(it) }
 
     private fun decodeCursors(json: JSONObject): Map<String, Long> =
         json.keys().asSequence().associateWith { json.getLong(it) }

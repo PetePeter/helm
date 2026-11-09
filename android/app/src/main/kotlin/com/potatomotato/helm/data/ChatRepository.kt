@@ -161,6 +161,9 @@ class ChatRepository(
 
     /** The catch-up cursors: the highest seq held per desktop, saved only beside its threads. */
     private var cursors: Map<String, Long> = emptyMap()
+
+    /** The journal epoch each cursor counts in, per desktop; see [adoptJournal]. */
+    private var epochs: Map<String, String> = emptyMap()
     private val _excludedComfyReferenceIds = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
     val excludedComfyReferenceIds: StateFlow<Map<String, Set<String>>> = _excludedComfyReferenceIds.asStateFlow()
 
@@ -191,6 +194,7 @@ class ChatRepository(
         if (cursors.isNotEmpty() || _threads.value.isNotEmpty()) return
         val saved = chatStore.load() ?: return
         cursors = saved.cursors
+        epochs = saved.epochs
         _excludedComfyReferenceIds.value = saved.excludedComfyReferenceIds.mapValues { it.value.toSet() }
         saved.sentIds.forEach { sentIds[it] = Unit }
         _threads.value = saved.threads.mapValues { (_, thread) ->
@@ -226,6 +230,40 @@ class ChatRepository(
      * Survives a restart with the threads it counts; see the class doc.
      */
     fun lastSeq(desktopId: String): Long = cursors[desktopId] ?: 0L
+
+    /**
+     * Helm's answer to a cursor report: the journal it numbers from ([epoch])
+     * and the newest seq it has handed out. A desktop whose journal was
+     * recreated numbers from 1 again, and a cursor still at the old high number
+     * would drop every new live record as a duplicate. So the cursor resets to
+     * zero — and the caller re-reports, for a full replay — when the epoch
+     * differs from the one saved, or (a cursor saved before epochs existed)
+     * when it claims more than the journal ever numbered.
+     *
+     * Row seqs of a superseded epoch are forgotten: under the new numbering
+     * they would make a reused seq look already held. A first adoption keeps
+     * them, so the replay it triggers still dedupes against what is held.
+     *
+     * Returns true when the cursor was reset.
+     */
+    @Synchronized
+    fun adoptJournal(desktopId: String, epoch: String, latestSeq: Long): Boolean {
+        val saved = epochs[desktopId]
+        if (saved == epoch) return false
+        epochs = epochs + (desktopId to epoch)
+        val reset = saved != null || lastSeq(desktopId) > latestSeq
+        if (!reset) {
+            persist()
+            return false
+        }
+        cursors = cursors + (desktopId to 0L)
+        if (saved != null) {
+            setThreads(_threads.value.mapValues { (_, thread) -> thread.map { if (it.seq == null) it else it.copy(seq = null) } })
+        } else {
+            persist()
+        }
+        return true
+    }
 
     /**
      * Record that a call carrying this phone's own words was SENT, so the echoed
@@ -622,6 +660,7 @@ class ChatRepository(
     private fun persist() = store.save(ChatSnapshot(
         _threads.value, cursors, sentIds.keys.toList(),
         _excludedComfyReferenceIds.value.mapValues { (_, ids) -> ids.toList() },
+        epochs,
     ))
 
     /** One write, to the flow the screens read and the store the app restarts from. */

@@ -29,6 +29,7 @@
  * constructor (the orchestrator hydrates via `hydrate(loadMobileChatJournal())`).
  */
 
+import { randomUUID } from 'node:crypto';
 import type { ChatRecordInput } from './mobile-envelope.js';
 
 /** One journaled message: its place in the global sequence, and the record. */
@@ -37,8 +38,15 @@ export interface ChatJournalEntry {
   record: ChatRecordInput;
 }
 
-/** The persisted form. `nextSeq` is saved so a seq is never reused after a restart. */
+/**
+ * The persisted form. `nextSeq` is saved so a seq is never reused after a restart.
+ * `epoch` names this numbering: a journal recreated from nothing (a wiped config
+ * dir, an unreadable file) numbers from 1 again under a new epoch, which is how
+ * a phone whose cursor is far ahead learns to reset instead of dropping every
+ * new record as a duplicate. Absent in files saved before epochs existed.
+ */
 export interface ChatJournalState {
+  epoch?: string;
   nextSeq: number;
   entries: ChatJournalEntry[];
 }
@@ -57,6 +65,7 @@ export const DEFAULT_CHAT_JOURNAL_MAX_ENTRIES = 100_000;
 export class MobileChatJournal {
   private entries: ChatJournalEntry[] = [];
   private nextSeq = 0;
+  private currentEpoch: string = randomUUID();
   private readonly persist: ((state: ChatJournalState) => void) | undefined;
   private readonly onAppend: ((entry: ChatJournalEntry) => void) | undefined;
   private readonly maxEntries: number;
@@ -77,12 +86,22 @@ export class MobileChatJournal {
     const state = saved as Partial<ChatJournalState>;
     if (typeof state.nextSeq !== 'number' || !Array.isArray(state.entries)) return;
     this.nextSeq = state.nextSeq;
+    // A file from before epochs keeps its numbering; it is given an epoch now,
+    // saved at once so every later answer names the same one.
+    const hasEpoch = typeof state.epoch === 'string' && state.epoch.length > 0;
+    if (hasEpoch) this.currentEpoch = state.epoch as string;
     this.entries = state.entries.filter(entry =>
       entry
       && typeof entry === 'object'
       && typeof entry.seq === 'number'
       && !!entry.record
       && typeof entry.record.at === 'number');
+    if (!hasEpoch) this.save();
+  }
+
+  /** The numbering this journal's seqs belong to; see ChatJournalState. */
+  get epoch(): string {
+    return this.currentEpoch;
   }
 
   /**
@@ -165,6 +184,6 @@ export class MobileChatJournal {
 
   private save(): void {
     if (!this.persist) return;
-    this.persist({ nextSeq: this.nextSeq, entries: this.entries });
+    this.persist({ epoch: this.currentEpoch, nextSeq: this.nextSeq, entries: this.entries });
   }
 }

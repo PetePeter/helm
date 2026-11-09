@@ -2073,8 +2073,19 @@ class HelmClient(
      */
     private fun reportChatCursorIfNeeded(): Boolean {
         if (chatCursorReported && now() - chatCursorReportedAt < CURSOR_REPORT_FRESH_MS) return true
-        val issued = call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq(linkedDesktop()))) { outcome ->
+        val desktopId = linkedDesktop()
+        val issued = call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq(desktopId))) { outcome ->
             if (outcome is Outcome.Failed) chatCursorReported = false
+            // A recreated journal numbers from 1 again: reset, and say the
+            // cursor again so Helm replays from zero. An older Helm sends no
+            // epoch and keeps today's behaviour.
+            val answer = json((outcome as? Outcome.Ok)?.result)
+            val epoch = answer?.opt("epoch") as? String
+            val latestSeq = (answer?.opt("latestSeq") as? Number)?.toLong()
+            if (epoch != null && latestSeq != null && chats.adoptJournal(desktopId, epoch, latestSeq)) {
+                chatCursorReported = false
+                reportChatCursorIfNeeded()
+            }
         }
         chatCursorReported = issued
         if (issued) chatCursorReportedAt = now()
