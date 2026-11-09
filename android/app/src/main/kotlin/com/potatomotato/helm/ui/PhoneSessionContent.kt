@@ -28,15 +28,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmSession
-import com.potatomotato.helm.ui.components.LoadViews
-import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
-import com.potatomotato.helm.ui.components.LoadNote
+import com.potatomotato.helm.R
 import com.potatomotato.helm.ui.sessions.SessionRowText
 import com.potatomotato.helm.ui.components.SessionTab
-import com.potatomotato.helm.ui.plans.PlanList
-import com.potatomotato.helm.ui.sequences.SequenceList
 import com.potatomotato.helm.ui.sessions.SessionRows
 import com.potatomotato.helm.ui.rememberEtaNow
 import com.potatomotato.helm.ui.sessions.SessionSwipePicker
@@ -67,7 +62,6 @@ internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffo
                 sessions = state.listedSessions,
                 unread = state.unreadCounts,
                 selectedId = home.sessionSwipeTargetId ?: currentOpenId,
-                nowMs = nowMs,
                 onSelect = home::updateSwipeTarget,
                 modifier = Modifier
                     .fillMaxHeight()
@@ -128,11 +122,11 @@ internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffo
                 onBack = actions.session.onBackToList,
                 onOverflow = actions.session.onOverflow,
             ) {
-                when (home.sessionTab) {
-                    SessionTab.Chat -> PhoneChatContent(
+                state.saveableStateHolder.SaveableStateProvider("session-tab:${targetSession.id}") {
+                    SessionTabBody(
                         state = state,
                         actions = actions,
-                        sessionId = targetSession.id,
+                        session = targetSession,
                         onSwipeSession = if (targetSessionId == currentOpenId && home.sessionSwipeDirection == 0) ({ step ->
                             if (home.sessionSwipeDirection == 0 && !state.edgeBounce.isRunning) {
                                 actions.session.onSwipeSession(targetSessionId, step)
@@ -141,49 +135,6 @@ internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffo
                         earlierUnread = neighbors.earlierSessions,
                         laterUnread = neighbors.laterSessions,
                     )
-
-                    SessionTab.Artifacts -> ArtifactsScreen(
-                        state = state.artifactList,
-                        capabilities = state.capabilities,
-                        onOpen = actions.session.onOpenArtifact,
-                        onNew = actions.session.onNewArtifact,
-                    )
-
-                    // Reuse the root Plans board in this session's working
-                    // directory, with no project picker: the session is its scope.
-                    // A session without a directory has no board to load.
-                    SessionTab.Plans -> if (state.planDirPath == null) {
-                        LoadNote(stringResource(R.string.plans_no_session_directory))
-                    } else {
-                        PlanList(
-                            plans = LoadViews.plans(state.planListState, state.planDirPath),
-                            sequences = LoadViews.sequences(state.sequenceListState, state.planDirPath),
-                            collapsedLaneIds = home.collapsedLanes,
-                            onToggleLane = actions.root.onToggleLane,
-                            onOpen = actions.session.onOpenPlan,
-                            onSpawn = actions.session.onSpawnForPlan,
-                            taskLinks = actions.root.taskLinks,
-                            onRefresh = actions.session.onRefreshPlanBoard,
-                            write = state.planWriteState,
-                            onDismissWrite = actions.session.onDismissPlanWrite,
-                            onCreate = actions.session.onCreatePlan,
-                        )
-                    }
-
-                    SessionTab.Sequences -> if (state.planDirPath == null) {
-                        LoadNote(stringResource(R.string.sequences_no_session_directory))
-                    } else {
-                        SequenceList(
-                            sequences = LoadViews.sequences(state.sequenceListState, state.planDirPath),
-                            onOpen = actions.session.onOpenSequence,
-                            onRefresh = actions.session.onRefreshLanes,
-                            cleanup = state.cleanupState,
-                            write = state.planWriteState,
-                            onDismissWrite = actions.session.onDismissPlanWrite,
-                            onCreate = actions.session.onCreateSequence,
-                            onClearUnused = actions.session.onClearUnused,
-                        )
-                    }
                 }
             }
         }

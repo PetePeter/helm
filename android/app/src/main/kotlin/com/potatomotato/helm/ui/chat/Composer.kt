@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,34 +72,64 @@ internal fun Composer(
     val dictation = rememberDictation(draft = draft, onDraft = onDraft, onSubmit = onSend)
     if (dictation.message != null) ComposerNote(dictation.message)
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(HelmColors.Surface)
-            .padding(HelmSpacing.Md)
-            // A growing draft lifts the composer smoothly rather than snapping.
-            .animateContentSize(),
-        // Bottom-anchored: a multiline draft grows the field upward, and the
-        // three circles stay where the thumb rests instead of riding to centre.
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-    ) {
-        ComposerDraft(
-            draft = draft,
-            onDraft = onDraft,
-            modifier = Modifier.weight(1f).heightIn(min = STACKED_CONTROLS_HEIGHT),
-        )
-
-        // The circles always stand on end along the right edge — the composer is
-        // one solid block at every draft size, never a row that reorganises
-        // under the thumb when the text wraps. Same order, send still last.
-        Column(
-            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-            horizontalAlignment = Alignment.End,
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val horizontalActions = maxWidth >= HORIZONTAL_COMPOSER_MIN_WIDTH
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(HelmColors.Surface)
+                .padding(HelmSpacing.Md)
+                // A growing draft lifts the composer smoothly rather than snapping.
+                .animateContentSize(),
+            // Bottom-anchored: a multiline draft grows the field upward, and the
+            // controls stay where the thumb rests instead of riding to centre.
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
-            ComposerTerminal(onTerminal)
-            ComposerVoice(dictation = dictation, onCall = onCall)
-            ComposerSend(hasText = draft.text.isNotBlank(), allowEmpty = allowEmpty, onSend = { onSend(draft.text) }, onAttach = onAttach)
+            ComposerDraft(
+                draft = draft,
+                onDraft = onDraft,
+                modifier = Modifier.weight(1f).heightIn(
+                    min = if (horizontalActions) HelmSize.MicButton else STACKED_CONTROLS_HEIGHT,
+                ),
+            )
+            ComposerControls(
+                horizontal = horizontalActions,
+                dictation = dictation,
+                hasText = draft.text.isNotBlank(),
+                allowEmpty = allowEmpty,
+                onTerminal = onTerminal,
+                onCall = onCall,
+                onSend = { onSend(draft.text) },
+                onAttach = onAttach,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComposerControls(
+    horizontal: Boolean,
+    dictation: DictationHandle,
+    hasText: Boolean,
+    allowEmpty: Boolean,
+    onTerminal: () -> Unit,
+    onCall: (() -> Unit)?,
+    onSend: () -> Unit,
+    onAttach: (() -> Unit)?,
+) {
+    val controls: @Composable () -> Unit = {
+        ComposerTerminal(onTerminal)
+        ComposerVoice(dictation = dictation, onCall = onCall)
+        ComposerSend(hasText = hasText, allowEmpty = allowEmpty, onSend = onSend, onAttach = onAttach)
+    }
+    if (horizontal) {
+        Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm), verticalAlignment = Alignment.CenterVertically) {
+            controls()
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm), horizontalAlignment = Alignment.End) {
+            controls()
         }
     }
 }
@@ -464,6 +495,7 @@ private val HOLD_ARROW_RISE = 18.dp
  * height, so the box and the controls beside it always read as one block.
  */
 private val STACKED_CONTROLS_HEIGHT = HelmSize.MicButton * 3 + HelmSpacing.Sm * 2
+private val HORIZONTAL_COMPOSER_MIN_WIDTH = 480.dp
 
 /** How far the listening halo reaches past the mic at full loudness. */
 private val HALO_SPREAD = 14.dp

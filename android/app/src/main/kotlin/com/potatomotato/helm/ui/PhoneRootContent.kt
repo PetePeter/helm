@@ -12,6 +12,7 @@ import com.potatomotato.helm.ui.components.LoadViews
 import com.potatomotato.helm.ui.components.ProjectPicker
 import com.potatomotato.helm.ui.components.SettingsMenuActions
 import com.potatomotato.helm.R
+import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.HomeTab
@@ -65,21 +66,14 @@ internal fun PhoneRootContent(state: PhoneScaffoldState, actions: PhoneScaffoldA
     // root tab shares the scaffold's exit question: Plans and Contexts stay on
     // their tabs instead of bouncing to Sessions, so there is one exit affordance.
     Column(modifier = Modifier.fillMaxSize()) {
-        HelmAppBar(
-            title = stringResource(R.string.app_name),
+        HomeAppBar(
             linkState = state.linkState,
-            contextLabel = stringResource(state.homeState.homeTab.labelRes),
-            contextMenuItems = HomeTab.entries.map {
-                ContextMenuItem(stringResource(it.labelRes), it.glyphRes)
-            },
-            onSelectContextItem = { actions.root.onSelectHomeTab(HomeTab.entries[it]) },
+            homeTab = state.homeState.homeTab,
+            notificationsEnabled = state.notificationsEnabled,
+            onSelectHomeTab = actions.root.onSelectHomeTab,
             onLinkClick = actions.root.onLinkClick,
-            settings = SettingsMenuActions(
-                notificationsEnabled = state.notificationsEnabled,
-                onToggleNotifications = actions.root.onToggleNotifications,
-                onExportLogs = actions.root.onExportLogs,
-                onOpenDesktops = actions.root.onLinkClick,
-            ),
+            onToggleNotifications = actions.root.onToggleNotifications,
+            onExportLogs = actions.root.onExportLogs,
         )
         Box(modifier = Modifier.weight(1f)) {
             when (state.homeState.homeTab) {
@@ -163,4 +157,33 @@ internal fun PhoneRootContent(state: PhoneScaffoldState, actions: PhoneScaffoldA
             }
         }
     }
+}
+
+/** The root chrome shared by the root surfaces and the tablet session panes. */
+@Composable
+internal fun HomeAppBar(
+    linkState: LinkState,
+    homeTab: HomeTab,
+    notificationsEnabled: Boolean,
+    onSelectHomeTab: (HomeTab) -> Unit,
+    onLinkClick: () -> Unit,
+    onToggleNotifications: () -> Unit,
+    onExportLogs: () -> Unit,
+) {
+    HelmAppBar(
+        title = stringResource(R.string.app_name),
+        linkState = linkState,
+        contextLabel = stringResource(homeTab.labelRes),
+        contextMenuItems = HomeTab.entries.map {
+            ContextMenuItem(stringResource(it.labelRes), it.glyphRes)
+        },
+        onSelectContextItem = { onSelectHomeTab(HomeTab.entries[it]) },
+        onLinkClick = onLinkClick,
+        settings = SettingsMenuActions(
+            notificationsEnabled = notificationsEnabled,
+            onToggleNotifications = onToggleNotifications,
+            onExportLogs = onExportLogs,
+            onOpenDesktops = onLinkClick,
+        ),
+    )
 }

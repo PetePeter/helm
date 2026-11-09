@@ -3,15 +3,15 @@ package com.potatomotato.helm.ui.control
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -37,6 +37,7 @@ import com.potatomotato.helm.ui.theme.HelmTheme
 
 /** Flat tablet action list; the phone sheet and this bar consume the same entries. */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun SessionActionBar(
     actions: SessionActions,
     sessionName: String,
@@ -49,20 +50,25 @@ internal fun SessionActionBar(
     val dialogState = rememberSessionActionDialogState()
     Box(modifier = modifier.fillMaxWidth()) {
         Column {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()).padding(HelmSpacing.Sm),
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(HelmSpacing.Sm),
                 horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
             ) {
-                for ((index, group) in actions.barGroups.withIndex()) {
-                    if (index > 0) GroupDivider()
-                    Column(verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs)) {
+                for (group in actions.barGroups) {
+                    Column(
+                        modifier = Modifier.widthIn(max = 600.dp),
+                        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+                    ) {
                         Text(
                             text = stringResource(group.group.titleRes),
                             color = HelmColors.Dim,
                             style = MaterialTheme.typography.labelSmall,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+                            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+                        ) {
                             for (entry in group.actions) {
                                 SessionActionBarButton(entry) {
                                     dialogState.select(entry)?.let(onAction)
@@ -111,15 +117,6 @@ private fun SessionActionBarButton(entry: SessionActionEntry, onClick: () -> Uni
             Switch(checked = enabled, onCheckedChange = null, enabled = entry.permitted)
         }
     }
-}
-
-@Composable
-private fun GroupDivider() {
-    Box(
-        modifier = Modifier
-            .size(width = 1.dp, height = HelmSize.TouchTarget)
-            .background(HelmColors.Line),
-    )
 }
 
 @Preview(name = "Session action bar", showBackground = true, widthDp = 1000)

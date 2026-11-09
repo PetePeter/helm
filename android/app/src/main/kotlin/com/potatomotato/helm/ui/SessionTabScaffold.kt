@@ -32,19 +32,24 @@ internal fun SessionTabScaffold(
     onSelectTab: (SessionTab) -> Unit,
     onBack: () -> Unit,
     onOverflow: () -> Unit,
+    header: (@Composable () -> Unit)? = null,
+    afterHeader: (@Composable () -> Unit)? = null,
     body: @Composable () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        HelmAppBar(
-            title = sessionName,
-            subtitle = mission,
-            detailLine = details,
-            linkState = linkState,
-            onBack = onBack,
-            showLinkBadge = false,
-            leading = { ContextRingButton(state = activity, history = context) },
-            onOverflow = onOverflow,
-        )
+        if (header == null) {
+            HelmAppBar(
+                title = sessionName,
+                subtitle = mission,
+                detailLine = details,
+                linkState = linkState,
+                onBack = onBack,
+                showLinkBadge = false,
+                leading = { ContextRingButton(state = activity, history = context) },
+                onOverflow = onOverflow,
+            )
+        } else header()
+        afterHeader?.invoke()
         SessionTabs(selected = tab, onSelect = onSelectTab)
         Box(modifier = Modifier.weight(1f)) { body() }
     }

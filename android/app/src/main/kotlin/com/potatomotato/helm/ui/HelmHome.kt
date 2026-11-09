@@ -8,7 +8,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -17,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -51,6 +54,9 @@ import com.potatomotato.helm.ui.operator.withoutOperator
 import com.potatomotato.helm.ui.plans.TaskLinks
 import com.potatomotato.helm.ui.plans.PlanScope
 import com.potatomotato.helm.ui.plans.PlanSpawn
+import com.potatomotato.helm.ui.tablet.LayoutChooser
+import com.potatomotato.helm.ui.tablet.TabletLayout
+import com.potatomotato.helm.ui.tablet.TabletScaffold
 import androidx.compose.ui.input.key.type
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -59,6 +65,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val saveableStateHolder = rememberSaveableStateHolder()
     val linkState by HelmLink.state.collectAsState()
     val sessions by client.sessions.state.sessions.collectAsState()
     val contextObservations by client.sessions.state.contextObservations.collectAsState()
@@ -340,7 +347,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         notice?.let { ActionNoticeBar(notice = it, onDismiss = client.workspace.control::clearNotice) }
 
         val phoneState = PhoneScaffoldState(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxSize(),
+            saveableStateHolder = saveableStateHolder,
             homeState = homeState,
             open = open,
             sessions = sessions,
@@ -443,7 +451,21 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 launchReplace = attachmentActions.launchReplace,
             ),
         )
-        PhoneScaffold(phoneState, phoneActions)
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            val layout = LayoutChooser.forWidth(maxWidth.value.toInt())
+            val tabletSessions = layout != TabletLayout.Phone &&
+                homeState.homeTab == HomeTab.Sessions && homeState.destination == Destination.Thread
+            if (tabletSessions) {
+                TabletScaffold(phoneState, phoneActions, layout)
+            } else {
+                PhoneScaffold(phoneState, phoneActions)
+            }
+            PhoneOverlays(
+                state = phoneState,
+                actions = phoneActions,
+                atRoot = phoneState.open == null && homeState.destination == Destination.Thread,
+            )
+        }
     }
 }
 

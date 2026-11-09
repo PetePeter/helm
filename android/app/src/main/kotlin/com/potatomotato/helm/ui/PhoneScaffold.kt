@@ -5,6 +5,7 @@ import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.activity.compose.BackHandler
@@ -67,6 +68,7 @@ import com.potatomotato.helm.ui.components.LoadViews
 /** Typed render input for the phone shell; all client requests are supplied as actions. */
 internal data class PhoneScaffoldState(
     val modifier: Modifier,
+    val saveableStateHolder: SaveableStateHolder,
     val homeState: HelmHomeState,
     val open: HelmSession?,
     val sessions: List<HelmSession>,
@@ -560,22 +562,17 @@ internal data class PhoneOverlayActions(
     val onCancelShare: (Long) -> Unit,
 )
 
-/**
- * The phone chooses one full-screen route, then draws sheet/exit/share overlays.
- * The same state and actions are available to the tablet shell in its own layout.
- */
+/** The phone chooses one full-screen route; HelmHome owns shared overlays above either shell. */
 @Composable
 internal fun PhoneScaffold(state: PhoneScaffoldState, actions: PhoneScaffoldActions) {
     val home = state.homeState
+    val atRoot = state.open == null && home.destination == Destination.Thread
     Box(modifier = state.modifier.fillMaxSize()) {
         when (phoneScaffoldSurface(home.destination, hasOpenSession = state.open != null)) {
             PhoneScaffoldSurface.FullScreen -> PhoneDestinationContent(state, actions)
             PhoneScaffoldSurface.Root -> PhoneRootContent(state, actions)
             PhoneScaffoldSurface.Session -> PhoneSessionContent(state, actions)
         }
-
-        val atRoot = state.open == null && home.destination == Destination.Thread
-        PhoneOverlays(state, actions, atRoot)
 
         // Back at the true root is gated, not merely last: otherwise it would
         // swallow in-app BackHandlers and offer to quit halfway down the app.

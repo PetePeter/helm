@@ -2,6 +2,7 @@ package com.potatomotato.helm
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -53,6 +54,7 @@ import com.potatomotato.helm.ui.pairing.PairingScreen
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmTheme
+import com.potatomotato.helm.ui.tablet.LayoutChooser
 
 /**
  * Shell. It owns only what must happen before there is anything to show: the
@@ -67,6 +69,13 @@ class MainActivity : ComponentActivity() {
         // underneath us. HelmTheme consumes the insets it opens up.
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (LayoutChooser.shouldPreferLandscape(
+                resources.configuration.screenWidthDp,
+                resources.configuration.screenHeightDp,
+            )
+        ) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+        }
         // A cold start from a notification tap: the extra is on the launch intent
         // and there is no composition yet to hand it to, so it is parked.
         takeNotificationTap(intent)

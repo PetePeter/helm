@@ -1,38 +1,28 @@
 package com.potatomotato.helm.ui.sessions
 
-import com.potatomotato.helm.data.ContextHistory
-import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.ContextHistory
 import com.potatomotato.helm.data.HelmSession
 import com.potatomotato.helm.data.Reach
 import com.potatomotato.helm.data.SessionAction
@@ -40,14 +30,10 @@ import com.potatomotato.helm.data.SessionListState
 import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
 import com.potatomotato.helm.data.sessionListState
-import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.PrimaryButton
-import com.potatomotato.helm.ui.components.SessionState
 import com.potatomotato.helm.ui.theme.HelmColors
-import com.potatomotato.helm.ui.theme.HelmSize
-import com.potatomotato.helm.ui.rememberEtaNow
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
 /**
@@ -78,15 +64,13 @@ fun SessionListScreen(
     spawnInFlight: Boolean,
     onNewSession: () -> Unit,
     onPairDesktop: () -> Unit,
+    selectedId: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // A Set is not Bundle-saveable; a List of the same strings is. The collapsed
     // set is rebuilt on read, so duplicates cannot accumulate.
     var collapsedList by rememberSaveable { mutableStateOf(listOf<String>()) }
     val collapsed = collapsedList.toSet()
-    val rows = remember(sessions, collapsed) { SessionRows.build(sessions, collapsed) }
-    val etas = remember(rows) { rows.mapNotNull { (it as? RowEntry.Session)?.session?.eta } }
-    val nowMs = rememberEtaNow(etas)
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         // Only while there is nothing to pair WITH: once a desktop is connected
@@ -106,33 +90,17 @@ fun SessionListScreen(
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 EmptyList(sessionListState(linkState, sessions, reach))
             }
-        } else LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            for (entry in rows) {
-                when (entry) {
-                    is RowEntry.Header -> item(key = "header:${entry.label}") {
-                        ProjectHeader(
-                            label = entry.label,
-                            collapsed = entry.collapsed,
-                            count = entry.count,
-                            onToggle = {
-                                collapsedList = SessionRows.toggle(collapsed, entry.label).toList()
-                            },
-                        )
-                    }
-
-                    is RowEntry.Session -> item(key = entry.session.id) {
-                        SessionRow(
-                            entry.session,
-                            unreadCount = unread[entry.session.id] ?: 0,
-                            context = contextHistories[entry.session.id],
-                            nowMs = nowMs,
-                            onClick = { onOpen(entry.session) },
-                            onLongClick = { onLongPress(entry.session) },
-                        )
-                    }
-                }
-            }
-        }
+        } else SessionRowsContent(
+            sessions = sessions,
+            unread = unread,
+            contextHistories = contextHistories,
+            collapsedGroups = collapsed,
+            selectedId = selectedId,
+            onToggleGroup = { label -> collapsedList = SessionRows.toggle(collapsed, label).toList() },
+            onOpen = onOpen,
+            onLongPress = onLongPress,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        )
 
         NewSessionButton(capabilities = capabilities, spawnInFlight = spawnInFlight, onClick = onNewSession)
     }
@@ -179,80 +147,25 @@ private fun NewSessionButton(capabilities: Capabilities, spawnInFlight: Boolean,
 }
 
 @Composable
-private fun ProjectHeader(label: String, collapsed: Boolean, count: Int, onToggle: () -> Unit) {
-    Column {
-        Hairline(color = HelmColors.Separator)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HelmSize.TouchTarget)
-                .clickable(onClick = onToggle)
-                .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = label.uppercase(),
-                color = HelmColors.Faint,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            // A folded group keeps saying how much is inside it — a count from
-            // the local snapshot, never a promise about anything unpolled.
-            if (collapsed) {
-                Text(
-                    text = pluralStringResource(R.plurals.sessions_group_count, count, count),
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-            Text(
-                text = stringResource(if (collapsed) R.string.group_collapsed_glyph else R.string.group_expanded_glyph),
-                color = HelmColors.Faint,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(start = HelmSpacing.Xs),
-            )
-        }
-    }
-}
-
-@Composable
 fun SessionSwipePicker(
     sessions: List<HelmSession>,
     unread: Map<String, Int>,
     selectedId: String,
-    nowMs: Long,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val rows = remember(sessions) { SessionRows.build(sessions, emptySet()) }
-    val listState = rememberLazyListState()
-    LaunchedEffect(selectedId, rows) {
-        rows.indexOfFirst { it is RowEntry.Session && it.session.id == selectedId }
-            .takeIf { it >= 0 }
-            ?.let { listState.animateScrollToItem(it) }
-    }
-    LazyColumn(state = listState, modifier = modifier.background(HelmColors.Bg)) {
-        rows.forEach { entry ->
-            when (entry) {
-                is RowEntry.Header -> item(key = "picker-header:${entry.label}") {
-                    ProjectHeader(entry.label, collapsed = false, count = entry.count, onToggle = {})
-                }
-                is RowEntry.Session -> item(key = "picker-session:${entry.session.id}") {
-                    SessionRow(
-                        session = entry.session,
-                        unreadCount = unread[entry.session.id] ?: 0,
-                        selected = entry.session.id == selectedId,
-                        nowMs = nowMs,
-                        compact = true,
-                        onClick = { onSelect(entry.session.id) },
-                        onLongClick = {},
-                    )
-                }
-            }
-        }
-    }
+    SessionRowsContent(
+        sessions = sessions,
+        unread = unread,
+        contextHistories = emptyMap(),
+        collapsedGroups = emptySet(),
+        selectedId = selectedId,
+        onToggleGroup = {},
+        onOpen = { onSelect(it.id) },
+        onLongPress = {},
+        compact = true,
+        modifier = modifier,
+    )
 }
 
 
