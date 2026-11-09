@@ -17,7 +17,6 @@ import androidx.compose.ui.res.stringResource
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ActionNotice
 import com.potatomotato.helm.data.ActionOutcome
-import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
@@ -48,7 +47,7 @@ fun ActionNoticeBar(notice: ActionNotice, onDismiss: () -> Unit, modifier: Modif
     }
 
     val (text, color) = when (val outcome = notice.outcome) {
-        ActionOutcome.Done -> stringResource(notice.action.doneRes) to HelmColors.Dim
+        ActionOutcome.Done -> stringResource(notice.action.noticeRes) to HelmColors.Dim
         ActionOutcome.Refused -> stringResource(R.string.control_notice_refused) to HelmColors.State.Flash
         is ActionOutcome.Failed -> outcome.message to HelmColors.Danger
     }
@@ -78,34 +77,6 @@ fun ActionNoticeBar(notice: ActionNotice, onDismiss: () -> Unit, modifier: Modif
         Hairline()
     }
 }
-
-/** Success is stated in the past tense of the thing that happened, never "OK". */
-private val SessionAction.doneRes: Int
-    get() = when (this) {
-        SessionAction.Rename -> R.string.control_notice_done_rename
-        SessionAction.Compact -> R.string.control_notice_done_compact
-        SessionAction.Clear -> R.string.control_notice_done_clear
-        SessionAction.HelmCompact -> R.string.control_notice_done_helm_compact
-        SessionAction.SwitchCli -> R.string.control_notice_done_switch_cli
-        SessionAction.Clone -> R.string.control_notice_done_clone
-        SessionAction.Stop -> R.string.control_notice_done_stop
-        SessionAction.KeepWarmOn -> R.string.control_notice_done_keep_warm
-        SessionAction.KeepWarmOff -> R.string.control_notice_done_stop_keep_warm
-        SessionAction.Freeze -> R.string.control_notice_done_freeze
-        SessionAction.Unfreeze -> R.string.control_notice_done_unfreeze
-        SessionAction.Close -> R.string.control_notice_done_close
-        SessionAction.Spawn -> R.string.control_notice_done_spawn
-        // A snapshot and the artifacts row report themselves on their own
-        // screens; they never raise a notice.
-        SessionAction.CreateArtifact -> R.string.artifacts_notice_done_create
-        SessionAction.ReviseArtifact -> R.string.artifacts_notice_done_revise
-        SessionAction.SetArtifactIntent -> R.string.artifacts_notice_done_revise
-        SessionAction.SaveArtifact -> R.string.artifacts_notice_done_save
-        SessionAction.DeleteArtifact -> R.string.artifacts_notice_done_delete
-        SessionAction.Snapshot -> R.string.snapshot_title
-        SessionAction.Artifacts -> R.string.artifacts_title
-        SessionAction.Call -> R.string.call_title
-    }
 
 /** Long enough to read a sentence, short enough to stop being scenery. */
 private const val NOTICE_LINGER_MS = 30_000L

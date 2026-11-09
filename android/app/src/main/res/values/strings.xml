@@ -324,6 +324,7 @@
     <string name="control_glyph_call">📞</string>
     <string name="control_group_chat">Chat</string>
     <string name="control_group_context">Context</string>
+    <string name="control_group_flow">Flow</string>
     <string name="control_group_session">Session</string>
     <string name="control_notice_done_keep_warm">Keep-warm enabled</string>
     <string name="control_notice_done_stop_keep_warm">Keep-warm stopped</string>

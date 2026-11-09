@@ -1,6 +1,9 @@
 package com.potatomotato.helm.ui.control
 
+import com.potatomotato.helm.R
 import com.potatomotato.helm.data.SessionAction
+import com.potatomotato.helm.ui.theme.HelmColors
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,5 +41,16 @@ class SheetConfirmTest {
         for (action in SessionAction.entries - confirming) {
             assertFalse(requiresConfirmation(action))
         }
+    }
+
+    @Test
+    fun `shared confirmation copy retains the action-specific warning and tone`() {
+        assertEquals(R.string.control_confirm_close, SessionAction.Close.confirmation?.messageRes)
+        assertEquals(HelmColors.Danger, SessionAction.Close.confirmation?.confirmColor)
+        assertEquals(R.string.control_confirm_compact, SessionAction.Compact.confirmation?.messageRes)
+        assertEquals(HelmColors.Accent, SessionAction.Compact.confirmation?.confirmColor)
+        assertEquals(R.string.control_confirm_clear, SessionAction.Clear.confirmation?.messageRes)
+        assertEquals(HelmColors.Danger, SessionAction.Clear.confirmation?.confirmColor)
+        assertEquals(null, SessionAction.Stop.confirmation)
     }
 }

@@ -15,13 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,26 +26,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.error
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.SessionAction
-import com.potatomotato.helm.data.answered
-import com.potatomotato.helm.data.permits
-import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.SCRIM_ALPHA
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -92,15 +74,10 @@ fun SessionSheet(
     clis: List<HelmCli> = emptyList(),
     onSwitchCli: (String) -> Unit = {},
 ) {
-    // Only what is hard to undo confirms, and each prompt names the session,
-    // because "are you sure?" answers nothing. Nothing else confirms: a prompt
-    // on every action trains people to tap through the one that matters.
-    var confirming by remember { mutableStateOf<SessionAction?>(null) }
-    var renaming by remember { mutableStateOf(false) }
-    var switching by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<SessionActionCategory?>(null) }
-    val actionGroups = sessionSheetActionGroups(keepWarm, frozen)
-    val selectedGroup = actionGroups.firstOrNull { it.category == selectedCategory }
+    val actionModel = remember(keepWarm, frozen, capabilities) { sessionActions(keepWarm, frozen, capabilities) }
+    val dialogState = rememberSessionActionDialogState()
+    val selectedGroup = actionModel.phoneGroups.firstOrNull { it.category == selectedCategory }
 
     BackHandler(enabled = selectedCategory != null) { selectedCategory = null }
 
@@ -132,16 +109,15 @@ fun SessionSheet(
             )
             Hairline()
 
-            val confirmed = confirming
+            val confirmed = dialogState.confirmation
             if (confirmed != null) {
-                ConfirmAction(
-                    action = confirmed,
+                SessionActionConfirmation(
+                    entry = confirmed,
                     sessionName = sessionName,
                     onConfirm = {
-                        confirming = null
-                        onAction(confirmed)
+                        dialogState.confirm()?.let(onAction)
                     },
-                    onCancel = { confirming = null },
+                    onCancel = dialogState::cancelConfirmation,
                 )
             } else if (selectedGroup != null) {
                 Text(
@@ -154,26 +130,14 @@ fun SessionSheet(
                         .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
                 )
                 Hairline()
-                for (action in selectedGroup.actions) {
+                for (entry in selectedGroup.actions) {
                     ActionRow(
-                        action = action,
-                        capabilities = capabilities,
-                        onClick = {
-                            when {
-                                // Hard-to-undo actions stop here first.
-                                requiresConfirmation(action) -> confirming = action
-                                // Rename needs a name before it can act, so it
-                                // opens the dialog instead of firing at once.
-                                action == SessionAction.Rename -> renaming = true
-                                // Switch needs a CLI before it can act: the picker.
-                                action == SessionAction.SwitchCli -> switching = true
-                                else -> onAction(action)
-                            }
-                        },
+                        entry = entry,
+                        onClick = { dialogState.select(entry)?.let(onAction) },
                     )
                 }
             } else {
-                for (group in actionGroups) {
+                for (group in actionModel.phoneGroups) {
                     CategoryRow(
                         title = stringResource(group.category.titleRes),
                         count = group.actions.size,
@@ -183,68 +147,16 @@ fun SessionSheet(
             }
         }
 
-        if (switching) {
-            CliPickerDialog(
-                clis = clis,
-                onPick = {
-                    switching = false
-                    onSwitchCli(it)
-                },
-                onCancel = { switching = false },
-            )
-        }
-
-        if (renaming) {
-            RenameDialog(
-                currentName = sessionName,
-                onRename = {
-                    renaming = false
-                    onRename(it)
-                },
-                onCancel = { renaming = false },
-            )
-        }
+        SessionActionDialogs(
+            state = dialogState,
+            sessionName = sessionName,
+            clis = clis,
+            onAction = onAction,
+            onRename = onRename,
+            onSwitchCli = onSwitchCli,
+        )
     }
 }
-
-/**
- * The sheet's order, top to bottom: talking to it, what it remembers, the session itself.
- * Declaration order IS display order, and inside a group the mildest action comes first —
- * the one that loses the most sits last, furthest from the reading position.
- */
-internal enum class SessionActionCategory(val titleRes: Int) {
-    CHAT(R.string.control_group_chat),
-    CONTEXT(R.string.control_group_context),
-    SESSION(R.string.control_group_session),
-}
-
-internal data class SessionSheetActionGroup(
-    val category: SessionActionCategory,
-    val actions: List<SessionAction>,
-)
-
-internal fun sessionSheetActionGroups(keepWarm: Boolean, frozen: Boolean): List<SessionSheetActionGroup> = listOf(
-    SessionSheetActionGroup(
-        SessionActionCategory.CHAT,
-        listOf(SessionAction.Call, SessionAction.Stop, SessionAction.Snapshot),
-    ),
-    SessionSheetActionGroup(
-        SessionActionCategory.CONTEXT,
-        listOf(SessionAction.HelmCompact, SessionAction.Compact, SessionAction.Clear),
-    ),
-    SessionSheetActionGroup(
-        SessionActionCategory.SESSION,
-        listOf(
-            SessionAction.Rename,
-            SessionAction.SwitchCli,
-            if (keepWarm) SessionAction.KeepWarmOff else SessionAction.KeepWarmOn,
-            if (frozen) SessionAction.Unfreeze else SessionAction.Freeze,
-            SessionAction.Clone,
-            SessionAction.Spawn,
-            SessionAction.Close,
-        ),
-    ),
-)
 
 @Composable
 private fun CategoryRow(title: String, count: Int, onClick: () -> Unit) {
@@ -263,11 +175,10 @@ private fun CategoryRow(title: String, count: Int, onClick: () -> Unit) {
 
 @Composable
 private fun ActionRow(
-    action: SessionAction,
-    capabilities: Capabilities,
+    entry: SessionActionEntry,
     onClick: () -> Unit,
 ) {
-    val permitted = capabilities.permits(action)
+    val permitted = entry.permitted
 
     Row(
         modifier = Modifier
@@ -291,14 +202,14 @@ private fun ActionRow(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = stringResource(action.glyphRes),
-                color = action.labelColor(permitted),
+                text = stringResource(entry.glyphRes),
+                color = entry.action.labelColor(permitted),
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
         Text(
-            text = stringResource(action.labelRes),
-            color = action.labelColor(permitted),
+            text = stringResource(entry.labelRes),
+            color = entry.action.labelColor(permitted),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(1f),
         )
@@ -310,239 +221,11 @@ private fun ActionRow(
         if (!permitted) {
             Text(
                 text = stringResource(
-                    if (capabilities.answered) R.string.control_not_permitted else R.string.control_asking,
+                    if (entry.capabilityAnswered) R.string.control_not_permitted else R.string.control_asking,
                 ),
                 color = HelmColors.Faint,
                 style = MaterialTheme.typography.labelMedium,
             )
-        }
-    }
-}
-
-/**
- * The confirmation row: what will happen, then the answer that does it and the
- * one that does not. The confirm's colour carries the verdict — Danger for the
- * action that loses something, Accent for one that is merely expensive.
- */
-@Composable
-private fun ConfirmAction(
-    action: SessionAction,
-    sessionName: String,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    val copy = confirmCopy(action)
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(HelmSpacing.Gutter),
-        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-    ) {
-        Text(
-            text = stringResource(copy.messageRes, sessionName),
-            color = HelmColors.Txt,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        // The destructive one is NOT the loud accent button: the accent means
-        // "the thing you came here to do", and that is never losing a session.
-        Text(
-            text = stringResource(copy.yesRes),
-            color = copy.confirmColor,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(HelmRadius.Md))
-                .clickable(onClick = onConfirm)
-                .padding(vertical = HelmSpacing.Md),
-        )
-        GhostButton(text = stringResource(copy.noRes), onClick = onCancel)
-    }
-}
-
-/** The actions a tap does not spend straight away — the ones that are hard to undo. */
-internal fun requiresConfirmation(action: SessionAction): Boolean =
-    action == SessionAction.Close || action == SessionAction.Compact || action == SessionAction.Clear ||
-        action == SessionAction.HelmCompact
-
-/** The prompt copy of a confirming action, and the colour its confirm earns. */
-private data class ConfirmCopy(val messageRes: Int, val yesRes: Int, val noRes: Int, val confirmColor: Color)
-
-private fun confirmCopy(action: SessionAction): ConfirmCopy = when (action) {
-    SessionAction.Close -> ConfirmCopy(
-        messageRes = R.string.control_confirm_close,
-        yesRes = R.string.control_confirm_close_yes,
-        noRes = R.string.control_confirm_close_no,
-        confirmColor = HelmColors.Danger,
-    )
-    SessionAction.Compact -> ConfirmCopy(
-        messageRes = R.string.control_confirm_compact,
-        yesRes = R.string.control_confirm_compact_yes,
-        noRes = R.string.control_confirm_compact_no,
-        confirmColor = HelmColors.Accent,
-    )
-    SessionAction.HelmCompact -> ConfirmCopy(
-        messageRes = R.string.control_confirm_helm_compact,
-        yesRes = R.string.control_confirm_helm_compact_yes,
-        noRes = R.string.control_confirm_compact_no,
-        confirmColor = HelmColors.Accent,
-    )
-    // Danger, not Accent: unlike a compact, nothing of the conversation survives.
-    SessionAction.Clear -> ConfirmCopy(
-        messageRes = R.string.control_confirm_clear,
-        yesRes = R.string.control_confirm_clear_yes,
-        noRes = R.string.control_confirm_clear_no,
-        confirmColor = HelmColors.Danger,
-    )
-    else -> throw IllegalArgumentException("$action never confirms")
-}
-
-/**
- * Rename, asked in place. Hand-drawn like the sheet itself, centred on the
- * scrim it sits on. The field is prefilled with the current name so the edit
- * starts from what is true, and Rename stays dark until the name has actually
- * changed — a confirm that fires on a no-op trains tapping through it.
- */
-@Composable
-private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCancel: () -> Unit) {
-    // Seeded as a TextFieldValue with the whole name selected: the common case
-    // is a full rewrite, so the first keystroke replaces it instead of appending.
-    var name by remember {
-        mutableStateOf(TextFieldValue(currentName, TextRange(0, currentName.length)))
-    }
-    val verdict = RenameRules.judge(currentName, name.text)
-    val canRename = verdict == RenameRules.Verdict.Ok
-
-    // The field takes focus as the dialog opens: the whole point of the dialog
-    // is to type, and on a tablet with a keyboard attached that means now.
-    val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(HelmColors.Bg.copy(alpha = SCRIM_ALPHA))
-            // Tapping the darkness around the card is cancel, like the sheet.
-            .clickable(onClick = onCancel),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // Consume taps on the card so they never fall through to the
-                // scrim: only a deliberate Cancel or a dismiss-tap cancels.
-                .padding(HelmSpacing.Gutter)
-                .clip(RoundedCornerShape(HelmRadius.Md))
-                .background(HelmColors.Surface)
-                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
-                // A bare pointer input, not an empty clickable: it keeps scrim
-                // taps from falling through to Cancel without adding the
-                // unlabeled no-op node an empty clickable puts in the tree.
-                .pointerInput(Unit) {}
-                .padding(HelmSpacing.Lg),
-            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-        ) {
-            val fieldLabel = stringResource(R.string.control_rename_title)
-            val tooLongLabel = stringResource(R.string.control_rename_too_long)
-            Text(
-                text = fieldLabel,
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(HelmRadius.Md))
-                    .background(HelmColors.Surface2)
-                    .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
-                    .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
-            ) {
-                BasicTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
-                    cursorBrush = SolidColor(HelmColors.Accent),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    // Done on the keyboard is the confirm, not a dismissal —
-                    // the same verb the dialog's own button carries.
-                    keyboardActions = KeyboardActions(onDone = { if (canRename) onRename(name.text.trim()) }),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(focusRequester)
-                        // The field is titled above, but BasicTextField carries
-                        // no label of its own — without this, TalkBack reaches
-                        // an anonymous edit box. The rule state rides along so
-                        // an over-long name is announced as the reason the
-                        // confirm is dark, not discovered by tapping it.
-                        .semantics {
-                            contentDescription = fieldLabel
-                            if (verdict == RenameRules.Verdict.TooLong) error(tooLongLabel)
-                        },
-                )
-            }
-            Text(
-                text = stringResource(R.string.control_rename_confirm),
-                color = if (canRename) HelmColors.Accent else HelmColors.Faint,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(HelmRadius.Md))
-                    .clickable(enabled = canRename, onClick = { onRename(name.text.trim()) })
-                    .padding(vertical = HelmSpacing.Md),
-            )
-            GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onCancel)
-        }
-    }
-}
-
-/**
- * Switch CLI's picker: one row per CLI type this desktop offers. The session
- * continues in the picked CLI; the old one goes to the desktop's recycle bin.
- */
-@Composable
-private fun CliPickerDialog(clis: List<HelmCli>, onPick: (String) -> Unit, onCancel: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(HelmColors.Bg.copy(alpha = SCRIM_ALPHA))
-            .clickable(onClick = onCancel),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(HelmSpacing.Gutter)
-                .clip(RoundedCornerShape(HelmRadius.Md))
-                .background(HelmColors.Surface)
-                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
-                // Keeps card taps from falling through to the scrim's cancel.
-                .pointerInput(Unit) {}
-                .padding(HelmSpacing.Lg),
-            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-        ) {
-            Text(
-                text = stringResource(R.string.control_switch_cli_title),
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            if (clis.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.control_switch_cli_loading),
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            for (cli in clis) {
-                Text(
-                    text = cli.name,
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(HelmRadius.Md))
-                        .clickable { onPick(cli.cliType) }
-                        .padding(vertical = HelmSpacing.Md),
-                )
-            }
-            GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onCancel)
         }
     }
 }
@@ -560,66 +243,6 @@ private fun GrabHandle() {
         )
     }
 }
-
-/** The label colour: dim when unavailable, danger for the ones that destroy. */
-internal fun SessionAction.labelColor(permitted: Boolean): Color = when {
-    !permitted -> HelmColors.Faint
-    this == SessionAction.Close || this == SessionAction.DeleteArtifact -> HelmColors.Danger
-    else -> HelmColors.Txt
-}
-
-/**
- * Shared with the artifacts screens, whose rows are the same action shape drawn
- * in a list rather than a sheet: one definition, so a label or glyph cannot
- * drift between the two surfaces.
- */
-internal val SessionAction.labelRes: Int
-    get() = when (this) {
-        SessionAction.Snapshot -> R.string.control_action_snapshot
-        SessionAction.Artifacts -> R.string.control_action_artifacts
-        SessionAction.Rename -> R.string.control_action_rename
-        SessionAction.Compact -> R.string.control_action_compact
-        SessionAction.Clear -> R.string.control_action_clear
-        SessionAction.HelmCompact -> R.string.control_action_helm_compact
-        SessionAction.SwitchCli -> R.string.control_action_switch_cli
-        SessionAction.Clone -> R.string.control_action_clone
-        SessionAction.Stop -> R.string.control_action_stop
-        SessionAction.KeepWarmOn -> R.string.control_action_keep_warm
-        SessionAction.KeepWarmOff -> R.string.control_action_stop_keep_warm
-        SessionAction.Freeze -> R.string.control_action_freeze
-        SessionAction.Unfreeze -> R.string.control_action_unfreeze
-        SessionAction.Spawn -> R.string.control_action_spawn
-        SessionAction.Close -> R.string.control_action_close
-        SessionAction.Call -> R.string.control_action_call
-        SessionAction.CreateArtifact -> R.string.artifacts_action_new
-        SessionAction.ReviseArtifact -> R.string.artifacts_action_revise
-        SessionAction.SetArtifactIntent -> R.string.artifacts_action_revise
-        SessionAction.SaveArtifact -> R.string.artifacts_action_save
-        SessionAction.DeleteArtifact -> R.string.artifacts_action_delete
-    }
-
-internal val SessionAction.glyphRes: Int
-    get() = when (this) {
-        SessionAction.Snapshot -> R.string.control_glyph_snapshot
-        SessionAction.Artifacts -> R.string.control_glyph_artifacts
-        SessionAction.Rename -> R.string.control_glyph_rename
-        SessionAction.Compact -> R.string.control_glyph_compact
-        SessionAction.Clear -> R.string.control_glyph_clear
-        SessionAction.HelmCompact -> R.string.control_glyph_helm_compact
-        SessionAction.SwitchCli -> R.string.control_glyph_switch_cli
-        SessionAction.Clone -> R.string.control_glyph_clone
-        SessionAction.Stop -> R.string.control_glyph_stop
-        SessionAction.KeepWarmOn, SessionAction.KeepWarmOff -> R.string.control_glyph_keep_warm
-        SessionAction.Freeze, SessionAction.Unfreeze -> R.string.control_glyph_freeze
-        SessionAction.Spawn -> R.string.control_glyph_spawn
-        SessionAction.Close -> R.string.control_glyph_close
-        SessionAction.Call -> R.string.control_glyph_call
-        SessionAction.CreateArtifact -> R.string.artifacts_glyph_new
-        SessionAction.ReviseArtifact -> R.string.artifacts_glyph_revise
-        SessionAction.SetArtifactIntent -> R.string.artifacts_glyph_revise
-        SessionAction.SaveArtifact -> R.string.artifacts_glyph_save
-        SessionAction.DeleteArtifact -> R.string.artifacts_glyph_delete
-    }
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f
