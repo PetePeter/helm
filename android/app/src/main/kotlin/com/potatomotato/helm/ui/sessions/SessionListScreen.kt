@@ -1,14 +1,9 @@
-@file:OptIn(ExperimentalFoundationApi::class)
-
 package com.potatomotato.helm.ui.sessions
 
 import com.potatomotato.helm.data.ContextHistory
-import com.potatomotato.helm.ui.components.CONTEXT_RING_SIZE
-import com.potatomotato.helm.ui.components.ContextRingButton
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,14 +25,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.ExperimentalFoundationApi
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.Capabilities
@@ -55,8 +46,8 @@ import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.PrimaryButton
 import com.potatomotato.helm.ui.components.SessionState
 import com.potatomotato.helm.ui.theme.HelmColors
-import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
+import com.potatomotato.helm.ui.rememberEtaNow
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
 /**
@@ -93,6 +84,9 @@ fun SessionListScreen(
     // set is rebuilt on read, so duplicates cannot accumulate.
     var collapsedList by rememberSaveable { mutableStateOf(listOf<String>()) }
     val collapsed = collapsedList.toSet()
+    val rows = remember(sessions, collapsed) { SessionRows.build(sessions, collapsed) }
+    val etas = remember(rows) { rows.mapNotNull { (it as? RowEntry.Session)?.session?.eta } }
+    val nowMs = rememberEtaNow(etas)
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         // Only while there is nothing to pair WITH: once a desktop is connected
@@ -113,7 +107,7 @@ fun SessionListScreen(
                 EmptyList(sessionListState(linkState, sessions, reach))
             }
         } else LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            for (entry in SessionRows.build(sessions, collapsed)) {
+            for (entry in rows) {
                 when (entry) {
                     is RowEntry.Header -> item(key = "header:${entry.label}") {
                         ProjectHeader(
@@ -131,6 +125,7 @@ fun SessionListScreen(
                             entry.session,
                             unreadCount = unread[entry.session.id] ?: 0,
                             context = contextHistories[entry.session.id],
+                            nowMs = nowMs,
                             onClick = { onOpen(entry.session) },
                             onLongClick = { onLongPress(entry.session) },
                         )
@@ -223,129 +218,11 @@ private fun ProjectHeader(label: String, collapsed: Boolean, count: Int, onToggl
 }
 
 @Composable
-fun SessionRow(
-    session: HelmSession,
-    unreadCount: Int,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    selected: Boolean = false,
-    selectedMarkerAtEnd: Boolean = false,
-    context: ContextHistory? = null,
-) {
-    val labels = SessionRowText.Labels(
-        working = stringResource(R.string.sessions_sub_working),
-        waitingApproval = stringResource(R.string.sessions_sub_waiting),
-        idle = stringResource(R.string.sessions_sub_idle),
-    )
-    // Re-read per composition, not remembered: the label must age ("3m" → "4m")
-    // even when nothing else about the session changed.
-    val now = System.currentTimeMillis()
-    val age = SessionRowText.relativeTime(session.lastActiveAtEpochMs, now)
-
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HelmSize.TouchTarget)
-                .background(if (selected) HelmColors.Surface2 else HelmColors.Bg)
-                // Long-press opens the control sheet without entering the thread —
-                // close and compact are list-level questions, not thread-level ones.
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-        ) {
-            if (selected && !selectedMarkerAtEnd) {
-                Text("➜", color = HelmColors.Accent, style = MaterialTheme.typography.headlineMedium)
-            }
-            ContextRingButton(state = session.activity, history = context, size = CONTEXT_RING_SIZE)
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-                ) {
-                    Text(
-                        text = session.name,
-                        color = HelmColors.Txt,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        // Truncate, never wrap: a two-line row breaks the rhythm of the
-                        // list far more than a clipped name costs.
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    // Fixed-width slots (empty ones still take their width) so the name
-                    // and age columns line up on every row, whatever it carries.
-                    Text(
-                        text = session.statusIcons(now),
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.width(ICON_SLOT),
-                    )
-                    Text(
-                        text = age.orEmpty(),
-                        color = HelmColors.Faint,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.width(AGE_SLOT),
-                    )
-                }
-                Text(
-                    text = SessionRowText.detailLine(
-                        status = SessionRowText.subLine(
-                            activity = session.activity,
-                            cliTypeName = session.cliTypeName,
-                            // The age has its own column; repeating it here said it twice.
-                            age = null,
-                            labels = labels,
-                        ),
-                        branch = session.gitBranch?.let { stringResource(R.string.sessions_git_branch, it) },
-                        mission = session.mission,
-                    ),
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            // Unread chat is a count badge, not a sub-line word: findable without
-            // reading anything. Its own fixed slot, so a row without one keeps the
-            // same column.
-            Box(modifier = Modifier.width(BADGE_SLOT), contentAlignment = Alignment.Center) {
-                SessionRows.unreadBadgeLabel(unreadCount)?.let { badge ->
-                    Text(
-                        text = badge,
-                        color = HelmColors.OnAccent,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(HelmRadius.Pill))
-                            .background(HelmColors.Accent)
-                            .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
-                    )
-                }
-            }
-            if (selected && selectedMarkerAtEnd) {
-                Text(
-                    "➜",
-                    color = HelmColors.Accent,
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.graphicsLayer(scaleX = -1f),
-                )
-            }
-        }
-        Hairline(color = HelmColors.Separator)
-    }
-}
-
-@Composable
 fun SessionSwipePicker(
     sessions: List<HelmSession>,
     unread: Map<String, Int>,
     selectedId: String,
-    selectedMarkerAtEnd: Boolean = false,
+    nowMs: Long,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -367,7 +244,8 @@ fun SessionSwipePicker(
                         session = entry.session,
                         unreadCount = unread[entry.session.id] ?: 0,
                         selected = entry.session.id == selectedId,
-                        selectedMarkerAtEnd = selectedMarkerAtEnd,
+                        nowMs = nowMs,
+                        compact = true,
                         onClick = { onSelect(entry.session.id) },
                         onLongClick = {},
                     )
@@ -377,9 +255,6 @@ fun SessionSwipePicker(
     }
 }
 
-private val ICON_SLOT = 34.dp
-private val AGE_SLOT = 32.dp
-private val BADGE_SLOT = 28.dp
 
 /**
  * Nothing to show is five different situations, and conflating them is how a

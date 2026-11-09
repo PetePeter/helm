@@ -1,5 +1,7 @@
 package com.potatomotato.helm.ui.sessions
 
+import com.potatomotato.helm.data.SessionEta
+import com.potatomotato.helm.data.SessionEtaRange
 import com.potatomotato.helm.ui.components.SessionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -101,6 +103,84 @@ class SessionRowTextTest {
         assertEquals("Idle · codex", SessionRowText.detailLine("Idle · codex", null, null))
         assertEquals("Idle · codex", SessionRowText.detailLine("Idle · codex", "  ", "  \n "))
         assertEquals("Idle · codex · Fix backoff", SessionRowText.detailLine("Idle · codex", null, "Fix\nbackoff"))
+    }
+
+    @Test
+    fun `eta labels round up future and overdue minutes at the deadline boundary`() {
+        assertEquals(SessionRowText.EtaLabel(12L, overdue = false), SessionRowText.etaLabel(
+            SessionEta(NOW + 12 * 60_000), NOW,
+        ))
+        assertEquals(SessionRowText.EtaLabel(1L, overdue = false), SessionRowText.etaLabel(
+            SessionEta(NOW + 1), NOW,
+        ))
+        assertEquals(SessionRowText.EtaLabel(0L, overdue = false), SessionRowText.etaLabel(
+            SessionEta(NOW), NOW,
+        ))
+        assertEquals(SessionRowText.EtaLabel(1L, overdue = true), SessionRowText.etaLabel(
+            SessionEta(NOW - 1), NOW,
+        ))
+        assertEquals(SessionRowText.EtaLabel(8L, overdue = true), SessionRowText.etaLabel(
+            SessionEta(NOW - 8 * 60_000), NOW,
+        ))
+        assertNull(SessionRowText.etaLabel(null, NOW))
+    }
+
+    @Test
+    fun `header eta converts the learned range to remaining minutes`() {
+        val eta = SessionEta(
+            atEpochMs = NOW + 12 * 60_000,
+            range = SessionEtaRange(NOW + 9 * 60_000 + 1, NOW + 16 * 60_000, 5),
+        )
+        assertEquals(
+            SessionRowText.EtaHeaderLabel(12L, false, 10L, 16L),
+            SessionRowText.etaHeaderLabel(eta, NOW),
+        )
+        assertEquals(
+            SessionRowText.EtaHeaderLabel(12L, false, null, null),
+            SessionRowText.etaHeaderLabel(SessionEta(NOW + 12 * 60_000), NOW),
+        )
+    }
+
+    @Test
+    fun `next eta transition follows a non-minute-aligned deadline`() {
+        val eta = SessionEta(NOW + 90_000)
+
+        assertEquals(
+            NOW + 90_000,
+            SessionRowText.nextEtaTransitionAt(listOf(eta), nowMs = NOW + 60_000),
+        )
+    }
+
+    @Test
+    fun `the zero-minute eta transitions to overdue just after its deadline`() {
+        val eta = SessionEta(NOW)
+
+        assertEquals(SessionRowText.EtaLabel(0L, false), SessionRowText.etaLabel(eta, NOW))
+        assertEquals(NOW + 1, SessionRowText.nextEtaTransitionAt(listOf(eta), nowMs = NOW))
+        assertEquals(SessionRowText.EtaLabel(1L, true), SessionRowText.etaLabel(eta, NOW + 1))
+    }
+
+    @Test
+    fun `the earliest active range boundary wins over a later eta`() {
+        val eta = SessionEta(
+            atEpochMs = NOW + 5 * 60_000,
+            range = SessionEtaRange(NOW + 30_000, NOW + 2 * 60_000, 5),
+        )
+
+        assertEquals(NOW + 30_000, SessionRowText.nextEtaTransitionAt(listOf(eta), NOW))
+    }
+
+    @Test
+    fun `an expired learned range is omitted from the header`() {
+        val eta = SessionEta(
+            atEpochMs = NOW - 8 * 60_000,
+            range = SessionEtaRange(NOW - 16 * 60_000, NOW, 5),
+        )
+
+        assertEquals(
+            SessionRowText.EtaHeaderLabel(8L, true, null, null),
+            SessionRowText.etaHeaderLabel(eta, NOW),
+        )
     }
 
     private companion object {

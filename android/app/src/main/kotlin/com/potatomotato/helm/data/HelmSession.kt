@@ -71,6 +71,8 @@ data class HelmSession(
     val noPromptCache: Boolean = false,
     /** Current git branch when the session's local working directory has one. */
     val gitBranch: String? = null,
+    /** Desktop estimate of when the session may finish, including its learned range. */
+    val eta: SessionEta? = null,
 ) {
     /** Lock / frozen / keep-warm, as the desktop row shows them — every one that applies. */
     fun statusIcons(nowMs: Long): String = listOfNotNull(
@@ -118,6 +120,9 @@ data class ComfyUiProfile(val id: String, val name: String, val kind: String, va
 data class ComfyUiImageSize(val id: String, val name: String, val width: Int, val height: Int)
 
 data class SessionContext(val tokens: Long, val window: Long?, val level: ContextLevel?)
+
+data class SessionEta(val atEpochMs: Long, val range: SessionEtaRange? = null)
+data class SessionEtaRange(val loEpochMs: Long, val hiEpochMs: Long, val samples: Int)
 
 /**
  * Where this phone has got to in Helm's session change feed. [epoch] names one
@@ -251,6 +256,7 @@ object SessionWire {
             cacheWarnMinutes = (summary.opt("cacheWarnMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 5,
             cacheExpireMinutes = (summary.opt("cacheExpireMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 60,
             noPromptCache = summary.opt("noPromptCache") == true,
+            eta = parseEta(summary.optJSONObject("eta")),
         )
     }
 
@@ -267,6 +273,19 @@ object SessionWire {
         "active" -> SessionState.Active
         "inactive" -> SessionState.Waiting
         else -> SessionState.Idle
+    }
+
+    private fun parseEta(value: JSONObject?): SessionEta? {
+        value ?: return null
+        val at = (value.opt("at") as? Number)?.toLong()?.takeIf { it > 0 } ?: return null
+        val rangeValue = value.optJSONObject("range") ?: return SessionEta(at)
+        val lo = (rangeValue.opt("lo") as? Number)?.toLong()?.takeIf { it > 0 }
+        val hi = (rangeValue.opt("hi") as? Number)?.toLong()?.takeIf { it > 0 }
+        val samples = (rangeValue.opt("samples") as? Number)?.toInt()?.takeIf { it > 0 }
+        val range = if (lo != null && hi != null && lo <= hi && samples != null) {
+            SessionEtaRange(lo, hi, samples)
+        } else null
+        return SessionEta(at, range)
     }
 
     private fun parseContext(value: JSONObject?): SessionContext? {

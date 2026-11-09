@@ -68,6 +68,22 @@ describe('MCP session_eta_*', () => {
     expect((await call('session_list')).find((row: { id: string }) => row.id === 'me').eta).toEqual(eta);
   });
 
+  it('serializes the ETA deadline and learned range on session_list and omits it after clear', async () => {
+    const now = Date.now();
+    const eta = {
+      at: now + 12 * 60_000,
+      setAt: now,
+      range: { lo: now + 9 * 60_000, hi: now + 16 * 60_000, samples: 5 },
+    };
+    manager.updateSession('me', { eta });
+
+    expect((await call('session_list')).find((row: { id: string }) => row.id === 'me').eta).toEqual(eta);
+
+    await call('session_eta_clear');
+    const row = (await call('session_list')).find((session: { id: string }) => session.id === 'me');
+    expect(row).not.toHaveProperty('eta');
+  });
+
   it('accepts an absolute ETA, normalizes the note, and clears only the caller ETA', async () => {
     const now = Date.now();
     await call('session_eta_set', { at: now + 90_000, note: '  finish review  ' });

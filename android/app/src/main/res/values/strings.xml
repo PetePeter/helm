@@ -55,6 +55,11 @@
     <string name="sessions_sub_working">Working</string>
     <string name="sessions_sub_waiting">Waiting on approval</string>
     <string name="sessions_sub_idle">Idle</string>
+    <string name="sessions_eta_row_remaining">⏱ %1$dm</string>
+    <string name="sessions_eta_row_overdue">⏱ +%1$dm</string>
+    <string name="sessions_eta_header_left">⏱ %1$dm left</string>
+    <string name="sessions_eta_header_overdue">⏱ +%1$dm overdue</string>
+    <string name="sessions_eta_header_range">(~%1$d–%2$d)</string>
 
     <string name="sessions_new_session">New session</string>
     <string name="sessions_context">Sessions</string>

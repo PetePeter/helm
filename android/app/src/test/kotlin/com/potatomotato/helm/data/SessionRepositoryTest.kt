@@ -91,6 +91,60 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun `eta and learned range parse while old and malformed payloads degrade safely`() {
+        val now = 1_700_000_000_000L
+        val eta = SessionEta(
+            atEpochMs = now + 12 * 60_000,
+            range = SessionEtaRange(now + 9 * 60_000, now + 16 * 60_000, 5),
+        )
+        val parsed = SessionWire.parseList(
+            listOf(
+                summary("learned").put("eta", JSONObject(mapOf(
+                    "at" to eta.atEpochMs,
+                    "range" to JSONObject(mapOf(
+                        "lo" to eta.range!!.loEpochMs,
+                        "hi" to eta.range.hiEpochMs,
+                        "samples" to eta.range.samples,
+                    )),
+                ))),
+                summary("old"),
+                summary("malformed").put("eta", JSONObject(mapOf("at" to "later"))),
+            ).toJsonArray(),
+        )!!
+
+        assertEquals(eta, parsed[0].eta)
+        assertNull(parsed[1].eta)
+        assertNull(parsed[2].eta)
+    }
+
+    @Test
+    fun `an eta carried by a session delta replaces the held row`() {
+        val repository = SessionRepository()
+        val before = summary("s1").put("eta", JSONObject(mapOf("at" to 1_700_000_720_000L)))
+        repository.applySnapshot(SessionWire.parseList(listOf(before).toJsonArray())!!)
+        val expected = SessionEta(1_700_001_440_000L, SessionEtaRange(1_700_001_260_000L, 1_700_001_680_000L, 5))
+        val changed = summary("s1").put("eta", JSONObject(mapOf(
+            "at" to expected.atEpochMs,
+            "range" to JSONObject(mapOf(
+                "lo" to expected.range!!.loEpochMs,
+                "hi" to expected.range.hiEpochMs,
+                "samples" to expected.range.samples,
+            )),
+        )))
+        val reply = JSONObject(mapOf(
+            "epoch" to "e1",
+            "seq" to 2,
+            "full" to false,
+            "sessions" to listOf(changed).toJsonArray(),
+            "removed" to JSONArray(),
+        ))
+
+        repository.applyChanges(SessionWire.parseChanges(reply)!!)
+
+        assertEquals(expected, repository.find("s1")?.eta)
+    }
+
+    @Test
     fun `compact context parses tokens window and level while bad context degrades to absent`() {
         val parsed = SessionWire.parseList(
             JSONArray()

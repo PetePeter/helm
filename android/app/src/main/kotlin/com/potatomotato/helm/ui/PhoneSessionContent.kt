@@ -38,6 +38,7 @@ import com.potatomotato.helm.ui.components.SessionTab
 import com.potatomotato.helm.ui.plans.PlanList
 import com.potatomotato.helm.ui.sequences.SequenceList
 import com.potatomotato.helm.ui.sessions.SessionRows
+import com.potatomotato.helm.ui.rememberEtaNow
 import com.potatomotato.helm.ui.sessions.SessionSwipePicker
 
 internal const val SESSION_SWITCH_MS = 220
@@ -52,18 +53,21 @@ internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffo
     val open = state.open ?: return
     val home = state.homeState
     val currentOpenId = open.id
+    val swipePreviewVisible = home.sessionSwipeDirection == 0 && kotlin.math.abs(state.sessionSwipeOffset.value) > 8f
+    val pickerVisible = swipePreviewVisible && home.sessionTab == SessionTab.Chat
+    val etas = remember(open) { listOfNotNull(open.eta) }
+    val nowMs = rememberEtaNow(etas)
     Box(Modifier.fillMaxSize()) {
-        val swipePreviewVisible = home.sessionSwipeDirection == 0 && kotlin.math.abs(state.sessionSwipeOffset.value) > 8f
         val pickerFocusRequester = remember { FocusRequester() }
         LaunchedEffect(swipePreviewVisible, home.sessionTab) {
             if (swipePreviewVisible && home.sessionTab == SessionTab.Chat) pickerFocusRequester.requestFocus()
         }
-        if (swipePreviewVisible && home.sessionTab == SessionTab.Chat) {
+        if (pickerVisible) {
             SessionSwipePicker(
                 sessions = state.listedSessions,
                 unread = state.unreadCounts,
                 selectedId = home.sessionSwipeTargetId ?: currentOpenId,
-                selectedMarkerAtEnd = state.sessionSwipeOffset.value < 0f,
+                nowMs = nowMs,
                 onSelect = home::updateSwipeTarget,
                 modifier = Modifier
                     .fillMaxHeight()
@@ -112,10 +116,10 @@ internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffo
                     clip = true
                 },
                 // The same status icons as the list row, after the name.
-                sessionName = listOf(targetSession.name, targetSession.statusIcons(System.currentTimeMillis()))
+                sessionName = listOf(targetSession.name, targetSession.statusIcons(nowMs))
                     .filter { it.isNotEmpty() }.joinToString("  "),
                 mission = targetSession.mission,
-                details = sessionHeaderDetails(targetSession),
+                details = sessionHeaderDetails(targetSession, nowMs),
                 context = state.contextHistories[targetSession.id],
                 activity = targetSession.activity,
                 linkState = state.linkState,
@@ -188,20 +192,30 @@ internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffo
 
 /** Reuse the session row's status and branch wording in the open-session header. */
 @Composable
-internal fun sessionHeaderDetails(session: HelmSession): String {
+internal fun sessionHeaderDetails(session: HelmSession, nowMs: Long): String {
     val labels = SessionRowText.Labels(
         working = stringResource(R.string.sessions_sub_working),
         waitingApproval = stringResource(R.string.sessions_sub_waiting),
         idle = stringResource(R.string.sessions_sub_idle),
     )
-    val now = System.currentTimeMillis()
     val status = SessionRowText.subLine(
         activity = session.activity,
         cliTypeName = session.cliTypeName,
-        age = SessionRowText.relativeTime(session.lastActiveAtEpochMs, now),
+        age = SessionRowText.relativeTime(session.lastActiveAtEpochMs, nowMs),
         labels = labels,
     )
+    val eta = SessionRowText.etaHeaderLabel(session.eta, nowMs)?.let { label ->
+        val time = stringResource(
+            if (label.overdue) R.string.sessions_eta_header_overdue else R.string.sessions_eta_header_left,
+            label.minutes,
+        )
+        val range = if (label.rangeStartMinutes != null && label.rangeEndMinutes != null) {
+            stringResource(R.string.sessions_eta_header_range, label.rangeStartMinutes, label.rangeEndMinutes)
+        } else null
+        listOfNotNull(time, range).joinToString(" ")
+    }
     return listOfNotNull(
+        eta,
         status,
         session.gitBranch?.let { stringResource(R.string.sessions_git_branch, it) },
     ).joinToString("  ·  ")
