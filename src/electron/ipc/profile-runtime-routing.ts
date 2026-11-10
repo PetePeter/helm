@@ -67,6 +67,7 @@ export function createProfileRecycleBinRestorer(options: {
 
       // spawnConfiguredSession enforces the cwd against this runtime's projects.
       runtime.configLoader.reloadActiveProfileIfChanged();
+      const restoredSessionId = entry.sessionId;
       // Keep the per-entry lock until spawn completes so concurrent MCP calls cannot duplicate it.
       await spawn({
         ptyManager: options.ptyManager,
@@ -78,7 +79,7 @@ export function createProfileRecycleBinRestorer(options: {
         resumeSessionName: entry.cliSessionName,
         resumeThreadId: entry.cliThreadId,
         markRestored: sessionId => options.stateDetector.markRestored(sessionId),
-        onPromptCancel: cancel => options.trackPromptCanceller(entry.sessionId, cancel),
+        onPromptCancel: cancel => options.trackPromptCanceller(restoredSessionId, cancel),
       });
       try {
         runtime.sessionManager.restoreMission(entry.sessionId, entry.mission, entry.missionBarHeight);
