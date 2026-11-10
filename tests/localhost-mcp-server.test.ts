@@ -989,7 +989,7 @@ function adminServer(service: HelmControlService): LocalhostMcpServer {
     });
     const createJson = await createResponse.json();
     expect((service.createPlan as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
-      '/proj', 'Task', 'Desc', 'bug', undefined, undefined, undefined,
+      '/proj', 'Task', 'Desc', 'bug', undefined, undefined, undefined, undefined,
     );
     expect(toolPayload(createJson).type).toBe('bug');
 

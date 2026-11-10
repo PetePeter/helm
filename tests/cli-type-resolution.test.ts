@@ -311,6 +311,7 @@ describe('ScheduledTaskManager — cliType resolution', () => {
     getSpawnCwdContext() { return this.profileContext; }
     addSession(info: Record<string, unknown>) { this.added.push(info); }
     getSession(id: string) { return this.added.find((s) => s.id === id); }
+    hasSession(id: string) { return this.added.some((s) => s.id === id); }
     getActiveSession() { return null; }
     setActiveSession() {}
     removeSession() {}
@@ -320,6 +321,7 @@ describe('ScheduledTaskManager — cliType resolution', () => {
     spawned: Array<Record<string, unknown>> = [];
     spawn(options: Record<string, unknown>) { this.spawned.push(options); return { pid: 4242 }; }
     has() { return true; }
+    kill() {}
     write() {}
     deliverText() {}
     async nudgeResize() {}

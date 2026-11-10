@@ -68,7 +68,7 @@ function setup(onPtyInput = vi.fn(), isHandoverPending = (_id: string) => false)
     markSessionRendererDetached: vi.fn(() => true),
   };
   let activeProfileId = 'admin';
-  const runtimeRegistry = new ProfileRuntimeRegistry([{ userProfileId: 'admin', sessionManager: { ...sessionManager, hasSession: (id: string) => id === 's1' }, patternMatcher: Object.assign(new EventEmitter(), { processOutput: vi.fn() }) } as any], () => activeProfileId);
+  const runtimeRegistry = new ProfileRuntimeRegistry([{ userProfileId: 'admin', sessionManager: { ...sessionManager, hasSession: (id: string) => id === 's1' }, patternMatcher: Object.assign(new EventEmitter(), { processOutput: vi.fn() }), startupPromptWatcher: { processOutput: vi.fn(), removeSession: vi.fn() } } as any], () => activeProfileId);
 
   setupPtyHandlers(
     ptyManager as any,
