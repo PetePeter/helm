@@ -22,6 +22,19 @@ function statusline(now: number, fiveHour = 72, weekly = 41) {
 }
 
 describe('parseClaudeStatuslineQuota', () => {
+  it('accepts resets_at as Unix epoch seconds, as Claude Code sends it', () => {
+    const now = Math.floor(Date.now() / 1000) * 1000;
+    const epochSeconds = (ms: number) => ms / 1000;
+    expect(parseClaudeStatuslineQuota({ rate_limits: {
+      five_hour: { used_percentage: 72, resets_at: epochSeconds(now + FIVE_HOURS) },
+      seven_day: { used_percentage: 41, resets_at: epochSeconds(now + WEEK) },
+    } }, now)).toEqual({
+      fiveHour: { usedPercent: 72, resetsAtEpochMs: now + FIVE_HOURS },
+      weekly: { usedPercent: 41, resetsAtEpochMs: now + WEEK },
+      measuredAtEpochMs: now,
+    });
+  });
+
   it('accepts only a fresh complete five-hour and weekly snapshot', () => {
     const now = Date.now();
     expect(parseClaudeStatuslineQuota(statusline(now), now)).toEqual({

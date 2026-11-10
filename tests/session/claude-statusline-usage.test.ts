@@ -2,14 +2,30 @@ import { describe, expect, it } from 'vitest';
 import { parseClaudeStatuslineUsage } from '../../src/session/claude-statusline-usage.js';
 
 describe('parseClaudeStatuslineUsage', () => {
-  it('reads the combined current context and the reported model window', () => {
+  it('takes the current context from current_usage and ignores session-cumulative totals', () => {
     expect(parseClaudeStatuslineUsage({
       context_window: {
-        total_input_tokens: 15_500,
-        total_output_tokens: 1_200,
+        total_input_tokens: 150_000,
+        total_output_tokens: 20_000,
+        current_usage: {
+          input_tokens: 8_500,
+          cache_creation_input_tokens: 5_000,
+          cache_read_input_tokens: 2_000,
+          output_tokens: 1_200,
+        },
         context_window_size: 200_000,
       },
     })).toEqual({ contextTokens: 16_700, contextWindow: 200_000 });
+  });
+
+  it('reports no reading when current_usage is absent, even with large totals', () => {
+    expect(parseClaudeStatuslineUsage({
+      context_window: {
+        total_input_tokens: 150_000,
+        total_output_tokens: 20_000,
+        context_window_size: 200_000,
+      },
+    })).toBeNull();
   });
 
   it('falls back to the component counts when combined totals are absent', () => {

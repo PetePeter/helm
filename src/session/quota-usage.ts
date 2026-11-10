@@ -21,10 +21,16 @@ function record(value: unknown): JsonRecord | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : undefined;
 }
 
+/** Claude Code sends resets_at as Unix epoch seconds; an ISO string is also accepted. */
+function resetEpochMs(value: unknown): number {
+  if (typeof value === 'number') return value * 1000;
+  return typeof value === 'string' ? Date.parse(value) : NaN;
+}
+
 function parseWindow(value: unknown, now: number): SessionQuotaWindowSnapshot | undefined {
   const window = record(value);
   const usedPercent = window?.used_percentage;
-  const resetsAtEpochMs = typeof window?.resets_at === 'string' ? Date.parse(window.resets_at) : NaN;
+  const resetsAtEpochMs = resetEpochMs(window?.resets_at);
   if (typeof usedPercent !== 'number' || !Number.isFinite(usedPercent) || usedPercent < 0 || usedPercent > 100) return undefined;
   if (!Number.isFinite(resetsAtEpochMs) || resetsAtEpochMs <= now) return undefined;
   return { usedPercent, resetsAtEpochMs };

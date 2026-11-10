@@ -155,8 +155,14 @@ describe('POST /context-usage', () => {
     const response = await post(port, '/context-usage', sessionToken, JSON.stringify({
       session_id: 'claude-session-1',
       context_window: {
-        total_input_tokens: 15_500,
-        total_output_tokens: 1_200,
+        total_input_tokens: 150_000,
+        total_output_tokens: 20_000,
+        current_usage: {
+          input_tokens: 8_500,
+          cache_creation_input_tokens: 5_000,
+          cache_read_input_tokens: 2_000,
+          output_tokens: 1_200,
+        },
         context_window_size: 200_000,
       },
     }));
@@ -178,7 +184,7 @@ describe('POST /context-usage', () => {
     const now = Date.now();
     const response = await post(port, '/context-usage', sessionToken, JSON.stringify({
       session_id: 'claude-session-1',
-      context_window: { total_input_tokens: 100, total_output_tokens: 20 },
+      context_window: { current_usage: { input_tokens: 100, output_tokens: 20 } },
       rate_limits: {
         five_hour: { used_percentage: 73, resets_at: new Date(now + 60 * 60_000).toISOString() },
         seven_day: { used_percentage: 38, resets_at: new Date(now + 24 * 60 * 60_000).toISOString() },

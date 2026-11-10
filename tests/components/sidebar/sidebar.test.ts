@@ -1152,16 +1152,16 @@ describe('ContextRing', () => {
     const ok = mk(100_000);
     expect(ok.find('.context-ring__arc').exists()).toBe(true);
     expect(ok.attributes('style')).toContain('--ring-fill: 0.5');
-    expect(ok.classes()).toContain('level-ok');
-    expect(mk(170_000).classes()).toContain('level-warn');
-    expect(mk(190_000).classes()).toContain('level-hot');
+    expect(ok.find('.context-ring__inner').classes()).toContain('level-ok');
+    expect(mk(170_000).find('.context-ring__inner').classes()).toContain('level-warn');
+    expect(mk(190_000).find('.context-ring__inner').classes()).toContain('level-hot');
   });
 
   it('heartbeats only past the circle', async () => {
     const { default: ContextRing } = await import('../../../renderer/components/sidebar/ContextRing.vue');
     const mk = (tokens: number) => mount(ContextRing, { props: { activityLevel: 'active', contextUsage: usage(tokens) } });
-    expect(mk(200_000).classes()).not.toContain('overflow');
-    expect(mk(230_000).classes()).toContain('overflow');
+    expect(mk(200_000).find('.context-ring__inner').classes()).not.toContain('overflow');
+    expect(mk(230_000).find('.context-ring__inner').classes()).toContain('overflow');
   });
 
   it('is the plain dot without a reading', async () => {
