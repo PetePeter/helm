@@ -74,11 +74,7 @@ class MainActivity : ComponentActivity() {
         // underneath us. HelmTheme consumes the insets it opens up.
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (LayoutChooser.shouldPreferLandscape(
-                resources.configuration.screenWidthDp,
-                resources.configuration.screenHeightDp,
-            )
-        ) {
+        if (LayoutChooser.shouldPreferLandscape(resources.configuration.smallestScreenWidthDp)) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
         }
         // A cold start from a notification tap: the extra is on the launch intent

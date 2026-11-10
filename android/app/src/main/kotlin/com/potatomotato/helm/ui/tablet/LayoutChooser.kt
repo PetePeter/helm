@@ -17,7 +17,10 @@ internal object LayoutChooser {
         else -> TabletLayout.Expanded
     }
 
-    /** Ask for landscape only when the device's wider dimension can support expanded layout. */
-    fun shouldPreferLandscape(widthDp: Int, heightDp: Int): Boolean =
-        maxOf(widthDp, heightDp) >= EXPANDED_MIN_WIDTH_DP
+    /**
+     * Ask for landscape only on tablets. Keyed on the smallest side, not the longest:
+     * tall phones (e.g. 406x904dp) have a long side past the expanded width but are phones.
+     */
+    fun shouldPreferLandscape(smallestWidthDp: Int): Boolean =
+        smallestWidthDp >= COLLAPSED_MIN_WIDTH_DP
 }

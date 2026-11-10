@@ -13,9 +13,11 @@ class LayoutChooserTest {
         assertEquals(TabletLayout.Expanded, LayoutChooser.forWidth(840))
     }
 
-    @Test fun landscapePreferenceRequiresAnExpandedDeviceDimension() {
-        assertFalse(LayoutChooser.shouldPreferLandscape(533, 839))
-        assertTrue(LayoutChooser.shouldPreferLandscape(533, 840))
-        assertTrue(LayoutChooser.shouldPreferLandscape(900, 600))
+    @Test fun landscapePreferenceRequiresTabletSmallestWidth() {
+        // Moto edge 70: 406x904dp, a tall phone, must rotate freely.
+        assertFalse(LayoutChooser.shouldPreferLandscape(406))
+        assertFalse(LayoutChooser.shouldPreferLandscape(599))
+        assertTrue(LayoutChooser.shouldPreferLandscape(600))
+        assertTrue(LayoutChooser.shouldPreferLandscape(800))
     }
 }
