@@ -5,7 +5,7 @@
  * Shows session name + optional draft warning. Two buttons: Cancel / Close.
  * Gamepad D-pad left/right toggles selection, A confirms, B cancels.
  */
-import { ref, computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 
 const MODAL_ID = 'close-confirm';
@@ -46,7 +46,16 @@ const prompt = computed(() => {
   return `Close session ${props.sessionName}?`;
 });
 
-const selectedIndex = ref(0);
+watch(() => props.visible, (visible) => {
+  if (!visible) return;
+
+  // A focused SessionCard close button can receive Space's native keyup click.
+  const activeElement = document.activeElement;
+  if (activeElement instanceof HTMLElement && !activeElement.closest('.close-confirm-modal')) {
+    activeElement.blur();
+  }
+}, { immediate: true });
+
 const confirmLabel = computed(() => {
   if (isAppClose.value) return 'Close Helm';
   return isFolderClose.value ? 'Close all' : 'Close';
@@ -56,12 +65,15 @@ const buttons = computed(() => [
   { id: 'close', label: confirmLabel.value, variant: 'danger' },
 ] as const);
 
+const dialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
+const selectedIndex = computed({
+  get: () => dialog.value?.selectedIndex ?? 0,
+  set: (index: number) => dialog.value?.syncSelectedIndex(index),
+});
+
 function handleButton(button: string): boolean {
-  dialog.value?.syncSelectedIndex(selectedIndex.value);
   return dialog.value?.handleButton(button) ?? true;
 }
-
-const dialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 
 function onAction(action: string): void {
   if (action === 'close') emit('confirm');
@@ -78,7 +90,6 @@ defineExpose({ handleButton, selectedIndex });
     :title="title"
     :aria-label="ariaLabel"
     :buttons="buttons"
-    v-model:selected-index="selectedIndex"
     cancel-action-id="cancel"
     direction-mode="horizontal"
     @action="onAction"

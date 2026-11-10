@@ -17,6 +17,7 @@ import { usePeers, resetPeersStateForTesting } from '../renderer/composables/use
 const mockSessionGetAll = vi.fn<() => Promise<any[]>>().mockResolvedValue([]);
 const mockSessionSetActive = vi.fn().mockResolvedValue(undefined);
 const mockSessionClose = vi.fn().mockResolvedValue({ success: true });
+const mockCanonicalCloseSession = vi.fn().mockResolvedValue(true);
 const mockSessionSetState = vi.fn().mockResolvedValue(undefined);
 const mockConfigGetCliTypes = vi.fn<() => Promise<string[]>>().mockResolvedValue([]);
 const mockConfigGetWorkingDirs = vi.fn<() => Promise<any[]>>().mockResolvedValue([]);
@@ -37,6 +38,7 @@ const mockGetCliDisplayName = vi.fn((type: string) => type || 'Unknown');
 const mockRenderFooterBindings = vi.fn();
 const mockSwitchTo = vi.fn();
 const mockSetCloseConfirmCallback = vi.fn();
+const mockIsAnyBridgeModalVisible = vi.fn(() => false);
 const mockCloseConfirm = { visible: false, sessionId: '', sessionName: '' };
 const mockHidePlanScreen = vi.fn();
 const mockShowPlanScreen = vi.fn();
@@ -77,6 +79,7 @@ const mockShowSessionMenu = vi.fn();
 vi.mock('../renderer/stores/modal-bridge.js', () => ({
   closeConfirm: mockCloseConfirm,
   setCloseConfirmCallback: mockSetCloseConfirmCallback,
+  isAnyBridgeModalVisible: mockIsAnyBridgeModalVisible,
   showSessionMenu: (...args: unknown[]) => mockShowSessionMenu(...args),
 }));
 
@@ -312,7 +315,7 @@ describe('Sessions Screen', () => {
       fireChipAction: () => false,
       spawnSession: () => {},
       closeActiveSession: () => {
-        if (state.activeSessionId) sessions.confirmCloseSessionById(state.activeSessionId);
+        if (state.activeSessionId) sessions.confirmCloseSessionById(state.activeSessionId, mockCanonicalCloseSession);
       },
     })) {
       keyHandlerCleanups.push(registerKeyHandler(handler));
@@ -326,7 +329,7 @@ describe('Sessions Screen', () => {
         if (ctx.event.ctrlKey || ctx.event.altKey || ctx.event.metaKey) return false;
         const button = sessions.NAVIGATION_KEY_BUTTONS[ctx.key];
         if (!button) return false;
-        sessions.handleSessionsScreenButton(button);
+        sessions.handleSessionsScreenButton(button, mockCanonicalCloseSession);
         return true;
       },
     }));
@@ -476,6 +479,8 @@ describe('Sessions Screen', () => {
       expect(mockCloseConfirm.sessionId).toBe('s-1');
       expect(mockCloseConfirm.sessionName).toBe('Session 1');
       expect(mockSetCloseConfirmCallback).toHaveBeenCalledWith(expect.any(Function));
+      await mockSetCloseConfirmCallback.mock.calls[0][0]('s-1');
+      expect(mockCanonicalCloseSession).toHaveBeenCalledWith('s-1');
     });
   });
 
@@ -1382,22 +1387,52 @@ describe('Sessions Screen', () => {
 
     it('A at col=3 triggers close confirm modal', async () => {
       sessionsState.cardColumn = 3;
-      sessions.handleSessionsScreenButton('A');
+      sessions.handleSessionsScreenButton('A', mockCanonicalCloseSession);
       await flush();
       expect(mockCloseConfirm.sessionId).toBe('s-0');
       expect(mockSetCloseConfirmCallback).toHaveBeenCalledWith(expect.any(Function));
     });
 
-    it('A at col=3 close confirm callback closes the session via IPC', async () => {
+    it('A at col=3 close confirm callback uses the injected canonical close handler', async () => {
       sessionsState.cardColumn = 3;
-      sessions.handleSessionsScreenButton('A');
+      sessions.handleSessionsScreenButton('A', mockCanonicalCloseSession);
       await flush();
       // Extract the onConfirm callback and invoke it
       const onConfirm = mockSetCloseConfirmCallback.mock.calls[0][0];
       await onConfirm('s-0');
-      await flush();
-      expect(mockSessionClose).toHaveBeenCalledWith('s-0');
-      expect(mockDestroyTerminal).not.toHaveBeenCalledWith('s-0');
+      expect(mockCanonicalCloseSession).toHaveBeenCalledWith('s-0');
+      expect(mockSessionClose).not.toHaveBeenCalled();
+    });
+
+    it('routes input-router session close through the injected canonical handler', async () => {
+      const { ref } = await import('vue');
+      const { useInputRouter } = await import('../renderer/composables/useInputRouter.js');
+      const { useModalStack } = await import('../renderer/composables/useModalStack.js');
+      useModalStack().clear();
+      mockCloseConfirm.visible = false;
+      mockIsAnyBridgeModalVisible.mockReturnValue(false);
+
+      const router = useInputRouter({
+        settingsVisible: ref(false),
+        activeView: ref<'terminal' | 'plan'>('terminal'),
+        bindingEditorVisible: ref(false),
+        itemEditorVisible: ref(false),
+        itemEditorRef: ref(null) as never,
+        settingsPanelRef: ref(null) as never,
+        navStore: { closeSettings: vi.fn(), closePlan: vi.fn(), navigateToSession: vi.fn() },
+        focusedPaneId: ref('sessions') as never,
+        closeSession: mockCanonicalCloseSession,
+      });
+
+      sessionsState.cardColumn = 3;
+      const focusedSessionId = sessionsState.navList[sessionsState.sessionsFocusIndex]?.id;
+      router.handleButton('A');
+      expect(mockCloseConfirm.sessionId).toBe(focusedSessionId);
+
+      const onConfirm = mockSetCloseConfirmCallback.mock.calls.at(-1)?.[0];
+      expect(onConfirm).toEqual(expect.any(Function));
+      if (focusedSessionId) onConfirm?.(focusedSessionId);
+      expect(mockCanonicalCloseSession).toHaveBeenCalledWith(focusedSessionId);
     });
 
     it("A at col=2 opens the focused session's kebab menu", () => {

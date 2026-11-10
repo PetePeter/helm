@@ -565,6 +565,7 @@ const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRoute
   itemEditorRef,
   settingsPanelRef,
   navStore: inputNavigation,
+  closeSession: doCloseSession,
   openProfileSwitcher: () => profileSwitcherRef.value?.open(),
   focusedPaneId: dockWorkspace.focusedPaneId,
   getFocusedItemId: dockWorkspace.getFocusedItemId,
@@ -603,7 +604,7 @@ const workspaceKeyHandlers = createWorkspaceKeyHandlers({
     openQuickSpawn((cliType, machineId) => { void onSpawn(cliType, machineId); }, undefined, true);
   },
   closeActiveSession: () => {
-    if (state.activeSessionId) confirmCloseSessionById(state.activeSessionId);
+    if (state.activeSessionId) confirmCloseSessionById(state.activeSessionId, doCloseSession);
   },
 });
 

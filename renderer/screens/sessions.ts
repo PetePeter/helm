@@ -120,35 +120,6 @@ export function getSessionActivity(sessionId: string): string {
   return state.sessionActivityLevels.get(sessionId) ?? 'idle';
 }
 
-function cleanupRendererSession(sessionId: string): void {
-  removeSessionState(sessionId);
-  planCodingCounts.delete(sessionId);
-  planStartableCounts.delete(sessionId);
-  state.sessionActivityLevels.delete(sessionId);
-  state.lastOutputTimes.delete(sessionId);
-  state.workingPlanLabels.delete(sessionId);
-  state.workingPlanTooltips.delete(sessionId);
-  state.pendingSchedules.delete(sessionId);
-  state.snappedOutSessions.delete(sessionId);
-}
-
-export async function doCloseSession(sessionId: string): Promise<void> {
-
-  try {
-    const result = await sessionsClient.sessionClose(sessionId);
-    if (!result?.success && result?.error !== 'Session not found') {
-      console.error(`[Sessions] Failed to close session ${sessionId}:`, result?.error ?? 'unknown error');
-      return;
-    }
-  } catch (error) {
-    console.error(`[Sessions] Failed to close session ${sessionId}:`, error);
-    return;
-  }
-
-  cleanupRendererSession(sessionId);
-  await loadSessions();
-}
-
 // ============================================================================
 // Group prefs
 // ============================================================================
@@ -275,13 +246,15 @@ function getSessionAtFocus(): Session | undefined {
   return state.sessions.find(s => s.id === navItem.id);
 }
 
-function confirmCloseSession(): void {
+type CloseSession = (sessionId: string) => void | Promise<unknown>;
+
+function confirmCloseSession(closeSession?: CloseSession): void {
   const session = getSessionAtFocus();
   if (!session) return;
-  confirmCloseSessionById(session.id);
+  confirmCloseSessionById(session.id, closeSession);
 }
 
-export function confirmCloseSessionById(sessionId: string): void {
+export function confirmCloseSessionById(sessionId: string, closeSession?: CloseSession): void {
   const session = state.sessions.find(s => s.id === sessionId);
   if (!session) return;
   const displayName = session.name !== session.cliType
@@ -291,7 +264,7 @@ export function confirmCloseSessionById(sessionId: string): void {
   closeConfirm.visible = true;
   closeConfirm.sessionId = session.id;
   closeConfirm.sessionName = displayName;
-  setCloseConfirmCallback(doCloseSession);
+  setCloseConfirmCallback(closeSession ? (targetSessionId) => { void closeSession(targetSessionId); } : null);
 }
 
 function getFocusedRenderedSessionCard(): HTMLElement | null {
@@ -364,7 +337,7 @@ export async function loadSessions(): Promise<void> {
 }
 
 
-export function handleSessionsScreenButton(button: string): boolean {
+export function handleSessionsScreenButton(button: string, closeSession?: CloseSession): boolean {
   // State dropdown intercepts all input when open
   const dropdown = document.querySelector('.session-state-dropdown');
   if (dropdown) {
@@ -408,7 +381,7 @@ export function handleSessionsScreenButton(button: string): boolean {
 
   // Non-directional buttons: check specific handlers
   if (sessionsState.activeFocus === 'sessions') {
-    return handleSessionsZoneButton(button);
+    return handleSessionsZoneButton(button, closeSession);
   } else if (sessionsState.activeFocus === 'plans') {
     return handlePlansZoneButton(button);
   } else {
@@ -571,7 +544,7 @@ function setDropdownFocus(options: NodeListOf<HTMLElement>, index: number): void
 // Gamepad navigation — sessions zone button actions
 // ============================================================================
 
-function handleSessionsZoneButton(button: string): boolean {
+function handleSessionsZoneButton(button: string, closeSession?: CloseSession): boolean {
   const navItem = sessionsState.navList[sessionsState.sessionsFocusIndex];
   if (!navItem) return false;
 
@@ -594,7 +567,7 @@ function handleSessionsZoneButton(button: string): boolean {
       return true;
     }
     if (sessionsState.cardColumn === 3) {
-      confirmCloseSession();
+      confirmCloseSession(closeSession);
       return true;
     }
     // col=0: fall through to config bindings

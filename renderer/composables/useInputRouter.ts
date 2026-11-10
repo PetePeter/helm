@@ -33,6 +33,8 @@ export interface InputRouterDeps {
   itemEditorRef: Ref<ButtonTarget | null>;
   settingsPanelRef: Ref<ButtonTarget | null>;
   navStore: NavigationController;
+  /** Canonical main-process close path for session screen/gamepad actions. */
+  closeSession?: (sessionId: string) => void | Promise<unknown>;
   /** Identity of the dock pane that owns gamepad input. */
   focusedPaneId?: Ref<PaneId | null>;
   /** Last focusable item identity recorded inside a pane. */
@@ -83,6 +85,12 @@ export function useInputRouter(deps: InputRouterDeps) {
     return root.querySelector<HTMLElement>('.focusable:not([hidden]):not([disabled])');
   }
 
+  function handleSessionsButton(button: string): boolean {
+    return deps.closeSession
+      ? handleSessionsScreenButton(button, deps.closeSession)
+      : handleSessionsScreenButton(button);
+  }
+
   function handleButton(button: string): void {
     if (button === 'Sandwich' || button === 'Guide') {
       deps.settingsVisible.value = false;
@@ -128,12 +136,12 @@ export function useInputRouter(deps: InputRouterDeps) {
 
     if (routeByFocus) {
       if (focusedPane === 'sessions') {
-        handleSessionsScreenButton(button);
+        handleSessionsButton(button);
         return;
       } else if (focusedPane !== 'terminal' && focusedPane) {
         if (handleGenericPaneInput(button, focusedPane)) return;
       }
-    } else if (handleSessionsScreenButton(button)) return;
+    } else if (handleSessionsButton(button)) return;
 
     const tm = getTerminalManager();
     const activeSession = tm?.getActiveSessionId();

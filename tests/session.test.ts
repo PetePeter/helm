@@ -104,6 +104,19 @@ describe('SessionManager', () => {
       });
     });
 
+    it('continues notifying later listeners when one removal listener throws', () => {
+      manager.addSession(mockSession1);
+      const laterListener = vi.fn();
+      const failingListener = vi.fn(() => { throw new Error('observer failure'); });
+      manager.once('session:removed', failingListener);
+      manager.on('session:removed', laterListener);
+
+      expect(() => manager.removeSession(mockSession1.id)).not.toThrow();
+      expect(manager.getSession(mockSession1.id)).toBeNull();
+      expect(laterListener).toHaveBeenCalledOnce();
+      expect(manager.listenerCount('session:removed')).toBe(1);
+    });
+
     it('sets next session as active when removing active session', () => {
       manager.addSession(mockSession1);
       manager.addSession(mockSession2);

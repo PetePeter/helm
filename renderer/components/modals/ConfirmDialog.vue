@@ -18,7 +18,7 @@ const props = withDefaults(defineProps<{
   title: string;
   ariaLabel: string;
   buttons: readonly ConfirmDialogButton[];
-  selectedIndex: number;
+  selectedIndex?: number;
   cancelActionId?: string;
   directionMode?: 'horizontal' | 'any';
   modalClass?: string;
@@ -26,6 +26,7 @@ const props = withDefaults(defineProps<{
   cancelActionId: undefined,
   directionMode: 'any',
   modalClass: 'close-confirm-modal',
+  selectedIndex: 0,
 });
 
 const emit = defineEmits<{
@@ -126,7 +127,7 @@ function suppressActivationKey(e: KeyboardEvent): void {
   }
 }
 
-defineExpose({ handleButton, syncSelectedIndex });
+defineExpose({ handleButton, syncSelectedIndex, selectedIndex: internalSelectedIndex });
 </script>
 
 <template>

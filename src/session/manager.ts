@@ -155,7 +155,18 @@ export class SessionManager extends EventEmitter {
       session: { ...session },
       timestamp: Date.now()
     };
-    this.emit('session:removed', event);
+    // Removal is already committed; a broken observer must not report a false close failure.
+    this.emitSessionRemoved(event);
+  }
+
+  private emitSessionRemoved(event: SessionRemovedEvent): void {
+    for (const listener of this.rawListeners('session:removed')) {
+      try {
+        listener.call(this, event);
+      } catch (error) {
+        logger.error(`[Session] session:removed listener failed: ${error}`);
+      }
+    }
   }
 
   /**
