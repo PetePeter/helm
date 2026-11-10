@@ -374,6 +374,22 @@ describe('MobileGate — permitted-tool discovery', () => {
     expect(calls).toMatchObject([{ method: 'session_set_keep_warm', params: { sessionId: 's1', on: true } }]);
   });
 
+  it('discovers and dispatches recycle-bin tools only when their device grants are present', async () => {
+    const { gate, deviceId, calls } = build(['recycle_bin_search', 'recycle_bin_restore']);
+    const result = (await gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})) as {
+      tools: Array<{ name: string }>;
+    };
+
+    expect(result.tools.map(tool => tool.name).sort()).toEqual(['recycle_bin_restore', 'recycle_bin_search']);
+    await gate.handle(deviceId, 'recycle_bin_search', { query: 'alpha' });
+    await gate.handle(deviceId, 'recycle_bin_restore', { id: 'entry-1' });
+    expect(calls.map(call => call.method)).toEqual(['recycle_bin_search', 'recycle_bin_restore']);
+
+    const ungranted = build(['recycle_bin_search']);
+    await expect(ungranted.gate.handle(ungranted.deviceId, 'recycle_bin_restore', { id: 'entry-1' }))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+  });
+
   it('lists allow-listed chat_send without dispatching discovery', async () => {
     const { gate, deviceId, calls } = build(['session_list', 'session_get', 'chat_send']);
     const result = (await gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})) as {

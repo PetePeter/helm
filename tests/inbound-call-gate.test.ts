@@ -110,6 +110,26 @@ describe('InboundCallGate', () => {
     expect(log[0].method).toBe('artifact_get');
   });
 
+  it('exposes and dispatches recycle-bin tools under the ordinary inbound grant', async () => {
+    const { gate, calls } = build({ mac: true });
+    const listed = await gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {}) as { tools: Array<{ name: string }> };
+
+    expect(listed.tools.map(tool => tool.name)).toContain('recycle_bin_search');
+    expect(listed.tools.map(tool => tool.name)).toContain('recycle_bin_restore');
+    await gate.handle('mac', 'recycle_bin_search', { query: 'alpha' });
+    await gate.handle('mac', 'recycle_bin_restore', { id: 'entry-1' });
+    expect(calls.map(call => call.method)).toEqual(['recycle_bin_search', 'recycle_bin_restore']);
+
+    const denied = build({ mac: false });
+    for (const method of ['recycle_bin_search', 'recycle_bin_restore']) {
+      await expect(denied.gate.handle('mac', method, { id: 'entry-1' })).rejects.toMatchObject({
+        code: -32000,
+        message: 'Tool not permitted',
+      });
+    }
+    expect(denied.calls).toHaveLength(0);
+  });
+
   it('denies every tool for a peer not allowed in: uniform error, no dispatch, audit denied', async () => {
     const { gate, audit, calls } = build({ mac: false });
     await expect(gate.handle('mac', 'scheduler_list', {})).rejects.toMatchObject({

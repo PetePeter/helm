@@ -66,4 +66,19 @@ describe('MCP tool definitions (P-0343)', () => {
     expect(update.inputSchema.properties.intent.enum).toEqual(['normal', 'manifesto']);
     expect(set.inputSchema.required).toEqual(['id', 'intent']);
   });
+
+  it('exposes recycle-bin search filters and an expected-name restore guard', () => {
+    const search = MCP_TOOLS.find(tool => tool.name === 'recycle_bin_search');
+    const restore = MCP_TOOLS.find(tool => tool.name === 'recycle_bin_restore');
+
+    expect(search).toBeDefined();
+    expect(search!.inputSchema.properties).toHaveProperty('query');
+    expect(search!.inputSchema.properties).toHaveProperty('dirPath');
+    expect(search!.inputSchema.properties).toHaveProperty('cliType');
+    expect(search!.inputSchema.properties).toHaveProperty('limit');
+    expect(restore).toBeDefined();
+    expect(restore!.inputSchema.properties).toHaveProperty('id');
+    expect(restore!.inputSchema.properties).toHaveProperty('name');
+    expect(restore!.inputSchema.required).toEqual(['id']);
+  });
 });

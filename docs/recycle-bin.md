@@ -30,11 +30,20 @@ graph TB
         RBM["RecycleBinManager<br/>EventEmitter · injectable clock<br/>append/list/count/peek/forget/empty"]
         RBP["recycle-bin-persistence<br/>recycle-bin.yaml · 7d prune"]
         RBH["recycle-bin-handlers<br/>4 IPC channels"]
+        RBR["profile-runtime-routing<br/>shared atomic restorer"]
         AM["ArtifactManager"]
         SR -->|"resolve project + runtime group"| RRS --> RBM --> RBP
         RBH --> RBM
+        RBH --> RBR
+        RBR --> RBM
         RBM -. "recycle-bin:expired" .-> AM
         RBH -->|"forget / empty → clearSession"| AM
+    end
+    subgraph MCP["MCP"]
+        MCPC["Local / phone / peer caller"]
+        RBS["HelmRecycleBinService<br/>profile-scoped search + restore"]
+        MCPC --> RBS --> RBM
+        RBS -->|"explicit profile id + expected name"| RBR
     end
     subgraph Renderer
         URB["useRecycleBin<br/>(module-singleton refs)"]
@@ -48,6 +57,20 @@ graph TB
     URB -->|"recycleBin:*"| RBH
     URB -->|"restore → owning profile runtime<br/>+ sessionRename + runtimeGroupReattach"| RBH
 ```
+
+## MCP tools
+
+`recycle_bin_search` reads only the caller's profile and returns entries from the
+rolling 7-day window. It can match name, working directory, project, and mission
+text, with optional exact directory and CLI filters. Results include the saved
+name and grouping metadata but never the CLI resume credentials.
+
+`recycle_bin_restore` takes a search result's `id` and optional `name`. The name is
+an expected-name guard; the saved display name is restored through the same atomic
+main-process path as the desktop. Success returns the original `sessionId`. Unknown,
+expired, mismatched, duplicate, or failed restores return an error; a failed spawn
+keeps the entry available for retry. Phone tool grants and peer inbound access use
+their existing data-driven gates.
 
 ## What gets recorded
 

@@ -170,6 +170,79 @@ describe('profile runtime routing', () => {
     expect(admin.recycleBinManager.forget).not.toHaveBeenCalled();
   });
 
+  it('routes MCP restore to its explicit profile and guards the saved name', async () => {
+    const entry = makeEntry({ name: 'Saved Name' });
+    const admin = makeRuntime('1');
+    const source = makeRuntime('2', entry);
+    const spawn = vi.fn();
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [admin, source] } as any,
+      getActiveProfileId: () => '1',
+      ptyManager: { has: vi.fn(() => false) } as any,
+      stateDetector: { markRestored: vi.fn() } as any,
+      trackPromptCanceller: vi.fn(),
+      spawn: spawn as any,
+    });
+
+    await expect(restore(entry.id, { profileId: '2', expectedName: 'Saved Name' })).resolves.toEqual(entry);
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(source.sessionManager.renameSession).toHaveBeenCalledWith(entry.sessionId, 'Saved Name');
+    expect(source.recycleBinManager.forget).toHaveBeenCalledWith(entry.id);
+    expect(admin.recycleBinManager.peek).not.toHaveBeenCalled();
+  });
+
+  it('rejects a mismatched expected name without spawning or committing', async () => {
+    const entry = makeEntry({ name: 'Saved Name' });
+    const source = makeRuntime('2', entry);
+    const spawn = vi.fn();
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [source] } as any,
+      getActiveProfileId: () => '1',
+      ptyManager: { has: vi.fn(() => false) } as any,
+      stateDetector: { markRestored: vi.fn() } as any,
+      trackPromptCanceller: vi.fn(),
+      spawn: spawn as any,
+    });
+
+    await expect(restore(entry.id, { profileId: '2', expectedName: 'Wrong Name' })).rejects.toThrow(/expected name/i);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(source.recycleBinManager.forget).not.toHaveBeenCalled();
+  });
+
+  it('reports a duplicate in-flight restore for the same profile entry', async () => {
+    const entry = makeEntry();
+    const source = makeRuntime('2', entry);
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [source] } as any,
+      getActiveProfileId: () => '1',
+      ptyManager: { has: vi.fn(() => false) } as any,
+      stateDetector: { markRestored: vi.fn() } as any,
+      trackPromptCanceller: vi.fn(),
+      spawn: vi.fn(() => ({})) as any,
+    });
+    const first = restore(entry.id, { profileId: '2' });
+    const duplicate = restore(entry.id, { profileId: '2' });
+
+    await expect(first).resolves.toEqual(entry);
+    await expect(duplicate).rejects.toThrow(/already in progress/i);
+  });
+
+  it('keeps a failed explicit-profile restore retryable and surfaces the spawn error', async () => {
+    const entry = makeEntry();
+    const source = makeRuntime('2', entry);
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [source] } as any,
+      getActiveProfileId: () => '1',
+      ptyManager: { has: vi.fn(() => false) } as any,
+      stateDetector: { markRestored: vi.fn() } as any,
+      trackPromptCanceller: vi.fn(),
+      spawn: (() => { throw new Error('spawn failed'); }) as any,
+    });
+
+    await expect(restore(entry.id, { profileId: '2' })).rejects.toThrow('spawn failed');
+    expect(source.recycleBinManager.forget).not.toHaveBeenCalled();
+  });
+
   it('rejects a recycle-bin entry owned by another profile before spawning', async () => {
     const entry = makeEntry();
     const active = makeRuntime('1');
@@ -184,7 +257,7 @@ describe('profile runtime routing', () => {
       spawn: spawn as any,
     });
 
-    await expect(restore(entry.id)).resolves.toBeNull();
+    await expect(restore(entry.id)).rejects.toThrow(/not found or expired/i);
 
     expect(spawn).not.toHaveBeenCalled();
     expect(other.recycleBinManager.forget).not.toHaveBeenCalled();
@@ -203,7 +276,7 @@ describe('profile runtime routing', () => {
       trackPromptCanceller: vi.fn(),
     });
 
-    await expect(restore(entry.id)).resolves.toBeNull();
+    await expect(restore(entry.id)).rejects.toThrow();
 
     expect(source.recycleBinManager.forget).not.toHaveBeenCalled();
     expect(source.sessionManager.restoreMission).not.toHaveBeenCalled();

@@ -6,7 +6,7 @@ import type { UserProfileStore } from '../../config/user-profile-store.js';
 import type { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import type { ProfileMcpServiceFactory } from '../../mcp/profile-mcp-service-factory.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
-import type { RecycleBinEntry } from '../../types/recycle-bin.js';
+import type { RecycleBinEntry, RecycleBinRestorer } from '../../types/recycle-bin.js';
 import { logger } from '../../utils/logger.js';
 import { HandoverDelivery, type HandoverDeliveryOptions, type HandoverLossReason } from '../../session/handover-delivery.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
@@ -41,22 +41,30 @@ export function createProfileRecycleBinRestorer(options: {
   stateDetector: Pick<StateDetector, 'markRestored'>;
   trackPromptCanceller: (sessionId: string, cancel: () => void) => void;
   spawn?: typeof spawnConfiguredSession;
-}): (entryId: string) => Promise<RecycleBinEntry | null> {
+}): RecycleBinRestorer {
   const inFlight = new Set<string>();
   const spawn = options.spawn ?? spawnConfiguredSession;
-  return async entryId => {
-    if (inFlight.has(entryId)) return null;
-    inFlight.add(entryId);
+  return async (entryId, request = {}) => {
+    const profileId = request.profileId ?? options.getActiveProfileId();
+    const key = JSON.stringify([profileId, entryId]);
+    if (inFlight.has(key)) throw new Error('Recycle-bin restore is already in progress');
+    inFlight.add(key);
     try {
-      const activeProfileId = options.getActiveProfileId();
-      const runtime = options.registry.all().find(candidate => candidate.userProfileId === activeProfileId);
-      if (!runtime) return null;
+      const runtime = options.registry.all().find(candidate => candidate.userProfileId === profileId);
+      if (!runtime) throw new Error(`Profile runtime not found: ${profileId}`);
       const entry = runtime.recycleBinManager.peek(entryId);
-      if (!entry || runtime.sessionManager.hasSession(entry.sessionId) || options.ptyManager.has(entry.sessionId)) return null;
+      if (!entry) throw new Error(`Recycle-bin entry not found or expired: ${entryId}`);
+      if (request.expectedName !== undefined && request.expectedName !== entry.name) {
+        throw new Error('Expected name does not match the recycle-bin entry');
+      }
+      if (runtime.sessionManager.hasSession(entry.sessionId) || options.ptyManager.has(entry.sessionId)) {
+        throw new Error(`Session is already running: ${entry.sessionId}`);
+      }
 
       // spawnConfiguredSession enforces the cwd against this runtime's projects.
       runtime.configLoader.reloadActiveProfileIfChanged();
-      spawn({
+      // Keep the per-entry lock until spawn completes so concurrent MCP calls cannot duplicate it.
+      await spawn({
         ptyManager: options.ptyManager,
         sessionManager: runtime.sessionManager,
         configLoader: runtime.configLoader,
@@ -90,9 +98,9 @@ export function createProfileRecycleBinRestorer(options: {
       return entry;
     } catch (error) {
       logger.error(`[recycleBin:restore] Failed: ${error}`);
-      return null;
+      throw error;
     } finally {
-      inFlight.delete(entryId);
+      inFlight.delete(key);
     }
   };
 }

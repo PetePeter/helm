@@ -36,3 +36,15 @@ export interface RecycleBinEntry {
   /** The session's mission-bar height at close time. */
   missionBarHeight?: number;
 }
+
+export interface RecycleBinRestoreRequest {
+  /** Explicit caller profile for MCP; omitted by desktop IPC to use the active profile. */
+  profileId?: string;
+  /** Compare with the saved entry name before restoring; never rename from this value. */
+  expectedName?: string;
+}
+
+export type RecycleBinRestorer = (
+  entryId: string,
+  request?: RecycleBinRestoreRequest,
+) => Promise<RecycleBinEntry | null>;

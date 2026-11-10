@@ -899,6 +899,35 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'recycle_bin_search',
+    title: 'Search Recycle Bin',
+    description: 'Search recoverable sessions from your profile within the rolling 7-day window. Returns saved names and project/group metadata, never CLI resume credentials.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Case-insensitive match across name, directory, project, and mission text.' },
+        dirPath: { type: 'string', description: 'Exact working directory filter.' },
+        cliType: { type: 'string', description: 'Exact CLI type filter.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Maximum results (default 20).' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'recycle_bin_restore',
+    title: 'Restore Recycle Bin Entry',
+    description: 'Restore a search result in your profile through the shared atomic restore path. Pass name as an expected-name guard; it does not rename. Returns the restored sessionId; failures leave the entry retryable.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Recycle-bin entry id returned by recycle_bin_search.' },
+        name: { type: 'string', description: 'Optional expected saved name returned by recycle_bin_search.' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_list',
     title: 'List Sessions',
     description: 'List currently known Helm sessions, optionally filtered to one working directory or project. Context size is omitted so this does not read each transcript; use session_get for one session or session_info for your own. Call this before sending text so you can target an existing session instead of spawning blindly. Pass since (and the epoch a previous reply returned) to get only what changed: the reply is then {epoch, seq, full, sessions, removed} — merge sessions by id and drop removed, or replace everything when full is true.',

@@ -18,6 +18,28 @@ When completing a plan, `plan_complete` documentation should summarize implement
 
 Prefer `context_*` tools for durable memory that should survive across sessions. Sequences are primarily coordination lanes; their `sharedMemory` field is legacy and should be maintained only when updating existing sequence notes. For new durable notes, decisions, and collected evidence, create context and associate it with the relevant plan or sequence.
 
+## Recycle-bin search and restore
+
+`recycle_bin_search` searches recoverable sessions from the caller's profile during
+the rolling 7-day window. Optional `query` matches name, working directory, project,
+or mission text; `dirPath` and `cliType` filter exactly. Results include the entry id,
+saved display name, CLI type, directory, project/group metadata, close time, and
+mission text. CLI resume credentials are never returned. The default result limit is
+20 (maximum 100).
+
+Pass a result's `id` to `recycle_bin_restore`; optionally pass its `name` as an
+expected-name guard. It checks the saved name and never renames from caller input.
+Restore runs through the same atomic main-process path as the desktop, uses the
+caller's profile, and returns the original `sessionId`. Unknown, expired, mismatched,
+duplicate, and spawn failures return clear errors; failed spawns leave the entry
+available for retry.
+
+For example, call `recycle_bin_search({ query: "tablet" })`, then pass a result to
+`recycle_bin_restore({ id: "entry-id", name: "Tablet worker" })`.
+
+Phone named-tool grants and peer inbound access continue to govern these tools via
+the existing gates.
+
 ## Environment Variables
 
 When a session is spawned by Helm, three environment variables are automatically injected:

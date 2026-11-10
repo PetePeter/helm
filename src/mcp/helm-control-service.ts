@@ -76,6 +76,7 @@ import { MessManager } from '../session/mess-manager.js';
 import { MessPersistence } from '../session/mess-persistence.js';
 import type { MemoryAttachmentManager } from '../session/memory-attachment-manager.js';
 import type { MemoryManager } from '../session/memory-manager.js';
+import type { RecycleBinManager } from '../session/recycle-bin-manager.js';
 import type {
   MemoryAttachment,
   MemoryAttachmentTempFile,
@@ -90,6 +91,12 @@ import type {
   MemorySearchResult,
   MemoryTraversal,
 } from '../types/memory.js';
+import type { RecycleBinRestorer } from '../types/recycle-bin.js';
+import {
+  HelmRecycleBinService,
+  type RecycleBinRestoreInput,
+  type RecycleBinSearchOptions,
+} from './services/helm-recycle-bin-service.js';
 export { parseSubmitSuffix } from './submit-suffix.js';
 
 /**
@@ -324,6 +331,7 @@ export class HelmControlService extends EventEmitter {
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
   private draftManager?: DraftManager;
   private todoManager?: TodoManager;
+  private recycleBinService?: HelmRecycleBinService;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
   private artifactAttachmentDeleted?: (sessionId: string, artifactId: string, attachmentId: string) => void;
   private artifactUploadService?: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService;
@@ -520,6 +528,25 @@ export class HelmControlService extends EventEmitter {
     this.todoManager = manager;
     this.sessionService.setSessionTodosLookup(sessionId => manager.list(sessionId));
     this.sessionChangeFeed.attachTodos(manager);
+  }
+
+  /** Wire this profile's recycle-bin search and the shared main-process restorer. */
+  setRecycleBinService(
+    manager: Pick<RecycleBinManager, 'list' | 'peek'>,
+    profileId: string,
+    restoreEntry: RecycleBinRestorer,
+  ): void {
+    this.recycleBinService = new HelmRecycleBinService(manager, profileId, restoreEntry);
+  }
+
+  searchRecycleBin(options?: RecycleBinSearchOptions): ReturnType<HelmRecycleBinService['search']> {
+    if (!this.recycleBinService) throw new Error('Recycle bin is unavailable');
+    return this.recycleBinService.search(options);
+  }
+
+  restoreRecycleBin(input: RecycleBinRestoreInput): ReturnType<HelmRecycleBinService['restore']> {
+    if (!this.recycleBinService) throw new Error('Recycle bin is unavailable');
+    return this.recycleBinService.restore(input);
   }
 
   /** Wire the ArtifactManager so the artifact_* MCP tools can produce session reports. */

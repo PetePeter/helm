@@ -564,10 +564,22 @@ export function registerIPCHandlers(
     }),
   });
   mobileChatJournal.hydrate(loadMobileChatJournal());
+  const restoreRecycleBinEntry = createProfileRecycleBinRestorer({
+    registry,
+    getActiveProfileId: () => userProfileStore.getActiveProfileId(),
+    ptyManager,
+    stateDetector,
+    trackPromptCanceller: registerPromptCanceller,
+  });
+  helmControlService.setRecycleBinService(
+    adminRuntime.recycleBinManager,
+    adminRuntime.userProfileId,
+    restoreRecycleBinEntry,
+  );
   setupRecycleBinHandlers(
     recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal,
     // Restore reuses the original session id, so the mission lands back on the same session.
-    createProfileRecycleBinRestorer({ registry, getActiveProfileId: () => userProfileStore.getActiveProfileId(), ptyManager, stateDetector, trackPromptCanceller: registerPromptCanceller }),
+    restoreRecycleBinEntry,
     draftManager,
     todoManager,
   );
@@ -1023,6 +1035,7 @@ export function registerIPCHandlers(
     baseServices: { userProfileId: adminRuntime.userProfileId, service: helmControlService, loopDriver, uploads: artifactUploadService, remoteService },
     createServices: runtime => createProfileRuntimeMcpServiceSet(runtime, {
       composition: profileComposition,
+      restoreRecycleBinEntry,
       ptyManager,
       notificationManager,
       chatBroker,

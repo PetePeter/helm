@@ -10,6 +10,7 @@ import type { ChatBroker } from '../session/chat/chat-broker.js';
 import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
 import { RemoteService, type RemoteServiceDeps } from '../session/remote/remote-service.js';
 import type { PeerLinkManager } from './peer/peer-link-manager.js';
+import type { RecycleBinRestorer } from '../types/recycle-bin.js';
 import { MobileArtifactUploadService } from '../mobile/mobile-artifact-upload.js';
 import { MobileShareInbox } from '../mobile/mobile-share-inbox.js';
 import { MobileChatBridge } from '../mobile/mobile-chat-bridge.js';
@@ -38,6 +39,7 @@ export interface ProfileRuntimeMcpOptions {
   tempDir: string;
   remoteServiceForRuntime: (runtime: ProfileRuntime) => RemoteService;
   currentPeerLinkManager: () => PeerLinkManager | null;
+  restoreRecycleBinEntry: RecycleBinRestorer;
 }
 
 /** Build the shared fleet-owner service for the configured admin profile. */
@@ -80,6 +82,7 @@ export function createProfileRuntimeMcpServiceSet(
   service.setArtifactManager(runtime.artifactManager, runtime.artifactAttachmentManager);
   service.setDraftManager(runtime.draftManager);
   service.setTodoManager(runtime.todoManager);
+  service.setRecycleBinService(runtime.recycleBinManager, runtime.userProfileId, options.restoreRecycleBinEntry);
   service.setMemoryManager(runtime.memoryManager, runtime.memoryAttachmentManager, runtime.artifactTempRegistry);
   service.setMessManager(runtime.messManager);
   service.setApiContextSizeLookup(options.apiContextSizeLookup);

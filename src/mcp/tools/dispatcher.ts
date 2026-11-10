@@ -700,6 +700,23 @@ export async function callMcpTool(
           ? service.listSessions(dirPath, projectId)
           : service.listSessionChanges(parseSessionFeedCursor(args.epoch, args.since), dirPath, projectId);
       }
+      case 'recycle_bin_search': {
+        const limit = args.limit;
+        if (limit !== undefined && (typeof limit !== 'number' || !Number.isInteger(limit))) {
+          throw new Error('limit must be an integer');
+        }
+        return service.searchRecycleBin({
+          ...(args.query !== undefined ? { query: asString(args.query, 'query must be a string') } : {}),
+          ...(args.dirPath !== undefined ? { dirPath: asString(args.dirPath, 'dirPath must be a string') } : {}),
+          ...(args.cliType !== undefined ? { cliType: asString(args.cliType, 'cliType must be a string') } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        });
+      }
+      case 'recycle_bin_restore':
+        return service.restoreRecycleBin({
+          id: asString(args.id, 'id is required'),
+          ...(args.name !== undefined ? { name: asString(args.name, 'name must be a string') } : {}),
+        });
       case 'session_get':
         return requireResult(
           service.getSession(asString(args.sessionId ?? args.name, 'sessionId or name is required')),

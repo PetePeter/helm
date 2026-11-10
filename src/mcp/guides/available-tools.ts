@@ -62,6 +62,8 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'session_group_rename', title: 'Rename Session Group', description: 'Rename a runtime session group by id.' },
     { name: 'session_group_close', title: 'Close Session Group', description: 'Delete a runtime session group by id; member sessions fall back to directory grouping.' },
     { name: 'session_list', title: 'List Sessions', description: 'List currently known Helm sessions, optionally filtered to one working directory or project.' },
+    { name: 'recycle_bin_search', title: 'Search Recycle Bin', description: 'Find recoverable sessions from your profile within the rolling 7-day window.' },
+    { name: 'recycle_bin_restore', title: 'Restore Recycle Bin Entry', description: 'Restore a search result through the shared atomic path; an optional name checks the saved name and never renames.' },
     { name: 'session_get', title: 'Get Session', description: 'Get a session by ID or exact display name.' },
     { name: 'session_send_text', title: 'Send Text To Session', description: 'Send text to a running session PTY, with optional reply routing through HELM_MSG metadata.' },
     { name: 'session_clear', title: 'Clear Session Context', description: 'Clear a target session (sessionId required) by delivering its configured helmActions.clear command (fallback: clearCommand, then "/clear"), then optionally relay a note-to-future-self. Large notes are offloaded to a temp file.' },

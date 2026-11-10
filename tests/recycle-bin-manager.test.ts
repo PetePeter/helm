@@ -114,6 +114,21 @@ describe('RecycleBinManager', () => {
     expect(loaded.list().map(e => e.sessionId)).toEqual(['prior']);
   });
 
+  it('hides entries outside the retention window on reads without pruning storage', () => {
+    const fixedNow = 1_700_000_000_000;
+    diskStore = [
+      { ...makeEntry({ sessionId: 'boundary', closedAt: fixedNow - RECYCLE_BIN_WINDOW_MS }), id: 'id-boundary' },
+      { ...makeEntry({ sessionId: 'expired', closedAt: fixedNow - RECYCLE_BIN_WINDOW_MS - 1 }), id: 'id-expired' },
+    ];
+    manager = new RecycleBinManager(() => fixedNow);
+
+    expect(manager.list().map(entry => entry.sessionId)).toEqual(['boundary']);
+    expect(manager.count()).toBe(1);
+    expect(manager.peek('id-boundary')?.sessionId).toBe('boundary');
+    expect(manager.peek('id-expired')).toBeNull();
+    expect(diskStore.map(entry => entry.sessionId)).toEqual(['boundary', 'expired']);
+  });
+
   it('list returns entries newest-close first', () => {
     const base = Date.now();
     manager.append(makeEntry({ sessionId: 'old', closedAt: base - 3000 }));

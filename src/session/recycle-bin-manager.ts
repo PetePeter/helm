@@ -64,19 +64,19 @@ export class RecycleBinManager extends EventEmitter {
     return expired;
   }
 
-  /** All entries, newest close first. */
+  /** Recoverable entries, newest close first. */
   list(): RecycleBinEntry[] {
-    return [...this.entries].sort((a, b) => b.closedAt - a.closedAt);
+    return this.recoverableEntries().sort((a, b) => b.closedAt - a.closedAt);
   }
 
   /** Number of recoverable entries currently in the bin. */
   count(): number {
-    return this.entries.length;
+    return this.recoverableEntries().length;
   }
 
   /** Look up an entry without removing it (restore peeks, then commits on success). */
   peek(id: string): RecycleBinEntry | null {
-    return this.entries.find(e => e.id === id) ?? null;
+    return this.recoverableEntries().find(e => e.id === id) ?? null;
   }
 
   /** Forget (permanently delete) a single entry. */
@@ -101,6 +101,12 @@ export class RecycleBinManager extends EventEmitter {
     const expired = this.entries.filter(e => e.closedAt < cutoff);
     if (expired.length > 0) this.entries = this.entries.filter(e => e.closedAt >= cutoff);
     return expired;
+  }
+
+  /** Keep the read surface current without changing persisted entries or cleanup timing. */
+  private recoverableEntries(): RecycleBinEntry[] {
+    const cutoff = this.now() - RECYCLE_BIN_WINDOW_MS;
+    return this.entries.filter(entry => entry.closedAt >= cutoff);
   }
 }
 
