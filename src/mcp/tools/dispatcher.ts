@@ -422,6 +422,7 @@ export async function callMcpTool(
           typeof args.autoImplement === 'boolean' ? args.autoImplement : undefined,
           args.status === 'suggested' ? 'suggested' : undefined,
           sourceIdeaId,
+          typeof args.completionRecap === 'boolean' ? args.completionRecap : undefined,
         );
       case 'plan_update':
         return requireResult(

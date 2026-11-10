@@ -67,6 +67,7 @@ describe('suggested plan MCP surface', () => {
 
     const dispatcherService = {
       createPlan: (...args: Parameters<HelmPlanService['createPlan']>) => service.createPlan(...args),
+      getPlan: (id: string) => service.getPlan(id),
       deletePlan: (id: string) => service.deletePlan(id),
       acceptSuggestedPlan: (id: string) => service.acceptSuggestedPlan(id),
       rejectSuggestedPlan: (id: string) => service.rejectSuggestedPlan(id),
@@ -77,14 +78,33 @@ describe('suggested plan MCP surface', () => {
       completePlanWithValidation: () => undefined,
     };
 
+    const regular = await callMcpTool(deps, 'plan_create', {
+      dirPath,
+      title: 'Regular plan',
+      description: 'Created without the recap flag.',
+      completionRecap: true,
+    }, {}) as { id: string };
+    const regularView = await callMcpTool(deps, 'plan_get', { uuid: regular.id }, {}) as { completionRecap?: boolean };
+    expect(regularView.completionRecap).toBe(true);
+
+    const defaultPlan = await callMcpTool(deps, 'plan_create', {
+      dirPath,
+      title: 'Default plan',
+      description: 'Keeps the existing default.',
+    }, {}) as { id: string };
+    expect(plans.getItem(defaultPlan.id)?.completionRecap).toBeUndefined();
+
     const accepted = await callMcpTool(deps, 'plan_create', {
       dirPath,
       title: 'Implement idea',
       description: 'Build it.',
       status: 'suggested',
       sourceIdeaId: idea.id,
+      completionRecap: true,
     }, {}) as { id: string; humanId: string };
     expect(plans.getItem(accepted.id)).toMatchObject({ status: 'suggested', sourceIdeaId: idea.id });
+    const suggestedView = await callMcpTool(deps, 'plan_get', { uuid: accepted.id }, {}) as { completionRecap?: boolean };
+    expect(suggestedView.completionRecap).toBe(true);
     expect(await callMcpTool(deps, 'plan_accept_suggestion', { uuid: accepted.humanId }, {})).toEqual({ ok: true });
     expect(plans.getItem(accepted.id)?.status).toBe('ready');
     expect(memories.getRecord(idea.id)?.ideaStage).toBe('accepted');

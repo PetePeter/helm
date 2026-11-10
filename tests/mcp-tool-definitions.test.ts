@@ -28,6 +28,15 @@ describe('MCP tool definitions (P-0343)', () => {
     expect(required).not.toContain('expectedUpdatedAt');
   });
 
+  it('plan_create exposes completionRecap as an optional boolean', () => {
+    const def = MCP_TOOLS.find((t) => t.name === 'plan_create');
+    const properties = def!.inputSchema.properties as Record<string, unknown>;
+    const required: string[] = def!.inputSchema.required ?? [];
+
+    expect(properties.completionRecap).toEqual({ type: 'boolean' });
+    expect(required).not.toContain('completionRecap');
+  });
+
   it('documents file ownership and temp-path cleanup for artifact MCP tools', () => {
     const create = MCP_TOOLS.find((t) => t.name === 'artifact_create')!;
     const update = MCP_TOOLS.find((t) => t.name === 'artifact_update')!;

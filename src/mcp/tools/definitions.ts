@@ -224,7 +224,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'plan_create',
     title: 'Create Plan',
-    description: `Create a plan item in a directory when follow-up work, later cleanup, or a blocking question should survive the current session. Optionally set type to "bug", "feature", or "research", and set autoImplement=true when this ready follow-up may be picked up automatically after its prerequisite is completed. To place work in the Suggestions queue, set status="suggested" and optionally sourceIdeaId to an idea memory at stage growing or suggested. The service advances a linked growing idea after plan creation and returns an existing live suggestion on retry. The description should include these sections: ${REQUIRED_PLAN_DESCRIPTION_SECTIONS.join(', ')}. For blocking questions, create a separate plan titled "QUESTION: ..." and link it to the original blocked plan with plan_nextplan_link so the question must be resolved first. Ordinary plans start in "planning" status and are recomputed to ready when unblocked. When you begin working on a ready plan, call session_plan_claim with your sessionId and the planId to claim it.`,
+    description: `Create a plan item in a directory when follow-up work, later cleanup, or a blocking question should survive the current session. Optionally set type to "bug", "feature", or "research", and set autoImplement=true when this ready follow-up may be picked up automatically after its prerequisite is completed. Set completionRecap=true to require the existing read-verification recap gate when completing the plan; omitting it preserves the default. To place work in the Suggestions queue, set status="suggested" and optionally sourceIdeaId to an idea memory at stage growing or suggested. The service advances a linked growing idea after plan creation and returns an existing live suggestion on retry. The description should include these sections: ${REQUIRED_PLAN_DESCRIPTION_SECTIONS.join(', ')}. For blocking questions, create a separate plan titled "QUESTION: ..." and link it to the original blocked plan with plan_nextplan_link so the question must be resolved first. Ordinary plans start in "planning" status and are recomputed to ready when unblocked. When you begin working on a ready plan, call session_plan_claim with your sessionId and the planId to claim it.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -233,6 +233,7 @@ export const MCP_TOOLS: McpTool[] = [
         description: { type: 'string' },
         type: { type: 'string', enum: ['bug', 'feature', 'research'] },
         autoImplement: { type: 'boolean' },
+        completionRecap: { type: 'boolean' },
         status: { type: 'string', enum: ['suggested'] },
         sourceIdeaId: { type: 'string' },
       },

@@ -10,6 +10,7 @@ export interface CreateSuggestedPlanInput {
   sourceIdeaId?: string;
   type?: PlanType;
   autoImplement?: boolean;
+  completionRecap?: boolean;
 }
 
 /** Coordinates the plan and idea stores at their shared acceptance boundary. */
@@ -35,6 +36,7 @@ export class SuggestedPlanService {
       input.sourceIdeaId,
       input.type,
       input.autoImplement,
+      input.completionRecap,
     );
     if (idea) this.markSuggested(idea);
     return plan;

@@ -79,6 +79,21 @@ describe('PlanManager status persistence round trip', () => {
     pm.delete(suggested.id);
   });
 
+  it('preserves completionRecap across a reload and leaves omitted values at the default', () => {
+    const dir = `/tmp/plan-status-recap-${randomUUID()}`;
+    const paths = newPaths();
+    const pm = manager(paths);
+    const regular = pm.createWithType(dir, 'Regular recap', '', undefined, undefined, true);
+    const suggested = pm.createSuggested(dir, 'Suggested recap', '', undefined, undefined, undefined, true);
+    const defaultPlan = pm.create(dir, 'Default recap', '');
+
+    const reloaded = manager(paths);
+
+    expect(reloaded.getItem(regular.id)?.completionRecap).toBe(true);
+    expect(reloaded.getItem(suggested.id)?.completionRecap).toBe(true);
+    expect(reloaded.getItem(defaultPlan.id)?.completionRecap).toBeUndefined();
+  });
+
   it('still migrates legacy statuses on load', () => {
     const dir = '/tmp/plan-status-legacy';
     const paths = newPaths();

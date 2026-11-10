@@ -139,6 +139,7 @@ export class HelmPlanService {
     autoImplement?: boolean,
     status?: 'suggested',
     sourceIdeaId?: string,
+    completionRecap?: boolean,
   ): { id: string; humanId: string } {
     const normalizedDir = this.requireWorkingDirectory(dirPath).path;
     if (status === 'suggested' || sourceIdeaId) {
@@ -150,10 +151,11 @@ export class HelmPlanService {
         ...(sourceIdeaId ? { sourceIdeaId } : {}),
         type,
         autoImplement,
+        completionRecap,
       });
       return { id: item.id, humanId: item.humanId ?? item.id };
     }
-    const item = this.planManager.createWithType(normalizedDir, title, description, type, autoImplement);
+    const item = this.planManager.createWithType(normalizedDir, title, description, type, autoImplement, completionRecap);
     return { id: item.id, humanId: item.humanId ?? item.id };
   }
 

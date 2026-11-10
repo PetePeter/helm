@@ -144,8 +144,15 @@ export class PlanManager extends EventEmitter {
     sourceIdeaId?: string,
     type?: PlanType,
     autoImplement?: boolean,
+    completionRecap?: boolean,
   ): PlanItem {
-    return this.createItem(dirPath, title, description, { status: 'suggested', sourceIdeaId, type, autoImplement });
+    return this.createItem(dirPath, title, description, {
+      status: 'suggested',
+      sourceIdeaId,
+      type,
+      autoImplement,
+      completionRecap,
+    });
   }
 
   private createItem(

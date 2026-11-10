@@ -1204,8 +1204,17 @@ export class HelmControlService extends EventEmitter {
     return this.planService.getPlanIdMapping(humanId);
   }
 
-  createPlan(dirPath: string, title: string, description: string, type?: PlanType, autoImplement?: boolean, status?: 'suggested', sourceIdeaId?: string): { id: string; humanId: string } {
-    return this.planService.createPlan(dirPath, title, description, type, autoImplement, status, sourceIdeaId);
+  createPlan(
+    dirPath: string,
+    title: string,
+    description: string,
+    type?: PlanType,
+    autoImplement?: boolean,
+    status?: 'suggested',
+    sourceIdeaId?: string,
+    completionRecap?: boolean,
+  ): { id: string; humanId: string } {
+    return this.planService.createPlan(dirPath, title, description, type, autoImplement, status, sourceIdeaId, completionRecap);
   }
 
   acceptSuggestedPlan(id: string): { ok: true } {
