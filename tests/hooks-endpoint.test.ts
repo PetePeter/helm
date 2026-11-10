@@ -148,8 +148,8 @@ describe('POST /hooks', () => {
 describe('POST /context-usage', () => {
   it('accepts a session token and passes current tokens and the reported window to Helm', async () => {
     const reports: unknown[] = [];
-    const { port, sessionToken } = await makeServer(new HookReceiver(), (sessionId, cliSessionId, usage) => {
-      reports.push({ sessionId, cliSessionId, usage });
+    const { port, sessionToken } = await makeServer(new HookReceiver(), (sessionId, cliSessionId, usage, quotaUsage) => {
+      reports.push({ sessionId, cliSessionId, usage, quotaUsage });
       return true;
     });
     const response = await post(port, '/context-usage', sessionToken, JSON.stringify({
@@ -166,7 +166,36 @@ describe('POST /context-usage', () => {
       sessionId: 'session-1',
       cliSessionId: 'claude-session-1',
       usage: { contextTokens: 16_700, contextWindow: 200_000 },
+      quotaUsage: null,
     }]);
+  });
+
+  it('passes both complete subscription windows to Helm without guessing missing values', async () => {
+    const reports: unknown[] = [];
+    const { port, sessionToken } = await makeServer(new HookReceiver(), (sessionId, cliSessionId, usage, quotaUsage) => {
+      reports.push({ sessionId, cliSessionId, usage, quotaUsage });
+    });
+    const now = Date.now();
+    const response = await post(port, '/context-usage', sessionToken, JSON.stringify({
+      session_id: 'claude-session-1',
+      context_window: { total_input_tokens: 100, total_output_tokens: 20 },
+      rate_limits: {
+        five_hour: { used_percentage: 73, resets_at: new Date(now + 60 * 60_000).toISOString() },
+        seven_day: { used_percentage: 38, resets_at: new Date(now + 24 * 60 * 60_000).toISOString() },
+      },
+    }));
+
+    expect(response.status).toBe(204);
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      sessionId: 'session-1',
+      cliSessionId: 'claude-session-1',
+      usage: { contextTokens: 120 },
+      quotaUsage: {
+        fiveHour: { usedPercent: 73 },
+        weekly: { usedPercent: 38 },
+      },
+    });
   });
 
   it('rejects the shared bearer and malformed payloads', async () => {

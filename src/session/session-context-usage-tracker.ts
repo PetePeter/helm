@@ -195,6 +195,13 @@ export class SessionContextUsageTracker {
     return true;
   }
 
+  /** Correlate a quota-only statusline report without fabricating context usage. */
+  validateStatuslineSession(sessionId: string, cliSessionId: string): boolean {
+    if (!this.correlateStatuslineSession(sessionId, cliSessionId)) return false;
+    const session = this.sessionManager.getSession(sessionId);
+    return !!session && !session.remote;
+  }
+
   /** Clear a statusline snapshot after Claude reports an empty window, such as immediately after /compact. */
   clearStatuslineUsage(sessionId: string, cliSessionId: string): boolean {
     if (!this.correlateStatuslineSession(sessionId, cliSessionId)) return false;

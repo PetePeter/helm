@@ -64,6 +64,7 @@ fun SessionRow(
             ContextRingButton(
                 state = session.activity,
                 history = context,
+                quotaUsage = session.quotaUsage,
                 size = if (compact) COMPACT_RING_SIZE else CONTEXT_RING_SIZE,
             )
             if (compact) {

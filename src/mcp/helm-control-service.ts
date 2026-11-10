@@ -7,6 +7,7 @@ import type { ConfigLoader } from '../config/loader.js';
 import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
 import type { SessionEta, SessionInfo } from '../types/session.js';
+import type { SessionQuotaUsageSnapshot } from '../session/quota-usage.js';
 import { SessionChangeFeed, type SessionFeedCursor } from '../session/session-change-feed.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { TerminalReadMode } from '../session/terminal-output-buffer.js';
@@ -135,6 +136,8 @@ export interface SessionSummary {
   workingDir?: string;
   /** Compact current context for mobile rows; omitted when usage is unknown. */
   context?: SessionContextSummary;
+  /** Complete live subscription quota for the session's matching auth scope. */
+  quotaUsage?: SessionQuotaUsageSnapshot | null;
   /** Current local git branch; omitted for main/master and non-repositories. */
   gitBranch?: string;
   projectId?: string;

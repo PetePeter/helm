@@ -13,7 +13,7 @@ import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord, showFormModal } from '../../utils.js';
 import { useLlmNotificationsStore } from '../../stores/llmNotifications.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
-import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, SessionMission, UserPromptSource } from '../../../src/types/session.js';
+import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, SessionMission, SessionQuotaUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import ContextRing from './ContextRing.vue';
 import TickerText from '../common/TickerText.vue';
@@ -38,6 +38,7 @@ export interface SessionCardSession {
   name: string;
   cliType: string;
   contextUsage?: SessionContextUsageSnapshot;
+  quotaUsage?: SessionQuotaUsageSnapshot | null;
   contextHistory?: ContextUsageSample[];
   title?: string;
   cliSessionName?: string;
@@ -358,6 +359,7 @@ function onCardClick(e: MouseEvent): void {
         :activity-level="activityLevel"
         :cli-type="session.cliType"
         :context-usage="session.contextUsage"
+        :quota-usage="session.quotaUsage"
         :context-history="session.contextHistory"
       />
       <span v-if="isSnappedOut" class="snap-indicator" title="Snapped out">📤</span>

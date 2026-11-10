@@ -43,6 +43,8 @@ data class HelmSession(
     val currentPlanId: String? = null,
     /** Latest compact context reading from session_list, when the desktop knows it. */
     val context: SessionContext? = null,
+    /** Fresh, complete subscription windows. API usage and partial snapshots are absent. */
+    val quotaUsage: SessionQuotaUsage? = null,
     /** The session's mission TL;DR (desktop caps it at 500 chars); null when unset or blank. */
     val mission: String? = null,
     /** The desktop's session role — `operator` marks the one "Helm" session. Null for every other. */
@@ -132,6 +134,12 @@ data class ComfyUiProfile(val id: String, val name: String, val kind: String, va
 data class ComfyUiImageSize(val id: String, val name: String, val width: Int, val height: Int)
 
 data class SessionContext(val tokens: Long, val window: Long?, val level: ContextLevel?)
+data class SessionQuotaWindow(val usedPercent: Float, val resetsAtEpochMs: Long)
+data class SessionQuotaUsage(
+    val fiveHour: SessionQuotaWindow,
+    val weekly: SessionQuotaWindow,
+    val measuredAtEpochMs: Long,
+)
 
 data class SessionEta(val atEpochMs: Long, val range: SessionEtaRange? = null)
 data class SessionEtaRange(val loEpochMs: Long, val hiEpochMs: Long, val samples: Int)
@@ -230,6 +238,7 @@ object SessionWire {
             lastActiveAtEpochMs = (summary.opt("lastActiveAtEpochMs") as? Number)?.toLong(),
             currentPlanId = summary.opt("currentPlanId") as? String,
             context = parseContext(summary.optJSONObject("context")),
+            quotaUsage = parseQuotaUsage(summary.optJSONObject("quotaUsage")),
             mission = ((summary.opt("mission") as? JSONObject)?.opt("text") as? String)
                 ?.takeIf { it.isNotBlank() },
             role = (summary.opt("role") as? String)?.takeIf { it.isNotBlank() },
@@ -321,5 +330,24 @@ object SessionWire {
             else -> null
         }
         return SessionContext(tokens, window, level)
+    }
+
+    internal fun parseQuotaUsage(value: JSONObject?): SessionQuotaUsage? {
+        value ?: return null
+        val fiveHour = parseQuotaWindow(value.optJSONObject("fiveHour")) ?: return null
+        val weekly = parseQuotaWindow(value.optJSONObject("weekly")) ?: return null
+        val measuredAtEpochMs = (value.opt("measuredAtEpochMs") as? Number)?.toLong()
+            ?.takeIf { it > 0 } ?: return null
+        if (fiveHour.resetsAtEpochMs <= measuredAtEpochMs || weekly.resetsAtEpochMs <= measuredAtEpochMs) return null
+        return SessionQuotaUsage(fiveHour, weekly, measuredAtEpochMs)
+    }
+
+    private fun parseQuotaWindow(value: JSONObject?): SessionQuotaWindow? {
+        value ?: return null
+        val usedPercent = (value.opt("usedPercent") as? Number)?.toFloat()
+            ?.takeIf { it.isFinite() && it in 0f..100f } ?: return null
+        val resetsAtEpochMs = (value.opt("resetsAtEpochMs") as? Number)?.toLong()
+            ?.takeIf { it > 0 } ?: return null
+        return SessionQuotaWindow(usedPercent, resetsAtEpochMs)
     }
 }

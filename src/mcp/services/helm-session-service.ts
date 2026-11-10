@@ -499,6 +499,7 @@ export class HelmSessionService {
         ...(context.window !== undefined ? { window: context.window } : {}),
         ...(context.level ? { level: context.level } : {}),
       } } : {}),
+      ...(session.quotaUsage != null ? { quotaUsage: session.quotaUsage } : { quotaUsage: null }),
       ...(cliEntry?.noPromptCache ? { noPromptCache: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),
       ...(session.eta ? { eta: { ...session.eta } } : {}),

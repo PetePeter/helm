@@ -356,8 +356,8 @@ export function registerIPCHandlers(
       const projectId = workingDir ? runtime.planManager.getProjectIdForDirectory(workingDir) : null;
       suggestionUsageByProfile.get(runtime.userProfileId)?.recordFetch(sessionId, `${type}/${id}`, projectId);
     },
-    onClaudeStatuslineUsage: (sessionId, cliSessionId, usage) =>
-      profileComposition.includeStatuslineUsage(sessionId, cliSessionId, usage),
+    onClaudeStatuslineUsage: (sessionId, cliSessionId, usage, quotaUsage) =>
+      profileComposition.includeStatuslineUsage(sessionId, cliSessionId, usage, quotaUsage),
   }, ptyManager, hookReceiver);
 
   // API tools: Helm hosts the agent loop for CLI types with an `api` block.

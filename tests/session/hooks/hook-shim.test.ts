@@ -189,6 +189,10 @@ describe.skipIf(python === null)('helm-hook-shim.py', () => {
         context_window_size: 200_000,
         used_percentage: 8,
       },
+      rate_limits: {
+        five_hour: { used_percentage: 73, resets_at: '2026-11-10T15:00:00.000Z', extra: 'discarded' },
+        seven_day: { used_percentage: 38, resets_at: '2026-11-15T15:00:00.000Z' },
+      },
     };
 
     const result = await runStatusline({
@@ -202,6 +206,10 @@ describe.skipIf(python === null)('helm-hook-shim.py', () => {
     expect(helm.requests.map((request) => JSON.parse(request))).toEqual([{
       session_id: 'claude-1',
       context_window: payload.context_window,
+      rate_limits: {
+        five_hour: { used_percentage: 73, resets_at: '2026-11-10T15:00:00.000Z' },
+        seven_day: { used_percentage: 38, resets_at: '2026-11-15T15:00:00.000Z' },
+      },
     }]);
   });
 

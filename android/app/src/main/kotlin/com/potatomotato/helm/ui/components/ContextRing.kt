@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.data.ContextGraph
 import com.potatomotato.helm.data.ContextHistory
 import com.potatomotato.helm.data.ContextRing
+import com.potatomotato.helm.data.SessionQuotaUsage
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
@@ -51,11 +53,13 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
 fun ContextRing(
     state: SessionState,
     ring: ContextRing?,
+    quotaUsage: SessionQuotaUsage? = null,
     modifier: Modifier = Modifier,
     size: Dp = CONTEXT_RING_SIZE,
 ) {
-    Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
-        if (ring == null) {
+    val indicatorSize = if (quotaUsage != null) size + QUOTA_RING_GUTTER else size
+    Box(modifier = modifier.size(indicatorSize), contentAlignment = Alignment.Center) {
+        if (ring == null && quotaUsage == null) {
             StateDot(state = state)
             return@Box
         }
@@ -63,28 +67,57 @@ fun ContextRing(
         val animate = remember {
             Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
         }
-        val scale = if (ring.overflow && animate) heartbeat() else 1f
-        val levelColor = ring.level.color()
+        val scale = if (ring?.overflow == true && animate) heartbeat() else 1f
+        val levelColor = ring?.level?.color() ?: HelmColors.State.Active
         val dotColor = state.color
-        Canvas(modifier = Modifier.size(size).graphicsLayer(scaleX = scale, scaleY = scale)) {
+        Canvas(modifier = Modifier.size(indicatorSize).graphicsLayer(scaleX = scale, scaleY = scale)) {
             val stroke = size.toPx() * RING_THICKNESS
-            val arcSize = Size(this.size.width - stroke, this.size.height - stroke)
-            val topLeft = Offset(stroke / 2f, stroke / 2f)
-            if (ring.overflow && !animate) {
-                drawCircle(levelColor.copy(alpha = HALO_ALPHA), radius = this.size.width / 2f)
+            if (quotaUsage != null) {
+                val quotaArcSize = Size(this.size.width - stroke, this.size.height - stroke)
+                val quotaTopLeft = Offset(stroke / 2f, stroke / 2f)
+                drawArc(HelmColors.Line, 180f, 180f, useCenter = false, topLeft = quotaTopLeft, size = quotaArcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(HelmColors.Line, 0f, 180f, useCenter = false, topLeft = quotaTopLeft, size = quotaArcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(
+                    color = quotaLevelColor(quotaUsage.fiveHour.usedPercent),
+                    startAngle = 180f,
+                    sweepAngle = 180f * (1f - quotaUsage.fiveHour.usedPercent / 100f),
+                    useCenter = false,
+                    topLeft = quotaTopLeft,
+                    size = quotaArcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round),
+                )
+                drawArc(
+                    color = quotaLevelColor(quotaUsage.weekly.usedPercent),
+                    startAngle = 0f,
+                    sweepAngle = 180f * (1f - quotaUsage.weekly.usedPercent / 100f),
+                    useCenter = false,
+                    topLeft = quotaTopLeft,
+                    size = quotaArcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round),
+                )
             }
-            drawArc(HelmColors.Line, 0f, 360f, useCenter = false, topLeft = topLeft, size = arcSize, style = Stroke(stroke))
-            drawArc(
-                color = levelColor,
-                startAngle = -90f,
-                sweepAngle = 360f * ring.fill,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(stroke),
-            )
-            drawCircle(dotColor, radius = this.size.width * DOT_RADIUS)
+            if (ring != null) {
+                val innerDiameter = size.toPx()
+                val innerStroke = innerDiameter * RING_THICKNESS
+                val innerTopLeft = Offset((this.size.width - innerDiameter) / 2f + innerStroke / 2f, (this.size.height - innerDiameter) / 2f + innerStroke / 2f)
+                val innerArcSize = Size(innerDiameter - innerStroke, innerDiameter - innerStroke)
+                if (ring.overflow && !animate) {
+                    drawCircle(levelColor.copy(alpha = HALO_ALPHA), radius = innerDiameter / 2f, center = Offset(this.size.width / 2f, this.size.height / 2f))
+                }
+                drawArc(HelmColors.Line, 0f, 360f, useCenter = false, topLeft = innerTopLeft, size = innerArcSize, style = Stroke(innerStroke))
+                drawArc(
+                    color = levelColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * ring.fill,
+                    useCenter = false,
+                    topLeft = innerTopLeft,
+                    size = innerArcSize,
+                    style = Stroke(innerStroke),
+                )
+                drawCircle(dotColor, radius = innerDiameter * DOT_RADIUS, center = Offset(this.size.width / 2f, this.size.height / 2f))
+            }
         }
+        if (ring == null) StateDot(state = state)
     }
 }
 
@@ -96,6 +129,7 @@ fun ContextRing(
 fun ContextRingButton(
     state: SessionState,
     history: ContextHistory?,
+    quotaUsage: SessionQuotaUsage? = null,
     modifier: Modifier = Modifier,
     size: Dp = HEADER_RING_SIZE,
 ) {
@@ -104,6 +138,7 @@ fun ContextRingButton(
         ContextRing(
             state = state,
             ring = history?.let { ContextGraph.ring(it) },
+            quotaUsage = quotaUsage,
             size = size,
             modifier = if (history != null) Modifier.clickable { open = true } else Modifier,
         )
@@ -124,6 +159,12 @@ fun ContextRingButton(
             }
         }
     }
+}
+
+private fun quotaLevelColor(usedPercent: Float) = when {
+    usedPercent >= QUOTA_RED_AT_PERCENT -> HelmColors.Danger
+    usedPercent >= QUOTA_AMBER_AT_PERCENT -> HelmColors.CacheWarn
+    else -> HelmColors.State.Active
 }
 
 /** Two quick pulses then a rest, like a pulse — fast enough to catch the eye in a list. */
@@ -153,6 +194,9 @@ internal val CONTEXT_RING_SIZE = 22.dp
 private val HEADER_RING_SIZE = 30.dp
 private val POPOVER_WIDTH = 260.dp
 private val POPOVER_GRAPH_HEIGHT = 80.dp
+private val QUOTA_RING_GUTTER = 10.dp
+private const val QUOTA_AMBER_AT_PERCENT = 75f
+private const val QUOTA_RED_AT_PERCENT = 90f
 private const val RING_THICKNESS = 0.18f
 private const val DOT_RADIUS = 0.18f
 private const val HALO_ALPHA = 0.25f

@@ -22,7 +22,7 @@ import { state } from '../../state.js';
 import { isKeyboardModalOpen } from '../../keyboard/install.js';
 import { updateSessionsFocus } from '../../screens/sessions.js';
 import { createWheelStepAccumulator } from './wheel-step-accumulator.js';
-import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
+import type { ContextUsageSample, SessionContextUsageSnapshot, SessionQuotaUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 
 interface FlashEntry {
   phase: 'pulse' | 'solid';
@@ -45,6 +45,7 @@ interface SessionListGroupSession {
   name: string;
   cliType: string;
   contextUsage?: SessionContextUsageSnapshot;
+  quotaUsage?: SessionQuotaUsageSnapshot | null;
   contextHistory?: ContextUsageSample[];
   title?: string;
   cliSessionName?: string;
@@ -345,7 +346,7 @@ function onNewGroupDrop(e: DragEvent): void {
             <SessionCard
               v-for="session in group.sessions"
               :key="session.id"
-              :session="{ id: session.id, name: session.name, cliType: session.cliType, contextUsage: session.contextUsage, contextHistory: session.contextHistory, title: session.title, cliSessionName: session.cliSessionName, createdAt: session.createdAt, lastActiveAt: session.lastActiveAt, createdByPeerId: session.createdByPeerId, remote: session.remote, locked: session.locked, frozen: session.frozen, lastPromptAt: session.lastPromptAt, lastUserPromptAt: session.lastUserPromptAt, lastUserPromptSource: session.lastUserPromptSource, keepWarmUntil: session.keepWarmUntil, eta: session.eta, mission: session.mission }"
+              :session="{ id: session.id, name: session.name, cliType: session.cliType, contextUsage: session.contextUsage, quotaUsage: session.quotaUsage, contextHistory: session.contextHistory, title: session.title, cliSessionName: session.cliSessionName, createdAt: session.createdAt, lastActiveAt: session.lastActiveAt, createdByPeerId: session.createdByPeerId, remote: session.remote, locked: session.locked, frozen: session.frozen, lastPromptAt: session.lastPromptAt, lastUserPromptAt: session.lastUserPromptAt, lastUserPromptSource: session.lastUserPromptSource, keepWarmUntil: session.keepWarmUntil, eta: session.eta, mission: session.mission }"
               :nav-index="navIndexMap.get(session.id) ?? -1"
               :session-state="source === 'peer' ? (session.state || 'idle') : (sessionStates.get(session.id) || 'idle')"
               :activity-level="session.activityLevel || sessionActivityLevels.get(session.id) || 'idle'"

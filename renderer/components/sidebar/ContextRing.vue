@@ -6,8 +6,9 @@
  * plain dot in the same footprint, so rows never shift when the first reading lands.
  */
 import { computed, ref } from 'vue';
-import type { ContextUsageSample, SessionContextUsageSnapshot } from '../../../src/types/session.js';
+import type { ContextUsageSample, SessionContextUsageSnapshot, SessionQuotaUsageSnapshot } from '../../../src/types/session.js';
 import { contextRing, resolveContextLimits } from '../../../src/session/context-limits.js';
+import { isFreshQuotaUsageSnapshot, quotaUsageLevel, SESSION_QUOTA_USAGE_MAX_AGE_MS } from '../../../src/session/quota-usage.js';
 import { getActivityColor } from '../../state-colors.js';
 import { resolveCliTypeRecord } from '../../utils.js';
 import { sessionContextUsageTitle } from '../../session-context-usage.js';
@@ -17,6 +18,7 @@ const props = withDefaults(defineProps<{
   activityLevel: string;
   cliType?: string;
   contextUsage?: SessionContextUsageSnapshot;
+  quotaUsage?: SessionQuotaUsageSnapshot | null;
   contextHistory?: ContextUsageSample[];
   /** Outer diameter in px. */
   size?: number;
@@ -28,8 +30,12 @@ const limits = computed(() => resolveContextLimits(
 ));
 const ring = computed(() => (props.contextUsage ? contextRing(props.contextUsage.tokens, limits.value) : undefined));
 const thickness = computed(() => Math.max(2, Math.round(props.size * 0.2)));
+const quota = computed(() => (props.quotaUsage && isFreshQuotaUsageSnapshot(props.quotaUsage, Date.now(), SESSION_QUOTA_USAGE_MAX_AGE_MS)
+  ? props.quotaUsage
+  : null));
 const style = computed(() => ({
   '--ring-size': `${props.size}px`,
+  '--indicator-size': `${props.size + (quota.value ? 10 : 0)}px`,
   '--ring-thickness': `${thickness.value}px`,
   '--ring-fill': String(ring.value?.fill ?? 0),
   '--dot-size': `${Math.max(4, Math.round(props.size * 0.38))}px`,
@@ -48,13 +54,38 @@ function showCard(event: MouseEvent): void {
 <template>
   <span
     class="context-ring"
-    :class="[ring && `level-${ring.level}`, { 'has-ring': ring, overflow: ring?.overflow }]"
+    :class="{ 'has-quota': quota }"
     :style="style"
     @mouseenter="showCard"
     @mouseleave="cardAt = null"
   >
-    <span v-if="ring" class="context-ring__arc" />
-    <span class="context-ring__dot" :style="{ background: getActivityColor(activityLevel) }" />
+    <svg v-if="quota" class="quota-ring" viewBox="0 0 32 32" aria-hidden="true">
+      <path class="quota-ring__track" vector-effect="non-scaling-stroke" d="M2 16 A14 14 0 0 1 30 16" />
+      <path class="quota-ring__track" vector-effect="non-scaling-stroke" d="M30 16 A14 14 0 0 1 2 16" />
+      <path
+        class="quota-ring__arc"
+        :class="`level-${quotaUsageLevel(quota.fiveHour.usedPercent)}`"
+        vector-effect="non-scaling-stroke"
+        pathLength="100"
+        :style="{ strokeDasharray: `${100 - quota.fiveHour.usedPercent} 100` }"
+        d="M2 16 A14 14 0 0 1 30 16"
+      />
+      <path
+        class="quota-ring__arc"
+        :class="`level-${quotaUsageLevel(quota.weekly.usedPercent)}`"
+        vector-effect="non-scaling-stroke"
+        pathLength="100"
+        :style="{ strokeDasharray: `${100 - quota.weekly.usedPercent} 100` }"
+        d="M30 16 A14 14 0 0 1 2 16"
+      />
+    </svg>
+    <span
+      class="context-ring__inner"
+      :class="[ring && `level-${ring.level}`, { 'has-ring': ring, overflow: ring?.overflow }]"
+    >
+      <span v-if="ring" class="context-ring__arc" />
+      <span class="context-ring__dot" :style="{ background: getActivityColor(activityLevel) }" />
+    </span>
     <Teleport to="body">
       <div v-if="cardAt" class="context-card" :style="{ top: `${cardAt.top}px`, left: `${cardAt.left}px` }">
         <div class="context-card__head">{{ sessionContextUsageTitle(contextUsage) }}</div>
@@ -73,6 +104,14 @@ function showCard(event: MouseEvent): void {
 
 <style scoped>
 .context-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--indicator-size);
+  height: var(--indicator-size);
+}
+.context-ring__inner {
   --ring-color: var(--accent);
   position: relative;
   display: inline-grid;
@@ -81,8 +120,26 @@ function showCard(event: MouseEvent): void {
   width: var(--ring-size);
   height: var(--ring-size);
 }
-.context-ring.level-warn { --ring-color: var(--status-blocked); }
-.context-ring.level-hot { --ring-color: var(--danger); }
+.context-ring__inner.level-warn { --ring-color: var(--status-blocked); }
+.context-ring__inner.level-hot { --ring-color: var(--danger); }
+.quota-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.quota-ring__track,
+.quota-ring__arc {
+  fill: none;
+  stroke-width: var(--ring-thickness);
+  stroke-linecap: round;
+}
+.quota-ring__track { stroke: var(--border); }
+.quota-ring__arc { stroke: var(--accent); }
+.quota-ring__arc.level-warn { stroke: var(--status-blocked); }
+.quota-ring__arc.level-hot { stroke: var(--danger); }
 .context-ring__arc {
   position: absolute;
   inset: 0;
@@ -98,7 +155,7 @@ function showCard(event: MouseEvent): void {
   border-radius: 50%;
 }
 /* Past the circle: the ring heartbeats; reduce-motion keeps a static halo instead. */
-.context-ring.overflow { animation: context-heartbeat 1.1s infinite; border-radius: 50%; }
+.context-ring__inner.overflow { animation: context-heartbeat 1.1s infinite; border-radius: 50%; }
 @keyframes context-heartbeat {
   0%, 60%, 100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
   10% { transform: scale(1.2); box-shadow: 0 0 6px 1px var(--danger); }
@@ -106,7 +163,7 @@ function showCard(event: MouseEvent): void {
   34% { transform: scale(1.14); box-shadow: 0 0 4px 1px var(--danger); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .context-ring.overflow { animation: none; box-shadow: 0 0 5px 1px var(--danger); }
+  .context-ring__inner.overflow { animation: none; box-shadow: 0 0 5px 1px var(--danger); }
 }
 .context-card {
   position: fixed;

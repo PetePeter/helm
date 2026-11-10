@@ -142,6 +142,9 @@ export function loadSessions(sessionsFile?: string, expectedProfileId?: string):
         if (session.contextUsage !== undefined && !isContextUsageSnapshot(session.contextUsage)) {
           delete session.contextUsage;
         }
+        // Subscription quota is live provider data: never restore an old
+        // account reading after Helm restarts, even from a hand-edited file.
+        delete session.quotaUsage;
         if (session.contextHistory !== undefined) {
           const samples = Array.isArray(session.contextHistory) ? session.contextHistory.filter(isContextUsageSample) : [];
           if (samples.length) session.contextHistory = samples;

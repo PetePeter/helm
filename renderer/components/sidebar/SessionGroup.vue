@@ -164,6 +164,7 @@ function onDrop(e: DragEvent): void {
           :activity-level="session.activityLevel"
           :cli-type="stateSession(session.id)?.cliType"
           :context-usage="stateSession(session.id)?.contextUsage"
+          :quota-usage="stateSession(session.id)?.quotaUsage"
           :context-history="stateSession(session.id)?.contextHistory"
           :title="`${session.name}: ${session.activityLevel}`"
         />

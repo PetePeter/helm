@@ -1,3 +1,5 @@
+import type { SessionQuotaUsageSnapshot } from '../session/quota-usage.js';
+
 /**
  * Pipeline state for an AI CLI session.
  * Updated by explicit UI controls and pipeline machinery.
@@ -68,6 +70,8 @@ export interface SessionInfo {
   cliTranscriptPath?: string;
   /** Last known context size, refreshed at turn boundaries and persisted for the session row. */
   contextUsage?: SessionContextUsageSnapshot;
+  /** Fresh 5h + weekly subscription quota; runtime-only and never persisted. */
+  quotaUsage?: SessionQuotaUsageSnapshot | null;
   /** Recent context readings, oldest first, capped (see context-usage-history.ts). */
   contextHistory?: ContextUsageSample[];
   /** Explicit plan item to show on the session row as the current working plan. */

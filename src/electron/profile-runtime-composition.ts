@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path';
 import { statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import type { ConfigLoader } from '../config/loader.js';
 import type { UserProfileRecord, UserProfileStore } from '../config/user-profile-store.js';
 import { HandoverDelivery } from '../session/handover-delivery.js';
@@ -11,6 +12,9 @@ import { AutoFreezer } from '../session/auto-freezer.js';
 import { KeepWarmer } from '../session/keep-warmer.js';
 import { MessNotifier } from '../session/mess-notifier.js';
 import { SessionContextUsageTracker } from '../session/session-context-usage-tracker.js';
+import { SessionQuotaUsageTracker } from '../session/session-quota-usage-tracker.js';
+import { isClaudeSubscriptionQuotaEnvironment, type SessionQuotaUsageSnapshot } from '../session/quota-usage.js';
+import { inferCliProvider } from '../session/hooks/hook-providers.js';
 import { resolveSessionContextSize, type ApiSessionContextSize } from '../session/context-size.js';
 import { dormantAfterMs } from '../session/prompt-staleness.js';
 import type { SessionRemovedEvent } from '../types/session.js';
@@ -66,6 +70,7 @@ export class ProfileRuntimeComposition {
   readonly handoverDeliveries = new Map<string, HandoverDelivery>();
   readonly chatServices = new Map<string, HelmChatService>();
   readonly contextUsageTrackers = new Map<string, SessionContextUsageTracker>();
+  readonly quotaUsageTrackers = new Map<string, SessionQuotaUsageTracker>();
   readonly autoFreezers = new Map<string, AutoFreezer>();
   readonly keepWarmers = new Map<string, KeepWarmer>();
   readonly messNotifiers = new Map<string, MessNotifier>();
@@ -294,6 +299,27 @@ export class ProfileRuntimeComposition {
       contextUsageTracker.start(hookReceiver);
       this.contextUsageTrackers.set(userProfileId, contextUsageTracker);
 
+      const quotaUsageTracker = new SessionQuotaUsageTracker({
+        sessionManager: runtime.sessionManager,
+        scopeFor: session => {
+          const cli = runtime.configLoader.getCliTypeEntry(session.cliType);
+          if (session.remote || session.apiTool || session.comfyUiTool || !cli || inferCliProvider(cli) !== 'claude') return null;
+          // The profile + provider + config directory form a
+          // conservative auth scope. Hash it before retaining it in memory.
+          const env = {
+            ...(process.env as Record<string, string | undefined>),
+            ...(resolveConfiguredSpawnEnv(runtime.configLoader, session.cliType) ?? {}),
+          };
+          if (!isClaudeSubscriptionQuotaEnvironment(env)) return null;
+          const configDir = env.CLAUDE_CONFIG_DIR ?? '';
+          return createHash('sha256')
+            .update(`${userProfileId}\0claude\0${configDir}`)
+            .digest('hex');
+        },
+      });
+      quotaUsageTracker.start();
+      this.quotaUsageTrackers.set(userProfileId, quotaUsageTracker);
+
       const delivery = this.deliveryServices.get(userProfileId)!;
       this.registerStartupPromptWatcher(runtime, stateDetector, hookReceiver, notificationManager, delivery);
       this.messNotifiers.set(userProfileId, new MessNotifier(
@@ -467,16 +493,35 @@ export class ProfileRuntimeComposition {
   includeStatuslineUsage(
     sessionId: string,
     cliSessionId: string,
-    usage: { contextTokens: number; contextWindow?: number } | null,
+    usage: { contextTokens: number; contextWindow?: number } | null | undefined,
+    quotaUsage: SessionQuotaUsageSnapshot | null = null,
   ): boolean {
     const owner = this.registry.findSessionOwner(sessionId);
     if (!owner) return false;
     const session = owner.sessionManager.getSession(sessionId);
-    if (!session || session.remote || owner.configLoader.getCliTypeEntry(session.cliType)?.provider !== 'claude') return false;
+    const cli = session ? owner.configLoader.getCliTypeEntry(session.cliType) : null;
+    const quotaTracker = this.quotaUsageTrackers.get(owner.userProfileId);
+    if (!session) return false;
+    if (session.remote || !cli || inferCliProvider(cli) !== 'claude') {
+      quotaTracker?.clearSession(sessionId);
+      return false;
+    }
     const tracker = this.contextUsageTrackers.get(owner.userProfileId);
-    return usage
-      ? tracker?.reportStatuslineUsage(sessionId, cliSessionId, usage.contextTokens, usage.contextWindow) ?? false
-      : tracker?.clearStatuslineUsage(sessionId, cliSessionId) ?? false;
+    const contextAccepted = usage === undefined
+      ? tracker?.validateStatuslineSession(sessionId, cliSessionId) ?? false
+      : usage
+        ? tracker?.reportStatuslineUsage(sessionId, cliSessionId, usage.contextTokens, usage.contextWindow) ?? false
+        : tracker?.clearStatuslineUsage(sessionId, cliSessionId) ?? false;
+    if (usage !== undefined && !contextAccepted) return false;
+
+    const environment = {
+      ...(process.env as Record<string, string | undefined>),
+      ...(resolveConfiguredSpawnEnv(owner.configLoader, session.cliType) ?? {}),
+    };
+    const quotaAccepted = isClaudeSubscriptionQuotaEnvironment(environment)
+      ? quotaTracker?.report(sessionId, quotaUsage) ?? false
+      : quotaTracker?.clearSession(sessionId) ?? false;
+    return contextAccepted || quotaAccepted;
   }
 
   refreshContextUsage(sessionId: string): void {
@@ -492,6 +537,7 @@ export class ProfileRuntimeComposition {
     for (const tracker of this.hookTrackers.values()) tracker.dispose();
     for (const driver of this.loopDrivers.values()) driver.dispose();
     for (const tracker of this.contextUsageTrackers.values()) tracker.stop();
+    for (const tracker of this.quotaUsageTrackers.values()) tracker.stop();
     for (const freezer of this.autoFreezers.values()) freezer.dispose();
     for (const warmer of this.keepWarmers.values()) warmer.dispose();
     for (const notifier of this.messNotifiers.values()) notifier.dispose();
@@ -516,6 +562,7 @@ export class ProfileRuntimeComposition {
     this.hookTrackers.get(userProfileId)?.dispose();
     this.loopDrivers.get(userProfileId)?.dispose();
     this.contextUsageTrackers.get(userProfileId)?.stop();
+    this.quotaUsageTrackers.get(userProfileId)?.stop();
     this.autoFreezers.get(userProfileId)?.dispose();
     this.keepWarmers.get(userProfileId)?.dispose();
     this.messNotifiers.get(userProfileId)?.dispose();
@@ -525,6 +572,7 @@ export class ProfileRuntimeComposition {
     this.hookTrackers.delete(userProfileId);
     this.loopDrivers.delete(userProfileId);
     this.contextUsageTrackers.delete(userProfileId);
+    this.quotaUsageTrackers.delete(userProfileId);
     this.autoFreezers.delete(userProfileId);
     this.keepWarmers.delete(userProfileId);
     this.messNotifiers.delete(userProfileId);

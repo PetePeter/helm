@@ -26,6 +26,7 @@ import type { LoopDriver } from '../session/hooks/loop-driver.js';
 import type { ProfileMcpServiceSet } from './profile-mcp-service-factory.js';
 import type { McpToolDispatcherDeps } from './tools/dispatcher.js';
 import { parseClaudeStatuslineUsage, type ClaudeStatuslineUsage } from '../session/claude-statusline-usage.js';
+import { parseClaudeStatuslineQuota, type SessionQuotaUsageSnapshot } from '../session/quota-usage.js';
 
 type JsonRpcId = string | number | null;
 
@@ -65,7 +66,8 @@ export interface LocalhostMcpServerOptions {
   onClaudeStatuslineUsage?: (
     sessionId: string,
     cliSessionId: string,
-    usage: ClaudeStatuslineUsage | null,
+    usage: ClaudeStatuslineUsage | null | undefined,
+    quotaUsage: SessionQuotaUsageSnapshot | null,
   ) => boolean | void;
   /** Caller-specific runtime services shared by HTTP and API/peer dispatch. */
   resolveCallerServices?: (authContext: AuthContext) => ProfileMcpServiceSet;
@@ -372,7 +374,10 @@ export class LocalhostMcpServer {
     try {
       const cliSessionId = body.session_id.trim();
       const usage = parseClaudeStatuslineUsage(body);
-      if (usage !== undefined) this.onClaudeStatuslineUsage?.(auth.sessionId, cliSessionId, usage);
+      const quotaUsage = parseClaudeStatuslineQuota(body);
+      if (usage !== undefined || quotaUsage !== undefined) {
+        this.onClaudeStatuslineUsage?.(auth.sessionId, cliSessionId, usage, quotaUsage ?? null);
+      }
     } catch (error) {
       logger.warn(`[MCP] Context usage report failed: ${error instanceof Error ? error.message : String(error)}`);
       this.writeJson(res, 500, { error: 'Context usage report failed' });

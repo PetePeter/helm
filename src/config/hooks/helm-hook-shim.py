@@ -137,6 +137,16 @@ def post_statusline_usage(payload):
     body = json.dumps({
         "session_id": payload.get("session_id"),
         "context_window": context,
+        "rate_limits": {
+            key: {
+                field: payload["rate_limits"][key][field]
+                for field in ("used_percentage", "resets_at")
+                if field in payload["rate_limits"][key]
+            }
+            for key in ("five_hour", "seven_day")
+            if isinstance(payload.get("rate_limits"), dict)
+            and isinstance(payload["rate_limits"].get(key), dict)
+        },
     }).encode("utf-8")
     request = urllib.request.Request(
         url,

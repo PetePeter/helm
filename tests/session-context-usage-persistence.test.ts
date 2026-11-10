@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as YAML from 'yaml';
@@ -40,6 +40,29 @@ describe('session context usage persistence', () => {
     }] }));
 
     expect(loadSessions(file)[0]?.contextUsage).toBeUndefined();
+  });
+
+  it('never persists or restores subscription quota snapshots', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'helm-session-quota-usage-'));
+    directories.push(directory);
+    const file = join(directory, 'sessions.yaml');
+    const quotaUsage = {
+      fiveHour: { usedPercent: 72, resetsAtEpochMs: 1_800_000_000_000 },
+      weekly: { usedPercent: 41, resetsAtEpochMs: 1_800_000_000_000 },
+      measuredAtEpochMs: 1_700_000_000_000,
+    };
+
+    saveSessions([{
+      id: 's1', name: 'worker', cliType: 'claude-code', processId: 1, quotaUsage,
+    }], file);
+
+    const written = YAML.parse(readFileSync(file, 'utf8')) as { sessions: Array<Record<string, unknown>> };
+    expect(written.sessions[0]).not.toHaveProperty('quotaUsage');
+
+    writeFileSync(file, YAML.stringify({ sessions: [{
+      id: 's1', name: 'worker', cliType: 'claude-code', processId: 1, quotaUsage,
+    }] }));
+    expect(loadSessions(file)[0]?.quotaUsage).toBeUndefined();
   });
 
   it('round-trips the token history and drops malformed samples', () => {

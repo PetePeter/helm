@@ -259,6 +259,19 @@ describe('SessionContextUsageTracker', () => {
     expect(manager.getSession('claude')?.contextUsage).toBeUndefined();
   });
 
+  it('correlates quota-only statusline reports without changing context usage', () => {
+    const manager = fakeSessionManager([makeSession('claude')]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: false, reason: 'no-usage-yet' }),
+    });
+
+    expect(tracker.validateStatuslineSession('claude', 'claude-thread')).toBe(true);
+    expect(manager.getSession('claude')?.cliThreadId).toBe('claude-thread');
+    expect(manager.getSession('claude')?.contextUsage).toBeUndefined();
+    expect(tracker.validateStatuslineSession('claude', 'other-thread')).toBe(false);
+  });
+
   it('rejects statusline usage from a different Claude thread', () => {
     const manager = fakeSessionManager([makeSession('claude', {
       cliThreadId: 'expected-thread',
