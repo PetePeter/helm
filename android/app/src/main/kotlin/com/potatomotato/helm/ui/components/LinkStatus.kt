@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
@@ -202,18 +204,21 @@ fun HelmAppBar(
     overflowGlyphRes: Int = R.string.control_overflow_glyph,
     /** Settings owned by the root surface; other headers keep their existing actions. */
     settings: SettingsMenuActions? = null,
+    /** Fits the root actions in the expanded tablet's left pane. */
+    compact: Boolean = false,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(if (compact) Modifier.height(CompactAppBarHeight) else Modifier)
             .background(HelmColors.Surface)
             // The back target is 48dp wide with its glyph centred, so the gutter on
             // top of it pushed the arrow well in from the edge; it hugs the edge instead.
             .padding(
                 start = if (onBack != null) HelmSpacing.Xs else HelmSpacing.Gutter,
                 end = HelmSpacing.Gutter,
-                top = HelmSpacing.Md,
-                bottom = HelmSpacing.Md,
+                top = if (compact) 0.dp else HelmSpacing.Md,
+                bottom = if (compact) 0.dp else HelmSpacing.Md,
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
@@ -249,9 +254,9 @@ fun HelmAppBar(
         ) {
             Column(modifier = Modifier.weight(1f, fill = false)) {
                 Text(
-                    text = title,
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.titleLarge,
+                    text = if (compact) title.take(1) else title,
+                    color = if (compact) HelmColors.Accent else HelmColors.Txt,
+                    style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                     maxLines = 1,
                     // A long session name truncates; wrapping would push the link
                     // badge off the bar, which is the one thing that must always
@@ -305,6 +310,7 @@ fun HelmAppBar(
                 linkState = linkState,
                 linkRank = linkRank,
                 onOpenDesktops = onLinkClick,
+                compact = compact,
             )
         }
         settings?.let { SettingsMenu(actions = it) }
@@ -348,6 +354,7 @@ private fun TransportMenu(
     linkState: LinkState,
     linkRank: Int?,
     onOpenDesktops: () -> Unit,
+    compact: Boolean,
 ) {
     val preference by TransportPreferences.preference.collectAsState()
     val choices = TransportPreference.entries
@@ -366,15 +373,38 @@ private fun TransportMenu(
             if (index < choices.size) TransportPreferences.set(choices[index]) else onOpenDesktops()
         },
     ) { _, open ->
-        LinkBadge(
-            state = linkState,
-            rank = linkRank,
-            modifier = Modifier
-                .clickable(onClick = open)
-                // The badge is short; without padding its touch target is
-                // thinner than a finger.
-                .padding(vertical = HelmSpacing.Sm, horizontal = HelmSpacing.Xs),
-        )
+        if (compact) {
+            CompactLinkAnchor(linkState, linkRank, open)
+        } else {
+            LinkBadge(
+                state = linkState,
+                rank = linkRank,
+                modifier = Modifier
+                    .clickable(onClick = open)
+                    // The badge is short; without padding its touch target is
+                    // thinner than a finger.
+                    .padding(vertical = HelmSpacing.Sm, horizontal = HelmSpacing.Xs),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactLinkAnchor(state: LinkState, rank: Int?, onClick: () -> Unit) {
+    val preference by TransportPreferences.preference.collectAsState()
+    val description = buildString {
+        append(stringResource(labelUnder(state, preference)))
+        transportLabelRes(state, rank)?.let { append(" ${stringResource(it)}") }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(HelmSize.TouchTarget)
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        StateDot(state = dotUnder(state, preference), size = HelmSize.DotSmall)
     }
 }
 
@@ -416,6 +446,8 @@ private fun ContextMenu(
         HelmDropdownAnchor(label = label, expanded = expanded, onClick = open)
     }
 }
+
+private val CompactAppBarHeight = 40.dp
 
 /**
  * The one unit of elevation this design system has.

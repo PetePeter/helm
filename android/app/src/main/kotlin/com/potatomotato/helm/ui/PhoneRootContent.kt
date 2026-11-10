@@ -169,6 +169,7 @@ internal fun HomeAppBar(
     onLinkClick: () -> Unit,
     onToggleNotifications: () -> Unit,
     onExportLogs: () -> Unit,
+    compact: Boolean = false,
 ) {
     HelmAppBar(
         title = stringResource(R.string.app_name),
@@ -185,5 +186,6 @@ internal fun HomeAppBar(
             onExportLogs = onExportLogs,
             onOpenDesktops = onLinkClick,
         ),
+        compact = compact,
     )
 }

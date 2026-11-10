@@ -55,17 +55,21 @@ internal fun TabletExpandedShell(
     listWidth: Dp,
     heightStore: TabletPaneHeightStore,
     modifier: Modifier = Modifier,
+    sessionsHeader: @Composable () -> Unit,
     sessions: @Composable (Modifier) -> Unit,
     todos: @Composable (Modifier) -> Unit,
     detail: @Composable (Modifier) -> Unit,
 ) {
     Row(modifier.fillMaxSize()) {
-        TabletSplitter(
-            store = heightStore,
-            modifier = Modifier.width(listWidth).fillMaxHeight(),
-            sessions = sessions,
-            todos = todos,
-        )
+        Column(Modifier.width(listWidth).fillMaxHeight()) {
+            sessionsHeader()
+            TabletSplitter(
+                store = heightStore,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                sessions = sessions,
+                todos = todos,
+            )
+        }
         Box(Modifier.width(1.dp).fillMaxHeight().background(HelmColors.Line))
         Box(Modifier.weight(1f).fillMaxHeight()) { detail(Modifier.fillMaxSize()) }
     }

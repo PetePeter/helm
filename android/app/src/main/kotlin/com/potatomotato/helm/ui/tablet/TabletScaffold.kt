@@ -71,20 +71,7 @@ internal fun TabletScaffold(
     ) {
         TabletShellFrame(
             topBar = {
-                HomeAppBar(
-                    linkState = state.linkState,
-                    homeTab = state.homeState.homeTab,
-                    notificationsEnabled = state.notificationsEnabled,
-                    onSelectHomeTab = { tab ->
-                        if (tab != state.homeState.homeTab) {
-                            state.homeState.clearSessionSelection()
-                            actions.root.onSelectHomeTab(tab)
-                        }
-                    },
-                    onLinkClick = actions.root.onLinkClick,
-                    onToggleNotifications = actions.root.onToggleNotifications,
-                    onExportLogs = actions.root.onExportLogs,
-                )
+                if (layout != TabletLayout.Expanded) TabletHomeAppBar(state, actions)
             },
             content = {
                 when (layout) {
@@ -176,6 +163,7 @@ private fun ExpandedSession(
         TabletExpandedShell(
             listWidth = listWidth,
             heightStore = heightStore,
+            sessionsHeader = { TabletHomeAppBar(state, actions, compact = true) },
             sessions = { modifier ->
                 SessionListScreen(
                     sessions = state.listedSessions,
@@ -227,6 +215,29 @@ private fun ExpandedSession(
             }
         )
     }
+}
+
+@Composable
+private fun TabletHomeAppBar(
+    state: PhoneScaffoldState,
+    actions: PhoneScaffoldActions,
+    compact: Boolean = false,
+) {
+    HomeAppBar(
+        linkState = state.linkState,
+        homeTab = state.homeState.homeTab,
+        notificationsEnabled = state.notificationsEnabled,
+        onSelectHomeTab = { tab ->
+            if (tab != state.homeState.homeTab) {
+                state.homeState.clearSessionSelection()
+                actions.root.onSelectHomeTab(tab)
+            }
+        },
+        onLinkClick = actions.root.onLinkClick,
+        onToggleNotifications = actions.root.onToggleNotifications,
+        onExportLogs = actions.root.onExportLogs,
+        compact = compact,
+    )
 }
 
 @Composable

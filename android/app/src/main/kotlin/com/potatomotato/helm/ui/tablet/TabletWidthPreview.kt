@@ -99,12 +99,13 @@ private fun ExpandedWidthPreview() {
     HelmTheme {
         TabletShellFrame(
             modifier = Modifier.fillMaxSize(),
-            topBar = { PreviewHomeAppBar() },
+            topBar = {},
             content = {
                 TabletExpandedShell(
                     listWidth = 300.dp,
                     heightStore = PreviewPaneHeightStore,
                     modifier = Modifier.fillMaxSize(),
+                    sessionsHeader = { PreviewHomeAppBar(compact = true) },
                     sessions = { modifier ->
                         SessionRowsContent(
                             sessions = previewSessions,
@@ -162,7 +163,7 @@ private fun ExpandedWidthPreview() {
 }
 
 @Composable
-private fun PreviewHomeAppBar() {
+private fun PreviewHomeAppBar(compact: Boolean = false) {
     HomeAppBar(
         linkState = LinkState.Linked,
         homeTab = HomeTab.Sessions,
@@ -171,6 +172,7 @@ private fun PreviewHomeAppBar() {
         onLinkClick = {},
         onToggleNotifications = {},
         onExportLogs = {},
+        compact = compact,
     )
 }
 
