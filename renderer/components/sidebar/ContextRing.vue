@@ -150,7 +150,7 @@ function showCard(event: MouseEvent): void {
 .quota-ring__arc {
   fill: none;
   stroke-width: var(--ring-thickness);
-  stroke-linecap: round;
+  stroke-linecap: butt;
 }
 .quota-ring__track { stroke: var(--border); }
 .quota-ring__arc, .quota-row { --quota-color: var(--accent); stroke: var(--quota-color); }

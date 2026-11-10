@@ -8,7 +8,11 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -37,6 +42,8 @@ import com.potatomotato.helm.data.ContextGraph
 import com.potatomotato.helm.data.ContextHistory
 import com.potatomotato.helm.data.ContextRing
 import com.potatomotato.helm.data.SessionQuotaUsage
+import com.potatomotato.helm.data.SessionQuotaWindow
+import com.potatomotato.helm.data.formatQuotaResetIn
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
@@ -57,7 +64,7 @@ fun ContextRing(
     modifier: Modifier = Modifier,
     size: Dp = CONTEXT_RING_SIZE,
 ) {
-    val indicatorSize = if (quotaUsage != null) size + QUOTA_RING_GUTTER else size
+    val indicatorSize = if (quotaUsage != null) size + size * QUOTA_RING_GUTTER else size
     Box(modifier = modifier.size(indicatorSize), contentAlignment = Alignment.Center) {
         if (ring == null && quotaUsage == null) {
             StateDot(state = state)
@@ -75,8 +82,8 @@ fun ContextRing(
             if (quotaUsage != null) {
                 val quotaArcSize = Size(this.size.width - stroke, this.size.height - stroke)
                 val quotaTopLeft = Offset(stroke / 2f, stroke / 2f)
-                drawArc(HelmColors.Line, 180f, 180f, useCenter = false, topLeft = quotaTopLeft, size = quotaArcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                drawArc(HelmColors.Line, 0f, 180f, useCenter = false, topLeft = quotaTopLeft, size = quotaArcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(HelmColors.Line, 180f, 180f, useCenter = false, topLeft = quotaTopLeft, size = quotaArcSize, style = Stroke(stroke, cap = StrokeCap.Butt))
+                drawArc(HelmColors.Line, 0f, 180f, useCenter = false, topLeft = quotaTopLeft, size = quotaArcSize, style = Stroke(stroke, cap = StrokeCap.Butt))
                 drawArc(
                     color = quotaLevelColor(quotaUsage.fiveHour.usedPercent),
                     startAngle = 180f,
@@ -84,7 +91,7 @@ fun ContextRing(
                     useCenter = false,
                     topLeft = quotaTopLeft,
                     size = quotaArcSize,
-                    style = Stroke(stroke, cap = StrokeCap.Round),
+                    style = Stroke(stroke, cap = StrokeCap.Butt),
                 )
                 drawArc(
                     color = quotaLevelColor(quotaUsage.weekly.usedPercent),
@@ -93,7 +100,7 @@ fun ContextRing(
                     useCenter = false,
                     topLeft = quotaTopLeft,
                     size = quotaArcSize,
-                    style = Stroke(stroke, cap = StrokeCap.Round),
+                    style = Stroke(stroke, cap = StrokeCap.Butt),
                 )
             }
             if (ring != null) {
@@ -140,23 +147,49 @@ fun ContextRingButton(
             ring = history?.let { ContextGraph.ring(it) },
             quotaUsage = quotaUsage,
             size = size,
-            modifier = if (history != null) Modifier.clickable { open = true } else Modifier,
+            modifier = if (history != null || quotaUsage != null) Modifier.clickable { open = true } else Modifier,
         )
-        if (history != null) {
+        if (history != null || quotaUsage != null) {
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 Column(modifier = Modifier.width(POPOVER_WIDTH).padding(HelmSpacing.Md)) {
-                    ContextGraph.summary(history)?.let {
-                        Text(text = it, color = HelmColors.Txt, style = MaterialTheme.typography.bodyMedium)
+                    if (history != null) {
+                        ContextGraph.summary(history)?.let {
+                            Text(text = it, color = HelmColors.Txt, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        ContextSparkline(
+                            samples = history.samples,
+                            window = history.window,
+                            limits = history.limits,
+                            detailed = true,
+                            modifier = Modifier.fillMaxWidth().height(POPOVER_GRAPH_HEIGHT).padding(top = HelmSpacing.Sm),
+                        )
                     }
-                    ContextSparkline(
-                        samples = history.samples,
-                        window = history.window,
-                        limits = history.limits,
-                        detailed = true,
-                        modifier = Modifier.fillMaxWidth().height(POPOVER_GRAPH_HEIGHT).padding(top = HelmSpacing.Sm),
-                    )
+                    if (quotaUsage != null) {
+                        QuotaRow("5h", quotaUsage.fiveHour)
+                        QuotaRow("Week", quotaUsage.weekly)
+                    }
                 }
             }
+        }
+    }
+}
+
+/** What is LEFT of one quota window: the bar drains right-to-left like the arcs. */
+@Composable
+private fun QuotaRow(label: String, window: SessionQuotaWindow) {
+    val left = (100f - window.usedPercent).coerceIn(0f, 100f)
+    Column(modifier = Modifier.fillMaxWidth().padding(top = HelmSpacing.Sm)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = label, color = HelmColors.Dim, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(QUOTA_LABEL_WIDTH))
+            Box(
+                modifier = Modifier.weight(1f).height(QUOTA_BAR_HEIGHT).clip(RoundedCornerShape(50)).background(HelmColors.Line),
+            ) {
+                Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(left / 100f).background(quotaLevelColor(window.usedPercent)))
+            }
+            Text(text = "${left.toInt()}%", color = HelmColors.Txt, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = HelmSpacing.Sm))
+        }
+        formatQuotaResetIn(window.resetsAtEpochMs)?.let {
+            Text(text = it, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = QUOTA_LABEL_WIDTH))
         }
     }
 }
@@ -164,7 +197,7 @@ fun ContextRingButton(
 private fun quotaLevelColor(usedPercent: Float) = when {
     usedPercent >= QUOTA_RED_AT_PERCENT -> HelmColors.Danger
     usedPercent >= QUOTA_AMBER_AT_PERCENT -> HelmColors.CacheWarn
-    else -> HelmColors.State.Active
+    else -> HelmColors.Accent
 }
 
 /** Two quick pulses then a rest, like a pulse — fast enough to catch the eye in a list. */
@@ -194,7 +227,10 @@ internal val CONTEXT_RING_SIZE = 22.dp
 private val HEADER_RING_SIZE = 30.dp
 private val POPOVER_WIDTH = 260.dp
 private val POPOVER_GRAPH_HEIGHT = 80.dp
-private val QUOTA_RING_GUTTER = 10.dp
+/** Scales with the ring so the stroke-to-gap proportions match at every size (10dp at the 22dp row ring). */
+private const val QUOTA_RING_GUTTER = 10f / 22f
+private val QUOTA_LABEL_WIDTH = 40.dp
+private val QUOTA_BAR_HEIGHT = 6.dp
 private const val QUOTA_AMBER_AT_PERCENT = 75f
 private const val QUOTA_RED_AT_PERCENT = 90f
 private const val RING_THICKNESS = 0.18f

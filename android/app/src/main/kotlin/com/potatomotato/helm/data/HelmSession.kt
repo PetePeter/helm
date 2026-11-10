@@ -351,3 +351,17 @@ object SessionWire {
         return SessionQuotaWindow(usedPercent, resetsAtEpochMs)
     }
 }
+
+/** "resets in 3h 12m" countdown, matching the desktop card; null once the reset has passed. */
+fun formatQuotaResetIn(resetsAtEpochMs: Long, now: Long = System.currentTimeMillis()): String? {
+    if (resetsAtEpochMs <= now) return null
+    val minutes = (resetsAtEpochMs - now) / 60_000L
+    if (minutes < 1) return "resets in <1m"
+    val days = minutes / 1440
+    val hours = (minutes % 1440) / 60
+    return when {
+        days > 0 -> "resets in ${days}d ${hours}h"
+        hours > 0 -> "resets in ${hours}h ${minutes % 60}m"
+        else -> "resets in ${minutes}m"
+    }
+}
