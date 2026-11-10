@@ -11,7 +11,7 @@ import { contextRing, resolveContextLimits } from '../../../src/session/context-
 import { isFreshQuotaUsageSnapshot, quotaUsageLevel, SESSION_QUOTA_USAGE_MAX_AGE_MS } from '../../../src/session/quota-usage.js';
 import { getActivityColor } from '../../state-colors.js';
 import { resolveCliTypeRecord } from '../../utils.js';
-import { sessionContextUsageTitle } from '../../session-context-usage.js';
+import { formatQuotaResetIn, sessionContextUsageTitle } from '../../session-context-usage.js';
 import ContextSparkline from './ContextSparkline.vue';
 
 const props = withDefaults(defineProps<{
@@ -44,8 +44,17 @@ const style = computed(() => ({
 // Fixed-position so the sidebar's scroll container cannot clip the card.
 const cardAt = ref<{ top: number; left: number } | null>(null);
 const hasGraph = computed(() => (props.contextHistory?.length ?? 0) >= 1);
+// Bars show what is LEFT, so they drain right-to-left like the arcs.
+const quotaRows = computed(() => (quota.value
+  ? ([['5h', quota.value.fiveHour], ['Week', quota.value.weekly]] as const).map(([label, window]) => ({
+    label,
+    leftPercent: Math.round(100 - window.usedPercent),
+    level: quotaUsageLevel(window.usedPercent),
+    resetIn: formatQuotaResetIn(window.resetsAtEpochMs),
+  }))
+  : []));
 function showCard(event: MouseEvent): void {
-  if (!hasGraph.value) return;
+  if (!hasGraph.value && !quotaRows.value.length) return;
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
   cardAt.value = { top: rect.bottom + 6, left: Math.max(rect.left - 8, 4) };
 }
@@ -90,6 +99,7 @@ function showCard(event: MouseEvent): void {
       <div v-if="cardAt" class="context-card" :style="{ top: `${cardAt.top}px`, left: `${cardAt.left}px` }">
         <div class="context-card__head">{{ sessionContextUsageTitle(contextUsage) }}</div>
         <ContextSparkline
+          v-if="hasGraph"
           :samples="contextHistory"
           :window="contextUsage?.window"
           :limits="limits"
@@ -97,6 +107,12 @@ function showCard(event: MouseEvent): void {
           :height="90"
           detailed
         />
+        <div v-for="row in quotaRows" :key="row.label" class="quota-row" :class="`level-${row.level}`">
+          <span class="quota-row__label">{{ row.label }}</span>
+          <span class="quota-row__bar"><span class="quota-row__fill" :style="{ width: `${row.leftPercent}%` }" /></span>
+          <span class="quota-row__pct">{{ row.leftPercent }}%</span>
+          <span v-if="row.resetIn" class="quota-row__reset">{{ row.resetIn }}</span>
+        </div>
       </div>
     </Teleport>
   </span>
@@ -137,9 +153,9 @@ function showCard(event: MouseEvent): void {
   stroke-linecap: round;
 }
 .quota-ring__track { stroke: var(--border); }
-.quota-ring__arc { stroke: var(--accent); }
-.quota-ring__arc.level-warn { stroke: var(--status-blocked); }
-.quota-ring__arc.level-hot { stroke: var(--danger); }
+.quota-ring__arc, .quota-row { --quota-color: var(--accent); stroke: var(--quota-color); }
+.quota-ring__arc.level-warn, .quota-row.level-warn { --quota-color: var(--status-blocked); }
+.quota-ring__arc.level-hot, .quota-row.level-hot { --quota-color: var(--danger); }
 .context-ring__arc {
   position: absolute;
   inset: 0;
@@ -180,4 +196,17 @@ function showCard(event: MouseEvent): void {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
 }
+.quota-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  gap: 2px var(--spacing-xs);
+  align-items: center;
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+}
+.quota-row__label, .quota-row__reset { color: var(--text-secondary); }
+.quota-row__pct { text-align: right; font-variant-numeric: tabular-nums; }
+.quota-row__bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.quota-row__fill { display: block; height: 100%; border-radius: 3px; background: var(--quota-color); }
+.quota-row__reset { grid-column: 2 / 4; }
 </style>
