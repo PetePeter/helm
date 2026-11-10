@@ -201,6 +201,13 @@ describe('operator guide', () => {
     OPERATOR_RULES.forEach((rule, i) => expect(guide).toContain(`rule_${i + 1} = ${JSON.stringify(rule)}`));
   });
 
+  it('tells operators to verify a spawned CLI before sending more work', () => {
+    const sessionRule = OPERATOR_RULES.find((rule) => rule.startsWith('SESSIONS:'))!;
+    expect(sessionRule).toContain('session_read_terminal');
+    expect(sessionRule).toContain('initialPrompt');
+    expect(sessionRule).toContain('Report if it is still blocked');
+  });
+
   it('has no [user_rules] section when the user rules are empty or blank', () => {
     expect(guide).not.toContain('[user_rules]');
     expect(buildOperatorGuide('  \n \n')).toBe(guide);

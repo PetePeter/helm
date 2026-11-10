@@ -47,4 +47,11 @@ describe('buildStartupGuide', () => {
     expect(names).toContain('skill_clear_reviews');
   });
 
+  it('summarizes session_create startup verification', () => {
+    const create = getAvailableTools().find((tool) => tool.name === 'session_create');
+    expect(create?.description).toContain('session_read_terminal');
+    expect(create?.description).toContain('trust or permission prompt');
+    expect(create?.description).toContain('Report if it is still blocked');
+  });
+
 });

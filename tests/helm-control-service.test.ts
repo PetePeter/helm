@@ -411,7 +411,7 @@ describe('HelmControlService directory validation', () => {
     const { service, planManager } = makeService();
     (planManager as any).createWithType = vi.fn(() => ({ id: 'p1', dirPath: '/work', title: 'Title', status: 'ready' }));
     expect(() => service.createPlan('/work', 'Title', 'Desc')).not.toThrow();
-    expect((planManager as any).createWithType).toHaveBeenCalledWith('/work', 'Title', 'Desc', undefined, undefined);
+    expect((planManager as any).createWithType).toHaveBeenCalledWith('/work', 'Title', 'Desc', undefined, undefined, undefined);
   });
 
   it('createPlanSequence rejects unconfigured dirPath', () => {
@@ -428,6 +428,17 @@ describe('HelmControlService directory validation', () => {
 });
 
 describe('HelmControlService.spawnCli', () => {
+  it('returns a hint to verify CLI startup', () => {
+    const { service, configLoader } = makeService();
+    configLoader.getCliTypeEntry.mockReturnValue({ name: 'Claude Code', spawnCommand: 'claude' } as any);
+
+    const created = service.spawnCli('claude-code', '/work', 'Claude');
+
+    expect(created.id).toBeTruthy();
+    expect(created.verifyHint).toContain('session_read_terminal');
+    expect(created.verifyHint).toContain('trust/permission');
+  });
+
   it('injects Helm-managed environment variables into spawned CLI sessions', () => {
     const { service, ptyManager, configLoader } = makeService();
     (configLoader.getCliTypeEntry as ReturnType<typeof vi.fn>).mockReturnValue({

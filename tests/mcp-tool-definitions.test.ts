@@ -28,6 +28,17 @@ describe('MCP tool definitions (P-0343)', () => {
     expect(required).not.toContain('expectedUpdatedAt');
   });
 
+  it('documents checking a new session after spawn', () => {
+    const def = MCP_TOOLS.find((tool) => tool.name === 'session_create')!;
+    expect(def.description).toContain('about 5 seconds after spawning');
+    expect(def.description).toContain('session_read_terminal');
+    expect(def.description).toContain('initialPrompt was supplied');
+    expect(def.description).toContain('report that instead of sending more work');
+    expect(def.description).toContain('Claude Code');
+    expect(def.description).toContain('Codex');
+    expect(def.description).toContain('Copilot CLI');
+  });
+
   it('plan_create exposes completionRecap as an optional boolean', () => {
     const def = MCP_TOOLS.find((t) => t.name === 'plan_create');
     const properties = def!.inputSchema.properties as Record<string, unknown>;

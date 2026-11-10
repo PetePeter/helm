@@ -1525,7 +1525,11 @@ export class HelmControlService extends EventEmitter {
     name: string | undefined,
     opts: { creatorSessionId?: string; runtimeGroupId?: string; initialPrompt?: string } = {},
   ) {
-    return this.sessionService.spawnCli(cliType, dirPath, name, opts);
+    const created = this.sessionService.spawnCli(cliType, dirPath, name, opts);
+    return {
+      ...created,
+      verifyHint: 'Use session_read_terminal after ~5s; resolve any trust/permission prompt and confirm the CLI is ready.',
+    };
   }
 
   // ---------------------------------------------------------------------------

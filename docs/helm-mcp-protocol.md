@@ -55,6 +55,8 @@ Use `session_read_terminal` to inspect the recent terminal tail for any known se
 
 The response includes session metadata, `ptyRunning`, `lastOutputAt` when output has been seen, and the selected output arrays.
 
+After `session_create`, wait about five seconds and read the new session with `session_read_terminal`, even when `initialPrompt` was supplied. Resolve a folder-trust or permission prompt with `session_send_input`, reread, and confirm the CLI is ready. If it remains blocked, report that instead of sending more work. Examples include Claude Code folder trust, Codex workspace access, and Copilot CLI directory trust.
+
 ### Envelope Format
 
 ```

@@ -24,6 +24,12 @@ When a Claude Code session receives a `[HELM_MSG]` message, it should:
 > current turn — do not resend; if it still sits unsubmitted once the target
 > idles (e.g. a Codex composer), send `session_send_input "{Enter}"`.
 
+## Verifying a New Session
+
+About five seconds after `session_create`, call `session_read_terminal`, even when `initialPrompt` was supplied. Resolve any folder-trust or permission prompt with `session_send_input`, then reread the terminal. Confirm the CLI is ready and the initial prompt arrived; report if startup is still blocked.
+
+Examples: Claude Code may ask you to trust the folder, Codex may request workspace access, and Copilot CLI may ask you to trust the directory.
+
 ## Detecting and Parsing the Envelope
 
 Your Claude Code session receives text in chunks via PTY. Watch for the `[HELM_MSG]` prefix:
