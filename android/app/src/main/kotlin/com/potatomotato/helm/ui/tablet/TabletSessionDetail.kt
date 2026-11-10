@@ -61,6 +61,7 @@ internal fun TabletSessionDetail(
         mission = session.mission,
         details = sessionHeaderDetails(session, nowMs),
         context = context,
+        quotaUsage = session.quotaUsage,
         activity = session.activity,
         linkState = linkState,
         tab = tab,

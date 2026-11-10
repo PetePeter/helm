@@ -47,7 +47,11 @@ internal fun TabletSessionHeader(
             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
             if (session != null) {
-                ContextRingButton(state = session.activity, history = contextHistories[session.id])
+                ContextRingButton(
+                    state = session.activity,
+                    history = contextHistories[session.id],
+                    quotaUsage = session.quotaUsage,
+                )
             }
             Column(
                 modifier = Modifier.weight(1f).clickable(enabled = collapsed, onClick = onTogglePicker),

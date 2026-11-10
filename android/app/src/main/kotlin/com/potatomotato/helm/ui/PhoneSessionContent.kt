@@ -117,6 +117,7 @@ internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffo
                 mission = targetSession.mission,
                 details = sessionHeaderDetails(targetSession, nowMs),
                 context = state.contextHistories[targetSession.id],
+                quotaUsage = targetSession.quotaUsage,
                 activity = targetSession.activity,
                 linkState = state.linkState,
                 tab = home.sessionTab,

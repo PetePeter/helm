@@ -53,6 +53,7 @@ private fun PhoneWidthPreview() {
             mission = previewSession.mission,
             details = "Working · Codex · git: feat/tablet",
             context = null,
+            quotaUsage = null,
             activity = previewSession.activity,
             linkState = LinkState.Linked,
             tab = SessionTab.Chat,

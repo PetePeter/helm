@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.potatomotato.helm.data.ContextHistory
+import com.potatomotato.helm.data.SessionQuotaUsage
 import com.potatomotato.helm.ui.components.ContextRingButton
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -26,6 +27,7 @@ internal fun SessionTabScaffold(
     mission: String?,
     details: String,
     context: ContextHistory?,
+    quotaUsage: SessionQuotaUsage?,
     activity: SessionState,
     linkState: LinkState,
     tab: SessionTab,
@@ -45,7 +47,7 @@ internal fun SessionTabScaffold(
                 linkState = linkState,
                 onBack = onBack,
                 showLinkBadge = false,
-                leading = { ContextRingButton(state = activity, history = context) },
+                leading = { ContextRingButton(state = activity, history = context, quotaUsage = quotaUsage) },
                 onOverflow = onOverflow,
             )
         } else header()
