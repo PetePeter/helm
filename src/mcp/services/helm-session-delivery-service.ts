@@ -21,6 +21,7 @@ import {
   type SessionMessageFlight,
 } from '../../session/message-flight.js';
 import { buildTranscriptResumePrompt, writeStrippedTranscript } from '../../session/transcript-strip.js';
+import { scheduleSessionReloadPrompt } from '../../session/session-reload-prompt.js';
 import {
   buildLargeTextTempFileNotice,
   shouldSendLargeTextAsTempFile,
@@ -692,8 +693,23 @@ export class HelmSessionDeliveryService {
     const clear = () => this.clearSession(session.id, {
       ...(options.senderSessionId ? { senderSessionId: options.senderSessionId } : {}),
       ...(options.senderSessionName ? { senderSessionName: options.senderSessionName } : {}),
-      context: buildTranscriptResumePrompt(transcriptFile, options.handover),
-    }).then(() => this.stampCompacted(session.id), withdrawCompactRequest)
+    }).then(() => {
+      this.stampCompacted(session.id);
+      scheduleSessionReloadPrompt({
+        sessionId: session.id,
+        cliSessionName: session.cliSessionName ?? '',
+        isResume: false,
+        cfg: this.configLoader.getCliTypeEntry(session.cliType),
+        ptyManager: this.ptyManager,
+        sessionManager: this.sessionManager,
+        configLoader: this.configLoader,
+        contextText: buildTranscriptResumePrompt(transcriptFile, options.handover),
+        ...(this.handover ? {
+          armContextText: (sessionId: string, text: string) => this.handover?.arm(sessionId, text, { floorMs: 0, escRetry: true }),
+        } : {}),
+        fallbackCompleteDelayMs: 0,
+      });
+    }, withdrawCompactRequest)
       .finally(() => this.compactsPending.delete(session.id));
     // Never clear mid-turn: a session quick-compacting itself finishes its turn first.
     if (this.handover) {

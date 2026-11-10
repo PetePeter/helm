@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { spawnConfiguredSession } from '../src/session/configured-session-spawn.js';
 import { normalizeProjectPath as norm } from '../src/session/project-identity.js';
+import { SessionManager } from '../src/session/manager.js';
 import { PtyManager, type PtyFactory, type PtyProcess } from '../src/session/pty-manager.js';
 import { ProjectStore } from '../src/session/project-store.js';
 
@@ -13,11 +14,12 @@ function spawnCwdContext(userProfileId = '1') {
 class FakePtyProcess implements PtyProcess {
   pid = 4321;
   writes: string[] = [];
+  killed = false;
   onData(_callback: (data: string) => void): void {}
   onExit(_callback: (exitCode: { exitCode: number; signal?: number }) => void): void {}
   write(data: string): void { this.writes.push(data); }
   resize(): void {}
-  kill(): void {}
+  kill(): void { this.killed = true; }
 }
 
 class InMemorySessionManager {
@@ -164,6 +166,83 @@ describe('spawnConfiguredSession', () => {
       sessionId: 'failed-start', cliType: 'codex', command: 'codex',
     })).toThrow('launch failed');
     expect(notifySessionSpawnFailed).toHaveBeenCalledWith('failed-start');
+  });
+
+  it('seeds SessionStart context before the successor process is created and rolls back a failed spawn', () => {
+    const order: string[] = [];
+    const mission = { text: 'Continue the parser', setBy: 'user' as const, setAt: 1 };
+    const addSession = vi.fn((session: any) => { order.push('registered'); expect(session.mission).toEqual(mission); });
+    const manager = {
+      addSession,
+      updateSession: vi.fn(),
+      hasSession: () => false,
+      getSession: () => undefined,
+      getSpawnCwdContext: () => spawnCwdContext(),
+    };
+    spawnConfiguredSession({
+      ptyManager: { spawn: vi.fn(() => { order.push('spawn'); return { pid: 99 }; }), write: vi.fn() } as any,
+      sessionManager: manager as any,
+      sessionId: 'seeded',
+      cliType: 'codex',
+      command: 'codex',
+      prepareSession: () => {
+        order.push('seeded');
+        return { sessionContext: { mission, currentPlanId: 'plan-1' } };
+      },
+    });
+    expect(order).toEqual(['seeded', 'spawn', 'registered']);
+    expect(addSession).toHaveBeenCalledWith(expect.objectContaining({ currentPlanId: 'plan-1' }));
+
+    order.length = 0;
+    const rollback = vi.fn(() => { order.push('rollback'); });
+    const failedManager = {
+      ...manager,
+      notifySessionStarting: () => order.push('starting'),
+      notifySessionSpawnFailed: () => order.push('failed'),
+    };
+    expect(() => spawnConfiguredSession({
+      ptyManager: { spawn: vi.fn(() => { order.push('spawn'); throw new Error('launch failed'); }), write: vi.fn() } as any,
+      sessionManager: failedManager as any,
+      sessionId: 'seeded-fail',
+      cliType: 'codex',
+      command: 'codex',
+      prepareSession: () => {
+        order.push('seeded');
+        return { rollback };
+      },
+    })).toThrow('launch failed');
+    expect(order).toEqual(['seeded', 'starting', 'spawn', 'failed', 'rollback']);
+    expect(rollback).toHaveBeenCalledTimes(1);
+  });
+
+  it('kills the launched PTY, removes a partial real session row, then rolls back preparation when registration fails', () => {
+    const order: string[] = [];
+    const projectStore = spawnCwdContext().projectStore;
+    const sessionManager = new SessionManager({ userProfileId: '1', sessionsFile: '', projectStore });
+    const pty = new FakePtyProcess();
+    pty.kill = () => { pty.killed = true; order.push('killed'); };
+    const ptyManager = new PtyManager({
+      spawn: () => { order.push('spawned'); return pty; },
+    });
+    sessionManager.on('session:added', () => {
+      order.push('registered');
+      throw new Error('registration failed');
+    });
+    sessionManager.on('session:removed', () => order.push('removed'));
+
+    expect(() => spawnConfiguredSession({
+      ptyManager,
+      sessionManager,
+      sessionId: 'partial-registration',
+      cliType: 'codex',
+      command: 'codex',
+      cwd: process.cwd(),
+      prepareSession: () => ({ rollback: () => order.push('rollback') }),
+    })).toThrow('registration failed');
+
+    expect(order).toEqual(['spawned', 'registered', 'killed', 'removed', 'rollback']);
+    expect(pty.killed).toBe(true);
+    expect(sessionManager.hasSession('partial-registration')).toBe(false);
   });
 
   it('registers role and lock in the same add, so the operator never appears as a plain row', () => {

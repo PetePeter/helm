@@ -2,7 +2,7 @@
 
 Three actions share one engine: Helm strips a session's own transcript to markdown and has a fresh context read it back.
 
-- **Quick Compact** (`session_quick_compact`, context menu "🗜️ Quick Compact"): strip → clear the session → paste a prompt pointing at the file. The prompt is not pasted blind: it rides the handover idle-wait ([handover.md](handover.md)) — armed before the clear, pasted once the cleared CLI falls quiet, never sooner than that CLI's `initialPromptDelay`, forced at the 5-minute ceiling. `session_clear` notes use the same path.
+- **Quick Compact** (`session_quick_compact`, context menu "🗜️ Quick Compact"): strip → clear the session → run the CLI's configured initial-prompt sequence → paste a prompt pointing at the file. The clear's SessionStart hook re-injects manifesto, mission, todos and active plan through the existing context builder. The shared reload scheduler sends the transcript pointer once the configured sequence finishes. `session_clear` notes use the handover idle-wait ([handover.md](handover.md)).
 - **A redundant compaction is answered as done**: if the context is green and something compacted it in the last 5 minutes, `session_quick_compact` and `session_compact` do nothing and reply as if they had compacted. That covers the CLI's own compaction (PreCompact hook) and Helm's (both tools stamp `lastCliCompactAt` once their command is delivered), and every caller: agent, desktop menu, phone, scheduler. The case it stops: a resumed agent re-reads its own "compact me" turn in the transcript and asks again — Codex did, compacting twice. A context reading older than the compaction is stale and counts as green; amber or red compacts normally. A request that arrives while another compaction still waits for the session to go idle is answered the same way.
 - **Quick Compact leaves a snapshot**: just before its `/clear`, it composes the same **Compaction snapshot** artifact as a CLI compaction (stripped transcript inline, raw transcript attached). A `/clear` fires no PreCompact, so without this a Quick Compact left none.
 
@@ -15,17 +15,18 @@ graph TD
 ```
 
 - On the phone, all three sit on the session sheet: "Quick compact" (confirms first), "Switch CLI" (opens a picker of the desktop's CLIs) and "Clone". Rows grey out unless the device's mobile allow-list permits the tool.
-- **Switch CLI** (`session_switch_cli`, context menu "🔀 Switch CLI…" → CLI picker): strip → spawn the picked CLI in the same directory, name and runtime group, with the prompt as its initial paste → close the source (recycle bin, restorable; `closeSource: false` keeps it; locked sessions are never closed).
-- **Artifacts follow** (Switch CLI and Clone): before the source can close, every artifact is copied to the new session under a fresh id, with its versions and attachments. The source keeps its own. A copy's content has the old artifact id swapped for the new one, so embedded attachment paths point at the copy's files.
-- **Clone** (`session_clone`, context menu "🧬 Clone" → CLI picker): spawn with the picked CLI; MCP callers may pass optional `cliType`, which defaults to the source CLI. The clone is named "<name> (clone)" and the source stays open. Plans, mission and ownership are not copied.
+- **Switch CLI** (`session_switch_cli`, context menu "🔀 Switch CLI…" → CLI picker): strip → seed the successor's SessionStart context → spawn the picked CLI in the same directory, name and runtime group with the transcript pointer as its reload prompt → close the source (recycle bin, restorable; `closeSource: false` keeps it; locked sessions are never closed). A replacement receives the mission and todos, and takes over the active plan claim. A failed spawn rolls back those copies and the claim.
+- If the successor fails to start, restore the source session from the recycle bin; its data is retained.
+- **Artifacts follow** (Switch CLI and Clone): before the successor process starts, every artifact is copied under a fresh id, with its versions and attachments. The source keeps its own. A copy's content has the old artifact id swapped for the new one, so embedded attachment paths point at the copy's files. This makes manifestos available to the first SessionStart hook.
+- **Clone** (`session_clone`, context menu "🧬 Clone" → CLI picker): spawn with the picked CLI; MCP callers may pass optional `cliType`, which defaults to the source CLI. The clone is named "<name> (clone)" and the source stays open. Plans, mission and todos are not transferred.
 
 ```mermaid
 graph LR
     H[CLI hooks<br/>transcript_path] -->|HookTracker| S[SessionInfo.cliTranscriptPath]
     S --> X[stripTranscript<br/>src/session/transcript-strip.ts]
     X --> F[Helm tmp .md]
-    F --> C[Quick Compact:<br/>clear + resume prompt]
-    F --> W[Switch CLI:<br/>spawn picked CLI + resume prompt,<br/>close source]
+    F --> C[Quick Compact:<br/>clear + SessionStart context<br/>+ reload prompt]
+    F --> W[Switch CLI:<br/>seed successor context<br/>+ spawn + reload prompt,<br/>close source]
     F --> K[Clone:<br/>spawn same CLI as name clone,<br/>keep source]
 ```
 

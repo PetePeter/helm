@@ -46,6 +46,38 @@ export class HelmSessionPlanService {
     return { ok: true };
   }
 
+  /** Move the source's active plan claim to a successor and reverse it on spawn failure. */
+  transferClaim(sourceSessionId: string, targetSessionId: string): { currentPlanId: string; rollback: () => void } | null {
+    const source = this.sessionManager.getSession(sourceSessionId);
+    if (!source) throw new Error(`Session not found: ${sourceSessionId}`);
+    const plan = this.planManager.claimedItemFor(sourceSessionId);
+    if (!plan) return null;
+    if (!this.planManager.claimPlan(plan.id, targetSessionId)) {
+      throw new Error(`Plan ${plan.id} could not be transferred to ${targetSessionId}`);
+    }
+
+    const sourcePlanId = source.currentPlanId;
+    try {
+      this.sessionManager.updateSession(sourceSessionId, { currentPlanId: undefined });
+    } catch (error) {
+      this.planManager.claimPlan(plan.id, sourceSessionId);
+      throw error;
+    }
+
+    let rolledBack = false;
+    return {
+      currentPlanId: plan.id,
+      rollback: () => {
+        if (rolledBack) return;
+        if (this.sessionManager.getSession(sourceSessionId)) {
+          this.planManager.claimPlan(plan.id, sourceSessionId);
+          this.sessionManager.updateSession(sourceSessionId, { currentPlanId: sourcePlanId });
+        }
+        rolledBack = true;
+      },
+    };
+  }
+
   private findSession(sessionRef: string): SessionInfo | null {
     const nameMatches = this.sessionManager.getAllSessions().filter((session) => session.name === sessionRef);
     if (nameMatches.length > 1) {

@@ -36,21 +36,30 @@ const afterIdle = () => Promise.all(idleRuns);
 function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true, opts: { holdIdle?: boolean } = {}) {
   idleRuns = [];
   const held: Array<() => Promise<void>> = [];
-  const session: { id: string; name: string; cliType: string; frozen?: boolean; compactRequestedAt?: number } = { id: 's1', name: 'worker', cliType: 'claude-code' };
+  const session: { id: string; name: string; cliType: string; cliSessionName: string; frozen?: boolean; compactRequestedAt?: number } = {
+    id: 's1', name: 'worker', cliType: 'claude-code', cliSessionName: 'thread-1',
+  };
   const sessionManager = {
     getSession: (id: string) => (id === 's1' ? session : null),
     getAllSessions: () => [session],
     setSessionFrozen: (_id: string, frozen: boolean) => { session.frozen = frozen; return session; },
     updateSession: (_id: string, patch: object) => Object.assign(session, patch),
   };
-  const ptyManager = { has: () => ptyRunning };
+  const reloadEvents: string[] = [];
+  const ptyManager = {
+    has: () => ptyRunning,
+    write: vi.fn(),
+    deliverText: vi.fn(async (_sessionId: string, text: string) => { if (text) reloadEvents.push(text); }),
+  };
   const configLoader = { getCliTypeEntry: () => entry, getCliTypeLabel: (ref: string) => ref };
   // Records arm order against deliverSpy so "armed before the command was
   // written" is assertable, not merely "both happened".
   const armed: Array<{ sessionId: string; text: string; deliveriesBefore: number }> = [];
   const handover = {
-    arm: (sessionId: string, text: string) =>
-      armed.push({ sessionId, text, deliveriesBefore: deliverSpy.mock.calls.length }),
+    arm: (sessionId: string, text: string) => {
+      reloadEvents.push('arm');
+      armed.push({ sessionId, text, deliveriesBefore: deliverSpy.mock.calls.length });
+    },
     isPending: () => false,
     whenSettled: async () => {},
     // Idle by default; holdIdle keeps the session busy until release().
@@ -66,7 +75,7 @@ function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true, op
     configLoader as any,
     handover,
   );
-  return { service, session, armed, release };
+  return { service, session, ptyManager, armed, reloadEvents, release };
 }
 
 /** Extract the `text` passed to the (mocked) delivery call at index. */
@@ -264,8 +273,12 @@ describe('session_quick_compact', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('clears, then points the session at a stripped copy of its own transcript', async () => {
-    const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+  it('clears, reloads the configured initial prompt, then points at the stripped transcript', async () => {
+    const { service, session, ptyManager, armed, reloadEvents } = makeService({
+      helmActions: { clear: '/clear{Enter}' },
+      initialPrompt: [{ label: 'Reload rules', sequence: 'Load the configured rules{Enter}' }],
+      initialPromptDelay: 0,
+    });
     const log = join(dir, 'log.jsonl');
     writeFileSync(log, [
       { type: 'user', message: { content: 'build the parser' } },
@@ -275,10 +288,13 @@ describe('session_quick_compact', () => {
 
     const result = await service.quickCompactSession('s1', { handover: 'next: wire the CLI' });
     await afterIdle();
+    await vi.waitFor(() => expect(armed).toHaveLength(1));
 
     expect(deliveredText(0)).toBe('/clear{Enter}');
-    // Pasted by the idle-wait once the cleared CLI falls quiet, not inline.
-    expect(armed).toHaveLength(1);
+    expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', 'Load the configured rules');
+    // The shared reload scheduler arms the transcript pointer only after the configured sequence.
+    expect(reloadEvents).toEqual(['Load the configured rules', 'arm']);
+    expect(armed[0].deliveriesBefore).toBe(1);
     const prompt = armed[0].text;
     expect(prompt).toContain(result.transcriptFile);
     expect(prompt).toContain('next: wire the CLI');

@@ -85,4 +85,19 @@ describe('TodoManager', () => {
     expect(manager.pruneOrphans(new Set(['live', 'binned']))).toEqual(['orphan']);
     expect(readdirSync(dir).sort()).toEqual(['binned.json']);
   });
+
+  it('copies unfinished todos to a successor and rolls back only the copy', () => {
+    const manager = open();
+    const openTodo = manager.add('source', 'Carry the parser work');
+    const waitingTodo = manager.add('source', 'Ask before changing format');
+    manager.setWaiting('source', waitingTodo.id, true);
+
+    const rollback = manager.copySession('source', 'successor');
+
+    expect(manager.list('successor')).toEqual([openTodo, { ...waitingTodo, status: 'waiting' }]);
+    rollback();
+    rollback();
+    expect(manager.list('successor')).toEqual([]);
+    expect(manager.list('source')).toEqual([openTodo, { ...waitingTodo, status: 'waiting' }]);
+  });
 });

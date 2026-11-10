@@ -1,12 +1,9 @@
 import { randomUUID } from 'crypto';
-import { resolveEnvWithMode, type ConfigLoader, type ResolvedCliType, type SequenceListItem } from '../config/loader.js';
+import { resolveEnvWithMode, type ConfigLoader, type ResolvedCliType } from '../config/loader.js';
 import { mintSessionAuthToken } from '../mcp/session-auth.js';
-import { parseSubmitSuffix } from '../mcp/submit-suffix.js';
 import type { SessionManager } from './manager.js';
 import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo } from '../types/session.js';
-import { scheduleInitialPrompt } from './initial-prompt.js';
 import type { PtyManager, PtyProcess } from './pty-manager.js';
-import { deliverPromptSequenceToSession } from './sequence-delivery.js';
 import type { DeliveryContext } from './delivery-context.js';
 import { logger } from '../utils/logger.js';
 import { toHeaderSafeName } from '../utils/header-safe-name.js';
@@ -14,11 +11,19 @@ import { normalizeProjectPath } from './project-identity.js';
 import { getApiSessionHost } from './api/api-session-host.js';
 import { getComfyUiSessionHost } from './comfyui/comfyui-session-host.js';
 import { assertCwdInProfileProjects, getDefaultProfileProjectCwd } from './profile-spawn-cwd.js';
+import { scheduleSessionReloadPrompt } from './session-reload-prompt.js';
 
-/** Pause before writing the submit suffix so bracketed/paste-aware CLIs can settle. */
-const SUBMIT_DELAY_MS = 200;
+export { resolveInitialPromptConfig } from './session-reload-prompt.js';
+
 /** Nominal size for an adopted API session; it renders line output, so size is cosmetic. */
 const API_SESSION_SIZE = { cols: 120, rows: 30 };
+
+export interface SessionSpawnPreparation {
+  /** Context fields needed by SessionStart, committed with the successor row. */
+  sessionContext?: Pick<SessionInfo, 'mission' | 'currentPlanId'>;
+  /** Reverse external context seeding if the process cannot be created. */
+  rollback?: () => void;
+}
 
 export interface ConfiguredSessionSpawnParams {
   ptyManager: PtyManager;
@@ -54,6 +59,8 @@ export interface ConfiguredSessionSpawnParams {
   /** Born with its role/lock so no listener ever sees it as a plain session (the operator). */
   role?: SessionInfo['role'];
   locked?: boolean;
+  /** Seed session-scoped reload context before its first CLI hook can run. */
+  prepareSession?: (sessionId: string) => SessionSpawnPreparation | undefined;
 }
 
 export interface ConfiguredSessionSpawnResult {
@@ -105,61 +112,86 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   const comfyUiProcess = cfg?.comfyUi
     ? getComfyUiSessionHost().create(sessionId, cfg.comfyUi, params.sessionManager.getUserProfileId())
     : null;
-  let launched: { pty: PtyProcess; rawCommand?: string; command?: string; args?: string[] };
-  if (comfyUiProcess) {
-    params.ptyManager.adopt(sessionId, comfyUiProcess, API_SESSION_SIZE);
-    launched = { pty: comfyUiProcess };
-  } else if (apiProcess) {
-    params.ptyManager.adopt(sessionId, apiProcess, API_SESSION_SIZE);
-    launched = { pty: apiProcess };
-  } else if (isShellSession && !params.command) {
-    launched = { pty: params.ptyManager.spawn({ sessionId, cwd: normalizedCwd }) };
-  } else {
-    params.sessionManager.notifySessionStarting?.({
-      sessionId,
-      cliType,
-      ...(params.creatorSessionId ? { creatorSessionId: params.creatorSessionId } : {}),
-    });
-    try {
+  // Copy context before creating a process: the new CLI may call SessionStart
+  // as soon as its PTY is live, and artifacts are read by the hook by session id.
+  const preparation = params.prepareSession?.(sessionId);
+  let startNotified = false;
+  let launched: { pty: PtyProcess; rawCommand?: string; command?: string; args?: string[] } | undefined;
+  let removeRegisteredSessionOnFailure = false;
+  try {
+    if (comfyUiProcess) {
+      params.ptyManager.adopt(sessionId, comfyUiProcess, API_SESSION_SIZE);
+      launched = { pty: comfyUiProcess };
+    } else if (apiProcess) {
+      params.ptyManager.adopt(sessionId, apiProcess, API_SESSION_SIZE);
+      launched = { pty: apiProcess };
+    } else if (isShellSession && !params.command) {
+      launched = { pty: params.ptyManager.spawn({ sessionId, cwd: normalizedCwd }) };
+    } else {
+      params.sessionManager.notifySessionStarting?.({
+        sessionId,
+        cliType,
+        ...(params.creatorSessionId ? { creatorSessionId: params.creatorSessionId } : {}),
+      });
+      startNotified = true;
       launched = spawnCliProcess(params, { cfg, sessionId, sessionName, cliSessionName, cliThreadId, isResume, cwd: normalizedCwd });
-    } catch (error) {
-      params.sessionManager.notifySessionSpawnFailed?.(sessionId);
-      throw error;
     }
+    const { pty } = launched;
+    const sessionInfo = {
+      id: sessionId,
+      name: sessionName,
+      cliType,
+      processId: pty.pid,
+      ...(normalizedCwd ? { workingDir: normalizedCwd } : {}),
+      cliSessionName,
+      ...(cliThreadId ? { cliThreadId } : {}),
+      lastOutputAt: now,
+      ...(params.createdByPeerId ? { createdByPeerId: params.createdByPeerId } : {}),
+      ...(params.createdByMobileDeviceId ? { createdByMobileDeviceId: params.createdByMobileDeviceId } : {}),
+      ...(params.role ? { role: params.role } : {}),
+      ...(params.locked ? { locked: true } : {}),
+      ...(preparation?.sessionContext ?? {}),
+      ...(apiProcess ? { apiTool: true } : {}),
+      ...(comfyUiProcess ? {
+        comfyUiTool: true,
+        comfyUiProfiles: comfyUiProcess.profiles,
+        comfyUiImageSizes: comfyUiProcess.imageSizes,
+      } : {}),
+      ...(apiProcess && getApiSessionHost().parentOf(sessionId) ? { subagentOf: getApiSessionHost().parentOf(sessionId) } : {}),
+    };
+
+    if (isResume && params.sessionManager.hasSession(sessionId)) {
+      params.sessionManager.updateSession(sessionId, sessionInfo);
+    } else {
+      // addSession may throw after storing the row (for example, an event
+      // listener can fail), so remember whether this spawn owns a partial row.
+      removeRegisteredSessionOnFailure = !params.sessionManager.hasSession(sessionId);
+      params.sessionManager.addSession(sessionInfo);
+    }
+    // The API host starts only after registration so its first frame has a row.
+    apiProcess?.start();
+  } catch (error) {
+    if (startNotified) {
+      try { params.sessionManager.notifySessionSpawnFailed?.(sessionId); }
+      catch (notifyError) { logger.error(`[ConfiguredSessionSpawn] Could not release startup observers for ${sessionId}: ${notifyError}`); }
+    }
+    if (launched) {
+      try { params.ptyManager.kill(sessionId); }
+      catch (killError) { logger.error(`[ConfiguredSessionSpawn] Could not stop failed session ${sessionId}: ${killError}`); }
+    }
+    try {
+      if (removeRegisteredSessionOnFailure && params.sessionManager.hasSession(sessionId)) {
+        params.sessionManager.removeSession(sessionId, { force: true });
+      }
+    } catch (removeError) {
+      logger.error(`[ConfiguredSessionSpawn] Could not remove failed session ${sessionId}: ${removeError}`);
+    }
+    rollbackSessionPreparation(preparation, sessionId);
+    throw error;
   }
   const { pty, rawCommand, command, args } = launched;
 
-  const sessionInfo = {
-    id: sessionId,
-    name: sessionName,
-    cliType,
-    processId: pty.pid,
-    ...(normalizedCwd ? { workingDir: normalizedCwd } : {}),
-    cliSessionName,
-    ...(cliThreadId ? { cliThreadId } : {}),
-    lastOutputAt: now,
-    ...(params.createdByPeerId ? { createdByPeerId: params.createdByPeerId } : {}),
-    ...(params.createdByMobileDeviceId ? { createdByMobileDeviceId: params.createdByMobileDeviceId } : {}),
-    ...(params.role ? { role: params.role } : {}),
-    ...(params.locked ? { locked: true } : {}),
-    ...(apiProcess ? { apiTool: true } : {}),
-    ...(comfyUiProcess ? {
-      comfyUiTool: true,
-      comfyUiProfiles: comfyUiProcess.profiles,
-      comfyUiImageSizes: comfyUiProcess.imageSizes,
-    } : {}),
-    ...(apiProcess && getApiSessionHost().parentOf(sessionId) ? { subagentOf: getApiSessionHost().parentOf(sessionId) } : {}),
-  };
-
-  if (isResume && params.sessionManager.hasSession(sessionId)) {
-    params.sessionManager.updateSession(sessionId, sessionInfo);
-  } else {
-    params.sessionManager.addSession(sessionInfo);
-  }
-  // Painted only once the row exists, so the first frame has a session to land on.
-  apiProcess?.start();
-
-  scheduleConfiguredInitialPrompt({
+  scheduleSessionReloadPrompt({
     ...params,
     sessionId,
     cliSessionName,
@@ -170,125 +202,9 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   return { sessionId, cliSessionName, pty, rawCommand, command, args };
 }
 
-function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & {
-  sessionId: string;
-  cliSessionName: string;
-  isResume: boolean;
-  cfg: ReturnType<ConfigLoader['getCliTypeEntry']> | undefined;
-}): void {
-  const deliverText = (sessionId: string, text: string): Promise<void> => {
-    const maybeDeliver = (params.ptyManager as Partial<PtyManager>).deliverText;
-    if (typeof maybeDeliver === 'function') {
-      return maybeDeliver.call(params.ptyManager, sessionId, text);
-    }
-    params.ptyManager.write(sessionId, text, 'system');
-    return Promise.resolve();
-  };
-  const submit = async (sessionId: string): Promise<void> => {
-    await new Promise<void>((resolve) => setTimeout(resolve, SUBMIT_DELAY_MS));
-    const submitSuffix = parseSubmitSuffix(params.cfg?.submitSuffix);
-    const maybeDeliver = (params.ptyManager as Partial<PtyManager>).deliverText;
-    if (typeof maybeDeliver === 'function') {
-      return maybeDeliver.call(params.ptyManager, sessionId, '', { submitSuffix });
-    }
-    params.ptyManager.write(sessionId, submitSuffix, 'system');
-  };
-  // Rename delivery waits for PTY output to settle (see initial-prompt); a
-  // test fake without the method skips the wait, same deal as deliverText.
-  const waitForQuiet = async (sessionId: string): Promise<void> => {
-    const maybeWait = (params.ptyManager as Partial<PtyManager>).waitForQuiet;
-    if (typeof maybeWait === 'function') await maybeWait.call(params.ptyManager, sessionId);
-  };
-
-  const resolvedPrompt = resolveInitialPromptConfig(params.cfg, params.cliSessionName);
-  const promptConfig = params.skipInitialPrompt ? { ...resolvedPrompt, initialPrompt: undefined } : resolvedPrompt;
-  if (params.isResume) {
-    params.markRestored?.(params.sessionId);
-    if (!promptConfig.renameCommand) return;
-    const cancel = scheduleInitialPrompt(
-      params.sessionId,
-      {
-        initialPromptDelay: promptConfig.initialPromptDelay,
-        renameCommand: promptConfig.renameCommand,
-      },
-      (sid, data) => params.ptyManager.write(sid, data, 'system'),
-      (sid, text) => deliverText(sid, text),
-      undefined,
-      submit,
-      waitForQuiet,
-    );
-    if (cancel) params.onPromptCancel?.(cancel);
-    return;
-  }
-
-  const onComplete = buildPromptCompleteHandler(params, deliverText);
-  const cancel = scheduleInitialPrompt(
-    params.sessionId,
-    promptConfig,
-    (sid, data) => params.ptyManager.write(sid, data, 'system'),
-    (sid, text) => deliverText(sid, text),
-    onComplete ?? (() => undefined),
-    submit,
-    waitForQuiet,
-  );
-
-  if (cancel) {
-    params.onPromptCancel?.(cancel);
-  } else if (onComplete) {
-    const timeout = setTimeout(onComplete, params.fallbackCompleteDelayMs ?? 500);
-    params.onPromptCancel?.(() => clearTimeout(timeout));
-  }
-}
-
-function buildPromptCompleteHandler(
-  params: ConfiguredSessionSpawnParams & { sessionId: string; sessionManager: SessionManager; ptyManager: PtyManager },
-  deliverText: (sessionId: string, text: string) => Promise<void>,
-): (() => void) | undefined {
-  const contextText = typeof params.contextText === 'string' && params.contextText.length > 0
-    ? params.contextText
-    : undefined;
-  const callbacks: Array<() => void> = [];
-
-  if (contextText) {
-    callbacks.push(() => {
-      if (params.configLoader) {
-        const target = params.sessionManager.getSession(params.sessionId);
-        const cliEntry = target ? params.configLoader.getCliTypeEntry(target.cliType) : undefined;
-        const isCodex = cliEntry?.provider === 'codex' || cliEntry?.hooks?.provider === 'codex';
-        void deliverPromptSequenceToSession({
-          sessionId: params.sessionId,
-          text: contextText,
-          ptyManager: params.ptyManager,
-          sessionManager: params.sessionManager,
-          configLoader: params.configLoader,
-          ...(params.contextDeliveryContext ? { deliveryContext: params.contextDeliveryContext } : {}),
-          verifyDelivery: {
-            label: 'spawn initial prompt',
-            background: true,
-            ...(isCodex ? { requirePromptSubmit: true } : {}),
-            onComplete: (result) => {
-              const writeLog = result.status === 'confirmed' || result.status === 'retry_confirmed'
-                ? logger.info
-                : logger.warn;
-              writeLog(`[ConfiguredSessionSpawn] Initial prompt verification ${result.status} for ${params.sessionId}: ${result.detail}`);
-            },
-          },
-        });
-      } else {
-        void deliverText(params.sessionId, contextText);
-      }
-      logger.info(`[ConfiguredSessionSpawn] Context prompt delivered to ${params.sessionId} (${contextText.length} chars)`);
-    });
-  }
-
-  if (params.onPromptComplete) {
-    callbacks.push(params.onPromptComplete);
-  }
-
-  if (callbacks.length === 0) return undefined;
-  return () => {
-    for (const callback of callbacks) callback();
-  };
+function rollbackSessionPreparation(preparation: SessionSpawnPreparation | undefined, sessionId: string): void {
+  try { preparation?.rollback?.(); }
+  catch (error) { logger.error(`[ConfiguredSessionSpawn] Context rollback failed for ${sessionId}: ${error}`); }
 }
 
 /** Resolve the CLI command line and env, then spawn it in a real PTY. */
@@ -412,21 +328,6 @@ export function resolveConfiguredSpawnEnv(
     env.HELM_CONTEXT_USAGE_URL = `http://127.0.0.1:${mcpPort}/context-usage`;
   }
   return Object.keys(env).length > 0 ? env : undefined;
-}
-
-export function resolveInitialPromptConfig(
-  cliEntry: ReturnType<ConfigLoader['getCliTypeEntry']> | undefined,
-  cliSessionName: string,
-): { initialPrompt?: SequenceListItem[]; initialPromptDelay?: number; renameCommand?: string } {
-  if (!cliEntry) return {};
-  const renameCommand = cliEntry.renameCommand && cliSessionName
-    ? cliEntry.renameCommand.replace('{cliSessionName}', cliSessionName)
-    : undefined;
-  return {
-    initialPrompt: cliEntry.initialPrompt,
-    initialPromptDelay: cliEntry.initialPromptDelay,
-    renameCommand,
-  };
 }
 
 /**

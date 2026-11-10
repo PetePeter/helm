@@ -63,6 +63,24 @@ export class TodoManager extends EventEmitter {
     return count;
   }
 
+  /** Copy unfinished work to a successor and return an idempotent spawn-failure rollback. */
+  copySession(sourceSessionId: string, targetSessionId: string): () => void {
+    if (sourceSessionId === targetSessionId) return () => undefined;
+    const sourceTodos = this.list(sourceSessionId);
+    if (sourceTodos.length === 0) return () => undefined;
+    if (this.current(targetSessionId).length > 0) {
+      throw new Error(`Todos already exist for ${targetSessionId}`);
+    }
+
+    this.write(targetSessionId, sourceTodos);
+    let rolledBack = false;
+    return () => {
+      if (rolledBack) return;
+      this.write(targetSessionId, []);
+      rolledBack = true;
+    };
+  }
+
   /** A session removed permanently takes its checklist with it. */
   clearSession(sessionId: string, reportFailure = false): void {
     this.bySession.delete(sessionId);

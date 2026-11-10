@@ -527,6 +527,7 @@ export class HelmControlService extends EventEmitter {
     if (this.todoManager && this.todoManager !== manager) this.sessionChangeFeed.detachTodos(this.todoManager);
     this.todoManager = manager;
     this.sessionService.setSessionTodosLookup(sessionId => manager.list(sessionId));
+    this.sessionService.setSessionTodoCopier((fromSessionId, toSessionId) => manager.copySession(fromSessionId, toSessionId));
     this.sessionChangeFeed.attachTodos(manager);
   }
 
@@ -557,9 +558,18 @@ export class HelmControlService extends EventEmitter {
     this.artifactManager = manager;
     this.artifactAttachmentManager = attachmentManager;
     this.sessionService.setSessionArtifactCopier((fromSessionId, toSessionId) => {
-      for (const { from, to } of manager.copySession(fromSessionId, toSessionId)) {
-        attachmentManager?.copyForArtifact(from, to);
+      const copies = manager.copySession(fromSessionId, toSessionId);
+      try {
+        for (const { from, to } of copies) attachmentManager?.copyForArtifact(from, to);
+      } catch (error) {
+        for (const { to } of copies) attachmentManager?.deleteForArtifact(to);
+        manager.clearSession(toSessionId);
+        throw error;
       }
+      return () => {
+        for (const { to } of copies) attachmentManager?.deleteForArtifact(to);
+        manager.clearSession(toSessionId);
+      };
     });
   }
 

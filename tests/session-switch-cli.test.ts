@@ -13,10 +13,19 @@ import { join } from 'node:path';
 import { callMcpTool, type McpToolDispatcherDeps } from '../src/mcp/tools/dispatcher.js';
 import type { HelmControlService } from '../src/mcp/helm-control-service.js';
 
-const spawnCalls: Array<Record<string, unknown>> = [];
+const { spawnCalls, spawnFailure } = vi.hoisted(() => ({
+  spawnCalls: [] as Array<Record<string, unknown>>,
+  spawnFailure: { enabled: false },
+}));
 vi.mock('../src/session/configured-session-spawn.js', () => ({
   spawnConfiguredSession: (params: Record<string, unknown>) => {
-    spawnCalls.push(params);
+    const prepare = params.prepareSession as ((sessionId: string) => { sessionContext?: unknown; rollback?: () => void }) | undefined;
+    const preparation = prepare?.('new-sid');
+    spawnCalls.push({ ...params, sessionContext: preparation?.sessionContext });
+    if (spawnFailure.enabled) {
+      preparation?.rollback?.();
+      throw new Error('launch failed');
+    }
     return { sessionId: 'new-sid' };
   },
 }));
@@ -28,6 +37,7 @@ import { HelmSessionService } from '../src/mcp/services/helm-session-service.js'
 import { RuntimeGroupManager } from '../src/session/runtime-group-manager.js';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
 import { DraftManager } from '../src/session/draft-manager.js';
+import { TodoManager } from '../src/session/todo-manager.js';
 import type { Draft } from '../src/types/draft.js';
 import type { SessionInfo } from '../src/types/session.js';
 
@@ -44,22 +54,41 @@ function setup(patch: Partial<SessionInfo> = {}) {
     getAllSessions: () => [...sessions.values()],
     getSession: (id: string) => sessions.get(id) ?? null,
     hasSession: (id: string) => sessions.has(id),
+    updateSession: (id: string, updates: Partial<SessionInfo>) => Object.assign(sessions.get(id)!, updates),
     removeSession: (id: string) => { sessions.delete(id); artifacts.clearSession(id); },
   };
   const artifacts = new ArtifactManager();
-  artifacts.create('old-sid', 'Findings', 'markdown', '# notes');
+  const manifesto = artifacts.create('old-sid', 'Working agreement', 'markdown', '# notes');
+  artifacts.setIntent(manifesto.id, 'manifesto');
   const killed: string[] = [];
   const configLoader = {
     getWorkingDirectories: () => [{ path: '/repo/main', name: 'main' }],
     getCliTypes: () => [],
     resolveCliType: (ref: string) => (ref === 'codex' ? { id: ref, config: { name: 'Codex', spawnCommand: 'codex' } } : null),
   };
+  let planOwner = patch.currentPlanId ? 'old-sid' : undefined;
+  const planManager = {
+    claimedItemFor: (sessionId: string) => planOwner === sessionId ? { id: patch.currentPlanId } : null,
+    claimPlan: (_id: string, sessionId: string) => { planOwner = sessionId; return true; },
+  };
   const service = new HelmSessionService(
-    sessionManager as any, { kill: (id: string) => killed.push(id) } as any, configLoader as any, {} as any,
+    sessionManager as any, { kill: (id: string) => killed.push(id) } as any, configLoader as any, planManager as any,
   );
   const groups = new RuntimeGroupManager();
   service.setRuntimeGroupManager(groups);
-  service.setSessionArtifactCopier((from, to) => { artifacts.copySession(from, to); });
+  service.setSessionArtifactCopier((from, to) => {
+    artifacts.copySession(from, to);
+    return () => artifacts.clearSession(to);
+  });
+  const todoFiles = new Map<string, any[]>();
+  const todos = new TodoManager({
+    load: id => todoFiles.get(id) ?? null,
+    save: (id, items) => { todoFiles.set(id, items); },
+    remove: id => { todoFiles.delete(id); return true; },
+    list: () => [...todoFiles.keys()],
+  }, () => 'todo-1', () => 1);
+  todos.add('old-sid', 'Resume parser work');
+  service.setSessionTodoCopier((from, to) => todos.copySession(from, to));
   const padFiles = new Map<string, Draft>();
   const pads = new DraftManager({
     load: id => padFiles.get(id) ?? null,
@@ -71,12 +100,13 @@ function setup(patch: Partial<SessionInfo> = {}) {
   });
   pads.set('old-sid', 'todo: lexer', 'user', 0);
   service.setSessionDraftCopier((from, to) => pads.copySession(from, to));
-  return { service, sessions, killed, groups, artifacts, pads };
+  return { service, sessions, killed, groups, artifacts, pads, todos, planOwner: () => planOwner };
 }
 
 describe('HelmSessionService.switchCli', () => {
   beforeEach(() => {
     spawnCalls.length = 0;
+    spawnFailure.enabled = false;
     dir = mkdtempSync(join(tmpdir(), 'helm-switch-'));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -105,8 +135,37 @@ describe('HelmSessionService.switchCli', () => {
 
     const result = service.switchCli('old-sid', 'codex');
 
-    expect(artifacts.getForSession('new-sid').map(a => a.title)).toEqual(['Findings']);
+    expect(artifacts.getForSession('new-sid').map(a => a.title)).toEqual(['Working agreement']);
     rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('seeds manifestos, mission, todos, and the active plan before the successor starts', () => {
+    const mission = { text: 'Finish the parser', setBy: 'user' as const, setAt: 5 };
+    const { service, sessions, artifacts, todos, planOwner } = setup({ mission, currentPlanId: 'plan-1' });
+
+    service.switchCli('old-sid', 'codex');
+
+    expect(artifacts.getManifestosForSession('new-sid').map(a => a.title)).toEqual(['Working agreement']);
+    expect(todos.list('new-sid')).toEqual(todos.list('old-sid'));
+    expect(spawnCalls[0].sessionContext).toEqual({ mission, currentPlanId: 'plan-1' });
+    expect(planOwner()).toBe('new-sid');
+    expect(sessions.get('old-sid')?.currentPlanId).toBeUndefined();
+  });
+
+  it('rolls back seeded state when the successor process fails to spawn', () => {
+    const mission = { text: 'Finish the parser', setBy: 'user' as const, setAt: 5 };
+    const { service, sessions, artifacts, todos, killed, planOwner } = setup({ mission, currentPlanId: 'plan-1' });
+    spawnFailure.enabled = true;
+
+    expect(() => service.switchCli('old-sid', 'codex')).toThrow('launch failed');
+
+    expect(artifacts.getForSession('new-sid')).toEqual([]);
+    expect(todos.list('new-sid')).toEqual([]);
+    expect(planOwner()).toBe('old-sid');
+    expect(sessions.get('old-sid')).toMatchObject({ mission, currentPlanId: 'plan-1' });
+    expect(killed).toEqual([]);
+    const transcriptFile = String(spawnCalls[0].contextText).match(/at: ([^\r\n]+)/)?.[1];
+    if (transcriptFile) rmSync(transcriptFile, { force: true });
   });
 
   it('hands the draft to the replacement, but not to a session that leaves the source open', () => {
@@ -144,6 +203,7 @@ describe('HelmSessionService.switchCli', () => {
 describe('HelmSessionService.cloneSession', () => {
   beforeEach(() => {
     spawnCalls.length = 0;
+    spawnFailure.enabled = false;
     dir = mkdtempSync(join(tmpdir(), 'helm-clone-'));
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -197,11 +257,18 @@ describe('HelmSessionService.cloneSession', () => {
   });
 
   it('copies artifacts to the clone and leaves the source its own', () => {
-    const { service, artifacts } = setup({ cliType: 'codex' });
+    const { service, artifacts, todos, planOwner } = setup({
+      cliType: 'codex',
+      mission: { text: 'Finish the parser', setBy: 'user', setAt: 5 },
+      currentPlanId: 'plan-1',
+    });
 
     const result = service.cloneSession('old-sid');
 
-    expect(artifacts.getForSession('new-sid').map(a => a.title)).toEqual(['Findings']);
+    expect(artifacts.getForSession('new-sid').map(a => a.title)).toEqual(['Working agreement']);
+    expect(todos.list('new-sid')).toEqual([]);
+    expect(spawnCalls[0].sessionContext).toBeUndefined();
+    expect(planOwner()).toBe('old-sid');
     expect(artifacts.count('old-sid')).toBe(1);
     rmSync(result.transcriptFile, { force: true });
   });

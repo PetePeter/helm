@@ -11,7 +11,7 @@ import type { SessionEtaInput } from '../../session/session-eta.js';
 import { createSessionEta } from '../../session/session-eta.js';
 import { etaWhereOf, type EtaTracker } from '../../session/eta-tracker.js';
 import type { SessionDetails, SessionSummary, SessionTerminalTailResponse } from '../helm-control-service.js';
-import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
+import { spawnConfiguredSession, type SessionSpawnPreparation } from '../../session/configured-session-spawn.js';
 import { HelmSessionPlanService } from './helm-session-plan-service.js';
 import { normalizeProjectPath } from '../../session/project-identity.js';
 import { GitBranchResolver } from '../../session/git-branch-resolver.js';
@@ -70,10 +70,16 @@ export class HelmSessionService {
   }
 
   /** Late-bound: carries a session's artifacts to the session that continues it. */
-  setSessionArtifactCopier(copier: (fromSessionId: string, toSessionId: string) => void): void {
+  setSessionArtifactCopier(copier: (fromSessionId: string, toSessionId: string) => (() => void) | void): void {
     this.copySessionArtifacts = copier;
   }
-  private copySessionArtifacts: ((fromSessionId: string, toSessionId: string) => void) | null = null;
+  private copySessionArtifacts: ((fromSessionId: string, toSessionId: string) => (() => void) | void) | null = null;
+
+  /** Late-bound: seeds the successor's checklist before its first SessionStart. */
+  setSessionTodoCopier(copier: (fromSessionId: string, toSessionId: string) => (() => void) | void): void {
+    this.copySessionTodos = copier;
+  }
+  private copySessionTodos: ((fromSessionId: string, toSessionId: string) => (() => void) | void) | null = null;
 
   /** Late-bound: carries a session's draft to the session that replaces it. */
   setSessionDraftCopier(copier: (fromSessionId: string, toSessionId: string) => void): void {
@@ -131,7 +137,12 @@ export class HelmSessionService {
     cliType: string,
     dirPath: string,
     name: string | undefined,
-    opts: { creatorSessionId?: string; runtimeGroupId?: string; initialPrompt?: string } = {},
+    opts: {
+      creatorSessionId?: string;
+      runtimeGroupId?: string;
+      initialPrompt?: string;
+      prepareSession?: (sessionId: string) => SessionSpawnPreparation | undefined;
+    } = {},
   ): { id: string; runtimeGroupId?: string; runtimeGroupName?: string } {
     const workingDir = this.requireWorkingDirectory(dirPath);
     const cli = this.requireCliEntry(cliType);
@@ -168,6 +179,7 @@ export class HelmSessionService {
       ...(createdByMobileDeviceId ? { createdByMobileDeviceId } : {}),
       ...(opts.creatorSessionId ? { creatorSessionId: opts.creatorSessionId } : {}),
       ...(initialPrompt ? { contextText: initialPrompt } : {}),
+      ...(opts.prepareSession ? { prepareSession: opts.prepareSession } : {}),
     });
     // Work the operator hands out is the operator's to follow up: the new
     // session reports back to it until the user talks to it directly.
@@ -259,15 +271,44 @@ export class HelmSessionService {
 
     const transcriptFile = writeStrippedTranscript(source);
     const group = this.runtimeGroupManager?.groupForSession(source.id);
+    const closeSource = opts.closeSource !== false && !source.locked;
     const created = this.spawnCli(cliType, source.workingDir, opts.name ?? source.name, {
       ...(opts.creatorSessionId ? { creatorSessionId: opts.creatorSessionId } : {}),
       runtimeGroupId: group?.id ?? 'none',
       initialPrompt: buildTranscriptResumePrompt(transcriptFile, opts.handover),
+      prepareSession: (targetSessionId) => {
+        const rollbacks: Array<() => void> = [];
+        const rollback = () => {
+          for (const undo of rollbacks.splice(0).reverse()) {
+            try { undo(); }
+            catch (error) { logger.error(`[SessionSwitch] Context rollback failed for ${targetSessionId}: ${error}`); }
+          }
+        };
+        const addRollback = (undo: (() => void) | void) => { if (undo) rollbacks.push(undo); };
+        try {
+          // These records are read by the new CLI's first SessionStart hook.
+          addRollback(this.copySessionArtifacts?.(source.id, targetSessionId));
+          const sessionContext: NonNullable<SessionSpawnPreparation['sessionContext']> = {};
+          if (closeSource) {
+            addRollback(this.copySessionTodos?.(source.id, targetSessionId));
+            const planTransfer = this.planService.transferClaim(source.id, targetSessionId);
+            if (planTransfer) {
+              sessionContext.currentPlanId = planTransfer.currentPlanId;
+              addRollback(planTransfer.rollback);
+            }
+            if (source.mission) sessionContext.mission = { ...source.mission };
+          }
+          return {
+            ...(Object.keys(sessionContext).length > 0 ? { sessionContext } : {}),
+            ...(rollbacks.length > 0 ? { rollback } : {}),
+          };
+        } catch (error) {
+          rollback();
+          throw error;
+        }
+      },
     });
-    // Before the close: closing clears the source's artifacts.
-    this.copySessionArtifacts?.(source.id, created.id);
 
-    const closeSource = opts.closeSource !== false && !source.locked;
     // The notes follow the work: a replacement takes them over, while a clone
     // (or a source that stays open) starts empty so two live pads never fork.
     if (closeSource) this.copySessionDraft?.(source.id, created.id);
