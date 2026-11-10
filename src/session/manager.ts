@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import type { SessionInfo, SessionChangeEvent, SessionAddedEvent, SessionRemovedEvent, SessionUpdatedEvent } from '../types/session.js';
+import type { SessionInfo, SessionChangeEvent, SessionAddedEvent, SessionRemovedEvent, SessionUpdatedEvent, SessionStartingEvent, SessionSpawnFailedEvent } from '../types/session.js';
 import { saveSessions, loadSessions } from './persistence.js';
 import { logger } from '../utils/logger.js';
 import type { ProjectStore } from './project-store.js';
@@ -58,6 +58,16 @@ export class SessionManager extends EventEmitter {
       ...(this.hasExplicitProfileIdentity ? { userProfileId: this.userProfileId } : {}),
       ...(this.projectStore ? { projectStore: this.projectStore } : {}),
     };
+  }
+
+  /** Publish transient spawn context before the CLI can emit its first output. */
+  notifySessionStarting(event: Omit<SessionStartingEvent, 'timestamp'>): void {
+    this.emit('session:starting', { ...event, timestamp: Date.now() } satisfies SessionStartingEvent);
+  }
+
+  /** Release observers armed by notifySessionStarting when the CLI launch fails. */
+  notifySessionSpawnFailed(sessionId: string): void {
+    this.emit('session:spawn-failed', { sessionId } satisfies SessionSpawnFailedEvent);
   }
 
   /**

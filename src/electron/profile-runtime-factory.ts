@@ -31,6 +31,7 @@ import { TimeTracker } from '../session/time-tracker.js';
 import { EtaPersistence } from '../session/eta-persistence.js';
 import { EtaTracker } from '../session/eta-tracker.js';
 import { PatternMatcher } from '../session/pattern-matcher.js';
+import { StartupPromptWatcher } from '../session/startup-prompt-watcher.js';
 import type { PtyManager } from '../session/pty-manager.js';
 
 export interface CreateProfileRuntimeOptions {
@@ -129,6 +130,10 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
       catch { return cliType; }
     },
   );
+  const startupPromptWatcher = new StartupPromptWatcher({
+    getPrompts: cliType => configLoader.getStartupPrompts(cliType),
+    updateSession: (sessionId, updates) => sessionManager.updateSession(sessionId, updates),
+  });
 
   return {
     userProfileId,
@@ -158,9 +163,11 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
     timeTracker,
     etaTracker,
     patternMatcher,
+    startupPromptWatcher,
     dispose: () => {
       scheduledTaskManager.stop();
       patternMatcher.dispose();
+      startupPromptWatcher.dispose();
       timeTracker.flush();
     },
   };

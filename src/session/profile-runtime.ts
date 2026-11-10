@@ -23,6 +23,7 @@ import type { SkillManager } from './skill-manager.js';
 import type { TimeTracker } from './time-tracker.js';
 import type { TodoManager } from './todo-manager.js';
 import type { PatternMatcher } from './pattern-matcher.js';
+import type { StartupPromptWatcher } from './startup-prompt-watcher.js';
 
 /** One user's long-lived, profile-owned manager container. */
 export interface ProfileRuntime {
@@ -53,5 +54,6 @@ export interface ProfileRuntime {
   readonly timeTracker: TimeTracker;
   readonly etaTracker: EtaTracker;
   readonly patternMatcher: PatternMatcher;
+  readonly startupPromptWatcher: StartupPromptWatcher;
   dispose(): void;
 }

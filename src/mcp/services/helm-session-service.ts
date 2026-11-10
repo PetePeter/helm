@@ -166,6 +166,7 @@ export class HelmSessionService {
       fallbackCompleteDelayMs: 500,
       ...(createdByPeerId ? { createdByPeerId } : {}),
       ...(createdByMobileDeviceId ? { createdByMobileDeviceId } : {}),
+      ...(opts.creatorSessionId ? { creatorSessionId: opts.creatorSessionId } : {}),
       ...(initialPrompt ? { contextText: initialPrompt } : {}),
     });
     // Work the operator hands out is the operator's to follow up: the new

@@ -49,6 +49,8 @@ export interface ConfiguredSessionSpawnParams {
   createdByPeerId?: string;
   /** Paired phone that requested this spawn, when it came in over the mobile proxy. */
   createdByMobileDeviceId?: string;
+  /** Local or proxy creator for startup-prompt reporting; transient and never persisted. */
+  creatorSessionId?: string;
   /** Born with its role/lock so no listener ever sees it as a plain session (the operator). */
   role?: SessionInfo['role'];
   locked?: boolean;
@@ -113,7 +115,17 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   } else if (isShellSession && !params.command) {
     launched = { pty: params.ptyManager.spawn({ sessionId, cwd: normalizedCwd }) };
   } else {
-    launched = spawnCliProcess(params, { cfg, sessionId, sessionName, cliSessionName, cliThreadId, isResume, cwd: normalizedCwd });
+    params.sessionManager.notifySessionStarting?.({
+      sessionId,
+      cliType,
+      ...(params.creatorSessionId ? { creatorSessionId: params.creatorSessionId } : {}),
+    });
+    try {
+      launched = spawnCliProcess(params, { cfg, sessionId, sessionName, cliSessionName, cliThreadId, isResume, cwd: normalizedCwd });
+    } catch (error) {
+      params.sessionManager.notifySessionSpawnFailed?.(sessionId);
+      throw error;
+    }
   }
   const { pty, rawCommand, command, args } = launched;
 

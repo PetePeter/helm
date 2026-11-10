@@ -245,6 +245,7 @@ export function setupPtyHandlers(
       const cliType = ownerManager?.getSession(sessionId)?.cliType;
       if (cliType) sessionPatternMatcher.processOutput(sessionId, cliType, data);
     }
+    owner?.startupPromptWatcher.processOutput(sessionId, data);
 
     // Forward to renderer for xterm.js rendering
     if (!belongsToActiveProfile(sessionId)) return;
@@ -275,6 +276,7 @@ export function setupPtyHandlers(
     pipelineQueue.dequeue(sessionId);
     stateDetector.removeSession(sessionId);
     const owner = ownerFor(sessionId);
+    owner?.startupPromptWatcher.removeSession(sessionId);
     (owner ? owner.patternMatcher : runtimeRegistry ? undefined : patternMatcher)?.removeSession(sessionId);
     notificationManager?.removeSession(sessionId);
     if (ownerManager?.hasSession(sessionId)) {

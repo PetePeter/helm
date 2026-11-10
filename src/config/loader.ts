@@ -146,6 +146,25 @@ export interface PatternRule {
   cooldownMs?: number;
 }
 
+/** A startup-only prompt detector rule; it can observe text but cannot take an action. */
+export type StartupPromptRule = Pick<PatternRule, 'regex'>;
+
+const TRUST_FOLDER_PROMPT: StartupPromptRule = {
+  regex: 'do\\s+you\\s+trust\\s+the\\s+files\\s+in\\s+this\\s+folder\\?',
+};
+
+const BUILT_IN_STARTUP_PROMPTS: Record<'claude' | 'codex' | 'copilot', StartupPromptRule[]> = {
+  claude: [TRUST_FOLDER_PROMPT],
+  codex: [
+    { regex: 'do\\s+you\\s+trust\\s+the\\s+contents\\s+of\\s+this\\s+directory\\?' },
+    { regex: 'allow\\s+Codex\\s+to\\s+work\\s+in\\s+this\\s+folder' },
+  ],
+  copilot: [
+    { regex: 'confirm\\s+folder\\s+trust' },
+    TRUST_FOLDER_PROMPT,
+  ],
+};
+
 // ============================================================================
 // Shared Config Types
 // ============================================================================
@@ -154,6 +173,17 @@ export interface PatternRule {
 /** A hand-edited `api` block can lack what a request needs; such a tool cannot record. */
 function isRunnableApi(api: ApiToolConfig): boolean {
   return typeof api.baseUrl === 'string' && !!api.baseUrl.trim() && typeof api.model === 'string' && !!api.model.trim();
+}
+
+function startupPromptFamily(config: CliTypeConfig | undefined): keyof typeof BUILT_IN_STARTUP_PROMPTS | undefined {
+  for (const command of [config?.spawnCommand, config?.resumeCommand, config?.continueCommand]) {
+    if (!command?.trim()) continue;
+    const match = /^(?:"([^"]+)"|'([^']+)'|(\S+))/.exec(command.trim());
+    const executable = (match?.[1] ?? match?.[2] ?? match?.[3] ?? '').split(/[\\/]/).pop() ?? '';
+    const name = executable.replace(/\.(?:exe|cmd|bat)$/i, '').toLowerCase();
+    if (name === 'claude' || name === 'codex' || name === 'copilot') return name;
+  }
+  return undefined;
 }
 
 const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -257,6 +287,8 @@ export interface CliTypeConfig {
   helmActions?: HelmActionMap;
   /** User-defined regex patterns that trigger automated actions when matched against PTY output. */
   patterns?: PatternRule[];
+  /** Startup prompts to detect and report. These rules never send input to a PTY. */
+  startupPrompts?: StartupPromptRule[];
   /**
    * Which CLI family this tool actually speaks ('claude' | 'codex' | 'copilot').
    * Auto-migrated on load from the name/commands/hooks block; the CLI
@@ -1686,6 +1718,14 @@ export class ConfigLoader {
   getPatterns(cliType: string): PatternRule[] {
     this.ensureLoaded();
     return this.cliTypeStore.get(cliType)?.patterns ?? [];
+  }
+
+  getStartupPrompts(cliType: string): StartupPromptRule[] {
+    this.ensureLoaded();
+    const config = this.cliTypeStore.get(cliType);
+    if (Array.isArray(config?.startupPrompts)) return config.startupPrompts;
+    const family = startupPromptFamily(config);
+    return family ? BUILT_IN_STARTUP_PROMPTS[family] : [];
   }
 
   addPattern(cliType: string, rule: PatternRule): void {

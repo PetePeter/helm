@@ -45,6 +45,29 @@ type LastFiredMap = Map<string, Map<number, number>>;
 
 const DEFAULT_COOLDOWN_MS = 300_000; // 5 minutes
 
+/** Strip terminal styling/control sequences before applying text rules. */
+export function stripAnsiSequences(text: string): string {
+  return text
+    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b\][^\x07\x1b]*/g, '');
+}
+
+/** Compile the shared case-insensitive regex format used by PTY text watchers. */
+export function compileCaseInsensitiveRegex(pattern: string): RegExp | null {
+  try {
+    return new RegExp(pattern, 'i');
+  } catch {
+    return null;
+  }
+}
+
+/** Match a compiled rule without allowing stateful regex flags to leak between chunks. */
+export function findRegexMatch(text: string, regex: RegExp): RegExpMatchArray | null {
+  regex.lastIndex = 0;
+  return text.match(regex);
+}
+
 // ============================================================================
 // PatternMatcher
 // ============================================================================
@@ -98,7 +121,7 @@ export class PatternMatcher extends EventEmitter {
     // Canonicalize first: rules, the emitted event, and the regex cache key must
     // all agree on one identity for the CLI type regardless of how it was addressed.
     const cliType = this.resolveCliTypeFn(cliTypeRef);
-    const cleanText = PatternMatcher.stripAnsi(rawText);
+    const cleanText = stripAnsiSequences(rawText);
     const rules = this.getPatternsFn(cliType);
     if (rules.length === 0) return;
 
@@ -109,7 +132,7 @@ export class PatternMatcher extends EventEmitter {
       const regex = this.getRegex(cliType, i, rule.regex);
       if (!regex) continue;
 
-      const match = cleanText.match(regex);
+      const match = findRegexMatch(cleanText, regex);
       if (!match) continue;
 
       this.recordFired(sessionId, i);
@@ -161,24 +184,14 @@ export class PatternMatcher extends EventEmitter {
 
   // ---------- Private helpers -----------------------------------------------
 
-  /** Strip ANSI escape sequences so patterns match plain terminal text. */
-  private static stripAnsi(text: string): string {
-    return text
-      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-      .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-      .replace(/\x1b\][^\x07\x1b]*/g, '');
-  }
-
   /** Compiled regex cache keyed by `cliType:index:regex`. Avoids re-compilation per data chunk. */
   private regexCache: Map<string, RegExp | null> = new Map();
 
   private getRegex(cliType: string, index: number, pattern: string): RegExp | null {
     const key = `${cliType}:${index}:${pattern}`;
     if (this.regexCache.has(key)) return this.regexCache.get(key)!;
-    let regex: RegExp | null = null;
-    try {
-      regex = new RegExp(pattern, 'i');
-    } catch {
+    const regex = compileCaseInsensitiveRegex(pattern);
+    if (!regex) {
       logger.warn(`[PatternMatcher] Invalid regex for ${cliType}[${index}]: ${pattern}`);
     }
     this.regexCache.set(key, regex);

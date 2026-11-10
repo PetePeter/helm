@@ -16,12 +16,14 @@ import { dormantAfterMs } from '../session/prompt-staleness.js';
 import type { SessionRemovedEvent } from '../types/session.js';
 import { deliverPromptSequenceToSession } from '../session/sequence-delivery.js';
 import type { HookReceiver } from '../session/hooks/hook-receiver.js';
+import type { HookEvent } from '../session/hooks/hook-normaliser.js';
 import { HookTracker } from '../session/hooks/hook-tracker.js';
 import { LoopDriver } from '../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../session/hooks/suggestion-scorer.js';
 import { createSuggestionCandidateSource } from '../session/hooks/suggestion-candidates.js';
 import { SuggestionUsageStore } from '../session/hooks/suggestion-usage-store.js';
 import { HelmSessionDeliveryService } from '../mcp/services/helm-session-delivery-service.js';
+import { routeStartupPrompt } from '../session/startup-prompt-routing.js';
 import { HelmChatService } from '../mcp/services/helm-chat-service.js';
 import { AutoMemoryRecorder, splitTurns } from '../session/auto-memory-judge.js';
 import { CliAutoMemory } from '../session/cli-auto-memory.js';
@@ -290,6 +292,7 @@ export class ProfileRuntimeComposition {
       this.contextUsageTrackers.set(userProfileId, contextUsageTracker);
 
       const delivery = this.deliveryServices.get(userProfileId)!;
+      this.registerStartupPromptWatcher(runtime, stateDetector, hookReceiver, notificationManager, delivery);
       this.messNotifiers.set(userProfileId, new MessNotifier(
         runtime.messManager,
         runtime.sessionManager,
@@ -360,6 +363,47 @@ export class ProfileRuntimeComposition {
       this.trackSessionCleanup(runtime.userProfileId, () => runtime.sessionManager.off('session:removed', onRemoved));
       this.sessionRemovedProfiles.add(runtime.userProfileId);
     }
+  }
+
+  private registerStartupPromptWatcher(
+    runtime: ProfileRuntime,
+    stateDetector: StateDetector,
+    hookReceiver: HookReceiver,
+    notificationManager: NotificationManager,
+    delivery: HelmSessionDeliveryService,
+  ): void {
+    const { sessionManager, startupPromptWatcher } = runtime;
+    const onStarting = (event: { sessionId: string; cliType: string; creatorSessionId?: string }) => startupPromptWatcher.watch(event);
+    const onSpawnFailed = (event: { sessionId: string }) => startupPromptWatcher.removeSession(event.sessionId);
+    const onRemoved = (event: SessionRemovedEvent) => startupPromptWatcher.removeSession(event.sessionId);
+    const onActivity = (event: { sessionId: string; level: string }) => {
+      if (event.level === 'active') startupPromptWatcher.markReady(event.sessionId);
+    };
+    const onHook = (event: HookEvent) => {
+      if (event.event === 'SessionStart' && event.helmSessionId) startupPromptWatcher.markReady(event.helmSessionId);
+    };
+    const onBlocked = (event: Parameters<typeof routeStartupPrompt>[0]) => {
+      void routeStartupPrompt(event, {
+        getSession: sessionId => sessionManager.getSession(sessionId),
+        sendSystemReminder: (sessionId, text) => delivery.sendSystemReminder(sessionId, text),
+        notify: (sessionId, title, content) => { notificationManager.notifyLlmDirected(sessionId, title, content); },
+      });
+    };
+
+    sessionManager.on('session:starting', onStarting);
+    sessionManager.on('session:spawn-failed', onSpawnFailed);
+    sessionManager.on('session:removed', onRemoved);
+    stateDetector.on('activity-change', onActivity);
+    hookReceiver.on('hook', onHook);
+    startupPromptWatcher.on('blocked', onBlocked);
+    this.trackSessionCleanup(runtime.userProfileId, () => {
+      sessionManager.off('session:starting', onStarting);
+      sessionManager.off('session:spawn-failed', onSpawnFailed);
+      sessionManager.off('session:removed', onRemoved);
+      stateDetector.off('activity-change', onActivity);
+      hookReceiver.off('hook', onHook);
+      startupPromptWatcher.off('blocked', onBlocked);
+    });
   }
 
   startScheduledTasks(): void {

@@ -25,6 +25,8 @@
     clear: /clear{Enter}
     compact: /compact $instruction{Enter}
     export: /export $path{Enter} {Wait 5000}
+  startupPrompts:
+    - regex: 'do\s+you\s+trust\s+the\s+files\s+in\s+this\s+folder\?'
   # Model context window fallback for the phone's context badge. Claude's
   # statusline reports the actual window when a custom status line is configured;
   # transcripts do not, so this also covers sessions without that integration.
@@ -79,6 +81,9 @@
     clear: /new{Enter}
     compact: /compact{Enter}
     export: ''
+  startupPrompts:
+    - regex: 'do\s+you\s+trust\s+the\s+contents\s+of\s+this\s+directory\?'
+    - regex: 'allow\s+Codex\s+to\s+work\s+in\s+this\s+folder'
   provider: codex
   hooks:
     provider: codex
@@ -112,6 +117,9 @@
     clear: /clear{Enter}
     compact: /compact $instruction{Enter}
     export: /export $path{Enter} {Wait 5000}
+  startupPrompts:
+    - regex: 'confirm\s+folder\s+trust'
+    - regex: 'do\s+you\s+trust\s+the\s+files\s+in\s+this\s+folder\?'
   provider: copilot
   hooks:
     provider: copilot

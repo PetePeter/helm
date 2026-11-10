@@ -139,6 +139,33 @@ describe('spawnConfiguredSession', () => {
     expect(updateSession).not.toHaveBeenCalled();
   });
 
+  it('arms startup observers before launching and reports a failed launch', () => {
+    const order: string[] = [];
+    const notifySessionStarting = vi.fn((event: any) => { order.push(`starting:${event.creatorSessionId}`); });
+    const notifySessionSpawnFailed = vi.fn((sessionId: string) => { order.push(`failed:${sessionId}`); });
+    const sessionManager = {
+      addSession: vi.fn(), updateSession: vi.fn(), hasSession: () => false, getSession: () => undefined,
+      getSpawnCwdContext: () => spawnCwdContext(), notifySessionStarting, notifySessionSpawnFailed,
+    };
+    spawnConfiguredSession({
+      ptyManager: { spawn: vi.fn(() => { order.push('spawn'); return { pid: 1 }; }), write: vi.fn() } as any,
+      sessionManager: sessionManager as any,
+      sessionId: 'observe-first', cliType: 'codex', command: 'codex', creatorSessionId: 'creator-1',
+    });
+    expect(order).toEqual(['starting:creator-1', 'spawn']);
+    expect(notifySessionStarting).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'observe-first', cliType: 'codex', creatorSessionId: 'creator-1',
+    }));
+
+    const failedManager = { ...sessionManager, addSession: vi.fn() };
+    expect(() => spawnConfiguredSession({
+      ptyManager: { spawn: vi.fn(() => { throw new Error('launch failed'); }), write: vi.fn() } as any,
+      sessionManager: failedManager as any,
+      sessionId: 'failed-start', cliType: 'codex', command: 'codex',
+    })).toThrow('launch failed');
+    expect(notifySessionSpawnFailed).toHaveBeenCalledWith('failed-start');
+  });
+
   it('registers role and lock in the same add, so the operator never appears as a plain row', () => {
     const addSession = vi.fn();
     spawnConfiguredSession({

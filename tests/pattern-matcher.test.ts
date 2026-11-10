@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PatternMatcher } from '../src/session/pattern-matcher.js';
+import { compileCaseInsensitiveRegex, findRegexMatch, PatternMatcher, stripAnsiSequences } from '../src/session/pattern-matcher.js';
 import type { PatternRule } from '../src/config/loader.js';
 
 // ============================================================================
@@ -42,6 +42,13 @@ function makeMatcher(rules: PatternRule[] = []) {
 describe('PatternMatcher', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
+
+  it('shares ANSI stripping and case-insensitive matching helpers', () => {
+    const regex = compileCaseInsensitiveRegex('TRUST\\s+THIS');
+    expect(stripAnsiSequences('\x1b[33mTrust this\x1b[0m')).toBe('Trust this');
+    expect(regex && findRegexMatch('Trust this', regex)?.[0]).toBe('Trust this');
+    expect(compileCaseInsensitiveRegex('[invalid(')).toBeNull();
+  });
 
   describe('send-text', () => {
     it('calls ptyWrite immediately on match', () => {

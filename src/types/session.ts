@@ -85,6 +85,8 @@ export interface SessionInfo {
   lastActiveAt?: number;
   /** Current activity dot level. Ephemeral — NOT persisted; kept in sync by the pty activity-change listener. */
   activityLevel?: ActivityLevel;
+  /** Runtime-only reason the session is blocked before its first prompt. */
+  blockedOn?: 'startup-prompt';
   /** BrowserWindow ID if this session is snapped out to a child window. Undefined/null means main window. */
   windowId?: number;
   /** Whether the user last interacted remotely or at the desktop. Ephemeral — not persisted. */
@@ -229,6 +231,19 @@ export interface SessionRemovedEvent {
  */
 export interface SessionUpdatedEvent extends SessionInfo {
   timestamp: number;
+}
+
+/** Session spawn context sent before a CLI PTY launches; creator identity is never persisted. */
+export interface SessionStartingEvent {
+  sessionId: string;
+  cliType: string;
+  creatorSessionId?: string;
+  timestamp: number;
+}
+
+/** Failed CLI spawn signal used to release pre-launch observers. */
+export interface SessionSpawnFailedEvent {
+  sessionId: string;
 }
 
 /**

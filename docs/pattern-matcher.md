@@ -72,9 +72,19 @@ graph LR
 Rules live in the profile YAML under each CLI's `patterns` array, so switching
 profiles switches the whole rule set along with everything else.
 
+Startup trust prompts use a separate regex-only `startupPrompts` array. These
+rules are case-insensitive and observe the first 60 seconds of CLI output; they
+never run pattern actions or write an answer to the blocked session. Helm tells
+the creator session to resolve the prompt, or raises an alert when the creator
+is unavailable. Shipped Claude Code, Codex, and Copilot CLI patterns are based
+on known prompt text and still need live verification. Custom CLI entries with
+no `startupPrompts` value inherit defaults when their spawn, resume, or continue
+command starts with `claude`, `codex`, or `copilot`; `startupPrompts: []` disables
+that fallback.
+
 ## Matching pipeline
 
-1. **ANSI strip.** `PatternMatcher.stripAnsi()` removes CSI and OSC sequences
+1. **ANSI strip.** The shared `stripAnsiSequences()` helper removes CSI and OSC sequences
    (including partial OSC) so a rule author writes patterns against the text they
    can *read*, not against colour codes interleaved with it.
 2. **Early exit.** No rules for this CLI type → return immediately. This runs on
