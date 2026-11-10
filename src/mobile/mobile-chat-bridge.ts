@@ -413,10 +413,11 @@ export class MobileChatBridge implements ChatBridge {
   }
 
   /** Enabled, registered devices this hub currently holds a link to. */
-  private linkedMachines(profileId = '1'): string[] {
+  private linkedMachines(profileId = '1', excludingMachineId?: string): string[] {
     return this.deps.deviceStore
       .list()
       .filter(device => device.enabled !== false && device.userProfileId === profileId
+        && device.machineId !== excludingMachineId
         && this.deps.links.isOnline(device.machineId))
       .map(device => device.machineId);
   }
@@ -507,11 +508,11 @@ export class MobileChatBridge implements ChatBridge {
       if (record.method === SESSION_LIST_METHOD) this.armSessionNotice(machineId, result);
       // An ACCEPTED reply from a phone is part of the conversation the journal
       // exists to preserve — without this, a refetch after an app restart would
-      // restore only the agent's half of every thread. Journaled ONLY: nothing
-      // is live-fanned to the other phones, whose own catch-up will pick the
-      // echo up; the phone that sent it recognises and drops it by originId.
+      // restore only the agent's half of every thread. Live-fan the journaled
+      // echo to the sender's other online devices; the sender recognises and
+      // drops its own echo by originId.
       if (record.method === SESSION_SEND_TEXT_METHOD) {
-        this.journalPhoneReply(machineId, record);
+        this.journalPhoneReply(machineId, device.userProfileId, record);
       }
     } catch (err) {
       const code = err instanceof GateError ? err.code : JSONRPC_SERVER_ERROR;
@@ -572,15 +573,16 @@ export class MobileChatBridge implements ChatBridge {
   }
 
   /**
-   * Echo one accepted phone reply into the journal, marked with where it came
-   * from. The id is the phone's OWN call id prefixed with its machineId —
-   * stable enough for the sender to drop the replayed echo, and namespaced so
-   * two phones that number their calls alike can never drop each other's.
+   * Echo one accepted phone reply into the journal and push that sequenced
+   * entry to every other enabled online device in the sender's profile. The id
+   * is the phone's OWN call id prefixed with its machineId — stable enough for
+   * the sender to drop a replayed echo, and namespaced so two phones that number
+   * their calls alike can never drop each other's.
    * Anything malformed (no session, no text) is skipped rather than journaled
    * as a half-record; the reply itself has already been delivered or denied by
    * the gate either way.
    */
-  private journalPhoneReply(machineId: string, record: MobileCallRecord): void {
+  private journalPhoneReply(machineId: string, profileId: string | undefined, record: MobileCallRecord): void {
     const params = record.params && typeof record.params === 'object' && !Array.isArray(record.params)
       ? record.params as Record<string, unknown>
       : {};
@@ -590,13 +592,18 @@ export class MobileChatBridge implements ChatBridge {
     const session = this.deps.sessions.getSession(sessionId);
     if (!session) return;
 
-    this.deps.journal.append({
+    const entry = this.deps.journal.append({
       sessionId: session.id,
       sessionName: session.name,
       text,
       at: this.now(),
       originId: `${machineId}:${record.id}`,
     });
+
+    const payload = encodeChat({ ...entry.record, seq: entry.seq });
+    for (const targetMachineId of this.linkedMachines(profileId, machineId)) {
+      this.deps.links.send(targetMachineId, payload);
+    }
   }
 
   /**

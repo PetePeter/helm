@@ -332,9 +332,10 @@ Two deliberate edges:
 The journal would otherwise hold only half of every conversation: the agent's
 messages. So when the gate ACCEPTS a phone's `session_send_text` call, the
 bridge appends an echo to the journal — `journalPhoneReply` — stamped with
-`originId` (`<machineId>:<callId>`). The echo is **journaled only**: nothing is
-live-fanned to the other phones, whose own catch-up picks it up naturally, so
-fan-out rows stay as honest as ever. A reply the gate denies, or one naming a
+`originId` (`<machineId>:<callId>`). It live-fans that journal entry, including
+its `seq`, to every other enabled, online device in the sender's profile. The
+sender gets only the tool result and drops its own echo by `originId`; offline
+devices receive it on catch-up. A reply the gate denies, or one naming a
 session that no longer exists, is answered but journaled as nothing.
 
 The phone that sent it recognises its own words on replay and drops the echo —

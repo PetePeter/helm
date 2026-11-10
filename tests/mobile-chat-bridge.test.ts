@@ -537,8 +537,8 @@ describe('MobileChatBridge catch-up from a phone cursor', () => {
 
 /**
  * Phone-origin echoes. A phone's ACCEPTED `session_send_text` call is part of
- * the conversation, so it is echoed into the journal — journaled ONLY, never
- * live-fanned, and named by the sending phone so it can drop its own echo.
+ * the conversation, so it is echoed into the journal and live-fanned to other
+ * phones in the same profile, named by the sender so it can drop its own echo.
  */
 describe('MobileChatBridge journaling a phone reply', () => {
   it.each(['s1', 'operator'])('renders call interruption before the user text sent to %s', async (sessionId) => {
@@ -639,16 +639,34 @@ describe('MobileChatBridge journaling a phone reply', () => {
     expect(journal.since(0)[0].record.text).toBe('keep these words');
   });
 
-  it('a phone reply the gate accepted is journaled phone-origin and fanned nowhere', async () => {
+  it('a phone reply the gate accepted is live-fanned to same-profile phones except its sender', async () => {
     const second = deviceStore.add({ name: 'Tablet', machineId: 'tablet-machine', pskRef: 'secret-2', allow: [] });
+    const otherProfile = deviceStore.add({
+      name: 'Other profile', machineId: 'other-profile-machine', pskRef: 'secret-3', allow: [], userProfileId: '2',
+    });
     links.online.add('phone-machine');
     links.online.add(second.machineId);
+    links.online.add(otherProfile.machineId);
 
     links.receive('phone-machine', encodeCall('r1', 'session_send_text', { sessionId: 's1', text: 'on my way' }));
-    await vi.waitFor(() => expect(links.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(links.sent).toHaveLength(2));
 
-    // The gate's result went back, and NOTHING else — no live fan-out of the echo.
-    expect(links.records()).toEqual([{ v: 1, t: 'result', id: 'r1', result: { ok: 'session_send_text' } }]);
+    const senderRecords = links.sent
+      .filter(entry => entry.machineId === 'phone-machine')
+      .map(entry => decodeRecord(entry.payload));
+    const tabletRecords = links.sent
+      .filter(entry => entry.machineId === second.machineId)
+      .map(entry => decodeRecord(entry.payload));
+    const otherProfileRecords = links.sent
+      .filter(entry => entry.machineId === otherProfile.machineId)
+      .map(entry => decodeRecord(entry.payload));
+
+    expect(senderRecords).toEqual([{ v: 1, t: 'result', id: 'r1', result: { ok: 'session_send_text' } }]);
+    expect(tabletRecords).toEqual([{
+      v: 1, t: 'chat', sessionId: 's1', sessionName: 'work', text: 'on my way',
+      at: NOW, originId: 'phone-machine:r1', seq: 1,
+    }]);
+    expect(otherProfileRecords).toEqual([]);
     expect(journal.since(0)).toEqual([
       {
         seq: 1,
