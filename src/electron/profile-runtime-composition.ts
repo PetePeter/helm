@@ -119,7 +119,10 @@ export class ProfileRuntimeComposition {
     if (userProfileId === '1') throw new Error('The default profile runtime cannot be removed');
     if (this.userProfileStore.isAdmin(userProfileId)) throw new Error('The admin profile runtime cannot be removed');
     const runtime = this.registry.getRequiredRuntime(userProfileId);
-    if (runtime.sessionManager.getAllSessions().length || runtime.recycleBinManager.list().length) {
+    if (runtime.recycleBinManager.retainedSessionIds().size > 0) {
+      throw new Error('Empty the recycle bin and wait for pending recycle-bin cleanup to finish before deleting this profile');
+    }
+    if (runtime.sessionManager.getAllSessions().length) {
       throw new Error('Close or remove this profile’s sessions before deleting it');
     }
     this.disposeRuntime(userProfileId);

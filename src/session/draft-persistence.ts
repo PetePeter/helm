@@ -82,8 +82,10 @@ export function createDraftStore(dir: string): DraftStore {
       try {
         rmSync(fileFor(dir, sessionId), { force: true });
         rmSync(fileFor(historyDir, sessionId), { force: true });
+        return true;
       } catch (err) {
         logger.error(`[Draft] Failed to delete the draft of ${sessionId}: ${err}`);
+        return false;
       }
     },
     list() {

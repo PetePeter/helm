@@ -8,6 +8,7 @@
 import { ref } from 'vue';
 import { recycleBinClient, eventsClient } from '../ipc/clients.js';
 import type { RecycleBinEntry } from '../../src/types/recycle-bin.js';
+import { useToast } from './useToast.js';
 
 const entries = ref<RecycleBinEntry[]>([]);
 const count = ref(0);
@@ -42,8 +43,12 @@ async function restore(id: string): Promise<void> {
   try {
     // Main resolves the active profile runtime, restores metadata, and commits
     // before returning; a failed restore stays in the bin for retry.
-    const entry = await recycleBinClient.recycleBinRestore(id);
-    if (!entry) return;
+    const result = await recycleBinClient.recycleBinRestore(id);
+    if (!result.ok) {
+      useToast().addToast({ message: result.error, type: 'error', duration: 8000 });
+      return;
+    }
+    if (!result.entry) return;
     await refresh();
   } finally {
     restoring.delete(id);
@@ -51,13 +56,22 @@ async function restore(id: string): Promise<void> {
 }
 
 async function forget(id: string): Promise<void> {
-  await recycleBinClient.recycleBinForget(id);
+  const result = await recycleBinClient.recycleBinForget(id);
+  if (!result.ok) {
+    useToast().addToast({ message: result.error, type: 'error', duration: 8000 });
+    return;
+  }
   await refresh();
 }
 
-async function empty(): Promise<void> {
-  await recycleBinClient.recycleBinEmpty();
+async function empty(): Promise<boolean> {
+  const result = await recycleBinClient.recycleBinEmpty();
+  if (!result.ok) {
+    useToast().addToast({ message: result.error, type: 'error', duration: 8000 });
+    return false;
+  }
   await refresh();
+  return true;
 }
 
 export function useRecycleBin() {

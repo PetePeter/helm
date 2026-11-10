@@ -40,15 +40,15 @@ let recycleBinRestore: ReturnType<typeof vi.fn>;
 function installWindow(entry: RecycleBinEntry | null): void {
   sessionRename = vi.fn(async () => { callOrder.push('rename'); return { success: true }; });
   runtimeGroupReattach = vi.fn(async () => { callOrder.push('reattach'); });
-  recycleBinRestore = vi.fn(async () => { callOrder.push('restore'); return entry; });
+  recycleBinRestore = vi.fn(async () => { callOrder.push('restore'); return { ok: true, entry }; });
 
   (globalThis as typeof globalThis & { window: any }).window = {
     helm: {
       recycleBin: {
         recycleBinList: vi.fn(async () => []),
         recycleBinRestore,
-        recycleBinForget: vi.fn(async () => true),
-        recycleBinEmpty: vi.fn(async () => true),
+        recycleBinForget: vi.fn(async () => ({ ok: true })),
+        recycleBinEmpty: vi.fn(async () => ({ ok: true })),
       },
       runtimeGroups: { runtimeGroupReattach },
       sessions: { sessionRename },

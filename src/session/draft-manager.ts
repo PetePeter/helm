@@ -13,7 +13,7 @@ import {
 export interface DraftStore {
   load(sessionId: string): Draft | null;
   save(draft: Draft): void;
-  remove(sessionId: string): void;
+  remove(sessionId: string): void | boolean;
   list(): string[];
   loadHistory(sessionId: string): DraftSend[];
   saveHistory(sessionId: string, entries: DraftSend[]): void;
@@ -98,10 +98,12 @@ export class DraftManager extends EventEmitter {
   }
 
   /** The session is gone for good: drop its pad. */
-  clearSession(sessionId: string): void {
+  clearSession(sessionId: string, reportFailure = false): void {
     this.pads.delete(sessionId);
     this.histories.delete(sessionId);
-    this.store.remove(sessionId);
+    if (this.store.remove(sessionId) === false && reportFailure) {
+      throw new Error(`Failed to delete the draft of ${sessionId}`);
+    }
   }
 
   /** Startup reclamation after a crash: drop pads whose session is neither live nor in the recycle bin. */

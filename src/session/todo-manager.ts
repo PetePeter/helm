@@ -7,7 +7,7 @@ import type { CompletedSessionTodo, SessionTodo, SessionTodosChanged } from '../
 export interface TodoStore {
   load(sessionId: string): SessionTodo[] | null;
   save(sessionId: string, todos: SessionTodo[]): void;
-  remove(sessionId: string): void;
+  remove(sessionId: string): void | boolean;
   list(): string[];
 }
 
@@ -64,9 +64,11 @@ export class TodoManager extends EventEmitter {
   }
 
   /** A session removed permanently takes its checklist with it. */
-  clearSession(sessionId: string): void {
+  clearSession(sessionId: string, reportFailure = false): void {
     this.bySession.delete(sessionId);
-    this.store.remove(sessionId);
+    if (this.store.remove(sessionId) === false && reportFailure) {
+      throw new Error(`Failed to delete todos for ${sessionId}`);
+    }
   }
 
   /** Startup reclamation after a crash: keep only live and recycle-bin sessions. */

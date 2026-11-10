@@ -57,6 +57,7 @@ import { setupPtyHandlers, cancelAllPrompts, registerPromptCanceller } from './p
 import { setupPlanHandlers } from './plan-handlers.js';
 import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
+import { RecycleBinPurgeMaintenance } from '../recycle-bin-purge-maintenance.js';
 import { setupRuntimeGroupHandlers } from './runtime-group-handlers.js';
 import { setupArtifactHandlers } from './artifact-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
@@ -167,7 +168,7 @@ export function registerIPCHandlers(
   dirname: string | undefined,
   configLoader: ConfigLoader,
   options: IpcStartupOptions = {},
-): { cleanup: () => Promise<void>; sessionManager: SessionManager; ptyManager: PtyManager; incomingWatcher: IncomingPlansWatcher; windowManager: WindowManager; helmControlService: HelmControlService; runtimeGroupManager: RuntimeGroupManager } {
+): { cleanup: () => Promise<void>; startRecycleBinMaintenance: () => void; sessionManager: SessionManager; ptyManager: PtyManager; incomingWatcher: IncomingPlansWatcher; windowManager: WindowManager; helmControlService: HelmControlService; runtimeGroupManager: RuntimeGroupManager } {
   logger.info('[IPC] Registering handlers');
   const startupDelayMs = Math.max(0, options.startupDelayMs ?? 0);
 
@@ -285,7 +286,7 @@ export function registerIPCHandlers(
   // Reclaim profile-local data that lost its owning live or recoverable session.
   for (const runtime of registry.all()) {
     const liveSessionIds = new Set(runtime.sessionManager.getAllSessions().map(s => s.id));
-    const binSessionIds = new Set(runtime.recycleBinManager.list().map(e => e.sessionId));
+    const binSessionIds = runtime.recycleBinManager.retainedSessionIds();
     try {
       runtime.memoryManager.pruneOrphanedSessions(new Set([...liveSessionIds, ...binSessionIds]));
     } catch (error) {
@@ -564,6 +565,8 @@ export function registerIPCHandlers(
     }),
   });
   mobileChatJournal.hydrate(loadMobileChatJournal());
+  const recycleBinPurgeMaintenance = new RecycleBinPurgeMaintenance({ chatJournal: mobileChatJournal });
+  for (const runtime of registry.all()) recycleBinPurgeMaintenance.add(runtime);
   const restoreRecycleBinEntry = createProfileRecycleBinRestorer({
     registry,
     getActiveProfileId: () => userProfileStore.getActiveProfileId(),
@@ -576,16 +579,12 @@ export function registerIPCHandlers(
     adminRuntime.userProfileId,
     restoreRecycleBinEntry,
   );
-  setupRecycleBinHandlers(
-    recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal,
-    // Restore reuses the original session id, so the mission lands back on the same session.
+  const disposeRecycleBinHandlers = setupRecycleBinHandlers(
+    recycleBinManager,
+    windowManager,
     restoreRecycleBinEntry,
-    draftManager,
-    todoManager,
   );
-  // Expired entries loaded from persisted state were not visible to the runtime
-  // expiry event until now; dispatch them after cleanup listeners are attached.
-  recycleBinManager.pruneExpired();
+  const startRecycleBinMaintenance = () => recycleBinPurgeMaintenance.start();
   setupRuntimeGroupHandlers(runtimeGroupManager, windowManager);
   setupArtifactHandlers(artifactManager, artifactAttachmentManager, windowManager, dirname, artifactTempRegistry);
   setupDraftHandlers(
@@ -791,6 +790,7 @@ export function registerIPCHandlers(
       profileComposition.getCliAutoMemory(runtime.userProfileId)?.forget(sessionId);
     },
     closeComfyUiSession: sessionId => getComfyUiSessionHost().closeSession(sessionId),
+    abortComfyUiSession: sessionId => getComfyUiSessionHost().abortSession(sessionId),
     pruneMobileJournal: sessionId => mobileChatJournal.pruneSession(sessionId),
   });
   // Dual-path rules delivery (G9): every surface resolves each standing
@@ -1031,6 +1031,8 @@ export function registerIPCHandlers(
     devices: mobileDeviceStore,
     windowManager,
     incomingWatcher,
+    onProfileAdded: id => recycleBinPurgeMaintenance.add(profileComposition.getRequiredRuntime(id)),
+    onProfileRemoved: id => recycleBinPurgeMaintenance.remove(id),
     router: profileMcpRouter,
     baseServices: { userProfileId: adminRuntime.userProfileId, service: helmControlService, loopDriver, uploads: artifactUploadService, remoteService },
     createServices: runtime => createProfileRuntimeMcpServiceSet(runtime, {
@@ -1233,6 +1235,8 @@ export function registerIPCHandlers(
       clearInterval(timeTrackerTimer);
       clearInterval(subagentSweepTimer);
       clearInterval(etaSweepTimer);
+      disposeRecycleBinHandlers();
+      recycleBinPurgeMaintenance.dispose();
       setDeliveryObserver(null);
       sweepSubagents();
       cleanupTimeTracking();
@@ -1260,6 +1264,7 @@ export function registerIPCHandlers(
     },
     sessionManager,
     ptyManager,
+    startRecycleBinMaintenance,
     incomingWatcher,
     windowManager,
     helmControlService,

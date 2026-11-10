@@ -222,6 +222,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setArtifactUploadService = vi.fn();
     this.setMemoryManager = vi.fn();
     this.setMessManager = vi.fn();
+    this.setRecycleBinService = vi.fn();
     this.getSuggestedPlanService = vi.fn().mockReturnValue(undefined);
     this.setHandoverDelivery = vi.fn();
     this.setCompactSnapshot = vi.fn();

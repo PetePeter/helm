@@ -80,6 +80,7 @@ const profileConfigDir = getProfileConfigDir('1', appDataDir);
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let cleanupIPC: (() => Promise<void>) | null = null;
+let startRecycleBinMaintenance: (() => void) | null = null;
 let isCleaningUp = false;
 let allowMainWindowClose = false;
 let closeConfirmPending = false;
@@ -216,6 +217,8 @@ function createWindow(): void {
     },
     title: `Helm — steer your fleet of agents v${app.getVersion()}`,
   });
+
+  mainWindow.once('show', () => startRecycleBinMaintenance?.());
 
   // Confine this privileged window to its own app content (deny remote navigation).
   applyNavigationPolicy(mainWindow);
@@ -398,6 +401,7 @@ app.whenReady().then(async () => {
   // Register IPC handlers (passes __dirname for temp file cleanup on startup)
   const ipc = registerIPCHandlers(__dirname, configLoader, { startupDelayMs });
   cleanupIPC = ipc.cleanup;
+  startRecycleBinMaintenance = ipc.startRecycleBinMaintenance;
   const windowManager = ipc.windowManager;
   ipc.helmControlService.on('restart-requested', () => {
     logger.info('[Main] Restart requested - relaunching with startup delay');

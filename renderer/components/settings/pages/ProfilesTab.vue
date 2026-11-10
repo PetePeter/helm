@@ -168,7 +168,7 @@ onUnmounted(() => stopRegistryChanged?.());
           >Delete</button>
           <AdminOnlyHint v-if="profile.canDelete" :show="!isAdmin" />
           <span v-else-if="!profile.isAdmin" class="profile-delete-note">
-            Delete requires no sessions, recoverable sessions, or paired devices.
+            Delete requires no sessions, recoverable sessions, pending recycle-bin cleanup, or paired devices.
           </span>
         </div>
         <FieldRow :label="`Name for ${profile.name}`" :for="`profile-name-${profile.id}`">

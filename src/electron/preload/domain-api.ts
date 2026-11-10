@@ -3,7 +3,7 @@ import type { PtyWriteOptions } from '../../session/delivery-context.js';
 import type { SessionMessageFlight } from '../../session/message-flight.js';
 import type { SessionMission } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
-import type { RecycleBinEntry } from '../../types/recycle-bin.js';
+import type { RecycleBinActionResult, RecycleBinEntry, RecycleBinRestoreResult } from '../../types/recycle-bin.js';
 import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
@@ -1272,13 +1272,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   recycleBinList: (): Promise<RecycleBinEntry[]> => ipcRenderer.invoke('recycleBin:list'),
 
   /** Restore an entry on its owning profile runtime; failed spawns leave it recoverable. */
-  recycleBinRestore: (id: string): Promise<RecycleBinEntry | null> => ipcRenderer.invoke('recycleBin:restore', id),
+  recycleBinRestore: (id: string): Promise<RecycleBinRestoreResult> => ipcRenderer.invoke('recycleBin:restore', id),
 
   /** Forget (permanently delete) a single entry */
-  recycleBinForget: (id: string): Promise<boolean> => ipcRenderer.invoke('recycleBin:forget', id),
+  recycleBinForget: (id: string): Promise<RecycleBinActionResult> => ipcRenderer.invoke('recycleBin:forget', id),
 
   /** Empty the bin */
-  recycleBinEmpty: (): Promise<boolean> => ipcRenderer.invoke('recycleBin:empty'),
+  recycleBinEmpty: (): Promise<RecycleBinActionResult> => ipcRenderer.invoke('recycleBin:empty'),
 
   /** Subscribe to recycle-bin change events */
   onRecycleBinChanged: (callback: () => void) => {

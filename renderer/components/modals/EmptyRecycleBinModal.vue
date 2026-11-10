@@ -49,6 +49,7 @@ defineExpose({ handleButton, selectedIndex });
     title="Empty Recycle Bin"
     aria-label="Empty recycle bin confirmation"
     :buttons="buttons"
+    :auto-close="false"
     v-model:selected-index="selectedIndex"
     cancel-action-id="cancel"
     @action="onAction"

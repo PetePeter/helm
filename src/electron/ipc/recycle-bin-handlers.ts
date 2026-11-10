@@ -1,88 +1,23 @@
-/**
- * Recycle Bin IPC Handlers
- *
- * Lists, restores, and forgets closed recoverable sessions.
- */
+/** Recycle-bin IPC surface for listing, restoring, and forgetting sessions. */
 
 import { ipcMain, BrowserWindow } from 'electron';
 import type { RecycleBinManager } from '../../session/recycle-bin-manager.js';
-import type { ArtifactManager } from '../../session/artifact-manager.js';
-import type { DraftManager } from '../../session/draft-manager.js';
-import type { TodoManager } from '../../session/todo-manager.js';
-import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { WindowManager } from '../window-manager.js';
-import { ArtifactTempRegistry } from '../../session/artifact-temp-registry.js';
-import type { MemoryManager } from '../../session/memory-manager.js';
-import type { MessManager, MessSessionCloseKind } from '../../session/mess-manager.js';
-import type { MobileChatJournal } from '../../mobile/mobile-chat-journal.js';
+import type { RecycleBinEntry, RecycleBinRestoreResult } from '../../types/recycle-bin.js';
 import { logger } from '../../utils/logger.js';
 
 export function setupRecycleBinHandlers(
   recycleBin: RecycleBinManager,
-  artifactManager: ArtifactManager,
   windowManager?: WindowManager,
-  tempRegistry: ArtifactTempRegistry = new ArtifactTempRegistry(),
-  memoryManager?: Pick<MemoryManager, 'purgeSession'>,
-  messManager?: Pick<MessManager, 'onSessionClosed'>,
-  chatJournal?: Pick<MobileChatJournal, 'pruneSession'>,
-  /** Peeks, spawns, and commits on the runtime that owns this entry. */
   restoreEntry?: (id: string) => Promise<RecycleBinEntry | null>,
-  draftManager?: Pick<DraftManager, 'clearSession'>,
-  todoManager?: Pick<TodoManager, 'clearSession'>,
-): void {
+): () => void {
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
-  /**
-   * A session leaving the bin is never coming back, so its per-session stores go
-   * with it. Memory gates the transaction — a failed purge leaves the entry
-   * recoverable for retry — while the Mess cursor and the chat journal are
-   * maintenance that must never block the bin operation.
-   */
-  const purgeSessionData = (sessionId: string, kind: MessSessionCloseKind): boolean => {
-    try {
-      memoryManager?.purgeSession(sessionId);
-    } catch (error) {
-      logger.error(`[recycleBin] Failed to purge memories for ${sessionId}: ${error}`);
-      return false;
-    }
-    try {
-      messManager?.onSessionClosed(sessionId, kind);
-    } catch (error) {
-      logger.error(`[recycleBin] Failed to drop the Mess cursor for ${sessionId}: ${error}`);
-    }
-    try {
-      // The phone's replay of this conversation dies with the session — the
-      // journal's retention IS the session's lifetime (see MobileChatJournal).
-      chatJournal?.pruneSession(sessionId);
-    } catch (error) {
-      logger.error(`[recycleBin] Failed to prune the chat journal for ${sessionId}: ${error}`);
-    }
-    return true;
-  };
-
-  /** What a binned session keeps under its id for a restore; dropped once the entry is gone. */
-  const clearPreserved = (sessionId: string): void => {
-    artifactManager.clearSession(sessionId);
-    draftManager?.clearSession(sessionId);
-    todoManager?.clearSession(sessionId);
-    tempRegistry.drain(sessionId);
-  };
-
-  recycleBin.on('recycle-bin:changed', () => {
+  const onChanged = () => {
     for (const win of getTargetWindows()) {
       if (!win.isDestroyed()) win.webContents.send('recycle-bin:changed');
     }
-  });
-
-  // An entry that ages out of the retention window at runtime takes its preserved
-  // artifacts and draft with it — same effect as a Forget.
-  // Temp copies opened externally go too — a session that ages out is never
-  // coming back, so nothing can still legitimately reference them.
-  recycleBin.on('recycle-bin:expired', (expired: RecycleBinEntry[]) => {
-    for (const entry of expired) {
-      if (!purgeSessionData(entry.sessionId, 'expired')) continue;
-      clearPreserved(entry.sessionId);
-    }
-  });
+  };
+  recycleBin.on('recycle-bin:changed', onChanged);
 
   ipcMain.handle('recycleBin:list', () => {
     try {
@@ -93,52 +28,46 @@ export function setupRecycleBinHandlers(
     }
   });
 
-  // The runtime restorer binds lookup, spawn, and commit to one profile before
-  // awaiting any work, so a renderer profile switch cannot change ownership.
-  ipcMain.handle('recycleBin:restore', async (_event, id: string) => {
+  ipcMain.handle('recycleBin:restore', async (_event, id: string): Promise<RecycleBinRestoreResult> => {
     try {
-      return typeof id === 'string' ? await restoreEntry?.(id) ?? null : null;
+      const entry = typeof id === 'string' ? await restoreEntry?.(id) ?? null : null;
+      return { ok: true, entry };
     } catch (err) {
       logger.error(`[recycleBin:restore] Failed: ${err}`);
-      return null;
+      return { ok: false, error: errorText(err) };
     }
   });
 
   ipcMain.handle('recycleBin:forget', (_event, id: string) => {
     try {
-      // Permanently deleting an entry also clears its preserved artifacts. Resolve
-      // the session id BEFORE forgetting (restore uses a different path, so this
-      // only fires on a genuine Forget, never on restore).
-      const sessionId = recycleBin.list().find(e => e.id === id)?.sessionId;
-      if (sessionId) {
-        // Purge memory before removing the entry, so a failed purge leaves the
-        // recoverable entry available for retry. Restore never uses this path.
-        if (!purgeSessionData(sessionId, 'forgotten')) return false;
-      }
+      if (typeof id !== 'string') throw new Error('A recycle-bin entry id is required.');
       recycleBin.forget(id);
-      if (sessionId) clearPreserved(sessionId);
-      return true;
+      return { ok: true };
     } catch (err) {
       logger.error(`[recycleBin:forget] Failed: ${err}`);
-      return false;
+      return { ok: false, error: errorText(err) };
     }
   });
 
   ipcMain.handle('recycleBin:empty', () => {
     try {
-      // Snapshot every binned session id before emptying, then clear their artifacts.
-      const sessionIds = recycleBin.list().map(e => e.sessionId);
-      for (const sessionId of sessionIds) {
-        if (!purgeSessionData(sessionId, 'forgotten')) return false;
-      }
       recycleBin.empty();
-      for (const sessionId of sessionIds) clearPreserved(sessionId);
-      return true;
+      return { ok: true };
     } catch (err) {
       logger.error(`[recycleBin:empty] Failed: ${err}`);
-      return false;
+      return { ok: false, error: errorText(err) };
     }
   });
 
   logger.info('[IPC] Recycle bin handlers registered');
+  return () => {
+    recycleBin.off('recycle-bin:changed', onChanged);
+    for (const channel of ['recycleBin:list', 'recycleBin:restore', 'recycleBin:forget', 'recycleBin:empty']) {
+      ipcMain.removeHandler(channel);
+    }
+  };
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

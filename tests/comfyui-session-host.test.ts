@@ -207,6 +207,22 @@ describe('ComfyUI requester reply', () => {
     })));
   }, JOB_TIMEOUT_MS);
 
+  it('aborts a failed restore without deleting stored images', async () => {
+    host.submit(COMFY_SESSION, 'keep these files', undefined, undefined, REQUESTER);
+    await waitForNotifications(1);
+
+    const artifact = artifacts.find(item => item.sessionId === COMFY_SESSION)!;
+    const images = attachments.list(artifact.id).filter(item => item.contentType?.startsWith('image/'));
+    const imagePaths = images.map(item => attachments.getPath(artifact.id, item.id));
+
+    host.abortSession(COMFY_SESSION);
+
+    expect(imagePaths.every(path => existsSync(path))).toBe(true);
+    expect(attachments.list(artifact.id).map(item => item.id)).toEqual(images.map(item => item.id));
+    expect(deletedAttachments).toEqual([]);
+    expect(() => host.submit(COMFY_SESSION, 'should fail')).toThrow(/not running/i);
+  }, JOB_TIMEOUT_MS);
+
   it('removes a generated image that finishes storing after session close', async () => {
     let signalStorageStarted!: () => void;
     let releaseStorage!: () => void;

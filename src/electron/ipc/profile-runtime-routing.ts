@@ -49,11 +49,15 @@ export function createProfileRecycleBinRestorer(options: {
     const key = JSON.stringify([profileId, entryId]);
     if (inFlight.has(key)) throw new Error('Recycle-bin restore is already in progress');
     inFlight.add(key);
+    let runtime: ProfileRuntime | undefined;
+    let entry: RecycleBinEntry | undefined;
+    let reserved = false;
     try {
-      const runtime = options.registry.all().find(candidate => candidate.userProfileId === profileId);
+      runtime = options.registry.all().find(candidate => candidate.userProfileId === profileId);
       if (!runtime) throw new Error(`Profile runtime not found: ${profileId}`);
-      const entry = runtime.recycleBinManager.peek(entryId);
+      entry = runtime.recycleBinManager.beginRestore(entryId) ?? undefined;
       if (!entry) throw new Error(`Recycle-bin entry not found or expired: ${entryId}`);
+      reserved = true;
       if (request.expectedName !== undefined && request.expectedName !== entry.name) {
         throw new Error('Expected name does not match the recycle-bin entry');
       }
@@ -94,13 +98,30 @@ export function createProfileRecycleBinRestorer(options: {
       } catch (error) {
         logger.warn(`[recycleBin:restore] Failed to restore runtime group: ${error}`);
       }
-      runtime.recycleBinManager.forget(entry.id);
+      runtime.recycleBinManager.removeRestored(entry.id);
       return entry;
     } catch (error) {
+      if (entry && runtime && (
+        runtime.sessionManager.hasSession(entry.sessionId) || options.ptyManager.has(entry.sessionId)
+      )) {
+        if (runtime.sessionManager.hasSession(entry.sessionId)) {
+          try {
+            runtime.sessionManager.removeSession(entry.sessionId, { force: true, reason: 'restore-rollback' });
+          } catch (rollbackError) {
+            logger.error(`[recycleBin:restore] Failed to remove rolled-back session ${entry.sessionId}: ${rollbackError}`);
+          }
+        }
+        try {
+          options.ptyManager.kill(entry.sessionId);
+        } catch (rollbackError) {
+          logger.error(`[recycleBin:restore] Failed to stop rolled-back session ${entry.sessionId}: ${rollbackError}`);
+        }
+      }
       logger.error(`[recycleBin:restore] Failed: ${error}`);
       throw error;
     } finally {
       inFlight.delete(key);
+      if (reserved) runtime?.recycleBinManager.releaseRestore(entryId);
     }
   };
 }

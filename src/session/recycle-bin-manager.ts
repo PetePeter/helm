@@ -2,8 +2,8 @@
  * RecycleBinManager — rolling 7-day bin of closed, recoverable sessions.
  *
  * Mirrors the rolling-window pattern of ScheduledTaskHistoryManager. In-memory
- * list is newest-first; on every append stale entries (older than
- * RECYCLE_BIN_WINDOW_MS) are pruned and the list is persisted.
+ * list is newest-first; stale entries move into the durable purge queue when
+ * appending or pruning, then the small bin state is persisted atomically.
  *
  * Only sessions that carried a cliSessionName are recoverable, so only those
  * are ever added (see recordRemovedSession).
@@ -16,23 +16,35 @@ import { randomUUID } from 'node:crypto';
 import { BUILTIN_SHELL_CLI_TYPE } from '../types/session.js';
 import {
   saveRecycleBin,
-  loadRecycleBin,
+  loadRecycleBinState,
   RECYCLE_BIN_WINDOW_MS,
 } from './recycle-bin-persistence.js';
-import type { RecycleBinEntry } from '../types/recycle-bin.js';
+import type { RecycleBinEntry, RecycleBinPurgeJob, RecycleBinPurgeKind } from '../types/recycle-bin.js';
 import type { SessionRemovedEvent } from '../types/session.js';
+import { logger } from '../utils/logger.js';
 
 export { RECYCLE_BIN_WINDOW_MS };
 
+export class RecycleBinRestoreInProgressError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RecycleBinRestoreInProgressError';
+  }
+}
+
 export class RecycleBinManager extends EventEmitter {
   private entries: RecycleBinEntry[];
+  private pendingPurges: RecycleBinPurgeJob[];
+  private readonly restoring = new Set<string>();
 
   constructor(
     private readonly now: () => number = Date.now,
     private readonly recycleBinFile?: string,
   ) {
     super();
-    this.entries = loadRecycleBin(this.recycleBinFile);
+    const state = loadRecycleBinState(this.recycleBinFile);
+    this.entries = state.entries;
+    this.pendingPurges = state.pendingPurges;
   }
 
   /**
@@ -41,27 +53,37 @@ export class RecycleBinManager extends EventEmitter {
    */
   append(entry: Omit<RecycleBinEntry, 'id'>): RecycleBinEntry {
     const created: RecycleBinEntry = { id: randomUUID(), ...entry };
-    this.entries.unshift(created);
-    const expired = this.pruneExpiredEntries();
-    saveRecycleBin(this.entries, this.recycleBinFile);
+    const { entries: kept, expired } = this.prunedEntries([created, ...this.entries]);
+    const protectedExpired = expired.filter(item => this.restoring.has(item.id));
+    const queuedExpired = expired.filter(item => !this.restoring.has(item.id));
+    const entries = [...kept, ...protectedExpired];
+    const pendingPurges = this.withPurgeJobs(this.pendingPurges, queuedExpired, 'expired');
+    this.persist(entries, pendingPurges, queuedExpired.length > 0);
+    this.entries = entries;
+    this.pendingPurges = pendingPurges;
     this.emit('recycle-bin:changed');
-    // Entries that aged out of the retention window at runtime need their
-    // preserved artifacts reclaimed too (startup pruning only covers restarts).
-    if (expired.length > 0) this.emit('recycle-bin:expired', expired);
+    // Entries that aged out at runtime were added to pendingPurges in the same save.
+    if (queuedExpired.length > 0) this.emit('recycle-bin:expired', queuedExpired);
     return created;
   }
 
   /**
-   * Prune entries loaded from disk during startup. Invoke this after lifecycle
-   * listeners are registered so the normal expiry event reclaims all resources.
+   * Prune entries loaded from disk after the main window shows. Expired entries
+   * move into the durable queue before the visible list changes.
    */
   pruneExpired(): RecycleBinEntry[] {
-    const expired = this.pruneExpiredEntries();
-    if (expired.length === 0) return [];
-    saveRecycleBin(this.entries, this.recycleBinFile);
+    const { entries: kept, expired } = this.prunedEntries(this.entries);
+    const protectedExpired = expired.filter(item => this.restoring.has(item.id));
+    const queuedExpired = expired.filter(item => !this.restoring.has(item.id));
+    if (queuedExpired.length === 0) return [];
+    const entries = [...kept, ...protectedExpired];
+    const pendingPurges = this.withPurgeJobs(this.pendingPurges, queuedExpired, 'expired');
+    this.persist(entries, pendingPurges, true);
+    this.entries = entries;
+    this.pendingPurges = pendingPurges;
     this.emit('recycle-bin:changed');
-    this.emit('recycle-bin:expired', expired);
-    return expired;
+    this.emit('recycle-bin:expired', queuedExpired);
+    return queuedExpired;
   }
 
   /** Recoverable entries, newest close first. */
@@ -79,28 +101,113 @@ export class RecycleBinManager extends EventEmitter {
     return this.recoverableEntries().find(e => e.id === id) ?? null;
   }
 
-  /** Forget (permanently delete) a single entry. */
+  /** Retain every session whose data is still represented by durable bin state. */
+  retainedSessionIds(): Set<string> {
+    return new Set([
+      ...this.entries.map(entry => entry.sessionId),
+      ...this.pendingPurges.map(job => job.entry.sessionId),
+    ]);
+  }
+
+  /** Reserve a recoverable row before restore awaits process startup. */
+  beginRestore(id: string): RecycleBinEntry | null {
+    if (this.pendingPurges.some(job => job.entry.id === id)) return null;
+    if (this.restoring.has(id)) {
+      throw new RecycleBinRestoreInProgressError(`Recycle-bin entry ${id} is already being restored.`);
+    }
+    const entry = this.peek(id);
+    if (!entry) return null;
+    this.restoring.add(id);
+    return { ...entry };
+  }
+
+  /** Release a failed restore reservation and queue it if it expired meanwhile. */
+  releaseRestore(id: string): void {
+    if (!this.restoring.delete(id)) return;
+    try {
+      this.pruneExpired();
+    } catch (error) {
+      logger.error(`[recycleBin] Failed to queue expired entry after restore ${id}: ${error}`);
+    }
+  }
+
+  /** Remove an entry from the visible list and durably queue its permanent purge. */
   forget(id: string): void {
-    const before = this.entries.length;
-    this.entries = this.entries.filter(e => e.id !== id);
-    if (this.entries.length === before) return;
-    saveRecycleBin(this.entries, this.recycleBinFile);
+    this.assertNotRestoring(id);
+    const entry = this.entries.find(item => item.id === id);
+    if (!entry) return;
+    const entries = this.entries.filter(item => item.id !== id);
+    const pendingPurges = this.withPurgeJobs(this.pendingPurges, [entry], 'forgotten');
+    this.persist(entries, pendingPurges, true);
+    this.entries = entries;
+    this.pendingPurges = pendingPurges;
     this.emit('recycle-bin:changed');
   }
 
-  /** Empty the bin. */
+  /** Remove every visible entry and durably queue its permanent purge. */
   empty(): void {
+    if (this.restoring.size > 0) {
+      throw new RecycleBinRestoreInProgressError('Cannot empty the recycle bin while a session is being restored.');
+    }
+    if (this.entries.length === 0) return;
+    const pendingPurges = this.withPurgeJobs(this.pendingPurges, this.entries, 'forgotten');
+    this.persist([], pendingPurges, true);
     this.entries = [];
-    saveRecycleBin(this.entries, this.recycleBinFile);
+    this.pendingPurges = pendingPurges;
     this.emit('recycle-bin:changed');
   }
 
-  /** Drop entries whose closedAt falls outside the retention window; return them. */
-  private pruneExpiredEntries(): RecycleBinEntry[] {
+  /** Restore commits remove the bin row but preserve all per-session data. */
+  removeRestored(id: string): void {
+    const entries = this.entries.filter(item => item.id !== id);
+    if (entries.length === this.entries.length) return;
+    this.persist(entries, this.pendingPurges, true);
+    this.entries = entries;
+    this.emit('recycle-bin:changed');
+  }
+
+  /** Pending jobs stay hidden from the renderer until their cleanup succeeds. */
+  pendingPurgeJobs(skipIds: ReadonlySet<string> = new Set()): RecycleBinPurgeJob[] {
+    return this.pendingPurges
+      .filter(job => !skipIds.has(job.entry.id) && !this.restoring.has(job.entry.id))
+      .map(job => ({ ...job, entry: { ...job.entry } }));
+  }
+
+  /** Acknowledge only after every cleanup step completed successfully. */
+  completePurge(entryId: string): void {
+    const pendingPurges = this.pendingPurges.filter(job => job.entry.id !== entryId);
+    if (pendingPurges.length === this.pendingPurges.length) return;
+    this.persist(this.entries, pendingPurges, true);
+    this.pendingPurges = pendingPurges;
+  }
+
+  private persist(entries: RecycleBinEntry[], pendingPurges: RecycleBinPurgeJob[], requireDurable = false): void {
+    saveRecycleBin(entries, this.recycleBinFile, pendingPurges, requireDurable);
+  }
+
+  private assertNotRestoring(id: string): void {
+    if (this.restoring.has(id)) {
+      throw new RecycleBinRestoreInProgressError(`Cannot forget session ${id} while it is being restored.`);
+    }
+  }
+
+  private prunedEntries(entries: RecycleBinEntry[]): { entries: RecycleBinEntry[]; expired: RecycleBinEntry[] } {
     const cutoff = this.now() - RECYCLE_BIN_WINDOW_MS;
-    const expired = this.entries.filter(e => e.closedAt < cutoff);
-    if (expired.length > 0) this.entries = this.entries.filter(e => e.closedAt >= cutoff);
-    return expired;
+    const expired = entries.filter(entry => entry.closedAt < cutoff);
+    return { entries: entries.filter(entry => entry.closedAt >= cutoff), expired };
+  }
+
+  private withPurgeJobs(
+    current: RecycleBinPurgeJob[],
+    entries: RecycleBinEntry[],
+    kind: RecycleBinPurgeKind,
+  ): RecycleBinPurgeJob[] {
+    const jobs = [...current];
+    const queuedIds = new Set(jobs.map(job => job.entry.id));
+    for (const entry of entries) {
+      if (!queuedIds.has(entry.id)) jobs.push({ entry: { ...entry }, kind });
+    }
+    return jobs;
   }
 
   /** Keep the read surface current without changing persisted entries or cleanup timing. */

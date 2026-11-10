@@ -9,6 +9,8 @@ export interface ProfileSessionCleanupEffects {
   forgetSessionState?: (runtime: ProfileRuntime, sessionId: string) => void;
   /** Close a process-wide ComfyUI session while its owning runtime is known. */
   closeComfyUiSession?: (sessionId: string) => void;
+  /** Drop a failed ComfyUI restore without deleting its saved images. */
+  abortComfyUiSession?: (sessionId: string) => void;
   /** Prune the shared journal once any profile's session is permanently gone. */
   pruneMobileJournal?: (sessionId: string) => void;
 }
@@ -31,6 +33,16 @@ export function cleanupRemovedProfileSession(
 ): void {
   const { sessionId } = event;
   effects.forgetSessionState?.(runtime, sessionId);
+
+  if (event.reason === 'restore-rollback') {
+    try {
+      if (event.session?.comfyUiTool === true) effects.abortComfyUiSession?.(sessionId);
+    } catch (error) {
+      logger.error(`[IPC] Failed to abort ComfyUI restore ${sessionId}: ${error}`);
+    }
+    runtime.runtimeGroupManager.removeSessionEverywhere(sessionId);
+    return;
+  }
 
   if (event.session?.comfyUiTool === true) {
     try {
@@ -64,9 +76,21 @@ export function cleanupRemovedProfileSession(
   } catch (error) {
     logger.error(`[IPC] Failed to purge memories for removed session ${sessionId}: ${error}`);
   }
-  runtime.artifactManager.clearSession(sessionId);
-  runtime.draftManager.clearSession(sessionId);
-  runtime.todoManager.clearSession(sessionId);
+  try {
+    runtime.artifactManager.clearSession(sessionId);
+  } catch (error) {
+    logger.error(`[IPC] Failed to clear artifacts for removed session ${sessionId}: ${error}`);
+  }
+  try {
+    runtime.draftManager.clearSession(sessionId);
+  } catch (error) {
+    logger.error(`[IPC] Failed to clear the draft for removed session ${sessionId}: ${error}`);
+  }
+  try {
+    runtime.todoManager.clearSession(sessionId);
+  } catch (error) {
+    logger.error(`[IPC] Failed to clear todos for removed session ${sessionId}: ${error}`);
+  }
   try {
     effects.pruneMobileJournal?.(sessionId);
   } catch (error) {

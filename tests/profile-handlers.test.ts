@@ -12,6 +12,7 @@ import { ProfileIpcController, setupProfileRuntimeDomain } from '../src/electron
 import { ProfileMcpRouter } from '../src/mcp/profile-mcp-router.js';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
 import { PtyManager } from '../src/session/pty-manager.js';
+import { RECYCLE_BIN_WINDOW_MS } from '../src/session/recycle-bin-manager.js';
 import { getProfileConfigDir } from '../src/utils/app-paths.js';
 
 const ipcHandlers = vi.hoisted(() => new Map<string, (...args: any[]) => unknown>());
@@ -230,6 +231,61 @@ describe('ProfileIpcController', () => {
       )).toBe(true);
     } finally {
       composition.dispose();
+    }
+  });
+
+  it('blocks profile deletion while durable recycle-bin purges are pending', () => {
+    const { composition, controller, profileStore } = setup();
+    try {
+      const profile = composition.createProfile('Child');
+      const recycleBin = composition.getRequiredRuntime(profile.id).recycleBinManager;
+      const entry = recycleBin.append({
+        sessionId: 'closed-session', name: 'Closed', cliType: 'claude-code',
+        workingDir: 'X:/project', cliSessionName: 'resume-id', closedAt: Date.now(),
+      });
+      recycleBin.forget(entry.id);
+
+      const summary = controller.listProfiles().find(item => item.id === profile.id);
+      expect(summary?.canDelete).toBe(false);
+      expect(controller.deleteProfile(profile.id)).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/pending recycle-bin cleanup/i),
+      });
+      expect(profileStore.list().some(item => item.id === profile.id)).toBe(true);
+      expect(composition.registry.getRequiredRuntime(profile.id).recycleBinManager.pendingPurgeJobs()).toHaveLength(1);
+    } finally {
+      composition.dispose();
+    }
+  });
+
+  it('blocks profile deletion when an expired row could not be durably queued', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const { composition, controller, profileStore } = setup();
+    try {
+      const profile = composition.createProfile('Child');
+      const runtime = composition.getRequiredRuntime(profile.id);
+      const recycleBin = runtime.recycleBinManager;
+      const entry = recycleBin.append({
+        sessionId: 'expired-session', name: 'Expired', cliType: 'claude-code',
+        workingDir: 'X:/project', cliSessionName: 'resume-id', closedAt: Date.now(),
+      });
+      now.mockReturnValue(entry.closedAt + RECYCLE_BIN_WINDOW_MS + 1);
+      vi.spyOn(recycleBin as any, 'persist').mockImplementation(() => { throw new Error('disk failure'); });
+
+      expect(() => recycleBin.pruneExpired()).toThrow('disk failure');
+      expect(recycleBin.list()).toEqual([]);
+      expect(recycleBin.pendingPurgeJobs()).toEqual([]);
+      expect(recycleBin.retainedSessionIds()).toEqual(new Set([entry.sessionId]));
+      expect(controller.listProfiles().find(item => item.id === profile.id)?.canDelete).toBe(false);
+      expect(controller.deleteProfile(profile.id)).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/recycle-bin cleanup/i),
+      });
+      expect(profileStore.list().some(item => item.id === profile.id)).toBe(true);
+      expect(composition.registry.getRequiredRuntime(profile.id)).toBe(runtime);
+    } finally {
+      composition.dispose();
+      now.mockRestore();
     }
   });
 });

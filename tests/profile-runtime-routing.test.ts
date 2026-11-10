@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,10 +15,14 @@ import {
 } from '../src/electron/ipc/profile-runtime-routing.js';
 import { ActiveProfileRuntimeView } from '../src/electron/active-profile-runtime.js';
 import { ProfileRuntimeComposition } from '../src/electron/profile-runtime-composition.js';
+import { registerProfileSessionCleanup } from '../src/electron/profile-session-cleanup.js';
+import { ComfyUiSessionHost } from '../src/session/comfyui/comfyui-session-host.js';
+import { cloneDefaultComfyUiConfigForKind } from '../src/session/comfyui/comfyui-config.js';
 import type { ProfileRuntime } from '../src/session/profile-runtime.js';
 import { ProfileIpcController } from '../src/electron/ipc/profile-handlers.js';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
 import { PtyManager } from '../src/session/pty-manager.js';
+import { RecycleBinManager } from '../src/session/recycle-bin-manager.js';
 import { getProfileConfigDir } from '../src/utils/app-paths.js';
 import { WindowManager } from '../src/electron/window-manager.js';
 import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
@@ -77,12 +81,19 @@ function makeEntry(overrides: Partial<RecycleBinEntry> = {}): RecycleBinEntry {
 function makeRuntime(profileId: string, entry?: RecycleBinEntry, projects = ['X:/source-project']) {
   const entries = entry ? [entry] : [];
   const metadataOperations: string[] = [];
+  const restoring = new Set<string>();
   return {
     userProfileId: profileId,
     metadataOperations,
     recycleBinManager: {
       peek: vi.fn((id: string) => entries.find(candidate => candidate.id === id) ?? null),
-      forget: vi.fn((id: string) => {
+      beginRestore: vi.fn((id: string) => {
+        const found = entries.find(candidate => candidate.id === id) ?? null;
+        if (found) restoring.add(id);
+        return found;
+      }),
+      releaseRestore: vi.fn((id: string) => { restoring.delete(id); }),
+      removeRestored: vi.fn((id: string) => {
         metadataOperations.push('commit');
         const index = entries.findIndex(candidate => candidate.id === id);
         if (index >= 0) entries.splice(index, 1);
@@ -166,8 +177,8 @@ describe('profile runtime routing', () => {
     expect(source.runtimeGroupManager.ensureGroup).toHaveBeenCalledWith('group-2', 'Source Group');
     expect(source.runtimeGroupManager.addSession).toHaveBeenCalledWith('group-2', entry.sessionId);
     expect(source.metadataOperations).toEqual(['rename', 'ensure-group', 'add-session', 'commit']);
-    expect(source.recycleBinManager.forget).toHaveBeenCalledWith(entry.id);
-    expect(admin.recycleBinManager.forget).not.toHaveBeenCalled();
+    expect(source.recycleBinManager.removeRestored).toHaveBeenCalledWith(entry.id);
+    expect(admin.recycleBinManager.removeRestored).not.toHaveBeenCalled();
   });
 
   it('routes MCP restore to its explicit profile and guards the saved name', async () => {
@@ -187,7 +198,7 @@ describe('profile runtime routing', () => {
     await expect(restore(entry.id, { profileId: '2', expectedName: 'Saved Name' })).resolves.toEqual(entry);
     expect(spawn).toHaveBeenCalledOnce();
     expect(source.sessionManager.renameSession).toHaveBeenCalledWith(entry.sessionId, 'Saved Name');
-    expect(source.recycleBinManager.forget).toHaveBeenCalledWith(entry.id);
+    expect(source.recycleBinManager.removeRestored).toHaveBeenCalledWith(entry.id);
     expect(admin.recycleBinManager.peek).not.toHaveBeenCalled();
   });
 
@@ -206,7 +217,7 @@ describe('profile runtime routing', () => {
 
     await expect(restore(entry.id, { profileId: '2', expectedName: 'Wrong Name' })).rejects.toThrow(/expected name/i);
     expect(spawn).not.toHaveBeenCalled();
-    expect(source.recycleBinManager.forget).not.toHaveBeenCalled();
+    expect(source.recycleBinManager.removeRestored).not.toHaveBeenCalled();
   });
 
   it('reports a duplicate in-flight restore for the same profile entry', async () => {
@@ -240,7 +251,7 @@ describe('profile runtime routing', () => {
     });
 
     await expect(restore(entry.id, { profileId: '2' })).rejects.toThrow('spawn failed');
-    expect(source.recycleBinManager.forget).not.toHaveBeenCalled();
+    expect(source.recycleBinManager.removeRestored).not.toHaveBeenCalled();
   });
 
   it('rejects a recycle-bin entry owned by another profile before spawning', async () => {
@@ -260,8 +271,8 @@ describe('profile runtime routing', () => {
     await expect(restore(entry.id)).rejects.toThrow(/not found or expired/i);
 
     expect(spawn).not.toHaveBeenCalled();
-    expect(other.recycleBinManager.forget).not.toHaveBeenCalled();
-    expect(active.recycleBinManager.peek).toHaveBeenCalledWith(entry.id);
+    expect(other.recycleBinManager.removeRestored).not.toHaveBeenCalled();
+    expect(active.recycleBinManager.beginRestore).toHaveBeenCalledWith(entry.id);
   });
 
   it('rejects a restore cwd outside the source profile projects without committing', async () => {
@@ -278,9 +289,120 @@ describe('profile runtime routing', () => {
 
     await expect(restore(entry.id)).rejects.toThrow();
 
-    expect(source.recycleBinManager.forget).not.toHaveBeenCalled();
+    expect(source.recycleBinManager.removeRestored).not.toHaveBeenCalled();
     expect(source.sessionManager.restoreMission).not.toHaveBeenCalled();
     expect(ptyManager.spawn).not.toHaveBeenCalled();
+  });
+
+  it('reserves a row during restore so Forget and Empty cannot queue the live session', async () => {
+    const runtime = makeRuntime('2');
+    const manager = new RecycleBinManager();
+    const entry = manager.append({ ...makeEntry(), closedAt: Date.now() });
+    runtime.recycleBinManager = manager;
+    let onSpawnStarted!: () => void;
+    let finishSpawn!: () => void;
+    const spawnStarted = new Promise<void>(resolve => { onSpawnStarted = resolve; });
+    const spawnGate = new Promise<void>(resolve => { finishSpawn = resolve; });
+    const restore = createProfileRecycleBinRestorer({
+      registry: { all: () => [runtime] } as any,
+      getActiveProfileId: () => '2',
+      ptyManager: { has: vi.fn(() => false) } as any,
+      stateDetector: { markRestored: vi.fn() } as any,
+      trackPromptCanceller: vi.fn(),
+      spawn: (async () => { onSpawnStarted(); await spawnGate; }) as any,
+    });
+
+    const restoringRequest = restore(entry.id);
+    await spawnStarted;
+    expect(() => manager.forget(entry.id)).toThrow(/being restored/i);
+    expect(() => manager.empty()).toThrow(/being restored/i);
+
+    finishSpawn();
+    await expect(restoringRequest).resolves.toEqual(entry);
+    expect(manager.pendingPurgeJobs()).toEqual([]);
+    expect(manager.list()).toEqual([]);
+  });
+
+  it('rolls back a live restore when the durable bin commit fails without purging session data', async () => {
+    const { composition, profileTwo } = setupAdminRouting();
+    const runtime = composition.getRequiredRuntime(profileTwo.id);
+    const entry = runtime.recycleBinManager.append({ ...makeEntry({ cliType: 'comfyui' }), closedAt: Date.now() });
+    const memory = runtime.memoryManager.createForSession(entry.sessionId, {
+      tldr: 'keep this memory', content: 'restore retry data', sessionBound: true,
+    });
+    const chatFiles = runtime.artifactManager.create(entry.sessionId, 'Chat files', 'markdown', 'saved image', 'manual');
+    const savedImage = runtime.artifactAttachmentManager.add(chatFiles.id, {
+      filename: 'saved.png', content: Buffer.from([137, 80, 78, 71]), contentType: 'image/png',
+    });
+    const savedImagePath = runtime.artifactAttachmentManager.getPath(chatFiles.id, savedImage.id);
+    runtime.draftManager.append(entry.sessionId, 'keep this draft', 'user');
+    runtime.todoManager.add(entry.sessionId, 'keep this todo');
+    const removeRestored = vi.spyOn(runtime.recycleBinManager, 'removeRestored').mockImplementation(() => {
+      throw new Error('disk failure');
+    });
+    const comfyHost = new ComfyUiSessionHost({
+      tempDir: runtime.configDir,
+      storesForProfile: () => ({ artifacts: runtime.artifactManager, attachments: runtime.artifactAttachmentManager }),
+      postChat: async () => undefined,
+      recordPrompt: () => undefined,
+      notifyRequester: async () => undefined,
+    });
+    const comfyConfig = { ...cloneDefaultComfyUiConfigForKind('image'), endpoint: 'http://comfy.test:8188' };
+    const comfyProcess = comfyHost.create(entry.sessionId, comfyConfig, profileTwo.id);
+    const killComfyProcess = vi.spyOn(comfyProcess, 'kill');
+    const ptyManager = new PtyManager();
+    ptyManager.on('exit', (sessionId: string) => {
+      if (runtime.sessionManager.hasSession(sessionId)) {
+        runtime.sessionManager.removeSession(sessionId, { force: true });
+      }
+    });
+    const processEffects = {
+      forgetSessionState: vi.fn(),
+      abortComfyUiSession: vi.fn((sessionId: string) => comfyHost.abortSession(sessionId)),
+      closeComfyUiSession: vi.fn((sessionId: string) => comfyHost.closeSession(sessionId)),
+      pruneMobileJournal: vi.fn(),
+    };
+    registerProfileSessionCleanup(composition, processEffects);
+
+    const restore = createProfileRecycleBinRestorer({
+      registry: composition.registry,
+      getActiveProfileId: () => '1',
+      ptyManager,
+      stateDetector: { markRestored: vi.fn() },
+      trackPromptCanceller: vi.fn(),
+      spawn: ({ sessionManager, sessionId, cliType, cwd, resumeSessionName }) => {
+        ptyManager.adopt(sessionId, comfyProcess, { cols: 80, rows: 24 });
+        sessionManager.addSession({
+          id: sessionId, name: 'Restored', cliType, processId: comfyProcess.pid,
+          workingDir: cwd, cliSessionName: resumeSessionName, comfyUiTool: true,
+        });
+        return { sessionId } as any;
+      },
+    });
+
+    try {
+      await expect(restore(entry.id, { profileId: profileTwo.id })).rejects.toThrow('disk failure');
+
+      expect(killComfyProcess).toHaveBeenCalledOnce();
+      expect(ptyManager.has(entry.sessionId)).toBe(false);
+      expect(runtime.sessionManager.hasSession(entry.sessionId)).toBe(false);
+      expect(runtime.recycleBinManager.list()).toEqual([entry]);
+      expect(runtime.recycleBinManager.list()).toHaveLength(1);
+      expect(runtime.recycleBinManager.pendingPurgeJobs()).toEqual([]);
+      expect(runtime.memoryManager.getRecord(memory.id)).not.toBeNull();
+      expect(runtime.artifactManager.count(entry.sessionId)).toBe(1);
+      expect(runtime.artifactAttachmentManager.list(chatFiles.id)).toEqual([savedImage]);
+      expect(existsSync(savedImagePath)).toBe(true);
+      expect(runtime.draftManager.get(entry.sessionId).text).toBe('keep this draft');
+      expect(runtime.todoManager.list(entry.sessionId)).toHaveLength(1);
+      expect(processEffects.forgetSessionState).toHaveBeenCalledWith(runtime, entry.sessionId);
+      expect(processEffects.pruneMobileJournal).not.toHaveBeenCalled();
+      expect(processEffects.closeComfyUiSession).not.toHaveBeenCalled();
+      expect(processEffects.abortComfyUiSession).toHaveBeenCalledOnce();
+      expect(removeRestored).toHaveBeenCalledWith(entry.id);
+    } finally {
+      composition.dispose();
+    }
   });
 });
 

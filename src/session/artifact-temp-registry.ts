@@ -43,10 +43,12 @@ export class ArtifactTempRegistry {
    */
   drain(sessionId: string): string[] {
     const paths = this.pathsFor(sessionId);
-    this.bySession.delete(sessionId);
     if (paths.length === 0) return [];
 
     const deleted = paths.filter(forceDeleteTempFile);
+    const failed = paths.filter(filePath => !deleted.includes(filePath));
+    if (failed.length > 0) this.bySession.set(sessionId, new Set(failed));
+    else this.bySession.delete(sessionId);
     logger.debug(`[ArtifactTemps] Drained ${deleted.length}/${paths.length} temp files for ${sessionId}`);
     return deleted;
   }

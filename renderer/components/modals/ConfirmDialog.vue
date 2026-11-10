@@ -20,10 +20,12 @@ const props = withDefaults(defineProps<{
   buttons: readonly ConfirmDialogButton[];
   selectedIndex?: number;
   cancelActionId?: string;
+  autoClose?: boolean;
   directionMode?: 'horizontal' | 'any';
   modalClass?: string;
 }>(), {
   cancelActionId: undefined,
+  autoClose: true,
   directionMode: 'any',
   modalClass: 'close-confirm-modal',
   selectedIndex: 0,
@@ -78,10 +80,11 @@ function actionForIndex(index: number): string | undefined {
 function selectAction(actionId: string): void {
   if (actionId === props.cancelActionId) {
     emit('cancel');
+    close();
   } else {
     emit('action', actionId);
+    if (props.autoClose) close();
   }
-  close();
 }
 
 function handleButton(button: string): boolean {

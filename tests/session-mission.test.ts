@@ -26,7 +26,7 @@ vi.mock('../src/session/persistence.js', () => ({
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
   RECYCLE_BIN_WINDOW_MS: 30 * 24 * 60 * 60 * 1000,
   saveRecycleBin: () => {},
-  loadRecycleBin: () => [],
+  loadRecycleBinState: () => ({ entries: [], pendingPurges: [] }),
 }));
 
 const { SessionManager } = await import('../src/session/manager.js');

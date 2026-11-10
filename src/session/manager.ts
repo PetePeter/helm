@@ -120,7 +120,7 @@ export class SessionManager extends EventEmitter {
    * Remove a session
    * @param sessionId - Session ID to remove
    */
-  removeSession(sessionId: string, options: { force?: boolean } = {}): void {
+  removeSession(sessionId: string, options: { force?: boolean; reason?: 'restore-rollback' } = {}): void {
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session with id "${sessionId}" does not exist`);
@@ -153,7 +153,8 @@ export class SessionManager extends EventEmitter {
     const event: SessionRemovedEvent = {
       sessionId,
       session: { ...session },
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      ...(options.reason ? { reason: options.reason } : {}),
     };
     // Removal is already committed; a broken observer must not report a false close failure.
     this.emitSessionRemoved(event);

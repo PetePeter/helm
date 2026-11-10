@@ -16,7 +16,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
+import type { RecycleBinEntry, RecycleBinPurgeJob } from '../src/types/recycle-bin.js';
 
 // ─── Test temp dir (real disk) ───────────────────────────────────────────────
 
@@ -52,10 +52,13 @@ vi.mock('../src/utils/app-paths.js', async (importOriginal) => ({
 }));
 
 let diskStore: RecycleBinEntry[] = [];
+let diskPurges: RecycleBinPurgeJob[] = [];
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
   RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
-  saveRecycleBin: (entries: RecycleBinEntry[]) => { diskStore = [...entries]; },
-  loadRecycleBin: () => [...diskStore],
+  saveRecycleBin: (entries: RecycleBinEntry[], _file?: string, pendingPurges: RecycleBinPurgeJob[] = []) => {
+    diskStore = [...entries]; diskPurges = [...pendingPurges];
+  },
+  loadRecycleBinState: () => ({ entries: [...diskStore], pendingPurges: [...diskPurges] }),
 }));
 
 const { artifactTempFileName, ARTIFACT_TEMP_PREFIX } =
@@ -64,6 +67,7 @@ const { ArtifactTempRegistry, attachSessionTempCleanup } =
   await import('../src/session/artifact-temp-registry.js');
 const { setupArtifactHandlers } = await import('../src/electron/ipc/artifact-handlers.js');
 const { setupRecycleBinHandlers } = await import('../src/electron/ipc/recycle-bin-handlers.js');
+const { RecycleBinPurgeMaintenance } = await import('../src/electron/recycle-bin-purge-maintenance.js');
 const { cleanupWorkTempFiles } = await import('../src/electron/ipc/system-handlers.js');
 const { ArtifactManager } = await import('../src/session/artifact-manager.js');
 const { RecycleBinManager, recordRemovedSession } = await import('../src/session/recycle-bin-manager.js');
@@ -74,6 +78,25 @@ function getHandler(channel: string): Function {
   const handler = handleCalls.get(channel);
   if (!handler) throw new Error(`No handler for "${channel}"`);
   return handler;
+}
+
+function setupMaintenance(bin: InstanceType<typeof RecycleBinManager>, registry: InstanceType<typeof ArtifactTempRegistry>) {
+  const maintenance = new RecycleBinPurgeMaintenance();
+  maintenance.add({
+    userProfileId: 'test-profile',
+    recycleBinManager: bin,
+    memoryManager: { purgeSession: () => undefined },
+    messManager: { onSessionClosed: () => undefined },
+    artifactManager: new ArtifactManager(() => {}),
+    artifactTempRegistry: registry,
+    draftManager: { clearSession: () => undefined },
+    todoManager: { clearSession: () => undefined },
+  } as any);
+  return () => maintenance.start();
+}
+
+async function waitForPurgeTurns(turns = 8): Promise<void> {
+  for (let i = 0; i < turns; i++) await new Promise<void>(resolve => setImmediate(resolve));
 }
 
 /** Write a real file into the temp dir, optionally read-only like production does. */
@@ -89,6 +112,7 @@ beforeEach(() => {
   mockShellOpenPath.mockResolvedValue('');
   handleCalls.clear();
   diskStore = [];
+  diskPurges = [];
   tmpRoot = path.join(os.tmpdir(), `helm-temp-cleanup-${randomUUID()}`);
   fs.mkdirSync(tmpRoot, { recursive: true });
 });
@@ -222,7 +246,8 @@ describe('recycle-bin handlers drain artifact temps', () => {
   it('Forget deletes that session\'s temps only', async () => {
     const registry = new ArtifactTempRegistry();
     const bin = new RecycleBinManager();
-    setupRecycleBinHandlers(bin, new ArtifactManager(() => {}), undefined, registry);
+    setupRecycleBinHandlers(bin);
+    const start = setupMaintenance(bin, registry);
 
     const t1 = writeTemp('helm-artifact-s1--R-1.md', true);
     const t2 = writeTemp('helm-artifact-s2--R-2.md', true);
@@ -233,6 +258,9 @@ describe('recycle-bin handlers drain artifact temps', () => {
 
     await getHandler('recycleBin:forget')(null, e1.id);
 
+    expect(fs.existsSync(t1)).toBe(true);
+    start();
+    await waitForPurgeTurns();
     expect(fs.existsSync(t1)).toBe(false);
     expect(fs.existsSync(t2)).toBe(true);
   });
@@ -240,7 +268,8 @@ describe('recycle-bin handlers drain artifact temps', () => {
   it('Empty deletes every binned session\'s temps', async () => {
     const registry = new ArtifactTempRegistry();
     const bin = new RecycleBinManager();
-    setupRecycleBinHandlers(bin, new ArtifactManager(() => {}), undefined, registry);
+    setupRecycleBinHandlers(bin);
+    const start = setupMaintenance(bin, registry);
 
     const t1 = writeTemp('helm-artifact-s1--R-1.md', true);
     const t2 = writeTemp('helm-artifact-s2--R-2.md', true);
@@ -251,15 +280,18 @@ describe('recycle-bin handlers drain artifact temps', () => {
 
     await getHandler('recycleBin:empty')(null);
 
+    start();
+    await waitForPurgeTurns();
     expect(fs.existsSync(t1)).toBe(false);
     expect(fs.existsSync(t2)).toBe(false);
   });
 
-  it('an entry expiring at runtime deletes its temps', () => {
+  it('an entry expiring at runtime deletes its temps after maintenance starts', async () => {
     let nowVal = 1_700_000_000_000;
     const registry = new ArtifactTempRegistry();
     const bin = new RecycleBinManager(() => nowVal);
-    setupRecycleBinHandlers(bin, new ArtifactManager(() => {}), undefined, registry);
+    setupRecycleBinHandlers(bin);
+    const start = setupMaintenance(bin, registry);
 
     const t1 = writeTemp('helm-artifact-s1--R-1.md', true);
     registry.record('s1', t1);
@@ -269,6 +301,9 @@ describe('recycle-bin handlers drain artifact temps', () => {
     nowVal += 7 * 24 * 60 * 60 * 1000 + 1;
     binSession(bin, 's2', nowVal); // append prunes the aged-out entry and fires expired
 
+    expect(fs.existsSync(t1)).toBe(true);
+    start();
+    await waitForPurgeTurns();
     expect(fs.existsSync(t1)).toBe(false);
   });
 });

@@ -72,11 +72,13 @@ export function loadMobileSecrets(): Record<string, string> {
 // Entries hold full chat texts, so this is the most personal file here. It lives
 // under the same per-user app-data dir as everything else and nowhere else.
 
-export function saveMobileChatJournal(state: ChatJournalState): void {
+export function saveMobileChatJournal(state: ChatJournalState): boolean {
   try {
     atomicWriteFileSync(MOBILE_CHAT_JOURNAL_FILE, JSON.stringify(state));
+    return true;
   } catch (err) {
     logger.error(`[mobile-persist] Failed to save the chat journal: ${(err as Error).message}`);
+    return false;
   }
 }
 

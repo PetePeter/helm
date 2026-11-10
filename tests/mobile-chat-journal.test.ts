@@ -117,6 +117,13 @@ describe('MobileChatJournal retention', () => {
     expect(reloaded.since(0)).toEqual([]);
   });
 
+  it('reports a failed prune persistence result to the durable purge queue', () => {
+    const journal = new MobileChatJournal({ persist: () => false });
+    journal.append(record('gone', 0));
+
+    expect(() => journal.pruneSession('s1', true)).toThrow(/persist/i);
+  });
+
   it('drops the oldest past the hard safety cap', () => {
     const journal = new MobileChatJournal({ maxEntries: 3 });
     for (let index = 0; index < 5; index += 1) journal.append(record(`m${index}`, index));

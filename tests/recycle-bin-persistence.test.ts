@@ -13,6 +13,7 @@ import { mkdtempSync } from 'node:fs';
 import {
   saveRecycleBin,
   loadRecycleBin,
+  loadRecycleBinState,
   RECYCLE_BIN_WINDOW_MS,
 } from '../src/session/recycle-bin-persistence.js';
 import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
@@ -56,6 +57,18 @@ describe('recycle-bin persistence', () => {
     const ids = loadRecycleBin(RECYCLE_BIN_FILE).map(e => e.id);
     expect(ids).toContain('fresh');
     expect(ids).not.toContain('stale');
+  });
+
+  it('round-trips pending purge jobs and retains expired entries for startup pruning', () => {
+    const stale = entry({ id: 'stale', closedAt: Date.now() - RECYCLE_BIN_WINDOW_MS - 5000 });
+    const pending = { entry: entry({ id: 'pending' }), kind: 'forgotten' as const };
+    saveRecycleBin([stale], RECYCLE_BIN_FILE, [pending]);
+
+    const state = loadRecycleBinState(RECYCLE_BIN_FILE);
+
+    expect(state.entries.map(value => value.id)).toEqual(['stale']);
+    expect(state.pendingPurges).toEqual([pending]);
+    expect(loadRecycleBin(RECYCLE_BIN_FILE)).toEqual([]);
   });
 
   it('drops entries missing a cliSessionName (not recoverable)', () => {

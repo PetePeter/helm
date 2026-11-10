@@ -196,6 +196,7 @@ export class ProfileIpcController {
     const runtime = this.options.composition.getRequiredRuntime(profile.id);
     const sessionCount = runtime.sessionManager.getAllSessions().length;
     const recoverableSessionCount = runtime.recycleBinManager.list().length;
+    const retainedSessionCount = runtime.recycleBinManager.retainedSessionIds().size;
     const deviceCount = devices.filter(device => device.userProfileId === profile.id).length;
     return {
       id: profile.id,
@@ -206,7 +207,7 @@ export class ProfileIpcController {
       sessionCount,
       recoverableSessionCount,
       deviceCount,
-      canDelete: profile.id !== '1' && !this.options.profileStore.isAdmin(profile.id) && profile.id !== activeId && sessionCount === 0 && recoverableSessionCount === 0 && deviceCount === 0,
+      canDelete: profile.id !== '1' && !this.options.profileStore.isAdmin(profile.id) && profile.id !== activeId && sessionCount === 0 && recoverableSessionCount === 0 && retainedSessionCount === 0 && deviceCount === 0,
     };
   }
 
@@ -241,6 +242,8 @@ export function registerProfileIpcHandlers(controller: ProfileIpcController): ()
 export function setupProfileRuntimeIpcHandlers(options: Omit<ProfileIpcControllerOptions, 'onProfileAdded' | 'onProfileChanged' | 'onProfileRemoved'> & {
   profileMcpServiceFactory: ProfileMcpServiceFactory;
   incomingWatcher: IncomingPlansWatcher;
+  onProfileAdded?: (id: string) => void;
+  onProfileRemoved?: (id: string) => void;
 }): () => void {
   return registerProfileIpcHandlers(new ProfileIpcController({
     profileStore: options.profileStore,
@@ -248,7 +251,10 @@ export function setupProfileRuntimeIpcHandlers(options: Omit<ProfileIpcControlle
     runtimeView: options.runtimeView,
     devices: options.devices,
     windowManager: options.windowManager,
-    onProfileAdded: id => options.profileMcpServiceFactory.forProfile(id),
+    onProfileAdded: id => {
+      options.onProfileAdded?.(id);
+      options.profileMcpServiceFactory.forProfile(id);
+    },
     onProfileChanged: async id => {
       const runtime = options.composition.getRequiredRuntime(id);
       options.profileMcpServiceFactory.forProfile(id);
@@ -258,7 +264,10 @@ export function setupProfileRuntimeIpcHandlers(options: Omit<ProfileIpcControlle
         runtime.configDir,
       );
     },
-    onProfileRemoved: id => options.profileMcpServiceFactory.removeProfile(id),
+    onProfileRemoved: id => {
+      options.onProfileRemoved?.(id);
+      options.profileMcpServiceFactory.removeProfile(id);
+    },
   }));
 }
 
@@ -267,6 +276,8 @@ export function setupProfileRuntimeDomain(options: Omit<ProfileIpcControllerOpti
   router: ProfileMcpRouter;
   baseServices: ProfileMcpServiceSet;
   createServices: (runtime: ProfileRuntime) => ProfileMcpServiceSet;
+  onProfileAdded?: (id: string) => void;
+  onProfileRemoved?: (id: string) => void;
 }): {
   serviceFactory: ProfileMcpServiceFactory;
   cleanup: () => void;
@@ -287,6 +298,8 @@ export function setupProfileRuntimeDomain(options: Omit<ProfileIpcControllerOpti
     windowManager: options.windowManager,
     profileMcpServiceFactory: serviceFactory,
     incomingWatcher: options.incomingWatcher,
+    onProfileAdded: options.onProfileAdded,
+    onProfileRemoved: options.onProfileRemoved,
   });
   return {
     serviceFactory,

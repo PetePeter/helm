@@ -179,8 +179,13 @@ export class ComfyUiSessionHost {
   /** Permanently expire stored images after SessionManager removes this session. */
   closeSession(sessionId: string): void {
     const userProfileId = this.profileBySession.get(sessionId);
-    this.remove(sessionId);
+    this.abortSession(sessionId);
     if (userProfileId) this.deleteStoredImages(sessionId, userProfileId);
+  }
+
+  /** Stop runtime state while retaining the session's stored images. */
+  abortSession(sessionId: string): void {
+    this.remove(sessionId);
     this.profileBySession.delete(sessionId);
   }
 

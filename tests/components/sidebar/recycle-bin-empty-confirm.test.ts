@@ -78,7 +78,7 @@ beforeEach(() => {
   __resetTreeExpansionCache();
   document.body.innerHTML = '';
   mocks.recycleBinList.mockResolvedValue([makeEntry(), makeEntry({ id: 'bin-2', sessionId: 'sess-2' })]);
-  mocks.recycleBinEmpty.mockResolvedValue(true);
+  mocks.recycleBinEmpty.mockResolvedValue({ ok: true });
 });
 
 describe('RecycleBinModal — empty confirmation', () => {
@@ -107,6 +107,18 @@ describe('RecycleBinModal — empty confirmation', () => {
 
     expect(mocks.recycleBinEmpty).toHaveBeenCalledTimes(1);
     expect(wrapper.emitted('update:visible')).toEqual([[false]]);
+  });
+
+  it('keeps the confirmation open when Empty is rejected', async () => {
+    mocks.recycleBinEmpty.mockResolvedValue({ ok: false, error: 'A session is being restored.' });
+    const wrapper = await mountBin();
+    await openConfirm();
+
+    clickByText(confirmDialog()!, 'button', 'Empty bin');
+    await flushPromises();
+
+    expect(confirmDialog()).not.toBeNull();
+    expect(wrapper.emitted('update:visible')).toBeUndefined();
   });
 
   it('E4 cancelling leaves the bin untouched and dismisses the confirmation', async () => {

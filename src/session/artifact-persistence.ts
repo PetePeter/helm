@@ -51,12 +51,14 @@ function sanitizeArtifacts(value: unknown): Record<string, Artifact[]> {
   return result;
 }
 
-export function saveArtifacts(all: Record<string, Artifact[]>, filePath?: string): void {
-  if (!filePath) return;
+export function saveArtifacts(all: Record<string, Artifact[]>, filePath?: string): boolean {
+  if (!filePath) return true;
   try {
     atomicWriteFileSync(filePath, YAML.stringify({ artifacts: all }));
+    return true;
   } catch (err) {
     logger.error(`Failed to save artifacts: ${err}`);
+    return false;
   }
 }
 

@@ -14,7 +14,7 @@ import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
 // stub the persistence module so no filesystem/app-path work happens on import.
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
   saveRecycleBin: vi.fn(),
-  loadRecycleBin: vi.fn(() => []),
+  loadRecycleBinState: vi.fn(() => ({ entries: [], pendingPurges: [] })),
   RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
 }));
 

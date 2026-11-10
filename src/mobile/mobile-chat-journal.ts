@@ -52,8 +52,8 @@ export interface ChatJournalState {
 }
 
 export interface MobileChatJournalOptions {
-  /** Called on every mutation. Failures are the sink's problem, never fatal. */
-  persist?: (state: ChatJournalState) => void;
+  /** Called on every mutation. Purge callers can observe a false result. */
+  persist?: (state: ChatJournalState) => void | boolean;
   /** Called once per appended entry — the desktop operator chat's live feed. */
   onAppend?: (entry: ChatJournalEntry) => void;
   /** Oldest-dropped safety ceiling. See the class comment for why it exists. */
@@ -66,7 +66,7 @@ export class MobileChatJournal {
   private entries: ChatJournalEntry[] = [];
   private nextSeq = 0;
   private currentEpoch: string = randomUUID();
-  private readonly persist: ((state: ChatJournalState) => void) | undefined;
+  private readonly persist: ((state: ChatJournalState) => void | boolean) | undefined;
   private readonly onAppend: ((entry: ChatJournalEntry) => void) | undefined;
   private readonly maxEntries: number;
 
@@ -164,11 +164,18 @@ export class MobileChatJournal {
    * the bin): its conversation is not coming back either, so the entries go
    * now. Returns how many were dropped.
    */
-  pruneSession(sessionId: string): number {
+  pruneSession(sessionId: string, reportFailure = false): number {
     const before = this.entries.length;
     this.entries = this.entries.filter(entry => entry.record.sessionId !== sessionId);
     const dropped = before - this.entries.length;
-    if (dropped > 0) this.save();
+    if (dropped > 0) {
+      if (reportFailure) {
+        const saved = this.persist?.({ epoch: this.currentEpoch, nextSeq: this.nextSeq, entries: this.entries });
+        if (saved === false) throw new Error('Failed to persist the pruned mobile chat journal');
+      } else {
+        this.save();
+      }
+    }
     return dropped;
   }
 

@@ -224,6 +224,8 @@ export interface SessionRemovedEvent {
   /** Snapshot of the session at removal time (for cleanup handlers). */
   session: SessionInfo;
   timestamp: number;
+  /** Why the row was removed, when it was not a user or lifecycle close. */
+  reason?: 'restore-rollback';
 }
 
 /**

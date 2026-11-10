@@ -6,14 +6,19 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
+import type { RecycleBinEntry, RecycleBinPurgeJob } from '../src/types/recycle-bin.js';
 import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo, type SessionRemovedEvent } from '../src/types/session.js';
 
 let diskStore: RecycleBinEntry[] = [];
+let diskPurges: RecycleBinPurgeJob[] = [];
+let failDurableSave = false;
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
   RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
-  saveRecycleBin: (entries: RecycleBinEntry[]) => { diskStore = [...entries]; },
-  loadRecycleBin: () => [...diskStore],
+  saveRecycleBin: (entries: RecycleBinEntry[], _file?: string, pendingPurges: RecycleBinPurgeJob[] = [], requireDurable = false) => {
+    if (failDurableSave && requireDurable) throw new Error('disk failure');
+    diskStore = [...entries]; diskPurges = [...pendingPurges];
+  },
+  loadRecycleBinState: () => ({ entries: [...diskStore], pendingPurges: [...diskPurges] }),
 }));
 
 const {
@@ -55,6 +60,8 @@ describe('RecycleBinManager', () => {
 
   beforeEach(() => {
     diskStore = [];
+    diskPurges = [];
+    failDurableSave = false;
     manager = new RecycleBinManager();
   });
 
@@ -80,6 +87,22 @@ describe('RecycleBinManager', () => {
     const ids = manager.list().map(e => e.sessionId);
     expect(ids).toContain('fresh');
     expect(ids).not.toContain('stale');
+  });
+
+  it('retains expired disk entries and pending jobs during startup orphan pruning', () => {
+    const now = 1_700_000_000_000;
+    diskStore = [{
+      ...makeEntry({ sessionId: 'expired-on-disk', closedAt: now - RECYCLE_BIN_WINDOW_MS - 1 }),
+      id: 'expired-entry',
+    }];
+    diskPurges = [{
+      kind: 'forgotten',
+      entry: { ...makeEntry({ sessionId: 'pending-purge', closedAt: now }), id: 'pending-entry' },
+    }];
+    manager = new RecycleBinManager(() => now);
+
+    expect(manager.list()).toEqual([]);
+    expect([...manager.retainedSessionIds()].sort()).toEqual(['expired-on-disk', 'pending-purge']);
   });
 
   it('emits recycle-bin:expired with entries that age out at runtime', () => {
@@ -148,6 +171,61 @@ describe('RecycleBinManager', () => {
     const ids = manager.list().map(e => e.sessionId);
     expect(ids).toEqual(['b']);
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides forgotten entries immediately and keeps their purge job durable', () => {
+    const entry = manager.append(makeEntry({ sessionId: 'queued' }));
+
+    manager.forget(entry.id);
+
+    expect(manager.list()).toEqual([]);
+    expect(manager.pendingPurgeJobs().map(job => [job.entry.sessionId, job.kind])).toEqual([['queued', 'forgotten']]);
+    const restarted = new RecycleBinManager();
+    expect(restarted.list()).toEqual([]);
+    expect(restarted.pendingPurgeJobs().map(job => job.entry.sessionId)).toEqual(['queued']);
+  });
+
+  it('keeps an entry visible when the queue intent cannot be persisted', () => {
+    const entry = manager.append(makeEntry({ sessionId: 'still-recoverable' }));
+    failDurableSave = true;
+
+    expect(() => manager.forget(entry.id)).toThrow('disk failure');
+    expect(manager.list().map(item => item.id)).toContain(entry.id);
+    expect(manager.pendingPurgeJobs()).toEqual([]);
+  });
+
+  it('does not hide expired entries when append cannot durably save their purge intent', () => {
+    const now = 1_700_000_000_000;
+    diskStore = [{
+      ...makeEntry({ sessionId: 'still-on-disk', closedAt: now - RECYCLE_BIN_WINDOW_MS - 1 }),
+      id: 'expired-entry',
+    }];
+    manager = new RecycleBinManager(() => now);
+    failDurableSave = true;
+
+    expect(() => manager.append(makeEntry({ sessionId: 'new-session', closedAt: now }))).toThrow('disk failure');
+    expect([...manager.retainedSessionIds()]).toEqual(['still-on-disk']);
+    expect(manager.pendingPurgeJobs()).toEqual([]);
+    expect(diskStore.map(entry => entry.id)).toEqual(['expired-entry']);
+  });
+
+  it('removes restored entries without queuing data cleanup', () => {
+    const entry = manager.append(makeEntry({ sessionId: 'restored' }));
+
+    manager.removeRestored(entry.id);
+
+    expect(manager.list()).toEqual([]);
+    expect(manager.pendingPurgeJobs()).toEqual([]);
+  });
+
+  it('keeps the bin row when the restore commit cannot be durably saved', () => {
+    const entry = manager.append(makeEntry({ sessionId: 'restore-save-failure' }));
+    failDurableSave = true;
+
+    expect(() => manager.removeRestored(entry.id)).toThrow('disk failure');
+    expect(manager.list().map(item => item.id)).toContain(entry.id);
+    expect(manager.pendingPurgeJobs()).toEqual([]);
+    expect(diskStore.map(item => item.id)).toContain(entry.id);
   });
 
   it('empty clears all entries and emits changed', () => {

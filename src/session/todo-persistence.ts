@@ -64,8 +64,10 @@ export function createTodoStore(dir: string): TodoStore {
     remove(sessionId) {
       try {
         rmSync(fileFor(dir, sessionId), { force: true });
+        return true;
       } catch (error) {
         logger.error(`[Todos] Failed to delete todos for ${sessionId}: ${error}`);
+        return false;
       }
     },
     list() {

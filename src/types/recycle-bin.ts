@@ -37,6 +37,22 @@ export interface RecycleBinEntry {
   missionBarHeight?: number;
 }
 
+export type RecycleBinPurgeKind = 'expired' | 'forgotten';
+
+/** Durable cleanup intent for an entry hidden from the recoverable list. */
+export interface RecycleBinPurgeJob {
+  entry: RecycleBinEntry;
+  kind: RecycleBinPurgeKind;
+}
+
+export type RecycleBinActionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type RecycleBinRestoreResult =
+  | { ok: true; entry: RecycleBinEntry | null }
+  | { ok: false; error: string };
+
 export interface RecycleBinRestoreRequest {
   /** Explicit caller profile for MCP; omitted by desktop IPC to use the active profile. */
   profileId?: string;

@@ -16,9 +16,10 @@ effectively unreachable, even though nothing had actually been deleted.
 Ephemeral sessions (no `cliSessionName`) have nothing to come back to, so they are
 **never** recorded — a bin full of unrestorable rows is worse than no bin.
 
-The 7-day window mirrors the `ScheduledTaskHistoryManager` rolling-window pattern:
-prune on append, and defensively re-filter on load so the file cannot grow unbounded
-if pruning was ever skipped.
+The visible list is limited to the 7-day window. Expired entries remain in the
+persisted state until startup maintenance has queued their cleanup. Startup
+orphan retention includes every persisted bin entry and pending purge job, so
+recoverable data stays protected until its owning profile queue cleans it.
 
 ## Architecture
 
@@ -29,15 +30,15 @@ graph TB
         RRS["recordRemovedSession()<br/>bookmark dir + append entry"]
         RBM["RecycleBinManager<br/>EventEmitter · injectable clock<br/>append/list/count/peek/forget/empty"]
         RBP["recycle-bin-persistence<br/>recycle-bin.yaml · 7d prune"]
+        RBQ["RecycleBinPurgeMaintenance<br/>one fixed-store queue per profile"]
         RBH["recycle-bin-handlers<br/>4 IPC channels"]
         RBR["profile-runtime-routing<br/>shared atomic restorer"]
         AM["ArtifactManager"]
         SR -->|"resolve project + runtime group"| RRS --> RBM --> RBP
-        RBH --> RBM
+        RBH --> RBM --> RBQ
         RBH --> RBR
         RBR --> RBM
-        RBM -. "recycle-bin:expired" .-> AM
-        RBH -->|"forget / empty → clearSession"| AM
+        RBQ -->|"forget / empty / expiry<br/>one session per setImmediate turn"| AM
     end
     subgraph MCP["MCP"]
         MCPC["Local / phone / peer caller"]
@@ -110,15 +111,20 @@ The main process resolves the runtime that owns the entry and keeps the whole
 operation on it, even if the desktop switches profiles while the IPC request is
 in flight:
 
-1. `recycleBin:restore(id)` peeks the entry and runs the standard configured spawn
-   with that runtime's session manager and config loader. The normal profile cwd
-   assertion rejects directories outside that profile's projects.
+1. `recycleBin:restore(id)` reserves the entry before awaiting spawn and runs the
+   standard configured spawn with that runtime's session manager and config loader.
+   The normal profile cwd assertion rejects directories outside that profile's projects.
 2. Spawn failed → **the entry stays in the bin**, retryable.
-3. Spawn succeeded → the same runtime restores the mission and removes the entry.
-4. `session:rename(entry.sessionId, entry.name)` re-applies the **display name the session
-   was closed under** (see below).
-5. If tagged, `runtimeGroupReattach({ runtimeGroupId, runtimeGroupName }, entry.sessionId)`
-   re-adds it to its runtime group, recreating the group if it is gone.
+3. The same runtime restores the mission, display name, and tagged runtime group.
+   `session:rename(entry.sessionId, entry.name)` re-applies the **display name the
+   session was closed under** (see below). `runtimeGroupReattach` recreates a missing
+   group before adding the session.
+4. The entry is durably removed only after spawn and metadata restoration succeed.
+   If that save fails, the PTY and live session row are rolled back while the bin
+   entry and its saved session data remain available for retry.
+
+Forget or Empty attempted during an active restore returns `{ ok: false, error }`;
+the operation leaves the row and cleanup queue untouched.
 
 A renderer and main-process in-flight guard prevent duplicate restores.
 
@@ -149,38 +155,61 @@ Artifacts are ephemeral per-session reports, and their lifetime is bound to the 
 | Recoverable close (entry created) | **Kept**, under the same session id |
 | Non-recoverable / ephemeral close | Cleared immediately (`if (!binned) artifactManager.clearSession(...)`) |
 | Restore | Kept — the reused id owns them again |
-| `recycleBin:forget` | Cleared (session id resolved **before** forgetting) |
-| `recycleBin:empty` | Cleared for every binned session id (snapshotted before emptying) |
-| Entry ages out at runtime | `recycle-bin:expired` fires → `clearSession` per expired entry |
-| Startup | `pruneOrphanArtifacts` reclaims artifacts whose session is neither live nor in the bin |
+| `recycleBin:forget` | Hidden immediately; per-session cleanup runs from the durable queue |
+| `recycleBin:empty` | All entries hidden immediately; each cleanup runs from the durable queue |
+| Entry ages out at runtime | Hidden and queued as `expired` cleanup |
+| Startup | Orphan pruning retains every on-disk bin entry and pending job; the deferred per-profile queue owns expiry cleanup |
 
 The session's [draft](draft.md) follows the same table: kept while the
 session is in the bin, deleted on Forget, Empty and expiry, reclaimed at startup.
 
-The `recycle-bin:expired` event exists because startup pruning only covers restarts;
-an entry that crosses the 7-day line while the app is running would otherwise leave
-its artifacts stranded.
+Runtime expiry uses the same durable queue as Forget and Empty, so preserved data
+is eventually reclaimed even if the app exits while a purge is pending.
 
 ## Persistence
 
 | Aspect | Detail |
 |---|---|
 | File | `RECYCLE_BIN_FILE` — `%APPDATA%/Helm/config/recycle-bin.yaml` |
-| Shape | `{ entries: [...] }` |
-| Write | `atomicWriteFileSync` |
-| Load | Rejects a bad shape, then drops entries with `closedAt` outside the window |
+| Shape | `{ entries: [...], pendingPurges: [{ entry, kind }] }` (legacy `{ entries }` remains readable) |
+| Write | Small synchronous `atomicWriteFileSync`; expiry queue intent and restore removal must save before memory changes |
+| Load | Validates entries and pending jobs; expired entries stay available for startup pruning |
 | Retention | `RECYCLE_BIN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000` |
 | Ordering | In-memory newest-first (`unshift`); `list()` re-sorts by `closedAt` descending |
 | Clock | Injectable `now: () => number` for deterministic retention tests |
+
+## Purge queue
+
+Forget, Empty, and expiry move entries into `pendingPurges` and update the visible
+list before cleanup begins. The queue processes one session on each
+`setImmediate` turn. A successful cleanup removes its job; a failed cleanup is
+logged and stays pending for the next startup, without another attempt in the
+same process. Startup expiry pruning and queue draining begin after the main
+window first shows.
+
+Each concrete profile runtime owns a queue bound to its own managers. All queues
+start after the main window first shows; a profile created later starts its queue
+immediately. Switching the active profile cannot retarget a queued job.
+
+Per-session store cleanup remains synchronous. The queue yields between sessions
+to avoid one N-session loop monopolizing the main process. The recycle-bin YAML
+write also remains synchronous and atomic because the durable job record is small.
+Cleanup persistence sinks report failure to the worker, which keeps the durable
+job for the next startup.
+
+Profile deletion is blocked while any session remains retained in that profile's
+recycle-bin state, including expired rows whose prune save failed and queued purge
+jobs. This keeps failed cleanup and shared chat-journal work attached to the owning
+runtime until it finishes.
 
 ## IPC channels
 
 | Channel | Purpose |
 |---|---|
 | `recycleBin:list` | All entries, newest close first (returns `[]` on error) |
-| `recycleBin:restore(id)` | Spawn on the entry's owning profile, then remove it after success; artifacts stay |
-| `recycleBin:forget(id)` | Permanently delete the entry **and** its artifacts |
-| `recycleBin:empty` | Delete everything, clearing all binned sessions' artifacts |
+| `recycleBin:restore(id)` | Returns `{ ok, entry }` or `{ ok: false, error }`; spawns on the owning profile, then durably removes the row |
+| `recycleBin:forget(id)` | Returns `{ ok: true }` or `{ ok: false, error }`; hides the entry and queues cleanup |
+| `recycleBin:empty` | Returns `{ ok: true }` or `{ ok: false, error }`; hides all entries and queues cleanup |
 | `recycle-bin:changed` | Main → renderer event, broadcast to every live window |
 
 Exposed to the renderer through a `recycleBin` preload domain.
@@ -238,6 +267,7 @@ list.
 | `src/types/recycle-bin.ts` | `RecycleBinEntry` |
 | `src/session/recycle-bin-manager.ts` | `RecycleBinManager` + `recordRemovedSession` |
 | `src/session/recycle-bin-persistence.ts` | YAML load/save, `RECYCLE_BIN_WINDOW_MS` |
+| `src/session/recycle-bin-purge-queue.ts` | Durable-job scheduler, one session per event-loop turn |
 | `src/session/recycle-bin-manager.test.ts`, `recycle-bin-persistence.test.ts` | Retention, recording condition, serialisation |
 | `src/electron/ipc/recycle-bin-handlers.ts` | 5 IPC channels + artifact coupling |
 | `src/electron/ipc/handlers.ts` | `session:removed` wiring (project + runtime-group resolution) |

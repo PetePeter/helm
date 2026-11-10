@@ -129,8 +129,10 @@ async function onForgetFolder(folder: RecycleFolderNode): Promise<void> {
 const confirmEmptyVisible = ref(false);
 
 async function onConfirmEmpty(): Promise<void> {
-  await empty();
-  close();
+  if (await empty()) {
+    confirmEmptyVisible.value = false;
+    close();
+  }
 }
 
 function handleButton(): boolean {

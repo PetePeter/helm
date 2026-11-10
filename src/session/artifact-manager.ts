@@ -33,7 +33,7 @@ export class ArtifactManager extends EventEmitter {
   private artifacts = new Map<string, Artifact[]>(); // sessionId -> artifacts
 
   constructor(
-    private readonly persist?: (all: Record<string, Artifact[]>) => void,
+    private readonly persist?: (all: Record<string, Artifact[]>) => void | boolean,
     private readonly now: () => number = Date.now,
     private readonly onDelete?: (artifactId: string) => void,
   ) {
@@ -222,19 +222,19 @@ export class ArtifactManager extends EventEmitter {
   }
 
   /** Remove every artifact owned by a session. */
-  deleteAllForSession(sessionId: string): void {
+  deleteAllForSession(sessionId: string, reportFailure = false): void {
     const artifacts = this.artifacts.get(sessionId);
     if (artifacts) {
       this.artifacts.delete(sessionId);
       for (const artifact of artifacts) this.onDelete?.(artifact.id);
-      this.markChanged(sessionId, artifacts.map(a => a.id));
+      this.markChanged(sessionId, artifacts.map(a => a.id), reportFailure);
       logger.info(`[ArtifactManager] Deleted all artifacts for session ${sessionId}`);
     }
   }
 
   /** Alias for deleteAllForSession, kept for call-site clarity on session close. */
-  clearSession(sessionId: string): void {
-    this.deleteAllForSession(sessionId);
+  clearSession(sessionId: string, reportFailure = false): void {
+    this.deleteAllForSession(sessionId, reportFailure);
   }
 
   /**
@@ -303,8 +303,9 @@ export class ArtifactManager extends EventEmitter {
     this.emit('artifact:reveal', sessionId, artifactId);
   }
 
-  private markChanged(sessionId: string, artifactIds: string[]): void {
-    this.persist?.(this.exportAll());
+  private markChanged(sessionId: string, artifactIds: string[], reportFailure = false): void {
+    const saved = this.persist?.(this.exportAll());
+    if (reportFailure && saved === false) throw new Error('Failed to persist cleared session artifacts');
     this.emit('artifact:changed', sessionId, artifactIds);
   }
 }

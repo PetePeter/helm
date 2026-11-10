@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
+import type { RecycleBinEntry, RecycleBinPurgeJob } from '../src/types/recycle-bin.js';
 
 const handleCalls = new Map<string, Function>();
 vi.mock('electron', () => ({
@@ -23,10 +23,15 @@ vi.mock('electron', () => ({
 }));
 
 let diskStore: RecycleBinEntry[] = [];
+let diskPurges: RecycleBinPurgeJob[] = [];
+let failDurableSave = false;
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
   RECYCLE_BIN_WINDOW_MS: 7 * 24 * 60 * 60 * 1000,
-  saveRecycleBin: (entries: RecycleBinEntry[]) => { diskStore = [...entries]; },
-  loadRecycleBin: () => [...diskStore],
+  saveRecycleBin: (entries: RecycleBinEntry[], _file?: string, pendingPurges: RecycleBinPurgeJob[] = [], requireDurable = false) => {
+    if (failDurableSave && requireDurable) throw new Error('disk failure');
+    diskStore = [...entries]; diskPurges = [...pendingPurges];
+  },
+  loadRecycleBinState: () => ({ entries: [...diskStore], pendingPurges: [...diskPurges] }),
 }));
 
 vi.mock('../src/utils/logger.js', () => ({
@@ -38,6 +43,8 @@ const { RecycleBinManager } = await import('../src/session/recycle-bin-manager.j
 const { ArtifactManager } = await import('../src/session/artifact-manager.js');
 const { DraftManager } = await import('../src/session/draft-manager.js');
 const { TodoManager } = await import('../src/session/todo-manager.js');
+const { ArtifactTempRegistry } = await import('../src/session/artifact-temp-registry.js');
+const { RecycleBinPurgeMaintenance } = await import('../src/electron/recycle-bin-purge-maintenance.js');
 const { setupRecycleBinHandlers } = await import('../src/electron/ipc/recycle-bin-handlers.js');
 
 function getHandler(channel: string): Function {
@@ -49,21 +56,48 @@ function getHandler(channel: string): Function {
 function testRestore(bin: InstanceType<typeof RecycleBinManager>) {
   return async (id: string) => {
     const entry = bin.peek(id);
-    if (entry) bin.forget(id);
+    if (entry) bin.removeRestored(id);
     return entry;
   };
+}
+
+async function waitForPurgeTurns(turns = 8): Promise<void> {
+  for (let i = 0; i < turns; i++) await new Promise<void>(resolve => setImmediate(resolve));
+}
+
+function setupPurgeMaintenance(
+  bin: InstanceType<typeof RecycleBinManager>,
+  artifacts: InstanceType<typeof ArtifactManager>,
+  options: { draftManager?: InstanceType<typeof DraftManager>; todoManager?: InstanceType<typeof TodoManager> } = {},
+): () => void {
+  const maintenance = new RecycleBinPurgeMaintenance();
+  maintenance.add({
+    userProfileId: 'test-profile',
+    recycleBinManager: bin,
+    memoryManager: { purgeSession: () => undefined },
+    messManager: { onSessionClosed: () => undefined },
+    artifactManager: artifacts,
+    artifactTempRegistry: new ArtifactTempRegistry(),
+    draftManager: options.draftManager ?? { clearSession: () => undefined },
+    todoManager: options.todoManager ?? { clearSession: () => undefined },
+  } as any);
+  return () => maintenance.start();
 }
 
 describe('recycle-bin handlers — artifact lifecycle', () => {
   let bin: InstanceType<typeof RecycleBinManager>;
   let artifacts: InstanceType<typeof ArtifactManager>;
+  let startMaintenance: () => void;
 
   beforeEach(() => {
     diskStore = [];
+    diskPurges = [];
+    failDurableSave = false;
     handleCalls.clear();
     bin = new RecycleBinManager();
     artifacts = new ArtifactManager();
-    setupRecycleBinHandlers(bin, artifacts, undefined, undefined, undefined, undefined, undefined, testRestore(bin));
+    setupRecycleBinHandlers(bin, undefined, testRestore(bin));
+    startMaintenance = setupPurgeMaintenance(bin, artifacts);
   });
 
   function binSession(sessionId: string): RecycleBinEntry {
@@ -85,6 +119,10 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
 
     await getHandler('recycleBin:forget')(null, e1.id);
 
+    expect(bin.list().map(entry => entry.id)).not.toContain(e1.id);
+    expect(artifacts.count('s1')).toBe(1);
+    startMaintenance();
+    await waitForPurgeTurns();
     expect(artifacts.count('s1')).toBe(0);
     expect(artifacts.count('s2')).toBe(1);
   });
@@ -97,8 +135,25 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
 
     await getHandler('recycleBin:empty')(null);
 
+    startMaintenance();
+    await waitForPurgeTurns();
     expect(artifacts.count('s1')).toBe(0);
     expect(artifacts.count('s2')).toBe(0);
+  });
+
+  it('returns a clear failure when Forget or Empty targets an entry being restored', async () => {
+    const entry = binSession('restoring');
+    bin.beginRestore(entry.id);
+
+    const forget = await getHandler('recycleBin:forget')(null, entry.id);
+    const empty = await getHandler('recycleBin:empty')(null);
+
+    expect(forget).toMatchObject({ ok: false, error: expect.stringMatching(/being restored/i) });
+    expect(empty).toMatchObject({ ok: false, error: expect.stringMatching(/being restored/i) });
+    expect(bin.list().map(item => item.id)).toContain(entry.id);
+    expect(bin.pendingPurgeJobs()).toEqual([]);
+
+    bin.releaseRestore(entry.id);
   });
 
   it('Restore returns the entry after commit and keeps its artifacts', async () => {
@@ -107,7 +162,7 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
 
     const restored = await getHandler('recycleBin:restore')(null, e1.id);
 
-    expect(restored?.sessionId).toBe('s1');   // original id preserved for reuse
+    expect(restored).toMatchObject({ ok: true, entry: { sessionId: 's1' } });   // original id preserved for reuse
     expect(artifacts.count('s1')).toBe(1);    // artifacts intact
     expect(bin.count()).toBe(0);              // one operation spawns then commits
     expect(handleCalls.has('recycleBin:commitRestore')).toBe(false);
@@ -124,14 +179,51 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
     expect(artifacts.count('s1')).toBe(1);    // artifacts preserved for the reused id
   });
 
+  it('returns a restore error when the durable row-removal commit fails', async () => {
+    const entry = binSession('restore-commit-failure');
+    failDurableSave = true;
+
+    const result = await getHandler('recycleBin:restore')(null, entry.id);
+
+    expect(result).toEqual({ ok: false, error: 'disk failure' });
+    expect(bin.list().map(item => item.id)).toContain(entry.id);
+    expect(bin.pendingPurgeJobs()).toEqual([]);
+  });
+
+  it('defers startup expiry pruning and cleanup until maintenance starts', async () => {
+    const now = 1_700_000_000_000;
+    diskStore = [{
+      id: 'expired', sessionId: 's-old', name: 'claude', cliType: 'claude-code',
+      workingDir: 'X:\\work', cliSessionName: 'old-uuid',
+      closedAt: now - 7 * 24 * 60 * 60 * 1000 - 1,
+    }];
+    diskPurges = [];
+    const startupBin = new RecycleBinManager(() => now);
+    const art = new ArtifactManager();
+    setupRecycleBinHandlers(startupBin);
+    const start = setupPurgeMaintenance(startupBin, art);
+
+    expect(startupBin.list()).toEqual([]);
+    expect(diskStore.map(entry => entry.id)).toEqual(['expired']);
+    expect(diskPurges).toEqual([]);
+
+    start();
+    await waitForPurgeTurns();
+    expect(diskStore).toEqual([]);
+    expect(diskPurges).toEqual([]);
+    expect(art.count('s-old')).toBe(0);
+  });
+
   it('a bin entry that expires at runtime has its artifacts cleared', async () => {
     // Fresh entry now, then a later append past the window prunes it and fires expired.
     let nowVal = 1_700_000_000_000;
     diskStore = [];
+    diskPurges = [];
     handleCalls.clear();
     const clockBin = new RecycleBinManager(() => nowVal);
     const art = new ArtifactManager();
-    setupRecycleBinHandlers(clockBin, art);
+    setupRecycleBinHandlers(clockBin);
+    const start = setupPurgeMaintenance(clockBin, art);
 
     art.create('s1', 'A', 'markdown', 'v1');
     clockBin.append({
@@ -146,7 +238,10 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
       cliSessionName: 'u2', closedAt: nowVal,
     });
 
-    expect(art.count('s1')).toBe(0); // expired entry's artifacts reclaimed at runtime
+    expect(art.count('s1')).toBe(1); // pruning is deferred until the window first shows
+    start();
+    await waitForPurgeTurns();
+    expect(art.count('s1')).toBe(0);
   });
 });
 
@@ -157,9 +252,11 @@ describe('recycle-bin handlers: draft lifecycle', () => {
   let todoFiles: Map<string, import('../src/types/todo.js').SessionTodo[]>;
   let todos: InstanceType<typeof TodoManager>;
   let nowVal: number;
+  let startMaintenance: () => void;
 
   beforeEach(() => {
     diskStore = [];
+    diskPurges = [];
     handleCalls.clear();
     nowVal = 1_700_000_000_000;
     files = new Map();
@@ -177,7 +274,8 @@ describe('recycle-bin handlers: draft lifecycle', () => {
       remove: id => { todoFiles.delete(id); },
       list: () => [...todoFiles.keys()],
     });
-    setupRecycleBinHandlers(bin, new ArtifactManager(), undefined, undefined, undefined, undefined, undefined, testRestore(bin), pads, todos);
+    setupRecycleBinHandlers(bin, undefined, testRestore(bin));
+    startMaintenance = setupPurgeMaintenance(bin, new ArtifactManager(), { draftManager: pads, todoManager: todos });
   });
 
   function binSession(sessionId: string): RecycleBinEntry {
@@ -208,6 +306,9 @@ describe('recycle-bin handlers: draft lifecycle', () => {
 
     await getHandler('recycleBin:forget')(null, entry.id);
 
+    expect(files.has('s1')).toBe(true);
+    startMaintenance();
+    await waitForPurgeTurns();
     expect([...files.keys()]).toEqual(['s2']);
     expect([...todoFiles.keys()]).toEqual(['s2']);
     expect(pads.get('s1')).toEqual({ sessionId: 's1', text: '', revision: 0 });
@@ -220,15 +321,21 @@ describe('recycle-bin handlers: draft lifecycle', () => {
 
     await getHandler('recycleBin:empty')(null);
 
+    startMaintenance();
+    await waitForPurgeTurns();
     expect(files.size).toBe(0);
     expect(todoFiles.size).toBe(0);
   });
 
-  it('an entry that ages out of the bin takes its pad with it', () => {
+  it('an entry that ages out of the bin takes its pad with it after startup maintenance starts', async () => {
     binSession('s1');
     nowVal += 7 * 24 * 60 * 60 * 1000 + 1;
     binSession('s2');
 
+    expect([...files.keys()]).toEqual(['s1', 's2']);
+    expect([...todoFiles.keys()]).toEqual(['s1', 's2']);
+    startMaintenance();
+    await waitForPurgeTurns();
     expect([...files.keys()]).toEqual(['s2']);
     expect([...todoFiles.keys()]).toEqual(['s2']);
   });
