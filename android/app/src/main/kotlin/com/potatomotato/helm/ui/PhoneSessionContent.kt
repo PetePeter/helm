@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -47,6 +48,7 @@ internal const val SESSION_SWITCH_MS = 220
 internal fun PhoneSessionContent(state: PhoneScaffoldState, actions: PhoneScaffoldActions) {
     val open = state.open ?: return
     val home = state.homeState
+    BackHandler(onBack = actions.session.onBackToList)
     val currentOpenId = open.id
     val swipePreviewVisible = home.sessionSwipeDirection == 0 && kotlin.math.abs(state.sessionSwipeOffset.value) > 8f
     val pickerVisible = swipePreviewVisible && home.sessionTab == SessionTab.Chat
