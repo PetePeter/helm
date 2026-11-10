@@ -3,10 +3,11 @@ import { buildEstimateView } from '../src/session/eta-stats.js';
 import type { EtaRecord } from '../src/session/eta-tracker.js';
 
 const MIN = 60_000;
-const MON = new Date(2026, 9, 19, 9, 0).getTime();
+// Weeks start on Tuesday (time-tracker periodEdges); 2026-10-20 is a Tuesday.
+const TUE = new Date(2026, 9, 20, 9, 0).getTime();
 
 function rec(dayOffset: number, predictedMin: number, actualMin: number, over: Partial<EtaRecord> = {}): EtaRecord {
-  const startedAt = MON + dayOffset * 24 * 60 * MIN;
+  const startedAt = TUE + dayOffset * 24 * 60 * MIN;
   return {
     startedAt, firstAt: startedAt + predictedMin * MIN, finalAt: startedAt + predictedMin * MIN,
     endedAt: startedAt + actualMin * MIN, outcome: 'cleared', cliType: 'claude', dir: 'X:/a', sessionName: 's', ...over,
@@ -18,24 +19,24 @@ describe('buildEstimateView', () => {
     rec(0, 10, 8),
     rec(0, 10, 15, { cliType: 'codex' }),
     rec(1, 20, 30, { outcome: 'unmarked', dir: 'X:/b' }),
-    rec(9, 10, 10), // next week: outside a 'day' period anchored on MON
+    rec(9, 10, 10), // next week: outside a 'day' period anchored on TUE
   ];
 
   it('a column of only rescoped estimates has no on-time value', () => {
-    const view = buildEstimateView([rec(0, 10, 30, { outcome: 'rescoped' })], 'day', MON, null, id => id);
+    const view = buildEstimateView([rec(0, 10, 30, { outcome: 'rescoped' })], 'day', TUE, null, id => id);
     expect(view.summary).toMatchObject({ total: 0, rescoped: 1 });
     expect(view.trend.values[0]).toBeNull();
   });
 
   it('filters by the period window and folder', () => {
-    expect(buildEstimateView(records, 'day', MON, null, id => id).summary.total).toBe(3);
-    const b = buildEstimateView(records, 'day', MON, 'X:/b', id => id);
+    expect(buildEstimateView(records, 'day', TUE, null, id => id).summary.total).toBe(3);
+    const b = buildEstimateView(records, 'day', TUE, 'X:/b', id => id);
     expect(b.summary).toMatchObject({ total: 1, unmarked: 1 });
     expect(b.dirs).toEqual(['X:/a', 'X:/b']);
   });
 
   it('builds scatter points, ratio histogram, per-column on-time trend', () => {
-    const view = buildEstimateView(records, 'day', MON, null, id => id.toUpperCase());
+    const view = buildEstimateView(records, 'day', TUE, null, id => id.toUpperCase());
     expect(view.points).toEqual(expect.arrayContaining([
       { predictedMin: 10, actualMin: 15, cliType: 'codex', label: 'CODEX', unmarked: false },
       { predictedMin: 20, actualMin: 30, cliType: 'claude', label: 'CLAUDE', unmarked: true },

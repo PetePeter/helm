@@ -184,8 +184,7 @@ describe.skipIf(python === null)('helm-hook-shim.py', () => {
       session_id: 'claude-1',
       model: { display_name: 'Opus' },
       context_window: {
-        total_input_tokens: 15_500,
-        total_output_tokens: 1_200,
+        current_usage: { input_tokens: 15_500, output_tokens: 1_200 },
         context_window_size: 200_000,
         used_percentage: 8,
       },
@@ -217,14 +216,40 @@ describe.skipIf(python === null)('helm-hook-shim.py', () => {
     const result = await runStatusline({ HELM_SESSION_ID: 'helm-1' }, JSON.stringify({
       session_id: 'claude-1',
       context_window: {
-        total_input_tokens: 10_000,
-        total_output_tokens: 90_000,
+        current_usage: { input_tokens: 10_000, output_tokens: 90_000 },
         context_window_size: 200_000,
         used_percentage: null,
       },
     }));
 
     expect(result).toMatchObject({ code: 0, stdout: 'USER:claude-1 | CTX 5% 100k/200k\r\n', stderr: '' });
+  });
+
+  it('does not build a badge from cumulative totals when Claude sends no current usage', async () => {
+    const result = await runStatusline({ HELM_SESSION_ID: 'helm-1' }, JSON.stringify({
+      session_id: 'claude-1',
+      context_window: {
+        total_input_tokens: 15_500,
+        total_output_tokens: 1_200,
+        context_window_size: 200_000,
+      },
+    }));
+
+    expect(result).toMatchObject({ code: 0, stdout: 'USER:claude-1\r\n', stderr: '' });
+  });
+
+  it('sizes the badge from current usage even when cumulative totals are far larger', async () => {
+    const result = await runStatusline({ HELM_SESSION_ID: 'helm-1' }, JSON.stringify({
+      session_id: 'claude-1',
+      context_window: {
+        total_input_tokens: 900_000,
+        total_output_tokens: 300_000,
+        context_window_size: 200_000,
+        current_usage: { input_tokens: 15_500, output_tokens: 1_200 },
+      },
+    }));
+
+    expect(result).toMatchObject({ code: 0, stdout: 'USER:claude-1 | CTX 8% 17k/200k\r\n', stderr: '' });
   });
 
   it('does not show stale combined totals while Claude marks current usage empty', async () => {
@@ -244,7 +269,7 @@ describe.skipIf(python === null)('helm-hook-shim.py', () => {
   it('still runs the original statusline command outside a Helm session', async () => {
     const result = await runStatusline({}, JSON.stringify({
       session_id: 'standalone',
-      context_window: { total_input_tokens: 1000, total_output_tokens: 0, context_window_size: 200_000 },
+      context_window: { current_usage: { input_tokens: 1000, output_tokens: 0 }, context_window_size: 200_000 },
     }));
 
     expect(result).toMatchObject({ code: 0, stdout: 'USER:standalone\r\n', stderr: '' });

@@ -52,28 +52,21 @@ def statusline_badge(payload):
     context = payload.get("context_window")
     if not isinstance(context, dict):
         return None
-    if "current_usage" in context and context.get("current_usage") is None:
-        return None
 
-    total_input = context.get("total_input_tokens")
-    total_output = context.get("total_output_tokens")
-    if number(total_input):
-        input_tokens = max(0, total_input)
-        tokens = input_tokens + (max(0, total_output) if number(total_output) else 0)
-    else:
-        current = context.get("current_usage")
-        if not isinstance(current, dict):
-            return None
-        input_tokens = sum(
-            max(0, current.get(key, 0)) if number(current.get(key, 0)) else 0
-            for key in (
-                "input_tokens",
-                "cache_creation_input_tokens",
-                "cache_read_input_tokens",
-            )
+    # current_usage is the per-request window; total_* are session-cumulative and overfill the badge.
+    current = context.get("current_usage")
+    if not isinstance(current, dict):
+        return None
+    input_tokens = sum(
+        max(0, current.get(key, 0)) if number(current.get(key, 0)) else 0
+        for key in (
+            "input_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens",
         )
-        output_tokens = max(0, current.get("output_tokens", 0)) if number(current.get("output_tokens", 0)) else 0
-        tokens = input_tokens + output_tokens
+    )
+    output_tokens = max(0, current.get("output_tokens", 0)) if number(current.get("output_tokens", 0)) else 0
+    tokens = input_tokens + output_tokens
 
     window = context.get("context_window_size")
     if not number(window) or window <= 0 or tokens <= 0:
