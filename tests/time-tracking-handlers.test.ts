@@ -38,8 +38,8 @@ describe('statisticsQuery', () => {
       { projectKey: 'p2', projectName: 'Other', user: 0, ai: 0, tokens: 400 },
     ]);
     expect(result.sheet.rows).toEqual([
-      { dir: 'C:/helm', user: expect.any(Array), ai: expect.any(Array), tokens: [0, 0, 0, 0, 0, 1_500, 0] },
-      { dir: 'C:/other', user: expect.any(Array), ai: expect.any(Array), tokens: [0, 0, 0, 0, 0, 400, 0] },
+      { dir: 'C:/helm', user: expect.any(Array), ai: expect.any(Array), tokens: [0, 0, 0, 0, 1_500, 0, 0] },
+      { dir: 'C:/other', user: expect.any(Array), ai: expect.any(Array), tokens: [0, 0, 0, 0, 400, 0, 0] },
     ]);
     const visibleColumns = result.chartModel.columns.length;
     expect(result.chartModel.series.map(({ key }) => key)).toEqual(['multiplier', 'tokens']);
@@ -53,11 +53,11 @@ describe('statisticsQuery', () => {
     };
 
     expect(result.sheet.rows).toEqual([
-      { cliType: 'codex', label: 'Codex', tokens: [0, 0, 0, 0, 0, 1_500, 0] },
+      { cliType: 'codex', label: 'Codex', tokens: [0, 0, 0, 0, 1_500, 0, 0] },
       { cliType: 'claude', label: 'Claude Code', tokens: [0, 0, 0, 0, 0, 0, 0] },
-      { cliType: 'other', label: 'other', tokens: [0, 0, 0, 0, 0, 400, 0] },
+      { cliType: 'other', label: 'other', tokens: [0, 0, 0, 0, 400, 0, 0] },
     ]);
-    expect(result.sheet.totals).toEqual([0, 0, 0, 0, 0, 1_900, 0]);
+    expect(result.sheet.totals).toEqual([0, 0, 0, 0, 1_900, 0, 0]);
     const visibleColumns = result.chartModel.columns.length;
     expect(result.chartModel.series.map(({ key, values }) => [key, values])).toEqual([
       ['cli:codex', result.sheet.rows[0].tokens.slice(0, visibleColumns)],

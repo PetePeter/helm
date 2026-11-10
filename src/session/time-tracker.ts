@@ -26,6 +26,7 @@ export const SUBMIT_WEIGHT = 20;
 const SLOT_MINUTES = SLOT_MS / 60_000;
 
 export type SlotKind = 'user' | 'ai' | 'tokens' | 'keys';
+export type TokenUsageSource = 'transcript' | 'api' | 'statusline' | 'unknown';
 
 export interface TimeSlot {
   start: number;
@@ -133,9 +134,20 @@ export class TimeTracker {
     if (!ai.has(where.projectKey)) ai.set(where.projectKey, { start, kind: 'ai', projectKey: where.projectKey, projectName: where.projectName, dir: where.dir });
   }
 
-  /** A context-size reading: a rise adds the growth, a drop adds the new context. */
-  recordTokens(sessionId: string, tokens: number): void {
-    this.addTokens(sessionId, sessionId, tokens, undefined);
+  /**
+   * A context snapshot: a rise adds growth, a drop adds the smaller post-reset context.
+   * Sources have different measurement semantics, so switching source primes a new baseline.
+   */
+  recordTokens(sessionId: string, tokens: number, source: TokenUsageSource = 'unknown'): void {
+    const prefix = `${sessionId}#context-source:`;
+    const stream = `${prefix}${source}`;
+    // Legacy baselines were untyped. They cannot safely be compared with a source-aware snapshot.
+    for (const knownStream of this.lastTokens.keys()) {
+      if ((knownStream === sessionId || knownStream.startsWith(prefix)) && knownStream !== stream) {
+        this.lastTokens.delete(knownStream);
+      }
+    }
+    this.addTokens(sessionId, stream, tokens, undefined);
   }
 
   /**
@@ -287,7 +299,7 @@ export interface Timesheet {
 
 /**
  * Column edges (n+1 values) for a view around `anchor`, on local calendar
- * boundaries: 'hour' = the 24 hours of its day, 'day' = the 7 days of its Monday week, 'week' = the Monday
+ * boundaries: 'hour' = the 24 hours of its day, 'day' = the 7 days of its Tuesday week, 'week' = the Tuesday
  * weeks covering its month, 'month' = the 12 months of its year.
  */
 export function periodEdges(period: TimesheetPeriod, anchor: number): number[] {
@@ -300,11 +312,11 @@ export function periodEdges(period: TimesheetPeriod, anchor: number): number[] {
     return Array.from({ length: 13 }, (_, i) => new Date(d.getFullYear(), i, 1).getTime());
   }
   if (period === 'day') {
-    const monday = mondayOf(d);
-    return Array.from({ length: 8 }, (_, i) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i).getTime());
+    const weekStart = tuesdayOf(d);
+    return Array.from({ length: 8 }, (_, i) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i).getTime());
   }
   const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
-  const cursor = mondayOf(new Date(d.getFullYear(), d.getMonth(), 1));
+  const cursor = tuesdayOf(new Date(d.getFullYear(), d.getMonth(), 1));
   const edges = [cursor.getTime()];
   while (edges[edges.length - 1] < monthEnd) {
     cursor.setDate(cursor.getDate() + 7);
@@ -313,8 +325,8 @@ export function periodEdges(period: TimesheetPeriod, anchor: number): number[] {
   return edges;
 }
 
-function mondayOf(d: Date): Date {
-  const offset = (d.getDay() + 6) % 7;
+function tuesdayOf(d: Date): Date {
+  const offset = (d.getDay() + 5) % 7;
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - offset);
 }
 

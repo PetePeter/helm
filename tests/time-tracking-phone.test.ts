@@ -64,7 +64,7 @@ describe('timesheetQuery (the phone Time tab)', () => {
       chartModel: { columns: number[]; series: Array<{ key: string; values: number[] }> };
     };
     expect(overview.projects[0].tokens).toBe(1_234);
-    expect(overview.sheet.totals.tokens[0]).toBe(1_234);
+    expect(overview.sheet.totals.tokens[6]).toBe(1_234);
     const visibleColumns = overview.chartModel.columns.length;
     expect(overview.chartModel.series.map(({ key }) => key)).toEqual(['multiplier', 'tokens']);
     expect(overview.chartModel.series[1].values).toEqual(overview.sheet.totals.tokens.slice(0, visibleColumns));

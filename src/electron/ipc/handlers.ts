@@ -519,7 +519,7 @@ export function registerIPCHandlers(
     // Every context reading feeds its profile's token ledger; unchanged readings add nothing.
     runtime.sessionManager.on('session:updated', (session: SessionUpdatedEvent) => {
       if (!session.contextUsage || session.remote) return;
-      runtime.timeTracker.recordTokens(session.id, session.contextUsage.tokens);
+      runtime.timeTracker.recordTokens(session.id, session.contextUsage.tokens, session.contextUsage.source ?? 'unknown');
     });
     runtime.sessionManager.on('session:removed', ({ session }: { session: SessionInfo }) => {
       const ingest = profileComposition.subagentIngestors.get(runtime.userProfileId)!;

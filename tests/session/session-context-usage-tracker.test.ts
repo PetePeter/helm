@@ -120,6 +120,7 @@ describe('SessionContextUsageTracker', () => {
       tokens: 12_345,
       window: 200_000,
       measuredAtIso: '2026-10-15T00:00:00.000Z',
+      source: 'transcript',
     });
     expect(manager.getSession('cached')?.contextUsage).toEqual({
       tokens: 9000,
@@ -177,7 +178,7 @@ describe('SessionContextUsageTracker', () => {
     await vi.advanceTimersByTimeAsync(1);
 
     expect(resolved).toEqual(['first']);
-    expect(manager.getSession('first')?.contextUsage).toEqual({ tokens: 8500, window: 100_000 });
+    expect(manager.getSession('first')?.contextUsage).toEqual({ tokens: 8500, window: 100_000, source: 'transcript' });
     expect(manager.getSession('second')?.contextUsage).toEqual({ tokens: 7000 });
     tracker.stop();
   });
@@ -213,7 +214,7 @@ describe('SessionContextUsageTracker', () => {
 
     tracker.refreshSession('api');
 
-    expect(manager.getSession('api')?.contextUsage).toEqual({ tokens: 1200, window: 100_000 });
+    expect(manager.getSession('api')?.contextUsage).toEqual({ tokens: 1200, window: 100_000, source: 'api' });
   });
 
   it('emits API session updates only when tokens or level change', () => {
@@ -364,6 +365,7 @@ describe('SessionContextUsageTracker', () => {
       tokens: 25_000,
       window: 200_000,
       measuredAtIso: '2026-10-15T03:01:00.000Z',
+      source: 'transcript',
     });
   });
 

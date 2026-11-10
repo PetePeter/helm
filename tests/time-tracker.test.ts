@@ -13,8 +13,8 @@ vi.mock('../src/utils/logger.js', () => ({
 
 const MIN = 60_000;
 const SUBMIT = SUBMIT_WEIGHT;
-/** A Monday, local midnight, so day bucketing is stable in any time zone. */
-const DAY0 = new Date(2026, 8, 28).getTime();
+/** A Tuesday, local midnight, so day bucketing is stable in any time zone. */
+const DAY0 = new Date(2026, 8, 29).getTime();
 const at = (h: number, m: number, s = 0) => DAY0 + h * 60 * MIN + m * MIN + s * 1000;
 
 const SESSIONS: Record<string, SessionWhere> = {
@@ -249,9 +249,10 @@ describe('buildTimesheet', () => {
     expect(hour).toEqual(Array.from({ length: 25 }, (_, i) => at(i, 0)));
     const day = periodEdges('day', at(15, 0));
     expect(day).toHaveLength(8);
-    expect(new Date(day[0]).getDay()).toBe(1); // weeks start Monday
+    expect(new Date(day[0]).getDay()).toBe(2); // weeks start Tuesday
     expect(day[0]).toBeLessThanOrEqual(at(15, 0));
     const week = periodEdges('week', at(15, 0));
+    expect(new Date(week[0]).getDay()).toBe(2);
     expect(week[0]).toBeLessThanOrEqual(new Date(2026, 8, 1).getTime());
     expect(week[week.length - 1]).toBeGreaterThanOrEqual(new Date(2026, 9, 1).getTime());
     const month = periodEdges('month', at(15, 0));
@@ -272,7 +273,7 @@ describe('buildTimesheet', () => {
 
   it('exports CSV with one line per dir and day, including tokens', () => {
     const sheet = { columns: [DAY0], rows: [{ dir: 'C:/a,b', user: [15], ai: [5], tokens: [1_200] }], totals: { user: [15], ai: [5], tokens: [1_200] } };
-    expect(timesheetToCsv(sheet, 'Alpha')).toBe('period_start,project,directory,you_minutes,ai_minutes,tokens\n2026-09-28,Alpha,"C:/a,b",15,5,1200\n');
+    expect(timesheetToCsv(sheet, 'Alpha')).toBe('period_start,project,directory,you_minutes,ai_minutes,tokens\n2026-09-29,Alpha,"C:/a,b",15,5,1200\n');
   });
 });
 
@@ -284,6 +285,32 @@ describe('TimeTracker tokens', () => {
     const t = tracker();
     for (const n of [10_000, 40_000, 90_000]) t.recordTokens('a1', n);
     expect(total(t)).toBe(80_000);
+  });
+
+  it('primes a new source instead of comparing it with a different source baseline', () => {
+    clock = new Date(2026, 8, 25, 9, 0).getTime(); // Friday before the Tuesday week boundary.
+    const first = tracker();
+    first.recordTokens('a1', 4_000_000, 'statusline');
+    first.recordTokens('a1', 4_020_000, 'statusline');
+    first.flush();
+
+    clock = at(9, 0);
+    const resumed = tracker();
+    resumed.recordTokens('a1', 150_000, 'transcript');
+    resumed.recordTokens('a1', 170_000, 'transcript');
+    resumed.recordTokens('a1', 4_050_000, 'statusline');
+    resumed.recordTokens('a1', 4_070_000, 'statusline');
+
+    // Friday's activity stays in the prior week; Tuesday only counts growth after each source is primed.
+    expect(total(resumed)).toBe(40_000);
+  });
+
+  it('discards a legacy untyped baseline when the first source-aware reading arrives', () => {
+    new TimePersistence(dir).saveBaselines(new Map([['a1', 4_000_000]]));
+    const t = tracker();
+    t.recordTokens('a1', 150_000, 'transcript');
+    t.recordTokens('a1', 170_000, 'transcript');
+    expect(total(t)).toBe(20_000);
   });
 
   it("counts a sub-agent's first reading in full, then its rises, apart from the main context", () => {

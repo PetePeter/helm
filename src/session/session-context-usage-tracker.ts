@@ -159,7 +159,7 @@ export class SessionContextUsageTracker {
           ...(context.window !== undefined ? { window: context.window } : {}),
           ...(context.level ? { level: context.level } : {}),
           ...(context.measuredAtIso ? { measuredAtIso: context.measuredAtIso } : {}),
-          ...(context.source === 'statusline' ? { source: 'statusline' as const } : {}),
+          ...(context.source ? { source: context.source } : {}),
         }
         : undefined;
       if (sameSnapshot(session.contextUsage, contextUsage, session.apiTool === true)) return;
