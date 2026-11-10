@@ -138,7 +138,7 @@ private fun ExpandedWidthPreview() {
                                 onSwitchCli = {},
                             ),
                             modifier = modifier,
-                            header = {
+                            header = { actionBar ->
                                 TabletSessionHeader(
                                     session = previewSession,
                                     sessions = previewSessions,
@@ -149,6 +149,7 @@ private fun ExpandedWidthPreview() {
                                     onTogglePicker = {},
                                     onPickSession = {},
                                     onOpenTodos = {},
+                                    actionBar = actionBar,
                                 )
                             },
                             body = { PreviewChatBody(previewSession) },

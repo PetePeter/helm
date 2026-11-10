@@ -141,7 +141,7 @@ private fun CollapsedSession(
         state = state,
         actions = actions,
         session = session,
-        header = {
+        header = { actionBar ->
             TabletSessionHeader(
                 session = session,
                 sessions = state.listedSessions,
@@ -158,6 +158,7 @@ private fun CollapsedSession(
                     state.homeState.selectSession(selection.sessionId)
                 },
                 onOpenTodos = { onShellState(shell.openTodos()) },
+                actionBar = actionBar,
             )
         },
     )
@@ -207,7 +208,7 @@ private fun ExpandedSession(
                         actions = actions,
                         session = session,
                         modifier = modifier,
-                        header = {
+                        header = { actionBar ->
                             TabletSessionHeader(
                                 session = session,
                                 sessions = state.listedSessions,
@@ -218,6 +219,7 @@ private fun ExpandedSession(
                                 onTogglePicker = {},
                                 onPickSession = {},
                                 onOpenTodos = {},
+                                actionBar = actionBar,
                             )
                         },
                     )
@@ -233,7 +235,7 @@ private fun SessionDetail(
     actions: PhoneScaffoldActions,
     session: HelmSession,
     modifier: Modifier = Modifier.fillMaxSize(),
-    header: @Composable () -> Unit,
+    header: @Composable (@Composable () -> Unit) -> Unit,
 ) {
     val neighbors = SessionRows.unreadNeighbors(state.listedSessionIds, session.id, state.unreadCounts)
     TabletSessionDetail(

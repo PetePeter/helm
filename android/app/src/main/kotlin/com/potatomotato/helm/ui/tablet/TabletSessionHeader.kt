@@ -37,6 +37,7 @@ internal fun TabletSessionHeader(
     onTogglePicker: () -> Unit,
     onPickSession: (String) -> Unit,
     onOpenTodos: () -> Unit,
+    actionBar: (@Composable () -> Unit)? = null,
 ) {
     val nowMs = rememberEtaNow(listOfNotNull(session?.eta))
     Box(modifier = Modifier.fillMaxWidth().background(HelmColors.Surface)) {
@@ -74,6 +75,7 @@ internal fun TabletSessionHeader(
                     )
                 }
             }
+            actionBar?.invoke()
             if (session != null) {
                 Box(
                     modifier = Modifier

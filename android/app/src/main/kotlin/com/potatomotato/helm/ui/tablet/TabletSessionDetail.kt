@@ -37,13 +37,23 @@ internal fun TabletSessionDetail(
     clis: List<HelmCli>,
     actions: TabletSessionDetailActions,
     modifier: Modifier = Modifier,
-    header: @Composable () -> Unit,
+    header: @Composable (@Composable () -> Unit) -> Unit,
     body: @Composable () -> Unit,
 ) {
     val nowMs = rememberEtaNow(listOfNotNull(session.eta))
     val keepWarm = isKeepWarmEnabled(session.keepWarmUntilEpochMs, System.currentTimeMillis())
     val actionModel = remember(keepWarm, session.frozen, capabilities) {
         sessionActions(keepWarm, session.frozen, capabilities)
+    }
+    val actionBar: @Composable () -> Unit = {
+        SessionActionBar(
+            actions = actionModel,
+            sessionName = session.name,
+            clis = clis,
+            onAction = actions.onSessionAction,
+            onRename = actions.onRename,
+            onSwitchCli = actions.onSwitchCli,
+        )
     }
     SessionTabScaffold(
         modifier = modifier,
@@ -57,17 +67,7 @@ internal fun TabletSessionDetail(
         onSelectTab = actions.onSelectTab,
         onBack = actions.onBack,
         onOverflow = actions.onOverflow,
-        header = header,
-        afterHeader = {
-            SessionActionBar(
-                actions = actionModel,
-                sessionName = session.name,
-                clis = clis,
-                onAction = actions.onSessionAction,
-                onRename = actions.onRename,
-                onSwitchCli = actions.onSwitchCli,
-            )
-        },
+        header = { header(actionBar) },
         body = body,
     )
 }
