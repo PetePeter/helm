@@ -105,9 +105,12 @@ function hookCommand(deps: HookInstallerDeps, interpreter: ResolvedInterpreter, 
     warnIfCodexCannotSpawn(parts, program);
     return parts.join(' ');
   }
-  return parts
+  const command = parts
     .map((part) => (part === program || /\s/.test(part) ? `"${part}"` : part))
     .join(' ');
+  // Copilot runs hooks through PowerShell, where a leading quoted path is a
+  // string literal and the next word a parse error (exit 1 = denied tool call).
+  return provider === 'copilot' && native ? `& ${command}` : command;
 }
 
 /**

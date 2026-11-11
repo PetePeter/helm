@@ -485,6 +485,19 @@ describe.runIf(process.platform === 'win32')('native shim', () => {
     expect(await readHookIntegrationStatus(CLAUDE, depsWithPython())).toBe('installed');
   });
 
+  it('prefixes the Copilot native command with PowerShell\'s call operator', async () => {
+    mkdirSync(join(shimPath, '..'), { recursive: true });
+    const native = join(shimPath, '..', 'helm-hook.exe');
+    writeFileSync(native, '');
+
+    await installCliHooks(COPILOT, depsWithPython());
+
+    // Copilot runs hooks through PowerShell: a leading quoted path is a string
+    // literal there, the next word a parse error, exit 1 — a denied tool call.
+    expect(readJson('.copilot/hooks/helm.json').hooks.agentStop[0].command).toBe(`& "${native}" copilot agentStop`);
+    expect(await readHookIntegrationStatus(COPILOT, depsWithPython())).toBe('installed');
+  });
+
   it('uninstall removes native-shim entries too', async () => {
     mkdirSync(join(shimPath, '..'), { recursive: true });
     writeFileSync(join(shimPath, '..', 'helm-hook.exe'), '');
