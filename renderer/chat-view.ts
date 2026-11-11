@@ -9,10 +9,9 @@ const WEB_LINK = /https?:\/\/[^\s<>"']+/gi;
 const TRAILING_PUNCTUATION = /[.,!?;:)\]}]+$/;
 
 /** A user turn's origin comes from the journal ID namespace. */
-export function chatOriginLabel(record: Pick<ChatRecordInput, 'originId'>): 'Phone' | 'Desktop' | 'Telegram' | null {
+export function chatOriginLabel(record: Pick<ChatRecordInput, 'originId'>): 'Phone' | 'Desktop' | null {
   const originId = record.originId?.toLowerCase();
   if (!originId) return null;
-  if (originId.startsWith('telegram:') || originId.startsWith('tg:')) return 'Telegram';
   if (originId.startsWith('desktop:')) return 'Desktop';
   return 'Phone';
 }

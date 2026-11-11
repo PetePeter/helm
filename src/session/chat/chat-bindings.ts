@@ -2,7 +2,7 @@
  * chatBindings — where a session lives on each chat surface.
  *
  * Persisted chat bindings are a map keyed by provider, so each surface can add
- * its own key. Legacy Telegram bindings are discarded during migration.
+ * its own key. The retired `telegram` key is dropped on load.
  *
  * TWO RULES, both learned the hard way:
  *
@@ -24,6 +24,9 @@ export type ChatBindingValue = string | number;
 
 export type ChatBindings = Record<string, ChatBindingValue>;
 
+/** Retired provider: its bindings and the old `topicId` field are dropped on load. */
+const RETIRED_PROVIDER = 'telegram';
+
 function isBindingValue(value: unknown): value is ChatBindingValue {
   return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value));
 }
@@ -33,7 +36,7 @@ export function parseChatBindings(raw: unknown): ChatBindings | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const bindings: ChatBindings = {};
   for (const [provider, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (provider !== 'telegram' && isBindingValue(value)) bindings[provider] = value;
+    if (provider !== RETIRED_PROVIDER && isBindingValue(value)) bindings[provider] = value;
   }
   return Object.keys(bindings).length > 0 ? bindings : undefined;
 }
@@ -47,8 +50,8 @@ export function serializeChatBindings(session: SessionInfo): ChatBindings | unde
 }
 
 /**
- * Normalize a loaded record in place. Legacy Telegram fields are intentionally
- * discarded while other provider bindings remain forward-compatible.
+ * Normalize a loaded record in place, dropping retired-provider state while
+ * other provider bindings stay forward-compatible.
  */
 export function hydrateChatBindings(session: SessionInfo): SessionInfo {
   const bindings = parseChatBindings(session.chatBindings);

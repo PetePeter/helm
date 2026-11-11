@@ -97,7 +97,7 @@ sequenceDiagram
 
 Old-profile sessions keep running after a switch, so the main process must not push their data to a renderer that now shows someone else. One check, `ProfileRuntimeRegistry.isSessionInActiveProfile`, gates every main→renderer push of session-scoped data: terminal output and replay, chat entries, message-flight envelopes (and their acks), desktop notifications and flashes, and the admin operator's voice replies (admin-active only). Terminal IPC (input, resize, kill) applies the same check in the other direction.
 
-Only the **desktop** is gated. A background profile's phone and Telegram alerts still go to that profile's own bound devices.
+Only the **desktop** is gated. A background profile's phone alerts still go to that profile's own bound devices.
 
 ## Paired device binding
 

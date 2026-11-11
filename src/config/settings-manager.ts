@@ -47,6 +47,40 @@ function hasOwn(value: Record<string, unknown> | undefined, key: string): boolea
   return !!value && Object.prototype.hasOwnProperty.call(value, key);
 }
 
+/**
+ * One-shot cleanup for settings written while Telegram existed: user data
+ * (voice paths, remote-chat overrides) moves to its current key unless that
+ * key is already set, then every stale key is dropped. Returns true when the
+ * file needs rewriting.
+ */
+function dropLegacyTelegramKeys(raw: Record<string, unknown>): boolean {
+  let changed = false;
+  const moveAndDrop = (target: Record<string, unknown>, renames: Record<string, string | null>) => {
+    for (const [legacy, current] of Object.entries(renames)) {
+      if (!hasOwn(target, legacy)) continue;
+      if (current && !hasOwn(target, current)) target[current] = target[legacy];
+      delete target[legacy];
+      changed = true;
+    }
+  };
+
+  const legacySection = asRecord(raw.telegram);
+  if (hasOwn(raw, 'telegram')) {
+    const voice = { ...(asRecord(raw.voice) ?? {}) };
+    for (const field of VOICE_CONFIG_FIELDS) {
+      if (typeof voice[field] !== 'string' && typeof legacySection?.[field] === 'string') voice[field] = legacySection[field];
+    }
+    raw.voice = voice;
+    delete raw.telegram;
+    changed = true;
+  }
+  const hookInjections = asRecord(raw.hookInjections);
+  if (hookInjections) moveAndDrop(hookInjections, { telegramRules: 'remoteChatRules', telegramMode: null });
+  const reminderDelivery = asRecord(raw.reminderDelivery);
+  if (reminderDelivery) moveAndDrop(reminderDelivery, { telegramInstruction: 'remoteChatInstruction', telegramModeInstructions: null });
+  return changed;
+}
+
 export class SettingsManager {
   private pendingSave: ReturnType<typeof setTimeout> | null = null;
 
@@ -62,22 +96,12 @@ export class SettingsManager {
       throw new Error('Invalid settings.yaml: could not parse');
     }
     const needsOnboardingMigration = settings.onboardingCompleted === undefined;
-    const rawSettings = settings as unknown as Record<string, unknown>;
-    const hasLegacyTelegramSection = hasOwn(rawSettings, 'telegram');
-    const legacyTelegram = asRecord(rawSettings.telegram);
-    const needsVoiceMigration = VOICE_CONFIG_FIELDS.some(field =>
-      !!legacyTelegram && Object.prototype.hasOwnProperty.call(legacyTelegram, field));
-    const hookInjections = asRecord(rawSettings.hookInjections);
-    const reminderDelivery = asRecord(rawSettings.reminderDelivery);
-    const needsRemoteChatMigration = hasOwn(hookInjections, 'telegramRules')
-      || hasOwn(hookInjections, 'telegramMode')
-      || hasOwn(reminderDelivery, 'telegramInstruction')
-      || hasOwn(reminderDelivery, 'telegramModeInstructions');
+    const droppedLegacyKeys = dropLegacyTelegramKeys(settings as unknown as Record<string, unknown>);
     const normalized = this.normalize(settings);
     // Bundled fresh-install settings explicitly contain false. An older user
     // settings file does not, so migrate it as completed rather than showing a
     // first-run wizard to someone upgrading an established installation.
-    if (needsOnboardingMigration || needsVoiceMigration || hasLegacyTelegramSection || needsRemoteChatMigration) {
+    if (needsOnboardingMigration || droppedLegacyKeys) {
       this.write(normalized);
     }
     return normalized;
@@ -105,44 +129,13 @@ export class SettingsManager {
     if (settings.hapticFeedback === undefined) settings.hapticFeedback = true;
     if (settings.notifications === undefined) settings.notifications = true;
 
-    const rawSettings = settings as unknown as Record<string, unknown>;
-    const savedTelegram = asRecord(rawSettings.telegram);
     const savedVoice = settings.voice as Partial<VoiceConfig> | undefined;
     const voice = { ...DEFAULT_VOICE_CONFIG };
     for (const field of VOICE_CONFIG_FIELDS) {
       const current = savedVoice?.[field];
-      const legacy = savedTelegram?.[field];
-      voice[field] = typeof current === 'string'
-        ? current
-        : typeof legacy === 'string'
-          ? legacy
-          : DEFAULT_VOICE_CONFIG[field];
+      if (typeof current === 'string') voice[field] = current;
     }
     settings.voice = voice;
-
-    delete rawSettings.telegram;
-
-    const hookInjections = asRecord(rawSettings.hookInjections);
-    if (hookInjections) {
-      const migrated = { ...hookInjections };
-      if (!hasOwn(migrated, 'remoteChatRules') && hasOwn(migrated, 'telegramRules')) {
-        migrated.remoteChatRules = migrated.telegramRules;
-      }
-      delete migrated.telegramRules;
-      delete migrated.telegramMode;
-      rawSettings.hookInjections = migrated;
-    }
-
-    const reminderDelivery = asRecord(rawSettings.reminderDelivery);
-    if (reminderDelivery) {
-      const migrated = { ...reminderDelivery };
-      if (!hasOwn(migrated, 'remoteChatInstruction') && hasOwn(migrated, 'telegramInstruction')) {
-        migrated.remoteChatInstruction = migrated.telegramInstruction;
-      }
-      delete migrated.telegramInstruction;
-      delete migrated.telegramModeInstructions;
-      rawSettings.reminderDelivery = migrated;
-    }
 
     settings.mcp = {
       ...DEFAULT_MCP_CONFIG,
