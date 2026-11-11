@@ -68,7 +68,7 @@ export interface ToolEditorData {
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
-  helmActions: { clear: string; compact: string; export: string };
+  helmActions: { clear: string; compact: string; export: string; stop: string };
   initialPrompt: Array<{ label: string; sequence: string }>;
 }
 
@@ -93,7 +93,7 @@ export interface ToolEditorValues {
   mouseTracking?: boolean;
   bindingProfileId: string;
   submitSuffix: string;
-  helmActions: { clear: string; compact: string; export: string };
+  helmActions: { clear: string; compact: string; export: string; stop: string };
   _promptItems: Array<{ label: string; sequence: string }>;
   api: ToolEditorApiConfig | null;
   comfyUi: ToolEditorComfyUiConfig | null;
@@ -142,6 +142,7 @@ const submitSuffix = ref<SubmitSuffixOption>('\\r');
 const helmActionClear = ref('');
 const helmActionCompact = ref('');
 const helmActionExport = ref('');
+const helmActionStop = ref('');
 
 // API tool: Helm runs the agent loop itself; no spawn/resume commands apply.
 const toolKind = ref<ToolKind>('cli');
@@ -324,6 +325,7 @@ function initForm(): void {
   helmActionClear.value = d.helmActions?.clear ?? '';
   helmActionCompact.value = d.helmActions?.compact ?? '';
   helmActionExport.value = d.helmActions?.export ?? '';
+  helmActionStop.value = d.helmActions?.stop ?? '';
   toolKind.value = kind;
   apiBaseUrl.value = d.api?.baseUrl || DEFAULT_API_BASE_URL;
   apiModel.value = d.api?.model ?? '';
@@ -415,6 +417,7 @@ function collectValues(): ToolEditorValues {
       clear: helmActionClear.value.trim(),
       compact: helmActionCompact.value.trim(),
       export: helmActionExport.value.trim(),
+      stop: helmActionStop.value.trim(),
     },
     _promptItems: promptItems.value.map(i => ({ label: i.label, sequence: i.sequence })),
     api: toolKind.value === 'api'
@@ -699,6 +702,10 @@ onMounted(async () => {
         <div class="te-field">
           <label for="te-action-export">Export <span class="te-params">params: <code>$path</code></span></label>
           <input id="te-action-export" v-model="helmActionExport" type="text" placeholder="e.g. /export $path{Enter}" class="focusable te-input te-input--mono" />
+        </div>
+        <div class="te-field">
+          <label for="te-action-stop">Stop <span class="te-params">sent before quick compact; blank = Esc burst</span></label>
+          <input id="te-action-stop" v-model="helmActionStop" type="text" placeholder="e.g. {Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{Esc}" class="focusable te-input te-input--mono" />
         </div>
       </fieldset>
 

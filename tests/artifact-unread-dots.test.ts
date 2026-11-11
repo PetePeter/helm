@@ -12,6 +12,7 @@ let capturedRevealCb:
   ((payload: { sessionId: string; artifactId: string }) => Promise<void>) | null = null;
 
 vi.mock('../renderer/ipc/clients.js', () => ({
+  configClient: {},
   artifactsClient: {
     artifactList: vi.fn().mockResolvedValue([]),
     artifactDelete: vi.fn(),

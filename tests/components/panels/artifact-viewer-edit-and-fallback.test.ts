@@ -21,6 +21,7 @@ const artifactOpenExternal = vi.fn();
 const artifactPrepareRender = vi.fn();
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
+  configClient: {},
   artifactsClient: {
     artifactList: (...a: unknown[]) => artifactList(...a),
     artifactUpdate: (...a: unknown[]) => artifactUpdate(...a),

@@ -21,6 +21,7 @@ const artifactSetIntent = vi.fn();
 const systemOpenExternalUrl = vi.fn().mockResolvedValue(true);
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
+  configClient: {},
   artifactsClient: {
     artifactList: (...a: unknown[]) => artifactList(...a),
     artifactDelete: (...a: unknown[]) => artifactDelete(...a),
@@ -366,7 +367,7 @@ describe('ArtifactViewer', () => {
     expect(artifactCreateText).toHaveBeenCalledTimes(2);
     expect(notes).toHaveLength(2);
     expect(viewer.selectedId.value).toBe('text-2');
-    expect(w.findAll('.ap-item')).toHaveLength(2);
+    expect(w.findAll('.ap-card')).toHaveLength(2);
   });
 
   it('pastes an arbitrary clipboard file through the attachment IPC path', async () => {
@@ -413,11 +414,11 @@ describe('ArtifactViewer', () => {
     const b = makeArtifact({ id: 'b1', title: 'Perf Benchmark', updatedAt: Date.now() - 5000, createdAt: Date.now() - 5000 });
     const { w } = await mountWith([makeArtifact(), b]);
 
-    const items = w.findAll('.ap-item');
+    const items = w.findAll('.ap-card');
     expect(items).toHaveLength(2);
 
     // Newest (a1, updatedAt = now) is auto-selected.
-    expect(w.find('.ap-item--active .ap-it-title').text()).toBe('Auth Flow Audit');
+    expect(w.find('.ap-card--active .ap-it-title').text()).toBe('Auth Flow Audit');
     // Latest version (v3) markdown is what gets staged for the frame.
     expect(lastPreparedDocument()).toContain('Newest content');
     // No "viewing older" banner when on latest.
@@ -461,7 +462,7 @@ describe('ArtifactViewer', () => {
     await flushPromises();
 
     expect(artifactDelete).toHaveBeenCalledWith('a1');
-    expect(w.findAll('.ap-item')).toHaveLength(0);
+    expect(w.findAll('.ap-card')).toHaveLength(0);
     expect(w.find('.ap-detail-empty').exists()).toBe(true);
   });
 
@@ -500,34 +501,50 @@ describe('ArtifactViewer', () => {
     expect(writeText).toHaveBeenCalledWith('helm artifact: "Auth Flow Audit" id=a1');
   });
 
-  it('filters the rail by search query', async () => {
+  /** Cycle a filter chip by label (Any → Yes → No). */
+  const chip = (w: Awaited<ReturnType<typeof mountWith>>['w'], label: string) =>
+    w.findAll('.ap-bar .filter-chip').find((c) => c.text().includes(label))!;
+  const resetFilters = async (w: Awaited<ReturnType<typeof mountWith>>['w']) => {
+    await w.find('.ap-bar .ap-ico[title="Reset filters"]').trigger('click');
+  };
+
+  it('narrows the strip with a kind chip and restores it on reset', async () => {
     const b = makeArtifact({ id: 'b1', title: 'Perf Benchmark', kind: 'html' });
     const { w } = await mountWith([makeArtifact(), b]);
 
-    await w.find('.ap-search input').setValue('perf');
+    await chip(w, 'HTML').trigger('click');
     await flushPromises();
+    expect(w.findAll('.ap-card .ap-it-title').map((t) => t.text())).toEqual(['Perf Benchmark']);
 
-    const titles = w.findAll('.ap-it-title').map((t) => t.text());
-    expect(titles).toEqual(['Perf Benchmark']);
+    await resetFilters(w);
+    await flushPromises();
+    expect(w.findAll('.ap-card')).toHaveLength(2);
   });
 
-  it('has no rail collapse control — collapsing a pane is the dock\'s job', async () => {
-    const { w } = await mountWith([makeArtifact()]);
+  it('orders the strip by the chosen sort', async () => {
+    const now = Date.now();
+    const a = makeArtifact({ id: 'a1', title: 'zeta', createdAt: now - 9000, updatedAt: now });
+    const b = makeArtifact({ id: 'b1', title: 'Alpha', createdAt: now - 1000, updatedAt: now - 5000 });
+    const { w } = await mountWith([a, b]);
+    const titles = () => w.findAll('.ap-card .ap-it-title').map((t) => t.text());
+    const sortBy = (label: string) => w.findAll('.ap-sort-btn').find((x) => x.text() === label)!.trigger('click');
 
-    expect(w.find('.ap-rail-collapse').exists()).toBe(false);
-    expect(w.find('.ap-rail--collapsed').exists()).toBe(false);
-    // The rail contents are unconditional, so the list is always reachable.
-    expect(w.find('.ap-rail-inner').isVisible()).toBe(true);
-    expect(localStorage.getItem('helm:artifact-rail-collapsed')).toBeNull();
+    await sortBy('Updated');
+    expect(titles()).toEqual(['zeta', 'Alpha']);
+    await sortBy('Created');
+    expect(titles()).toEqual(['Alpha', 'zeta']);
+    await sortBy('A–Z');
+    expect(titles()).toEqual(['Alpha', 'zeta']);
+    await sortBy('Updated');
   });
 
-  it('shows an empty state when the search query matches no artifacts', async () => {
+  it('shows an empty state when the filters match no artifacts', async () => {
     const { w } = await mountWith([makeArtifact()]);
 
-    await w.find('.ap-search input').setValue('does-not-exist');
+    await chip(w, 'HTML').trigger('click');
     await flushPromises();
-
-    expect(w.find('.ap-rail-list .empty-state').text()).toContain('No artifacts match your search');
+    expect(w.find('.ap-strip .empty-state').text()).toContain('No artifacts match filters');
+    await resetFilters(w);
   });
 
   it('emits pop-out from the header without a duplicate panel-close action', async () => {

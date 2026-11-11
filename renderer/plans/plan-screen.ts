@@ -23,7 +23,7 @@ import {
   schedulerClient,
 } from '../ipc/clients.js';
 import { nextCheckAt } from '../../src/session/operator-tasks.js';
-import { registerFilterPreference } from '../stores/filter-preferences.js';
+import { coerceTriState, matchesTriStateGroup, registerFilterPreference } from '../stores/filter-preferences.js';
 import type { FilterPreferenceState, PlanFilterPreferences } from '../../src/types/filter-preference.js';
 
 export type TriState = FilterPreferenceState;
@@ -138,19 +138,8 @@ function getWindowCallbacks(): WindowCallbacks {
   return callbackRegistry.get(key)!;
 }
 
-function coerceTriState(value: unknown): TriState {
-  return value === 'yes' || value === 'no' || value === 'either' ? value : 'either';
-}
-
 function cycleTriState(current: TriState): TriState {
   return current === 'either' ? 'yes' : current === 'yes' ? 'no' : 'either';
-}
-
-function matchesTriStateGroup<T extends string>(group: Record<T, TriState>, key: T): boolean {
-  const state = group[key] ?? 'either';
-  if (state === 'no') return false;
-  const hasYes = Object.values(group).some((value) => value === 'yes');
-  return hasYes ? state === 'yes' : true;
 }
 
 watch(persistedPlanFilters, (filters) => {

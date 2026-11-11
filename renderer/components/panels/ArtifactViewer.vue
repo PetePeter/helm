@@ -2,13 +2,13 @@
 /**
  * ArtifactViewer.vue — right-docked master/detail artifact panel.
  *
- * Master: a collapsible index rail (search + sort + Today/Earlier groups,
- * unread dots, hover-delete). Detail: the selected artifact rendered in an
+ * Master: a filter bar (kind/intent tri-state chips shared with Plans, sort
+ * switch, create actions) over a horizontal card strip with unread dots. Detail: the selected artifact rendered in an
  * isolated frame with a version bar (‹ › + dropdown + older-version banner).
  * Footer: Edit / Open externally / Export… / Copy reference / Delete. Editing
  * is in-situ over the raw source and saves as a NEW version, so it is offered
  * on the latest version only.
- * Header: title + count + pop-out. Pane close/restore belongs to the dock.
+ * Pane close/restore belongs to the dock.
  *
  * Supports manual artifact creation: text notes, file attachments via
  * file picker / drag-and-drop / clipboard paste. Images render inline
@@ -40,9 +40,19 @@ import type { Artifact, ArtifactIntent } from '../../../src/types/artifact.js';
 import { parseAttachmentHref } from '../../../src/types/artifact-attachment.js';
 import Chip from '../common/Chip.vue';
 import EmptyState from '../common/EmptyState.vue';
-import ListRow from '../common/ListRow.vue';
-import PanelHeader from '../common/PanelHeader.vue';
-import SearchField from '../common/SearchField.vue';
+import FilterChip from '../common/FilterChip.vue';
+import {
+  ARTIFACT_INTENTS,
+  ARTIFACT_KIND_LABELS,
+  ARTIFACT_LIST_PREFERENCE_ID,
+  ARTIFACT_SORTS,
+  artifactKindLabel,
+  defaultArtifactListPrefs,
+  listArtifacts,
+  normalizeArtifactListPrefs,
+  type ArtifactSort,
+} from '../../artifacts/artifact-list.js';
+import { registerFilterPreference } from '../../stores/filter-preferences.js';
 
 const props = defineProps<{ sessionId: string }>();
 const emit = defineEmits<{
@@ -74,11 +84,14 @@ function isArtifactShortcutMessage(value: unknown): value is ArtifactShortcutMes
     && typeof message.shiftKey === 'boolean';
 }
 
-// Local rail controls.
 import { ref } from 'vue';
-type SortMode = 'new' | 'upd' | 'az';
-const query = ref('');
-const sortMode = ref<SortMode>('new');
+// Filters + sort persist as one shared preference across windows.
+const listPrefs = registerFilterPreference(ARTIFACT_LIST_PREFERENCE_ID, defaultArtifactListPrefs(), normalizeArtifactListPrefs).value;
+const SORT_LABELS: Record<ArtifactSort, string> = { created: 'Created', updated: 'Updated', az: 'A–Z' };
+const INTENT_LABELS = { manifesto: 'Manifesto', normal: 'Normal' } as const;
+function resetListFilters(): void {
+  listPrefs.value = { ...defaultArtifactListPrefs(), sort: listPrefs.value.sort };
+}
 
 const {
   artifacts,
@@ -231,52 +244,9 @@ function stepVersion(delta: number): void {
   viewer.setVersion(a.versions[nextIdx].version);
 }
 
-// ── Rail list (filter → sort → group) ──────────────────────────────────────
+// ── Strip list ─────────────────────────────────────────────────────────────
 
-function matches(a: Artifact, q: string): boolean {
-  if (!q) return true;
-  return a.title.toLowerCase().includes(q) || a.kind.includes(q);
-}
-
-const filtered = computed(() => {
-  const q = query.value.trim().toLowerCase();
-  const rows = artifacts.value.filter(a => matches(a, q));
-  const sorted = [...rows];
-  if (sortMode.value === 'az') {
-    sorted.sort((a, b) => a.title.localeCompare(b.title));
-  } else if (sortMode.value === 'new') {
-    sorted.sort((a, b) => b.createdAt - a.createdAt);
-  } else {
-    sorted.sort((a, b) => b.updatedAt - a.updatedAt);
-  }
-  return sorted;
-});
-
-function startOfToday(): number {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-interface RailRow { kind: 'header' | 'item'; label?: string; artifact?: Artifact }
-
-const railRows = computed<RailRow[]>(() => {
-  const rows: RailRow[] = [];
-  const today = startOfToday();
-  let lastGroup: string | null = null;
-  const grouped = sortMode.value !== 'az';
-  for (const a of filtered.value) {
-    if (grouped) {
-      const group = a.updatedAt >= today ? 'Today' : 'Earlier';
-      if (group !== lastGroup) {
-        lastGroup = group;
-        rows.push({ kind: 'header', label: group });
-      }
-    }
-    rows.push({ kind: 'item', artifact: a });
-  }
-  return rows;
-});
+const visible = computed(() => listArtifacts(artifacts.value, listPrefs.value));
 
 function relativeTime(ms: number): string {
   const secs = Math.floor((Date.now() - ms) / 1000);
@@ -289,25 +259,13 @@ function relativeTime(ms: number): string {
   return `${days}d`;
 }
 
-/** Kind badge label: IMG for image-based markdown, BIN for binary, COMPACT for a compaction snapshot, otherwise MD/HTML. */
-function kindLabel(a: Artifact): string {
-  if (a.source === 'manual') {
-    const content = a.versions[a.versions.length - 1]?.content ?? '';
-    if (content.startsWith('![')) return 'IMG';
-    if (content.includes('Open in system viewer')) return 'BIN';
-  }
-  if (a.kind === 'compact') return 'COMPACT';
-  return a.kind === 'markdown' ? 'MD' : 'HTML';
-}
-
 function kindTone(a: Artifact): 'accent' | 'info' | 'warning' {
-  const kind = kindLabel(a);
+  const kind = artifactKindLabel(a);
   if (kind === 'MD') return 'accent';
   if (kind === 'BIN') return 'warning';
   return 'info';
 }
 
-const count = computed(() => artifacts.value.length);
 const newArtifactIntent = ref<ArtifactIntent>('normal');
 const settingIntent = ref(false);
 const selectedIntent = computed<ArtifactIntent>(() => selected.value?.intent ?? 'normal');
@@ -737,84 +695,69 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
       <span class="ap-drop-sub">Images, documents, or any file</span>
     </div>
 
-    <PanelHeader title="Artifacts" :subtitle="`${count} · session-scoped`" icon="📄">
-      <template #actions>
-        <button class="ap-ico" title="Pop out with terminal" @click="emit('pop-out')">⧉</button>
-      </template>
-      <template #toolbar>
-        <SearchField
-          v-model="query"
-          class="ap-search"
-          placeholder="Search artifacts…"
-          aria-label="Search artifacts"
-        />
-      </template>
-    </PanelHeader>
-
-    <div class="ap-main">
-      <!-- MASTER: index rail -->
-      <div class="ap-rail">
-        <div class="ap-rail-inner">
-          <div class="ap-rail-tools">
-            <div class="ap-new-row">
-              <div class="ap-create-dropdown">
-                <button class="ap-btn-new" @click="showCreateMenu = !showCreateMenu">+ New ▾</button>
-                <div v-if="showCreateMenu" class="dropdown-menu">
-                  <button class="dropdown-item" @click="onCreateTextNote">📝 Text note</button>
-                  <button class="dropdown-item" @click="onCreateFromClipboard">📋 Paste from clipboard</button>
-                </div>
-              </div>
-              <button class="ap-btn-attach" title="Pick a file to attach" @click="onAttachFile">📎</button>
-            </div>
-            <label class="ap-create-intent">
-              <span>Create as</span>
-              <select v-model="newArtifactIntent" class="ap-new-intent" aria-label="New artifact intent" title="Manifesto artifacts are added to context after session resets">
-                <option value="normal">Normal</option>
-                <option value="manifesto">Manifesto</option>
-              </select>
-            </label>
-            <div class="ap-sort">
-              <span>Sort</span>
-              <select v-model="sortMode">
-                <option value="new">Newest</option>
-                <option value="upd">Recently updated</option>
-                <option value="az">A–Z</option>
-              </select>
-            </div>
-          </div>
-          <div class="ap-rail-list">
-            <EmptyState v-if="artifacts.length === 0" class="ap-empty" title="No artifacts yet." />
-            <EmptyState v-else-if="railRows.length === 0" class="ap-empty" title="No artifacts match your search." />
-            <template v-for="(row, i) in railRows" :key="row.kind === 'header' ? 'h-' + row.label + i : row.artifact!.id">
-              <div v-if="row.kind === 'header'" class="ap-grp-h">{{ row.label }}</div>
-              <ListRow
-                v-else
-                class="ap-item"
-                :class="{ 'ap-item--active': row.artifact!.id === selectedId, 'ap-item--unread': unread.has(row.artifact!.id) }"
-                :selected="row.artifact!.id === selectedId"
-                :unread="unread.has(row.artifact!.id)"
-                @click="onSelect(row.artifact!.id)"
-              >
-                <template #title>
-                  <span class="ap-dot" aria-hidden="true"></span>
-                  <span class="ap-it-title">{{ row.artifact!.title }}</span>
-                  <span v-if="row.artifact!.intent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
-                  <span v-if="row.artifact!.draft" class="ap-intent-badge ap-draft-badge" title="Unsaved draft">Draft</span>
-                </template>
-                <template #meta>
-                  <span class="ap-it-meta">
-                    <Chip class="ap-kind" :label="kindLabel(row.artifact!)" :tone="kindTone(row.artifact!)" />
-                    <span v-if="row.artifact!.source === 'manual'" class="ap-src">manual</span>
-                    <span class="ap-vcount">v{{ row.artifact!.versions.length }}</span>
-                    <span>{{ relativeTime(row.artifact!.updatedAt) }}</span>
-                  </span>
-                </template>
-              </ListRow>
-            </template>
+    <div class="ap-bar">
+      <FilterChip
+        v-for="k in ARTIFACT_KIND_LABELS" :key="k"
+        v-model:state="listPrefs.kinds[k]" :label="k"
+      />
+      <span class="ap-bar-sep">|</span>
+      <FilterChip
+        v-for="i in ARTIFACT_INTENTS" :key="i"
+        v-model:state="listPrefs.intents[i]" :label="INTENT_LABELS[i]"
+      />
+      <button class="ap-ico" title="Reset filters" @click="resetListFilters">↺</button>
+      <span class="ap-bar-sep">|</span>
+      <div class="ap-sort" role="radiogroup" aria-label="Sort artifacts">
+        <button
+          v-for="mode in ARTIFACT_SORTS" :key="mode"
+          class="ap-sort-btn" :class="{ 'ap-sort-btn--on': listPrefs.sort === mode }"
+          role="radio" :aria-checked="listPrefs.sort === mode"
+          @click="listPrefs.sort = mode"
+        >{{ SORT_LABELS[mode] }}</button>
+      </div>
+      <div class="ap-bar-actions">
+        <div class="ap-create-dropdown">
+          <button class="ap-btn-new" @click="showCreateMenu = !showCreateMenu">+ New ▾</button>
+          <div v-if="showCreateMenu" class="dropdown-menu">
+            <button class="dropdown-item" @click="onCreateTextNote">📝 Text note</button>
+            <button class="dropdown-item" @click="onCreateFromClipboard">📋 Paste from clipboard</button>
           </div>
         </div>
+        <select v-model="newArtifactIntent" class="ap-new-intent" aria-label="New artifact intent" title="Create as — manifesto artifacts are added to context after session resets">
+          <option value="normal">Normal</option>
+          <option value="manifesto">Manifesto</option>
+        </select>
+        <button class="ap-btn-attach" title="Pick a file to attach" @click="onAttachFile">📎</button>
+        <button class="ap-ico" title="Pop out with terminal" @click="emit('pop-out')">⧉</button>
       </div>
+    </div>
 
+    <div class="ap-strip">
+      <EmptyState v-if="artifacts.length === 0" class="ap-empty" title="No artifacts yet." />
+      <EmptyState v-else-if="visible.length === 0" class="ap-empty" title="No artifacts match filters." />
+      <button
+        v-for="a in visible" :key="a.id"
+        class="ap-card"
+        :class="{ 'ap-card--active': a.id === selectedId, 'ap-card--unread': unread.has(a.id) }"
+        :aria-pressed="a.id === selectedId"
+        @click="onSelect(a.id)"
+      >
+        <span class="ap-card-title">
+          <span class="ap-dot" aria-hidden="true"></span>
+          <Chip class="ap-kind" :label="artifactKindLabel(a)" :tone="kindTone(a)" />
+          <span class="ap-it-title">{{ a.title }}</span>
+        </span>
+        <span class="ap-it-meta">
+          <span v-if="a.intent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
+          <span v-if="a.draft" class="ap-intent-badge ap-draft-badge" title="Unsaved draft">Draft</span>
+          <span v-if="a.source === 'manual'" class="ap-src">manual</span>
+          <span class="ap-vcount">v{{ a.versions.length }}</span>
+          <span>{{ relativeTime(listPrefs.sort === 'created' ? a.createdAt : a.updatedAt) }}</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="ap-main">
       <!-- DETAIL -->
       <div class="ap-detail">
         <!-- Text note creation editor -->
@@ -1002,9 +945,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-v-step:focus-visible,
 .ap-restore:focus-visible,
 .ap-btn:focus-visible,
-.ap-sort select:focus-visible,
 .ap-v-sel select:focus-visible,
-.ap-create-intent select:focus-visible,
 .ap-selected-intent-label select:focus-visible,
 .ap-create-title-input:focus-visible,
 .ap-create-body:focus-visible,
@@ -1015,16 +956,28 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 
 .ap-main { flex: 1; display: flex; min-height: 0; }
 
-/* index rail */
-.ap-rail { width: 214px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--bg-secondary); }
-.ap-rail-inner { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* ── Filter bar + card strip ── */
+.ap-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-sm); border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+.ap-bar-sep { color: var(--text-dim); }
+.ap-bar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--spacing-xs); }
+.ap-sort { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.ap-sort-btn { font-size: var(--font-size-xs); padding: var(--spacing-xs) var(--spacing-sm); border: none; border-right: 1px solid var(--border); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: inherit; }
+.ap-sort-btn:last-child { border-right: none; }
+.ap-sort-btn--on { background: rgba(79,208,139,0.12); color: var(--accent); font-weight: 600; }
+.ap-new-intent { background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--font-size-xs); font-family: inherit; }
+.ap-strip { display: flex; gap: var(--spacing-sm); padding: var(--spacing-sm); overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; }
+.ap-card { flex: 0 0 auto; width: 190px; display: flex; flex-direction: column; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-tertiary); color: var(--text-primary); text-align: left; cursor: pointer; font-family: inherit; font-size: var(--font-size-sm); }
+.ap-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.ap-card--active { border-color: var(--accent); background: rgba(79,208,139,0.08); }
+.ap-card--unread .ap-dot { background: var(--accent); }
+.ap-card-title { display: flex; align-items: center; gap: var(--spacing-xs); min-width: 0; }
+.ap-card-title .ap-it-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-empty { padding: var(--spacing-sm); }
 
-.ap-rail-tools { padding: var(--spacing-sm); display: flex; flex-direction: column; gap: var(--spacing-xs); border-bottom: 1px solid var(--border); }
+/* index rail */
+
 
 /* New + Attach row */
-.ap-new-row { display: flex; gap: var(--spacing-xs); }
-.ap-create-intent { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--font-size-xs); color: var(--text-secondary); }
-.ap-create-intent select,
 .ap-selected-intent-label select { min-width: 0; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); color: var(--text-primary); font-size: var(--font-size-xs); font-family: inherit; }
 .ap-btn-new { flex: 1; font-size: var(--font-size-sm); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); border: 1px solid var(--accent); background: rgba(79,208,139,0.12); color: var(--accent); cursor: pointer; font-weight: 600; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: var(--spacing-xs); }
 .ap-btn-new:hover { background: rgba(79,208,139,0.22); }
@@ -1037,16 +990,8 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .dropdown-item { display: flex; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); font-size: var(--font-size-sm); color: var(--text-primary); cursor: pointer; border: none; background: none; width: 100%; text-align: left; font-family: inherit; }
 .dropdown-item:hover { background: rgba(79,208,139,0.12); color: var(--accent); }
 
-.ap-search { width: 100%; }
-.ap-sort { display: flex; align-items: center; gap: var(--spacing-xs); font-size: var(--font-size-xs); color: var(--text-secondary); }
-.ap-sort select { flex: 1; background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); font-size: var(--font-size-xs); font-family: inherit; }
-.ap-sort select option { background: var(--bg-secondary); color: var(--text-primary); }
 
-.ap-rail-list { flex: 1; overflow-y: auto; padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm); }
-.ap-grp-h { font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs); position: sticky; top: 0; background: var(--bg-secondary); }
-.ap-item { margin-bottom: var(--spacing-xs); }
 .ap-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 var(--spacing-sm) 0 0; background: transparent; }
-.ap-item--unread .ap-dot { background: var(--accent); }
 .ap-it-title { color: var(--text-primary); }
 .ap-intent-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 999px; padding: 1px var(--spacing-xs); color: var(--accent); font-size: var(--font-size-xs); line-height: 1.3; white-space: nowrap; }
 /* An unsaved draft is the user's own pending work, not an AI-set intent. */

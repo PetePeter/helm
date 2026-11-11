@@ -235,6 +235,7 @@ export function useSettingsController(options: {
         clear: value?.helmActions?.clear ?? '',
         compact: value?.helmActions?.compact ?? '',
         export: value?.helmActions?.export ?? '',
+        stop: value?.helmActions?.stop ?? '',
       },
       initialPrompt: Array.isArray(value?.initialPrompt)
         ? value.initialPrompt.map((i: any) => ({ label: i.label || '', sequence: i.sequence || '' }))
@@ -363,7 +364,7 @@ export function useSettingsController(options: {
       contextWindow: 0,
       contextLimits: null,
       submitSuffix: '\\r',
-      helmActions: { clear: '', compact: '', export: '' },
+      helmActions: { clear: '', compact: '', export: '', stop: '' },
       initialPrompt: [],
       api: null,
     }, 'Added');

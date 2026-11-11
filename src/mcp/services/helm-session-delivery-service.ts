@@ -713,10 +713,11 @@ export class HelmSessionDeliveryService {
       });
     }, withdrawCompactRequest)
       .finally(() => this.compactsPending.delete(session.id));
-    // A half-typed composer or open menu can swallow the /clear: an even Esc burst
-    // unwedges it (pairs cancel Esc-Esc toggles) and interrupts any turn, whose Stop
-    // the injector lets through while the compact is pending.
-    await this.deliverActionSequence(session.id, QUICK_COMPACT_ESC_BURST);
+    // A half-typed composer or open menu can swallow the /clear: the CLI's stop action
+    // (default: an even Esc burst — pairs cancel Esc-Esc toggles) unwedges it and
+    // interrupts any turn, whose Stop the injector lets through while the compact is pending.
+    const stop = this.configLoader.getCliTypeEntry(session.cliType)?.helmActions?.stop?.trim();
+    await this.deliverActionSequence(session.id, stop || QUICK_COMPACT_ESC_BURST);
     // Never clear mid-turn: a session quick-compacting itself finishes its turn first.
     if (this.handover) {
       this.handover.runWhenIdle(session.id, clear);

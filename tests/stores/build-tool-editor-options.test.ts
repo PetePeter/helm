@@ -131,22 +131,23 @@ describe('buildToolEditorOptions', () => {
       keepWarmPrompt: '',
       bindingProfileId: '',
       submitSuffix: '\\r',
-      helmActions: { clear: '', compact: '', export: '' },
+      helmActions: { clear: '', compact: '', export: '', stop: '' },
       api: null,
       comfyUi: null,
     });
   });
 
   it('trims helmActions fields and defaults to empty strings', () => {
-    expect(buildToolEditorOptions({}).helmActions).toEqual({ clear: '', compact: '', export: '' });
+    expect(buildToolEditorOptions({}).helmActions).toEqual({ clear: '', compact: '', export: '', stop: '' });
 
     const result = buildToolEditorOptions({
-      helmActions: { clear: '  /clear{Enter} ', compact: '/compact $instruction{Enter}', export: 42 as any },
+      helmActions: { clear: '  /clear{Enter} ', compact: '/compact $instruction{Enter}', export: 42 as any, stop: ' {Esc}{Esc} ' },
     });
     expect(result.helmActions).toEqual({
       clear: '/clear{Enter}',
       compact: '/compact $instruction{Enter}',
       export: '', // non-string coerced to empty
+      stop: '{Esc}{Esc}',
     });
   });
 });

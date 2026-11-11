@@ -142,7 +142,7 @@ user-facing reports here rather than dumping files.
 Right-hand, resizable dock (width persisted). Master/detail so it scales to many
 artifacts:
 
-- **Index rail** (master): scrollable list, live search, sort (newest / recently-updated / A–Z), `Today` / `Earlier` group headers, unread dots, hover-delete.
+- **Filter bar + card strip** (master): kind (MD/HTML/IMG/BIN/COMPACT) and intent tri-state `FilterChip`s — the same chips and matching rule as Plans — plus a Created / Updated / A–Z sort switch, persisted as the shared `artifact.list` filter preference so every window agrees. Below it, a horizontal strip of cards with unread dots; the card timestamp follows the sort. No search: the strip is short enough to scan.
 - **Detail pane**: sanitized render (see below), version bar (title + ✎ rename + ‹ › + dropdown + older-version banner + *Jump to latest*), footer with **Edit / Open externally / Export… / Copy reference / Delete**.
 
 **Rename** is inline in the version bar — the ✎ button or a double-click on the

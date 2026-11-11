@@ -19,6 +19,7 @@ const artifactAttachmentDelete = vi.fn().mockResolvedValue(true);
 const artifactPrepareRender = vi.fn().mockResolvedValue('nonce-1');
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
+  configClient: {},
   artifactsClient: {
     artifactList: (...a: unknown[]) => artifactList(...a),
     artifactPrepareRender: (...a: unknown[]) => artifactPrepareRender(...a),

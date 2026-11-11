@@ -753,7 +753,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       keepWarmPrompt?: string;
       mouseTracking?: boolean;
       submitSuffix?: string;
-      helmActions?: { clear?: string; compact?: string; export?: string };
+      helmActions?: { clear?: string; compact?: string; export?: string; stop?: string };
       api?: ApiToolOptions | null;
     },
   ) => ipcRenderer.invoke('tools:addCliType', key, name, initialPrompt, initialPromptDelay, options),
@@ -776,7 +776,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       keepWarmPrompt?: string;
       mouseTracking?: boolean;
       submitSuffix?: string;
-      helmActions?: { clear?: string; compact?: string; export?: string };
+      helmActions?: { clear?: string; compact?: string; export?: string; stop?: string };
       api?: ApiToolOptions | null;
     },
   ) => ipcRenderer.invoke('tools:updateCliType', key, name, initialPrompt, initialPromptDelay, options),

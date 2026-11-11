@@ -1,5 +1,5 @@
 import { ref, watch, type Ref } from 'vue';
-import type { FilterPreferenceChanged, PlanFilterPreferences } from '../../src/types/filter-preference.js';
+import type { FilterPreferenceChanged, FilterPreferenceState, PlanFilterPreferences } from '../../src/types/filter-preference.js';
 import { configClient } from '../ipc/clients.js';
 
 interface PreferenceEntry<T> {
@@ -11,6 +11,18 @@ interface PreferenceEntry<T> {
   skipWriteValue: string | null;
   persistOnChange: boolean;
   persist: () => Promise<void>;
+}
+
+export function coerceTriState(value: unknown): FilterPreferenceState {
+  return value === 'yes' || value === 'no' || value === 'either' ? value : 'either';
+}
+
+/** A "no" key is excluded; once any key in the group is "yes", only "yes" keys pass. */
+export function matchesTriStateGroup<T extends string>(group: Record<T, FilterPreferenceState>, key: T): boolean {
+  const state = group[key] ?? 'either';
+  if (state === 'no') return false;
+  const hasYes = Object.values<FilterPreferenceState>(group).some((value) => value === 'yes');
+  return hasYes ? state === 'yes' : true;
 }
 
 const entries = new Map<string, PreferenceEntry<unknown>>();

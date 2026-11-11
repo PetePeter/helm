@@ -19,6 +19,7 @@ const artifactOpenAttachment = vi.fn();
 const artifactPrepareRender = vi.fn();
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
+  configClient: {},
   artifactsClient: {
     artifactList: (...a: unknown[]) => artifactList(...a),
     artifactCreateText: (...a: unknown[]) => artifactCreateText(...a),

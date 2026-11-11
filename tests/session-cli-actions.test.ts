@@ -319,6 +319,19 @@ describe('session_quick_compact', () => {
     if ('transcriptFile' in result) rmSync(result.transcriptFile, { force: true });
   });
 
+  it('interrupts with the configured helmActions.stop sequence before clearing', async () => {
+    const { service, session, release } = makeService({ helmActions: { clear: '/clear{Enter}', stop: '{Ctrl+C}{Wait 100}{Esc}' } }, true, { holdIdle: true });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'hi' } }));
+    Object.assign(session, { cliTranscriptPath: log });
+
+    const result = await service.quickCompactSession('s1', {});
+    expect(deliveredText(0)).toBe('{Ctrl+C}{Wait 100}{Esc}');
+    await release();
+    expect(deliveredText(1)).toBe('/clear{Enter}');
+    if ('transcriptFile' in result) rmSync(result.transcriptFile, { force: true });
+  });
+
   /** A context reading taken after the last compaction, at the given fill. */
   const readingAfter = (at: number, tokens: number) =>
     ({ tokens, window: 200_000, measuredAtIso: new Date(at + 1_000).toISOString() });

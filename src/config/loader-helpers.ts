@@ -26,6 +26,9 @@ export interface HelmActionMap {
   compact?: string;
   /** Export session detail to a file. $path is replaced with the caller-supplied path. Example: "/export $path{Enter}". */
   export?: string;
+  /** Interrupt the CLI (cancel a turn, close menus, empty the composer). Sent before
+   *  quick compact's /clear. Blank falls back to an even Esc burst. Example: "{Esc}{Wait 150}{Esc}". */
+  stop?: string;
 }
 
 /**

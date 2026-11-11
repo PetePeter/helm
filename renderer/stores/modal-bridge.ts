@@ -362,7 +362,7 @@ export interface ToolEditorBridgeData {
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
-  helmActions: { clear: string; compact: string; export: string };
+  helmActions: { clear: string; compact: string; export: string; stop: string };
   initialPrompt: Array<{ label: string; sequence: string }>;
 }
 
@@ -417,7 +417,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix?: string;
-  helmActions?: { clear?: string; compact?: string; export?: string };
+  helmActions?: { clear?: string; compact?: string; export?: string; stop?: string };
 } {
   const fields = ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'headlessCommand'] as const;
   const options: Record<string, string> = {};
@@ -429,6 +429,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     clear: typeof ha.clear === 'string' ? ha.clear.trim() : '',
     compact: typeof ha.compact === 'string' ? ha.compact.trim() : '',
     export: typeof ha.export === 'string' ? ha.export.trim() : '',
+    stop: typeof ha.stop === 'string' ? ha.stop.trim() : '',
   };
   const env = Array.isArray(values.env)
     ? values.env

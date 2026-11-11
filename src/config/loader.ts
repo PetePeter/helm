@@ -1585,7 +1585,7 @@ export class ConfigLoader {
   private cleanHelmActions(map?: HelmActionMap): HelmActionMap | null {
     if (!map) return null;
     const out: HelmActionMap = {};
-    for (const key of ['clear', 'compact', 'export'] as const) {
+    for (const key of ['clear', 'compact', 'export', 'stop'] as const) {
       const value = map[key]?.trim();
       if (value) out[key] = value;
     }
