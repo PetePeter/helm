@@ -6,7 +6,7 @@ import type { PlanManager } from '../../session/plan-manager.js';
 import type { IncomingPlansWatcher } from '../../session/incoming-plans-watcher.js';
 import type { ContextManager } from '../../session/context-manager.js';
 import type { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
-import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts } from '../../session/plan-cleanup.js';
+import { getPlanCleanupCounts, clearCompletedPlans, clearEmptySequences, clearUnreferencedContexts } from '../../session/plan-cleanup.js';
 import { logger } from '../../utils/logger.js';
 import type { PlanItem, PlanDependency } from '../../types/plan.js';
 import type { SuggestedPlanService } from '../../session/suggested-plan-service.js';
@@ -119,15 +119,8 @@ export function setupPlanHandlers(
     return result;
   });
 
-  ipcMain.handle('plan:clearCompleted', (_event, dirPath: string) => {
-    const doneItems = planManager.getForDirectory(dirPath).filter(i => i.status === 'done');
-    const count = planManager.deleteCompletedForDirectory(dirPath);
-    for (const item of doneItems) {
-      attachmentManager?.deletePlanAttachments(item.id);
-      contextManager?.removeBindingsForTarget('plan', item.id);
-    }
-    return count;
-  });
+  ipcMain.handle('plan:clearCompleted', (_event, dirPath: string) =>
+    clearCompletedPlans(planManager, contextManager, attachmentManager, dirPath));
 
   // Bulk cleanup (P-0805) — logic shared with the MCP tools in plan-cleanup.ts.
   ipcMain.handle('plan:cleanup-counts', (_event, dirPath: string) =>

@@ -89,7 +89,7 @@ fun SequenceList(
         }
         if (confirmingClear && counts != null) {
             ConfirmDelete(
-                message = stringResource(R.string.sequence_clear_confirm, counts.emptySequences, counts.unusedContexts),
+                message = stringResource(R.string.sequence_clear_confirm, counts.donePlans, counts.emptySequences, counts.unusedContexts),
                 confirmText = stringResource(R.string.sequence_clear_action),
                 onConfirm = { confirmingClear = false; onClearUnused() },
                 onCancel = { confirmingClear = false },
@@ -110,6 +110,7 @@ private fun CleanupRow(cleanup: CleanupState, onClear: () -> Unit) {
         is CleanupState.Failed -> cleanup.message to HelmColors.Danger
         is CleanupState.Ready -> stringResource(
             R.string.sequence_cleanup_counts,
+            cleanup.counts.donePlans,
             cleanup.counts.emptySequences,
             cleanup.counts.unusedContexts,
         ) to HelmColors.Dim

@@ -483,6 +483,17 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'plan_clear_completed',
+    title: 'Clear Completed Plans',
+    description: 'Delete every done plan in the directory, with its attachments and context bindings. First step of "Clear unused", before sequence_clear_empty. Returns { deleted }.',
+    inputSchema: {
+      type: 'object',
+      properties: { dirPath: { type: 'string' } },
+      required: ['dirPath'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'sequence_clear_empty',
     title: 'Clear Empty Sequences',
     description: 'Delete every sequence in the directory that has no member plans, releasing its context bindings. Run before context_clear_unreferenced to also remove contexts bound only to those sequences. Returns { deleted }.',

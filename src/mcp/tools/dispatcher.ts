@@ -519,6 +519,8 @@ export async function callMcpTool(
         );
       case 'plan_cleanup_counts':
         return service.getPlanCleanupCounts(asString(args.dirPath, 'dirPath is required'));
+      case 'plan_clear_completed':
+        return service.clearCompletedPlans(asString(args.dirPath, 'dirPath is required'));
       case 'sequence_clear_empty':
         return service.clearEmptySequences(asString(args.dirPath, 'dirPath is required'));
       case 'context_clear_unreferenced':

@@ -221,7 +221,7 @@ The Plans tab and the in-session Plans/Sequences tabs read through
 - **Sequences** — create, edit title/mission, delete with a confirm
   (`sequence_create` / `_update` / `_delete`), plus the desktop's cleanup:
   `plan_cleanup_counts` is shown first, and a confirmed *Clear unused* runs
-  `sequence_clear_empty` then `context_clear_unreferenced` — the same order and
+  `plan_clear_completed`, `sequence_clear_empty`, then `context_clear_unreferenced` — the same order and
   logic as the desktop planner (shared `src/session/plan-cleanup.ts`).
 
 Writes never parse their answer into a cache: success re-pulls the small

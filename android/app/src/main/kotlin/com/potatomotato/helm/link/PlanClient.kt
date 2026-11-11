@@ -228,23 +228,29 @@ class PlanClient internal constructor(
     }
 
     /**
-     * The desktop's "Clear unused", in the desktop's ORDER: empty sequences
-     * first, because deleting one releases its context bindings — which is what
-     * makes contexts bound only to it unreferenced — then unreferenced contexts.
-     * The second call only runs if the first succeeded; either failure is the
-     * one verdict the user reads.
+     * The desktop's "Clear unused", in the desktop's ORDER: done plans, then
+     * empty sequences — deleting either releases context bindings, which is
+     * what makes those contexts unreferenced — then unreferenced contexts.
+     * Each step only runs if the one before succeeded; any failure is the one
+     * verdict the user reads.
      */
     fun clearUnused(dirPath: String): Boolean {
         writes.started(PlanWriteKind.ClearUnused)
-        return core.call(HelmClient.METHOD_SEQUENCE_CLEAR_EMPTY, linkedMapOf("dirPath" to dirPath)) { first ->
-            when (first) {
-                is HelmClient.Outcome.Failed -> writes.failed(PlanWriteKind.ClearUnused, first.message)
-                is HelmClient.Outcome.Ok -> clearUnreferencedContexts(dirPath)
-            }
+        return clearStep(HelmClient.METHOD_PLAN_CLEAR_COMPLETED, dirPath) {
+            clearStep(HelmClient.METHOD_SEQUENCE_CLEAR_EMPTY, dirPath) { clearUnreferencedContexts(dirPath) }
         }
     }
 
-    /** Step two of [clearUnused]; only ever run after the empty sequences are gone. */
+    /** One non-final [clearUnused] step: [next] runs only on success. */
+    private fun clearStep(method: String, dirPath: String, next: () -> Unit): Boolean =
+        core.call(method, linkedMapOf("dirPath" to dirPath)) { outcome ->
+            when (outcome) {
+                is HelmClient.Outcome.Failed -> writes.failed(PlanWriteKind.ClearUnused, outcome.message)
+                is HelmClient.Outcome.Ok -> next()
+            }
+        }
+
+    /** The last [clearUnused] step; only ever run after the plans and sequences are gone. */
     private fun clearUnreferencedContexts(dirPath: String) {
         refreshSequences(dirPath)
         core.call(HelmClient.METHOD_CONTEXT_CLEAR_UNREFERENCED, linkedMapOf("dirPath" to dirPath)) { outcome ->

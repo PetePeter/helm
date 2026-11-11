@@ -66,7 +66,7 @@ data class CleanupCounts(
     val unusedContexts: Int,
 ) {
     /** Nothing for "Clear unused" to do — the button greys rather than asking to delete zero things. */
-    val nothingToClear: Boolean get() = emptySequences == 0 && unusedContexts == 0
+    val nothingToClear: Boolean get() = donePlans == 0 && emptySequences == 0 && unusedContexts == 0
 }
 
 /** The cleanup counts of one directory. */

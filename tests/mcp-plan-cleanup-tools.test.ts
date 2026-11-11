@@ -42,7 +42,7 @@ function setup() {
 
 describe('plan cleanup MCP tools (P-0812)', () => {
   it('are declared with a required dirPath', () => {
-    for (const name of ['plan_cleanup_counts', 'sequence_clear_empty', 'context_clear_unreferenced']) {
+    for (const name of ['plan_cleanup_counts', 'plan_clear_completed', 'sequence_clear_empty', 'context_clear_unreferenced']) {
       const def = MCP_TOOLS.find(t => t.name === name);
       expect(def?.inputSchema).toMatchObject({ required: ['dirPath'] });
     }
@@ -87,8 +87,24 @@ describe('plan cleanup MCP tools (P-0812)', () => {
     expect(contextManager.getBindingsForContext(onLane.id)).toEqual([]);
   });
 
+  it('plan_clear_completed deletes only done plans and frees the contexts bound to them', async () => {
+    const { dirPath, projectId, planManager, contextManager, call } = setup();
+    const done = planManager.create(dirPath, 'Done', '');
+    planManager.setState(done.id, 'coding');
+    planManager.completeItem(done.id, 'finished the work');
+    const open = planManager.create(dirPath, 'Open', '');
+    const onDone = contextManager.create(projectId, { title: 'On done' });
+    contextManager.bind(onDone.id, 'plan', done.id);
+
+    expect(await call('plan_clear_completed')).toEqual({ deleted: 1 });
+    expect(planManager.getItem(done.id)).toBeNull();
+    expect(planManager.getItem(open.id)).not.toBeNull();
+    expect(contextManager.getBindingsForContext(onDone.id)).toEqual([]);
+  });
+
   it('is a no-op on a clean directory', async () => {
     const { call } = setup();
+    expect(await call('plan_clear_completed')).toEqual({ deleted: 0 });
     expect(await call('sequence_clear_empty')).toEqual({ deleted: 0 });
     expect(await call('context_clear_unreferenced')).toEqual({ deleted: 0 });
   });

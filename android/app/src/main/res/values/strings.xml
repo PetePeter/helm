@@ -387,7 +387,7 @@
     <string name="artifacts_sort_created">Created</string>
     <string name="artifacts_sort_updated">Updated</string>
     <string name="artifacts_sort_az">A–Z</string>
-    <string name="artifacts_expand">⤢ Open</string>
+    <string name="artifacts_glyph_expand">⤢</string>
     <string name="artifacts_none_match">No artifacts match these filters.</string>
     <string name="artifacts_view_source">View source</string>
     <string name="artifacts_view_rendered">View rendered</string>
@@ -613,9 +613,9 @@
     <string name="sequence_delete_action">Delete sequence</string>
     <string name="sequence_confirm_delete">Delete sequence “%1$s”? Its plans stay, ungrouped.</string>
     <string name="sequence_cleanup_loading">Counting unused items…</string>
-    <string name="sequence_cleanup_counts">%1$d empty sequences · %2$d unused contexts</string>
+    <string name="sequence_cleanup_counts">%1$d done plans · %2$d empty sequences · %3$d unused contexts</string>
     <string name="sequence_clear_action">Clear unused</string>
-    <string name="sequence_clear_confirm">Delete %1$d empty sequences and %2$d unused contexts? This cannot be undone.</string>
+    <string name="sequence_clear_confirm">Delete %1$d done plans, %2$d empty sequences and %3$d unused contexts? This cannot be undone.</string>
     <string name="plans_blocked">blocked</string>
     <string name="plans_claimed">claimed</string>
 

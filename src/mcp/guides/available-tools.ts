@@ -39,6 +39,7 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'sequence_delete', title: 'Delete Sequence', description: 'Delete a sequence and clear membership from member plans.' },
     { name: 'sequence_assign', title: 'Assign Sequence', description: 'Assign or unlink a plan from a sequence without deleting the sequence.' },
     { name: 'plan_cleanup_counts', title: 'Plan Cleanup Counts', description: 'Read-only counts of done plans, empty sequences, unreferenced contexts, and unused contexts for a directory.' },
+    { name: 'plan_clear_completed', title: 'Clear Completed Plans', description: 'Delete done plans in a directory; run before sequence_clear_empty.' },
     { name: 'sequence_clear_empty', title: 'Clear Empty Sequences', description: 'Delete plan-less sequences in a directory; run before context_clear_unreferenced.' },
     { name: 'context_clear_unreferenced', title: 'Clear Unreferenced Contexts', description: 'Delete project context nodes with no plan or sequence bindings.' },
     { name: 'context_list', title: 'List Context Nodes', description: 'List project-level context nodes by projectId, including their plan and sequence bindings.' },

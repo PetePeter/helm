@@ -2,6 +2,7 @@ package com.potatomotato.helm.link
 
 import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
+import com.potatomotato.helm.data.CleanupCounts
 import com.potatomotato.helm.data.CleanupState
 import com.potatomotato.helm.data.PlanDetail
 import com.potatomotato.helm.data.PlanList
@@ -11,6 +12,7 @@ import com.potatomotato.helm.data.PlanWriteKind
 import com.potatomotato.helm.data.SequenceList
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -49,7 +51,7 @@ class HelmClientPlanWritesTest {
                 mapOf("id" to "s1", "title" to "Lane", "missionStatement" to "Why")),
             Triple({ client.plans.deleteSequence("/w", "s1") }, "sequence_delete", mapOf("id" to "s1")),
             Triple({ client.plans.refreshCleanupCounts("/w") }, "plan_cleanup_counts", mapOf("dirPath" to "/w")),
-            Triple({ client.plans.clearUnused("/w") }, "sequence_clear_empty", mapOf("dirPath" to "/w")),
+            Triple({ client.plans.clearUnused("/w") }, "plan_clear_completed", mapOf("dirPath" to "/w")),
         )
         for ((act, method, args) in cases) {
             sent.clear()
@@ -132,18 +134,23 @@ class HelmClientPlanWritesTest {
     }
 
     @Test
-    fun `clear unused runs empty sequences first, then unreferenced contexts`() {
+    fun `clear unused runs done plans, then empty sequences, then unreferenced contexts`() {
         client.plans.clearUnused("/w")
-        val first = lastRecord().getString("id")
+        val first = lastRecord()
+        assertEquals("plan_clear_completed", first.getString("method"))
         sent.clear()
 
-        client.onInbound(resultFor(first, """{"deleted":1}"""))
+        client.onInbound(resultFor(first.getString("id"), """{"deleted":3}"""))
 
-        val second = sent.map { JSONObject(String(it, Charsets.UTF_8)) }.single { it.getString("method") == "context_clear_unreferenced" }
-        assertEquals("/w", second.getJSONObject("params").getString("dirPath"))
+        val second = sent.map { JSONObject(String(it, Charsets.UTF_8)) }.single { it.getString("method") == "sequence_clear_empty" }
+        sent.clear()
+        client.onInbound(resultFor(second.getString("id"), """{"deleted":1}"""))
+
+        val third = sent.map { JSONObject(String(it, Charsets.UTF_8)) }.single { it.getString("method") == "context_clear_unreferenced" }
+        assertEquals("/w", third.getJSONObject("params").getString("dirPath"))
         assertTrue(client.plans.writes.state.value is PlanWrite.InFlight)
 
-        client.onInbound(resultFor(second.getString("id"), """{"deleted":2}"""))
+        client.onInbound(resultFor(third.getString("id"), """{"deleted":2}"""))
 
         assertEquals(PlanWriteKind.ClearUnused, (client.plans.writes.state.value as PlanWrite.Done).kind)
     }
@@ -156,7 +163,7 @@ class HelmClientPlanWritesTest {
 
         client.onInbound(errorFor(first, "desktop busy"))
 
-        assertTrue(sent.none { methodOf(it) == "context_clear_unreferenced" })
+        assertTrue(sent.none { methodOf(it) == "sequence_clear_empty" || methodOf(it) == "context_clear_unreferenced" })
         assertEquals("desktop busy", (client.plans.writes.state.value as PlanWrite.Failed).message)
     }
 
@@ -174,6 +181,13 @@ class HelmClientPlanWritesTest {
         val counts = (client.plans.sequences.cleanup.value as CleanupState.Ready).counts
         assertEquals(2, counts.emptySequences)
         assertEquals(4, counts.unusedContexts)
+        assertEquals(3, counts.donePlans)
+    }
+
+    @Test
+    fun `done plans alone are something to clear`() {
+        assertFalse(CleanupCounts(donePlans = 1, emptySequences = 0, unreferencedContexts = 0, unusedContexts = 0).nothingToClear)
+        assertTrue(CleanupCounts(donePlans = 0, emptySequences = 0, unreferencedContexts = 3, unusedContexts = 0).nothingToClear)
     }
 
     @Test

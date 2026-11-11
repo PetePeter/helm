@@ -1,5 +1,6 @@
 import type { PlanManager } from './plan-manager.js';
 import type { ContextManager } from './context-manager.js';
+import type { PlanAttachmentManager } from './plan-attachment-manager.js';
 
 /**
  * Bulk directory cleanup (P-0805), shared by the desktop IPC handlers and the
@@ -34,6 +35,22 @@ export function getPlanCleanupCounts(
       b => b.targetType === 'sequence' && emptySequenceIds.has(b.targetId),
     )).length,
   };
+}
+
+/** Deletes the directory's done plans with their attachments and context bindings. Returns the count deleted. */
+export function clearCompletedPlans(
+  planManager: PlanManager,
+  contextManager: ContextManager | undefined,
+  attachmentManager: PlanAttachmentManager | undefined,
+  dirPath: string,
+): number {
+  const doneIds = planManager.getForDirectory(dirPath).filter(i => i.status === 'done').map(i => i.id);
+  const count = planManager.deleteCompletedForDirectory(dirPath);
+  for (const id of doneIds) {
+    attachmentManager?.deletePlanAttachments(id);
+    contextManager?.removeBindingsForTarget('plan', id);
+  }
+  return count;
 }
 
 /** Deletes plan-less sequences and releases their context bindings. Returns the count deleted. */

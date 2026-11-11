@@ -465,6 +465,7 @@ class HelmClient(
         internal const val METHOD_SEQUENCE_UPDATE = "sequence_update"
         internal const val METHOD_SEQUENCE_DELETE = "sequence_delete"
         internal const val METHOD_PLAN_CLEANUP_COUNTS = "plan_cleanup_counts"
+        internal const val METHOD_PLAN_CLEAR_COMPLETED = "plan_clear_completed"
         internal const val METHOD_SEQUENCE_CLEAR_EMPTY = "sequence_clear_empty"
         internal const val METHOD_CONTEXT_CLEAR_UNREFERENCED = "context_clear_unreferenced"
         internal const val UNREADABLE_CLEANUP = "Helm answered with cleanup counts this app could not read"

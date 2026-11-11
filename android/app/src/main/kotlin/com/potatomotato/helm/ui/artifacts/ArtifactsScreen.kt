@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -151,8 +152,12 @@ private fun ListBody(
     onPull: (version: Int?) -> Unit,
     onNew: () -> Unit,
 ) {
-    if (artifacts.isEmpty() && !capabilities.permits(SessionAction.CreateArtifact)) {
-        Placeholder(stringResource(R.string.artifacts_empty))
+    val canCreate = capabilities.permits(SessionAction.CreateArtifact)
+    if (artifacts.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Placeholder(stringResource(R.string.artifacts_empty))
+            FloatingActions(onNew = onNew.takeIf { canCreate }, onExpand = null)
+        }
         return
     }
     val context = LocalContext.current
@@ -171,14 +176,15 @@ private fun ListBody(
 
     Column(modifier = Modifier.fillMaxSize()) {
         FilterBar(prefs, update)
-        CardStrip(shown, selected?.id, capabilities, onPreview, onNew)
+        CardStrip(shown, selected?.id, onPreview)
         Hairline()
         if (selected == null) {
-            Placeholder(
-                stringResource(if (artifacts.isEmpty()) R.string.artifacts_empty else R.string.artifacts_none_match),
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                Placeholder(stringResource(R.string.artifacts_none_match))
+                FloatingActions(onNew = onNew.takeIf { canCreate }, onExpand = null)
+            }
         } else {
-            InlineViewer(selected, read, onExpand, onPull)
+            InlineViewer(selected, read, onNew.takeIf { canCreate }, onExpand, onPull)
         }
     }
 }
@@ -239,13 +245,7 @@ private fun OutlineChip(text: String, on: Boolean, excluded: Boolean = false, on
 }
 
 @Composable
-private fun CardStrip(
-    artifacts: List<HelmArtifact>,
-    selectedId: String?,
-    capabilities: Capabilities,
-    onPick: (HelmArtifact) -> Unit,
-    onNew: () -> Unit,
-) {
+private fun CardStrip(artifacts: List<HelmArtifact>, selectedId: String?, onPick: (HelmArtifact) -> Unit) {
     val now = System.currentTimeMillis()
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
@@ -254,23 +254,6 @@ private fun CardStrip(
     ) {
         items(artifacts, key = { it.id }) { artifact ->
             ArtifactCard(artifact, selected = artifact.id == selectedId, now = now) { onPick(artifact) }
-        }
-        // The write affordance is a card like any other; a forbidden one stays
-        // visible and greyed rather than silently absent.
-        item {
-            val permitted = capabilities.permits(SessionAction.CreateArtifact)
-            CardFrame(
-                selected = false,
-                modifier = Modifier.alpha(if (permitted) 1f else FORBIDDEN_ALPHA),
-                onClick = onNew.takeIf { permitted },
-            ) {
-                Text(
-                    text = stringResource(R.string.artifacts_glyph_new) + " " +
-                        stringResource(R.string.artifacts_action_new),
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
         }
     }
 }
@@ -304,30 +287,26 @@ private fun ArtifactCard(artifact: HelmArtifact, selected: Boolean, now: Long, o
 }
 
 @Composable
-private fun CardFrame(
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)?,
-    content: @Composable () -> Unit,
-) {
+private fun CardFrame(selected: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
     val shape = RoundedCornerShape(HelmRadius.Md)
     Column(
-        modifier = modifier
+        modifier = Modifier
             .width(CARD_WIDTH)
             .clip(shape)
             .background(HelmColors.Surface)
             .border(HelmSize.Hairline, if (selected) HelmColors.Accent else HelmColors.Line, shape)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .clickable(onClick = onClick)
             .padding(HelmSpacing.Md),
         verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
     ) { content() }
 }
 
-/** The selected card's body, in place; the detail screen is one tap (⤢) away. */
+/** The selected card's body, in place; ✚ and ⤢ float over its corner. */
 @Composable
 private fun InlineViewer(
     artifact: HelmArtifact,
     read: ArtifactRead,
+    onNew: (() -> Unit)?,
     onExpand: (HelmArtifact) -> Unit,
     onPull: (version: Int?) -> Unit,
 ) {
@@ -335,31 +314,45 @@ private fun InlineViewer(
     // previous card must never show under the new one.
     val body = shownRead(read)?.takeIf { it.artifact.id == artifact.id }
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().background(HelmColors.Surface).padding(start = HelmSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = artifact.title,
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            GhostButton(text = stringResource(R.string.artifacts_expand), onClick = { onExpand(artifact) })
-        }
         if (artifact.intent == ArtifactIntent.Manifesto) ManifestoBanner()
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
-                body != null -> ArtifactBody(body)
+                body != null -> ArtifactBody(body, sourceToggle = false)
                 read is ArtifactRead.Failed -> Placeholder(read.message, HelmColors.Danger)
                 else -> Placeholder(stringResource(R.string.artifacts_detail_loading))
             }
+            FloatingActions(onNew = onNew, onExpand = { onExpand(artifact) })
         }
         if (body != null && body.artifact.versionCount > 1) {
             VersionBar(versions = body.artifact.versionCount, selected = body.requestedVersion, onPick = onPull)
         }
+    }
+}
+
+/** Small round buttons floating in a body's top-right corner, so the body keeps its full height. */
+@Composable
+private fun BoxScope.FloatingActions(onNew: (() -> Unit)?, onExpand: (() -> Unit)?) {
+    Row(
+        modifier = Modifier.align(Alignment.TopEnd).padding(HelmSpacing.Sm),
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+    ) {
+        onNew?.let { FloatingGlyph(stringResource(R.string.artifacts_glyph_new), it) }
+        onExpand?.let { FloatingGlyph(stringResource(R.string.artifacts_glyph_expand), it) }
+    }
+}
+
+@Composable
+private fun FloatingGlyph(glyph: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(FLOAT_SIZE)
+            .clip(RoundedCornerShape(HelmRadius.Pill))
+            .background(HelmColors.Surface2.copy(alpha = FLOAT_ALPHA))
+            .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Pill))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text = glyph, color = HelmColors.Txt, style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -715,9 +708,9 @@ private fun GatedRow(
 }
 
 @Composable
-private fun ArtifactBody(read: HelmArtifactRead) {
+private fun ArtifactBody(read: HelmArtifactRead, sourceToggle: Boolean = true) {
     when (read.artifact.kind) {
-        KIND_HTML -> HtmlViewer(read.content)
+        KIND_HTML -> HtmlViewer(read.content, sourceToggle)
         KIND_MARKDOWN, KIND_COMPACT -> MarkdownBody(read.content)
         // A kind this build has never met is still text a reader can read;
         // refusing the whole artifact over its label would protect nobody.
@@ -735,11 +728,11 @@ private fun ArtifactBody(read: HelmArtifactRead) {
  * checking WHAT was written reads the text.
  */
 @Composable
-private fun HtmlViewer(source: String) {
+private fun HtmlViewer(source: String, sourceToggle: Boolean) {
     var showSource by rememberSaveable { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxWidth().background(HelmColors.Surface)) {
+        if (sourceToggle) Row(modifier = Modifier.fillMaxWidth().background(HelmColors.Surface)) {
             GhostButton(
                 text = stringResource(
                     if (showSource) R.string.artifacts_view_rendered else R.string.artifacts_view_source,
@@ -837,6 +830,10 @@ private const val KIND_HTML = "html"
 private const val KIND_COMPACT = "compact"
 private const val SEPARATOR = " · "
 private val CARD_WIDTH = 148.dp
+private val FLOAT_SIZE = 36.dp
+
+/** Floating buttons stay legible over any body without hiding it. */
+private const val FLOAT_ALPHA = 0.85f
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f

@@ -3,7 +3,7 @@ import { artifactKindLabel, type ArtifactKindLabel } from '../session/artifact-k
 import { expireAfterMs } from '../session/prompt-staleness.js';
 import type { ChatTurnUsage } from '../session/chat/chat-bridge.js';
 import { EventEmitter } from 'node:events';
-import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, type PlanCleanupCounts } from '../session/plan-cleanup.js';
+import { getPlanCleanupCounts, clearCompletedPlans, clearEmptySequences, clearUnreferencedContexts, type PlanCleanupCounts } from '../session/plan-cleanup.js';
 import type { ConfigLoader } from '../config/loader.js';
 import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
@@ -1345,6 +1345,10 @@ export class HelmControlService extends EventEmitter {
   }
 
   /** Small `{ deleted }` reply on purpose: large MCP replies have broken the phone link. */
+  clearCompletedPlans(dirPath: string): { deleted: number } {
+    return { deleted: clearCompletedPlans(this.planManager, this.contextManager, this.attachmentManager, dirPath) };
+  }
+
   clearEmptySequences(dirPath: string): { deleted: number } {
     return { deleted: clearEmptySequences(this.planManager, this.contextManager, dirPath) };
   }
