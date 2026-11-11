@@ -74,9 +74,14 @@ class MainActivity : ComponentActivity() {
         // underneath us. HelmTheme consumes the insets it opens up.
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (LayoutChooser.shouldPreferLandscape(resources.configuration.smallestScreenWidthDp)) {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
-        }
+        // Phones default to "unspecified", which most OEMs map to three-way
+        // rotation; FULL_USER adds upside-down while still obeying rotation lock.
+        requestedOrientation =
+            if (LayoutChooser.shouldPreferLandscape(resources.configuration.smallestScreenWidthDp)) {
+                ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            }
         // A cold start from a notification tap: the extra is on the launch intent
         // and there is no composition yet to hand it to, so it is parked.
         takeNotificationTap(intent)
