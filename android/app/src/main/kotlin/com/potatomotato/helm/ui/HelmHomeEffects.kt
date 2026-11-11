@@ -169,15 +169,11 @@ internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: Hel
         if (home.destination != Destination.Thread) return@LaunchedEffect
         val inSession = home.selectedSessionId != null
         val showingPlans = if (inSession) home.sessionTab == SessionTab.Plans else home.homeTab == HomeTab.Plans
-        val showingSequences = inSession && home.sessionTab == SessionTab.Sequences
         val showingContexts = !inSession && home.homeTab == HomeTab.Contexts
         if (showingPlans && state.planDirPath != null) {
             // Two asks answer two things: rows and the lanes they group into.
             // The rows already carry the frontier edges, so there is no third ask.
             client.plans.refreshPlans(state.planDirPath)
-            client.plans.refreshSequences(state.planDirPath)
-        }
-        if (showingSequences && state.planDirPath != null) {
             client.plans.refreshSequences(state.planDirPath)
             client.plans.refreshCleanupCounts(state.planDirPath)
         }

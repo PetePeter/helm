@@ -93,6 +93,19 @@ class PlanGroupingTest {
     }
 
     @Test
+    fun `asked to keep empty lanes, they trail the real work so they stay editable`() {
+        val buckets = PlanGrouping.group(
+            plans = listOf(plan("p1", sequenceId = "b"), plan("p2", sequenceId = null)),
+            sequences = listOf(sequence("a", order = 0), sequence("b", order = 1)),
+            startableIds = emptySet(),
+            keepEmptyLanes = true,
+        )
+
+        assertEquals(listOf("b", null, "a"), buckets.map { it.sequence?.id })
+        assertTrue(buckets.last().plans.isEmpty())
+    }
+
+    @Test
     fun `when every lane is empty only the ungrouped bucket survives`() {
         val buckets = PlanGrouping.group(
             plans = listOf(plan("p1", sequenceId = null)),

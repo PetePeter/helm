@@ -28,14 +28,13 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  * get a tab each — the same shape the desktop pane uses. The sheet keeps only the
  * things that DO something (rename, compact, close, snapshot, spawn).
  */
-enum class SessionTab { Chat, Artifacts, Plans, Sequences }
+enum class SessionTab { Chat, Artifacts, Plans }
 
 private val SessionTab.labelRes: Int
     get() = when (this) {
         SessionTab.Chat -> R.string.session_tab_chat
         SessionTab.Artifacts -> R.string.session_tab_artifacts
         SessionTab.Plans -> R.string.session_tab_plans
-        SessionTab.Sequences -> R.string.session_tab_sequences
     }
 
 /**

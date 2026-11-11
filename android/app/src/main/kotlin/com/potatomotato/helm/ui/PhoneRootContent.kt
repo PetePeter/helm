@@ -131,6 +131,8 @@ internal fun PhoneRootContent(state: PhoneScaffoldState, actions: PhoneScaffoldA
                         write = state.planWriteState,
                         onDismissWrite = actions.root.onDismissPlanWrite,
                         onCreate = actions.root.onCreatePlan,
+                        lanes = actions.root.lanes,
+                        cleanup = state.cleanupState,
                     )
                 }
 

@@ -64,7 +64,9 @@ object PlanGrouping {
      * empty; drawn, they were five headers reading "0" between the reader and the
      * work, on a screen that has room for about that many rows. A lane with
      * nothing in it says nothing the reader needs here, and the desktop remains
-     * the place lanes are managed.
+     * the place lanes are managed — unless [keepEmptyLanes]: a board that also
+     * manages lanes (the merged Plans tab) needs them reachable, so they trail
+     * after the real work and the ungrouped bucket.
      *
      * A plan whose `sequenceId` names a lane that is not in [sequences] is
      * UNGROUPED, not dropped: a dangling id — or a lane answer that has not
@@ -80,6 +82,7 @@ object PlanGrouping {
         plans: List<HelmPlanSummary>,
         sequences: List<HelmPlanSequence>,
         startableIds: Set<String>,
+        keepEmptyLanes: Boolean = false,
     ): List<PlanBucket> {
         val lanes = sequences.sortedWith(laneOrder())
         val laneIds = lanes.map { it.id }.toSet()
@@ -92,8 +95,11 @@ object PlanGrouping {
             else PlanBucket(lane, members.sortedWith(planOrder(startableIds)))
         }
         val ungrouped = byLane[null].orEmpty()
-        if (ungrouped.isEmpty()) return laneBuckets
-        return laneBuckets + PlanBucket(null, ungrouped.sortedWith(planOrder(startableIds)))
+        val ungroupedBucket = listOfNotNull(
+            PlanBucket(null, ungrouped.sortedWith(planOrder(startableIds))).takeIf { ungrouped.isNotEmpty() },
+        )
+        val emptyLanes = if (keepEmptyLanes) lanes.filter { byLane[it.id].isNullOrEmpty() }.map { PlanBucket(it, emptyList()) } else emptyList()
+        return laneBuckets + ungroupedBucket + emptyLanes
     }
 
     /**

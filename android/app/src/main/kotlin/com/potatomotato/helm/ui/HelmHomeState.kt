@@ -289,7 +289,7 @@ internal class HelmHomeState {
                 HelmHomeState().apply {
                     selectedSessionId = saved[0].ifEmpty { null }
                     destination = Destination.valueOf(saved[1])
-                    sessionTab = SessionTab.valueOf(saved[2])
+                    sessionTab = SessionTab.entries.firstOrNull { it.name == saved[2] } ?: SessionTab.Plans
                     openArtifactId = saved[3].ifEmpty { null }
                     editingArtifactId = saved[4].ifEmpty { null }
                     editingShown = if (saved[5] == "1") saved[6] else null

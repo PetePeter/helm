@@ -208,7 +208,7 @@ interaction, the mockup wins.
 
 ## Plans and sequences — reading and writing (P-0812)
 
-The Plans tab and the in-session Plans/Sequences tabs read through
+The Plans tab and the in-session Plans tab (sequence lanes, + Sequence and Clear unused live on both boards) read through
 `plan_summary`, `plan_get`, `plan_context_list`, `sequence_list` and
 `sequence_get`, and since P-0812 also write:
 

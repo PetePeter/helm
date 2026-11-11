@@ -279,10 +279,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val createPlan: (String, String, String?, Boolean) -> Unit = { title, description, type, autoImplement ->
         planDirPath?.let { dir -> client.plans.createPlan(dir, title, description, type, autoImplement) }
     }
-    val refreshLanes: () -> Unit = {
-        planDirPath?.let { dir -> client.plans.refreshSequences(dir) }
-        Unit
-    }
     val refreshContextNodes: () -> Unit = {
         contextProjectId?.let { id -> client.plans.refreshContexts(id) }
         Unit
@@ -439,7 +435,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 spawnForPlan = spawnForPlan,
                 refreshPlanBoard = refreshPlanBoard,
                 createPlan = createPlan,
-                refreshLanes = refreshLanes,
                 refreshContextNodes = refreshContextNodes,
                 toggleLane = toggleLane,
                 exportLogs = exportLogs,

@@ -42,6 +42,7 @@ import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.Reach
 import com.potatomotato.helm.data.SequenceDetail
 import com.potatomotato.helm.data.SequenceList
+import com.potatomotato.helm.ui.sequences.LaneTools
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.ShareState
 import com.potatomotato.helm.data.Snapshot
@@ -159,7 +160,6 @@ internal data class PhoneActionContext(
     val spawnForPlan: (HelmPlanSummary) -> Unit,
     val refreshPlanBoard: () -> Unit,
     val createPlan: (String, String, String?, Boolean) -> Unit,
-    val refreshLanes: () -> Unit,
     val refreshContextNodes: () -> Unit,
     val toggleLane: (String) -> Unit,
     val exportLogs: () -> Unit,
@@ -217,6 +217,11 @@ internal fun phoneScaffoldActions(input: PhoneActionContext): PhoneScaffoldActio
             onDismissPlanWrite = client.plans.writes::dismiss,
             onCreatePlan = input.createPlan,
             onToggleLane = input.toggleLane,
+            lanes = LaneTools(
+                onCreateSequence = { title, mission -> planDir?.let { client.plans.createSequence(it, title, mission) } },
+                onClearUnused = { planDir?.let(client.plans::clearUnused) },
+                onOpenSequence = { home.openSequence(it.id) },
+            ),
             onAskTime = input.setTimeAsk,
             onFetchTime = { client.workspace.refreshTime(it) },
             onOpenContext = { home.openContext(it.id) },
@@ -361,10 +366,6 @@ internal fun phoneScaffoldActions(input: PhoneActionContext): PhoneScaffoldActio
             onRefreshPlanBoard = input.refreshPlanBoard,
             onDismissPlanWrite = client.plans.writes::dismiss,
             onCreatePlan = input.createPlan,
-            onOpenSequence = { home.openSequence(it.id) },
-            onRefreshLanes = input.refreshLanes,
-            onCreateSequence = { title, mission -> planDir?.let { client.plans.createSequence(it, title, mission) } },
-            onClearUnused = { planDir?.let(client.plans::clearUnused) },
         ),
         chat = phoneChatActions(
             PhoneChatActionContext(
@@ -474,6 +475,8 @@ internal fun applyPhoneSheetAction(
 
 internal data class PhoneRootActions(
     val onSelectHomeTab: (HomeTab) -> Unit,
+    /** Lane management for both plan boards (home and in-session) — one scope, one toolset. */
+    val lanes: LaneTools,
     val onExportLogs: () -> Unit,
     val onToggleNotifications: () -> Unit,
     val onLinkClick: () -> Unit,
@@ -550,10 +553,6 @@ internal data class PhoneSessionActions(
     val onRefreshPlanBoard: () -> Unit,
     val onDismissPlanWrite: () -> Unit,
     val onCreatePlan: (String, String, String?, Boolean) -> Unit,
-    val onOpenSequence: (HelmPlanSequence) -> Unit,
-    val onRefreshLanes: () -> Unit,
-    val onCreateSequence: (String, String) -> Unit,
-    val onClearUnused: () -> Unit,
 )
 
 internal data class PhoneOverlayActions(

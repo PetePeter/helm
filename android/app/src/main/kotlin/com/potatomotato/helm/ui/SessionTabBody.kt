@@ -9,7 +9,6 @@ import com.potatomotato.helm.ui.components.LoadViews
 import com.potatomotato.helm.ui.components.LoadNote
 import com.potatomotato.helm.ui.components.SessionTab
 import com.potatomotato.helm.ui.plans.PlanList
-import com.potatomotato.helm.ui.sequences.SequenceList
 
 /** The session tab body shared by phone and tablet shells. */
 @Composable
@@ -58,22 +57,10 @@ internal fun SessionTabBody(
                 write = state.planWriteState,
                 onDismissWrite = actions.session.onDismissPlanWrite,
                 onCreate = actions.session.onCreatePlan,
+                lanes = actions.root.lanes,
+                cleanup = state.cleanupState,
             )
         }
 
-        SessionTab.Sequences -> if (state.planDirPath == null) {
-            LoadNote(stringResource(R.string.sequences_no_session_directory))
-        } else {
-            SequenceList(
-                sequences = LoadViews.sequences(state.sequenceListState, state.planDirPath),
-                onOpen = actions.session.onOpenSequence,
-                onRefresh = actions.session.onRefreshLanes,
-                cleanup = state.cleanupState,
-                write = state.planWriteState,
-                onDismissWrite = actions.session.onDismissPlanWrite,
-                onCreate = actions.session.onCreateSequence,
-                onClearUnused = actions.session.onClearUnused,
-            )
-        }
     }
 }

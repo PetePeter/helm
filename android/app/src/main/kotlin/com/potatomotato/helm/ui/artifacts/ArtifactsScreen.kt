@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -153,13 +152,6 @@ private fun ListBody(
     onNew: () -> Unit,
 ) {
     val canCreate = capabilities.permits(SessionAction.CreateArtifact)
-    if (artifacts.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Placeholder(stringResource(R.string.artifacts_empty))
-            FloatingActions(onNew = onNew.takeIf { canCreate }, onExpand = null)
-        }
-        return
-    }
     val context = LocalContext.current
     val store = remember { PrefsArtifactListStore(context) }
     var prefs by remember { mutableStateOf(store.load()) }
@@ -175,16 +167,17 @@ private fun ListBody(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        FilterBar(prefs, update)
-        CardStrip(shown, selected?.id, onPreview)
+        if (artifacts.isNotEmpty()) FilterBar(prefs, update)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CardStrip(shown, selected?.id, onPreview, Modifier.weight(1f))
+            // Pinned at the strip's right end: they never scroll away with the cards.
+            StripActions(onNew = onNew.takeIf { canCreate }, onExpand = selected?.let { { onExpand(it) } })
+        }
         Hairline()
-        if (selected == null) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Placeholder(stringResource(R.string.artifacts_none_match))
-                FloatingActions(onNew = onNew.takeIf { canCreate }, onExpand = null)
-            }
-        } else {
-            InlineViewer(selected, read, onNew.takeIf { canCreate }, onExpand, onPull)
+        when {
+            selected != null -> InlineViewer(selected, read, onPull)
+            artifacts.isEmpty() -> Placeholder(stringResource(R.string.artifacts_empty))
+            else -> Placeholder(stringResource(R.string.artifacts_none_match))
         }
     }
 }
@@ -245,10 +238,15 @@ private fun OutlineChip(text: String, on: Boolean, excluded: Boolean = false, on
 }
 
 @Composable
-private fun CardStrip(artifacts: List<HelmArtifact>, selectedId: String?, onPick: (HelmArtifact) -> Unit) {
+private fun CardStrip(
+    artifacts: List<HelmArtifact>,
+    selectedId: String?,
+    onPick: (HelmArtifact) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val now = System.currentTimeMillis()
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         contentPadding = PaddingValues(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
     ) {
@@ -301,15 +299,9 @@ private fun CardFrame(selected: Boolean, onClick: () -> Unit, content: @Composab
     ) { content() }
 }
 
-/** The selected card's body, in place; ✚ and ⤢ float over its corner. */
+/** The selected card's body, in place. */
 @Composable
-private fun InlineViewer(
-    artifact: HelmArtifact,
-    read: ArtifactRead,
-    onNew: (() -> Unit)?,
-    onExpand: (HelmArtifact) -> Unit,
-    onPull: (version: Int?) -> Unit,
-) {
+private fun InlineViewer(artifact: HelmArtifact, read: ArtifactRead, onPull: (version: Int?) -> Unit) {
     // Only a read OF THIS artifact may draw here — a late answer for the
     // previous card must never show under the new one.
     val body = shownRead(read)?.takeIf { it.artifact.id == artifact.id }
@@ -321,7 +313,6 @@ private fun InlineViewer(
                 read is ArtifactRead.Failed -> Placeholder(read.message, HelmColors.Danger)
                 else -> Placeholder(stringResource(R.string.artifacts_detail_loading))
             }
-            FloatingActions(onNew = onNew, onExpand = { onExpand(artifact) })
         }
         if (body != null && body.artifact.versionCount > 1) {
             VersionBar(versions = body.artifact.versionCount, selected = body.requestedVersion, onPick = onPull)
@@ -329,25 +320,26 @@ private fun InlineViewer(
     }
 }
 
-/** Small round buttons floating in a body's top-right corner, so the body keeps its full height. */
+/** Small round ✚ / ⤢ buttons pinned at the strip's right end, one above the other. */
 @Composable
-private fun BoxScope.FloatingActions(onNew: (() -> Unit)?, onExpand: (() -> Unit)?) {
-    Row(
-        modifier = Modifier.align(Alignment.TopEnd).padding(HelmSpacing.Sm),
-        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+private fun StripActions(onNew: (() -> Unit)?, onExpand: (() -> Unit)?) {
+    // Stacked, so the pair spans the card height instead of eating strip width.
+    Column(
+        modifier = Modifier.padding(end = HelmSpacing.Md),
+        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
     ) {
-        onNew?.let { FloatingGlyph(stringResource(R.string.artifacts_glyph_new), it) }
-        onExpand?.let { FloatingGlyph(stringResource(R.string.artifacts_glyph_expand), it) }
+        onNew?.let { RoundGlyph(stringResource(R.string.artifacts_glyph_new), it) }
+        onExpand?.let { RoundGlyph(stringResource(R.string.artifacts_glyph_expand), it) }
     }
 }
 
 @Composable
-private fun FloatingGlyph(glyph: String, onClick: () -> Unit) {
+private fun RoundGlyph(glyph: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(FLOAT_SIZE)
+            .size(GLYPH_SIZE)
             .clip(RoundedCornerShape(HelmRadius.Pill))
-            .background(HelmColors.Surface2.copy(alpha = FLOAT_ALPHA))
+            .background(HelmColors.Surface2)
             .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Pill))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -830,10 +822,9 @@ private const val KIND_HTML = "html"
 private const val KIND_COMPACT = "compact"
 private const val SEPARATOR = " · "
 private val CARD_WIDTH = 148.dp
-private val FLOAT_SIZE = 36.dp
+private val GLYPH_SIZE = 36.dp
 
-/** Floating buttons stay legible over any body without hiding it. */
-private const val FLOAT_ALPHA = 0.85f
+
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f

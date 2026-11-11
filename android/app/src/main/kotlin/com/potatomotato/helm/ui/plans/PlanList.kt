@@ -23,6 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
+import com.potatomotato.helm.data.CleanupState
+import com.potatomotato.helm.ui.components.ConfirmDelete
+import com.potatomotato.helm.ui.sequences.CleanupRow
+import com.potatomotato.helm.ui.sequences.LaneTools
 import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmPlanSequence
 import com.potatomotato.helm.data.PlanStatus
@@ -77,21 +81,46 @@ fun PlanList(
     write: PlanWrite,
     onDismissWrite: () -> Unit,
     onCreate: (title: String, description: String, type: String?, autoImplement: Boolean) -> Unit,
+    lanes: LaneTools,
+    cleanup: CleanupState,
     modifier: Modifier = Modifier,
 ) {
-    // The new-plan form is local: it is a question over the board, not a place.
+    // The forms are local: each is a question over the board, not a place.
     var creating by rememberSaveable { mutableStateOf(false) }
+    var creatingSequence by rememberSaveable { mutableStateOf(false) }
+    var confirmingClear by rememberSaveable { mutableStateOf(false) }
     Box(modifier = modifier) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Above the LoadBody, not inside it, so an EMPTY board — exactly
             // where a first plan is wanted — still offers it.
-            GhostButton(
-                text = stringResource(R.string.plan_new_action),
-                onClick = { creating = true },
+            Row(
                 modifier = Modifier.padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
-            )
+                horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+            ) {
+                GhostButton(stringResource(R.string.plan_new_action), { creating = true }, Modifier.weight(1f))
+                GhostButton(stringResource(R.string.sequence_new_action), { creatingSequence = true }, Modifier.weight(1f))
+            }
+            CleanupRow(cleanup, onClear = { confirmingClear = true })
             PlanWriteLine(write, onDismissWrite)
-            PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, taskLinks, onRefresh, Modifier.weight(1f))
+            PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, taskLinks, onRefresh, lanes.onOpenSequence, Modifier.weight(1f))
+        }
+        if (creatingSequence) {
+            SequenceFormDialog(
+                heading = stringResource(R.string.sequence_new_title),
+                initialTitle = "",
+                initialMission = "",
+                onSave = { title, mission -> creatingSequence = false; lanes.onCreateSequence(title, mission) },
+                onCancel = { creatingSequence = false },
+            )
+        }
+        val counts = (cleanup as? CleanupState.Ready)?.counts
+        if (confirmingClear && counts != null) {
+            ConfirmDelete(
+                message = stringResource(R.string.sequence_clear_confirm, counts.donePlans, counts.emptySequences, counts.unusedContexts),
+                confirmText = stringResource(R.string.sequence_clear_action),
+                onConfirm = { confirmingClear = false; lanes.onClearUnused() },
+                onCancel = { confirmingClear = false },
+            )
         }
         if (creating) {
             NewPlanDialog(
@@ -115,6 +144,7 @@ private fun PlanBoard(
     onSpawn: (HelmPlanSummary) -> Unit,
     taskLinks: TaskLinks,
     onRefresh: () -> Unit,
+    onEditLane: (HelmPlanSequence) -> Unit,
     modifier: Modifier,
 ) {
     LoadBody(
@@ -128,13 +158,14 @@ private fun PlanBoard(
         val lanes = (sequences as? LoadView.Ready)?.data.orEmpty()
         val startableIds = PlanStartability.of(rows)
         PlanBuckets(
-            buckets = PlanGrouping.group(rows, lanes, startableIds),
+            buckets = PlanGrouping.group(rows, lanes, startableIds, keepEmptyLanes = true),
             startableIds = startableIds,
             collapsedLaneIds = collapsedLaneIds,
             onToggleLane = onToggleLane,
             onOpen = onOpen,
             onSpawn = onSpawn,
             taskLinks = taskLinks,
+            onEditLane = onEditLane,
         )
     }
 }
@@ -148,6 +179,7 @@ private fun PlanBuckets(
     onOpen: (HelmPlanSummary) -> Unit,
     onSpawn: (HelmPlanSummary) -> Unit,
     taskLinks: TaskLinks,
+    onEditLane: (HelmPlanSequence) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         for (bucket in buckets) {
@@ -162,6 +194,7 @@ private fun PlanBuckets(
                     count = bucket.plans.size,
                     collapsed = collapsed,
                     onToggle = { onToggleLane(laneKey) },
+                    onEdit = bucket.sequence?.let { lane -> { onEditLane(lane) } },
                 )
             }
             if (collapsed) continue
@@ -196,6 +229,7 @@ private fun LaneHeader(
     count: Int,
     collapsed: Boolean,
     onToggle: () -> Unit,
+    onEdit: (() -> Unit)?,
 ) {
     Column {
         Hairline(color = HelmColors.Separator)
@@ -233,6 +267,15 @@ private fun LaneHeader(
                 color = HelmColors.Faint,
                 style = MaterialTheme.typography.labelMedium,
             )
+            // Opens the lane's detail (mission, edit, delete) — the old Sequences tab's row.
+            onEdit?.let {
+                Text(
+                    text = stringResource(R.string.plans_lane_edit_glyph),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.clickable(onClick = it).padding(HelmSpacing.Sm),
+                )
+            }
         }
     }
 }

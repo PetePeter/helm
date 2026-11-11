@@ -63,7 +63,7 @@ flowchart TB
 |---|---|
 | Phone | The session list and selected session use the phone flow; row actions open the existing action sheet. |
 | Tablet, collapsed | The list gives way to a session-title picker; the open-todos chip shows the selected session's todo sheet. |
-| Tablet, expanded | Sessions sit above the selected session's open and waiting todos on a draggable, height-persisted splitter. The detail pane keeps the header, action bar, Chat / Artifacts / Plans / Sequences tabs, chat, and composer together. |
+| Tablet, expanded | Sessions sit above the selected session's open and waiting todos on a draggable, height-persisted splitter. The detail pane keeps the header, action bar, Chat / Artifacts / Plans tabs (Plans carries the sequence lanes, + Sequence and Clear unused), chat, and composer together. |
 
 Both presentations share session selection, chat/composer behavior, context-ring popovers, cache banners, and the SessionActions catalogue. The tablet action bar and phone action sheet are two presentations of that same catalogue. The todo view is scoped to the selected session and omits completed items.
 
