@@ -50,19 +50,17 @@ watch(() => props.tools, (tools) => {
   if (!tools.some((tool) => tool.key === selectedKey.value)) selectedKey.value = tools[0]?.key ?? null;
 }, { immediate: true });
 
+// The editor stays mounted across selections (it swaps tools in place), so the
+// open section tab carries over to the next tool. Cleared only on failure.
 watch(selectedKey, async (key) => {
   confirmingDelete.value = false;
-  editing.value = null;
   loadFailed.value = false;
-  if (!key) return;
-  try {
-    const data = await props.load(key);
-    if (selectedKey.value !== key) return;
-    if (data) editing.value = { key, data };
-    else loadFailed.value = true;
-  } catch {
-    if (selectedKey.value === key) loadFailed.value = true;
-  }
+  if (!key) { editing.value = null; return; }
+  let data: ToolEditorBridgeData | null = null;
+  try { data = await props.load(key); } catch { /* reported below */ }
+  if (selectedKey.value !== key) return;
+  editing.value = data ? { key, data } : null;
+  loadFailed.value = !data;
 }, { immediate: true });
 
 async function onAdd(): Promise<void> {

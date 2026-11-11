@@ -52,7 +52,18 @@ describe('ToolsPage', () => {
     expect((w.find('#te-name').element as HTMLInputElement).value).toBe('Codex');
   });
 
-  it('clears the prior editor during a delayed selection and flushes edits to its tool', async () => {
+  it('keeps the open section tab when switching tools', async () => {
+    const { w } = mountPage();
+    await flushPromises();
+    await w.findAll('button').find((b) => b.text() === 'Behaviour')!.trigger('click');
+    await w.findAll('.master-detail__row')[1].trigger('click');
+    await flushPromises();
+    expect((w.find('#te-name').element as HTMLInputElement).value).toBe('Codex');
+    const visible = w.findAll('fieldset.te-section').filter((f) => f.isVisible()).map((f) => f.find('legend').text());
+    expect(visible).toEqual(['Behavior']);
+  });
+
+  it('keeps the prior editor during a delayed selection and flushes edits to its tool', async () => {
     let resolveB!: (value: ReturnType<typeof data> | null) => void;
     const load = vi.fn((key: string) => key === 'b'
       ? new Promise<ReturnType<typeof data> | null>((resolve) => { resolveB = resolve; })
@@ -65,11 +76,11 @@ describe('ToolsPage', () => {
     await w.findAll('.master-detail__row')[1].trigger('click');
     await flushPromises();
 
-    expect(w.find('#te-name').exists()).toBe(false);
-    expect(save).toHaveBeenCalledWith('a', expect.objectContaining({ name: 'Claude edited' }));
+    expect((w.find('#te-name').element as HTMLInputElement).value).toBe('Claude edited');
 
     resolveB(data('Codex'));
     await flushPromises();
+    expect(save).toHaveBeenCalledWith('a', expect.objectContaining({ name: 'Claude edited' }));
     expect((w.find('#te-name').element as HTMLInputElement).value).toBe('Codex');
   });
 
