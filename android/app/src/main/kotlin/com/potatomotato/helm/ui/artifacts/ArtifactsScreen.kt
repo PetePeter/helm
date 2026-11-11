@@ -28,10 +28,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.potatomotato.helm.data.ARTIFACT_KIND_LABELS
+import com.potatomotato.helm.data.ArtifactListPrefs
+import com.potatomotato.helm.data.ArtifactListRules
+import com.potatomotato.helm.data.ArtifactSort
+import com.potatomotato.helm.data.PrefsArtifactListStore
+import com.potatomotato.helm.data.TriState
+import com.potatomotato.helm.ui.sessions.SessionRowText
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.ArtifactList
@@ -47,7 +60,6 @@ import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
-import com.potatomotato.helm.ui.HelmReferences
 import com.potatomotato.helm.ui.components.ConfirmDelete
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
@@ -90,8 +102,12 @@ import com.potatomotato.helm.ui.control.labelRes
 @Composable
 fun ArtifactsScreen(
     state: ArtifactList,
+    read: ArtifactRead,
+    selectedId: String?,
     capabilities: Capabilities,
-    onOpen: (HelmArtifact) -> Unit,
+    onPreview: (HelmArtifact) -> Unit,
+    onExpand: (HelmArtifact) -> Unit,
+    onPull: (version: Int?) -> Unit,
     onNew: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -101,12 +117,14 @@ fun ArtifactsScreen(
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when (state) {
-                is ArtifactList.Ready -> ListBody(state.artifacts, capabilities, onOpen, onNew)
+                is ArtifactList.Ready ->
+                    ListBody(state.artifacts, read, selectedId, capabilities, onPreview, onExpand, onPull, onNew)
 
                 // A re-visit keeps the last answer on screen while the fresh one
                 // crosses the link: the rows the user is looking at are the
                 // best-known truth, and a blank screen is the worst one.
-                is ArtifactList.Refreshing -> ListBody(state.cached, capabilities, onOpen, onNew)
+                is ArtifactList.Refreshing ->
+                    ListBody(state.cached, read, selectedId, capabilities, onPreview, onExpand, onPull, onNew)
 
                 is ArtifactList.Loading -> Placeholder(stringResource(R.string.artifacts_loading))
                 is ArtifactList.Failed -> Placeholder(state.message, HelmColors.Danger)
@@ -116,62 +134,249 @@ fun ArtifactsScreen(
     }
 }
 
-/** The rows both a settled and a refreshing list draw; only the source differs. */
+/**
+ * The desktop's Artifacts layout, on phone and tablet alike: filter chips, a
+ * sort switch, a horizontal card strip, and the selected card's body below it.
+ * Tapping a card swaps the body in place; ⤢ opens the full detail screen
+ * (revise, save, delete, attachments). Filter and sort are per device.
+ */
 @Composable
 private fun ListBody(
     artifacts: List<HelmArtifact>,
+    read: ArtifactRead,
+    selectedId: String?,
     capabilities: Capabilities,
-    onOpen: (HelmArtifact) -> Unit,
+    onPreview: (HelmArtifact) -> Unit,
+    onExpand: (HelmArtifact) -> Unit,
+    onPull: (version: Int?) -> Unit,
     onNew: () -> Unit,
 ) {
     if (artifacts.isEmpty() && !capabilities.permits(SessionAction.CreateArtifact)) {
         Placeholder(stringResource(R.string.artifacts_empty))
-    } else {
-        ArtifactRows(artifacts, capabilities, onOpen, onNew)
+        return
+    }
+    val context = LocalContext.current
+    val store = remember { PrefsArtifactListStore(context) }
+    var prefs by remember { mutableStateOf(store.load()) }
+    val update: (ArtifactListPrefs) -> Unit = { prefs = it; store.save(it) }
+    val shown = remember(artifacts, prefs) { ArtifactListRules.list(artifacts, prefs) }
+    val selected = shown.firstOrNull { it.id == selectedId } ?: shown.firstOrNull()
+
+    // The strip always has a body under it: the first card until the user
+    // picks. Arriving re-reads it too — the repository shows its cached body
+    // while the fresh one crosses the link.
+    LaunchedEffect(selected?.id) {
+        if (selected != null) onPreview(selected)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        FilterBar(prefs, update)
+        CardStrip(shown, selected?.id, capabilities, onPreview, onNew)
+        Hairline()
+        if (selected == null) {
+            Placeholder(
+                stringResource(if (artifacts.isEmpty()) R.string.artifacts_empty else R.string.artifacts_none_match),
+            )
+        } else {
+            InlineViewer(selected, read, onExpand, onPull)
+        }
     }
 }
 
 @Composable
-private fun ArtifactRows(
-    artifacts: List<HelmArtifact>,
-    capabilities: Capabilities,
-    onOpen: (HelmArtifact) -> Unit,
-    onNew: () -> Unit,
-) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(artifacts, key = { it.id }) { artifact ->
-            HelmRow(
-                title = artifact.title,
-                onClick = { onOpen(artifact) },
-                copy = HelmReferences.artifact(artifact),
-                subtitle = {
-                    Text(
-                        text = buildList {
-                            add(kindLabel(artifact.kind))
-                            add(versionLabel(artifact.versionCount))
-                            if (artifact.intent == ArtifactIntent.Manifesto) {
-                                add(stringResource(R.string.artifacts_intent_manifesto_badge))
-                            }
-                        }.joinToString(SEPARATOR),
-                        color = HelmColors.Faint,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                },
-            )
+private fun FilterBar(prefs: ArtifactListPrefs, onChange: (ArtifactListPrefs) -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items(ARTIFACT_KIND_LABELS) { kind ->
+            val state = prefs.kinds[kind] ?: TriState.Either
+            TriChip(kind, state) { onChange(prefs.withKind(kind, state.next())) }
         }
-        item {
-            // The write affordance is a row like any other, so the gate's reason
-            // has somewhere honest to sit ("not permitted", or "checking…" while
-            // the discovery is unanswered) instead of an app-bar button that
-            // would have to be silently absent.
-            GatedRow(
-                action = SessionAction.CreateArtifact,
-                capabilities = capabilities,
-                onClick = onNew,
-            )
+        items(ArtifactIntent.entries) { intent ->
+            val state = prefs.intents[intent.wireValue] ?: TriState.Either
+            TriChip(intentLabel(intent), state) { onChange(prefs.withIntent(intent.wireValue, state.next())) }
+        }
+        item { Spacer(Modifier.width(HelmSpacing.Md)) }
+        items(ArtifactSort.entries) { sort ->
+            OutlineChip(sortLabel(sort), on = prefs.sort == sort) { onChange(prefs.copy(sort = sort)) }
         }
     }
 }
+
+/** Tri-state like the desktop chip: either (plain) → yes (accent) → no (struck, danger). */
+@Composable
+private fun TriChip(text: String, state: TriState, onClick: () -> Unit) {
+    OutlineChip(text, on = state == TriState.Yes, excluded = state == TriState.No, onClick = onClick)
+}
+
+@Composable
+private fun OutlineChip(text: String, on: Boolean, excluded: Boolean = false, onClick: () -> Unit) {
+    // A chosen chip outlines in accent rather than filling, like the snapshot
+    // line counts: an outline reads as a setting, a fill as a button.
+    val tint = when {
+        excluded -> HelmColors.Danger
+        on -> HelmColors.Accent
+        else -> HelmColors.Dim
+    }
+    Text(
+        text = text,
+        color = tint,
+        style = MaterialTheme.typography.labelLarge,
+        textDecoration = if (excluded) TextDecoration.LineThrough else null,
+        modifier = Modifier
+            .clip(RoundedCornerShape(HelmRadius.Pill))
+            .border(
+                HelmSize.Hairline,
+                if (on || excluded) tint else HelmColors.Line,
+                RoundedCornerShape(HelmRadius.Pill),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+    )
+}
+
+@Composable
+private fun CardStrip(
+    artifacts: List<HelmArtifact>,
+    selectedId: String?,
+    capabilities: Capabilities,
+    onPick: (HelmArtifact) -> Unit,
+    onNew: () -> Unit,
+) {
+    val now = System.currentTimeMillis()
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+    ) {
+        items(artifacts, key = { it.id }) { artifact ->
+            ArtifactCard(artifact, selected = artifact.id == selectedId, now = now) { onPick(artifact) }
+        }
+        // The write affordance is a card like any other; a forbidden one stays
+        // visible and greyed rather than silently absent.
+        item {
+            val permitted = capabilities.permits(SessionAction.CreateArtifact)
+            CardFrame(
+                selected = false,
+                modifier = Modifier.alpha(if (permitted) 1f else FORBIDDEN_ALPHA),
+                onClick = onNew.takeIf { permitted },
+            ) {
+                Text(
+                    text = stringResource(R.string.artifacts_glyph_new) + " " +
+                        stringResource(R.string.artifacts_action_new),
+                    color = HelmColors.Faint,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtifactCard(artifact: HelmArtifact, selected: Boolean, now: Long, onClick: () -> Unit) {
+    CardFrame(selected = selected, onClick = onClick) {
+        Text(
+            text = buildList {
+                add(artifact.label)
+                add(stringResource(R.string.artifacts_version_glyph, artifact.versionCount))
+                if (artifact.intent == ArtifactIntent.Manifesto) {
+                    add(stringResource(R.string.artifacts_intent_manifesto_badge))
+                }
+            }.joinToString(SEPARATOR),
+            color = HelmColors.Faint,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
+        Text(
+            text = artifact.title,
+            color = HelmColors.Txt,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        SessionRowText.relativeTime(artifact.updatedAtEpochMs.takeIf { it > 0 }, now)?.let {
+            Text(text = it, color = HelmColors.Faint, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun CardFrame(
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)?,
+    content: @Composable () -> Unit,
+) {
+    val shape = RoundedCornerShape(HelmRadius.Md)
+    Column(
+        modifier = modifier
+            .width(CARD_WIDTH)
+            .clip(shape)
+            .background(HelmColors.Surface)
+            .border(HelmSize.Hairline, if (selected) HelmColors.Accent else HelmColors.Line, shape)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(HelmSpacing.Md),
+        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+    ) { content() }
+}
+
+/** The selected card's body, in place; the detail screen is one tap (⤢) away. */
+@Composable
+private fun InlineViewer(
+    artifact: HelmArtifact,
+    read: ArtifactRead,
+    onExpand: (HelmArtifact) -> Unit,
+    onPull: (version: Int?) -> Unit,
+) {
+    // Only a read OF THIS artifact may draw here — a late answer for the
+    // previous card must never show under the new one.
+    val body = shownRead(read)?.takeIf { it.artifact.id == artifact.id }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().background(HelmColors.Surface).padding(start = HelmSpacing.Md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = artifact.title,
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            GhostButton(text = stringResource(R.string.artifacts_expand), onClick = { onExpand(artifact) })
+        }
+        if (artifact.intent == ArtifactIntent.Manifesto) ManifestoBanner()
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                body != null -> ArtifactBody(body)
+                read is ArtifactRead.Failed -> Placeholder(read.message, HelmColors.Danger)
+                else -> Placeholder(stringResource(R.string.artifacts_detail_loading))
+            }
+        }
+        if (body != null && body.artifact.versionCount > 1) {
+            VersionBar(versions = body.artifact.versionCount, selected = body.requestedVersion, onPick = onPull)
+        }
+    }
+}
+
+@Composable
+private fun intentLabel(intent: ArtifactIntent): String = when (intent) {
+    ArtifactIntent.Manifesto -> stringResource(R.string.artifacts_intent_manifesto_badge)
+    ArtifactIntent.Normal -> stringResource(R.string.artifacts_intent_normal)
+}
+
+@Composable
+private fun sortLabel(sort: ArtifactSort): String = stringResource(
+    when (sort) {
+        ArtifactSort.Created -> R.string.artifacts_sort_created
+        ArtifactSort.Updated -> R.string.artifacts_sort_updated
+        ArtifactSort.AZ -> R.string.artifacts_sort_az
+    },
+)
 
 /** The detail half. [artifact] names what was opened; [state] carries its body. */
 @Composable
@@ -600,33 +805,15 @@ private fun PlainBody(content: String) {
 @Composable
 private fun VersionBar(versions: Int, selected: Int, onPick: (Int?) -> Unit) {
     Hairline()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(HelmColors.Surface)
-            .padding(HelmSpacing.Md),
-        verticalAlignment = Alignment.CenterVertically,
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().background(HelmColors.Surface),
+        contentPadding = PaddingValues(HelmSpacing.Md),
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
     ) {
-        for (version in 1..versions) {
-            val on = version == selected
-            // The chosen chip outlines in accent rather than filling, like the
-            // snapshot line counts: an outline reads as a setting, a fill as a
-            // button.
-            Text(
-                text = stringResource(R.string.artifacts_version_glyph, version),
-                color = if (on) HelmColors.Accent else HelmColors.Dim,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(HelmRadius.Pill))
-                    .border(
-                        HelmSize.Hairline,
-                        if (on) HelmColors.Accent else HelmColors.Line,
-                        RoundedCornerShape(HelmRadius.Pill),
-                    )
-                    .clickable { onPick(version) }
-                    .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
-            )
+        items((1..versions).toList()) { version ->
+            OutlineChip(stringResource(R.string.artifacts_version_glyph, version), on = version == selected) {
+                onPick(version)
+            }
         }
     }
 }
@@ -643,25 +830,13 @@ private fun Placeholder(text: String, color: Color = HelmColors.Faint) {
     }
 }
 
-/** The wire kind, said the way a reader says it; an unknown kind shows as itself. */
-@Composable
-private fun kindLabel(kind: String): String = when (kind) {
-    KIND_MARKDOWN -> stringResource(R.string.artifacts_kind_markdown)
-    KIND_HTML -> stringResource(R.string.artifacts_kind_html)
-    KIND_COMPACT -> stringResource(R.string.artifacts_kind_compact)
-    else -> kind
-}
-
-@Composable
-private fun versionLabel(count: Int): String =
-    pluralStringResource(R.plurals.artifacts_version_count, count, count)
-
 private const val KIND_MARKDOWN = "markdown"
 private const val KIND_HTML = "html"
 
 /** Helm's compaction snapshot: markdown underneath, badged as its own kind. */
 private const val KIND_COMPACT = "compact"
 private const val SEPARATOR = " · "
+private val CARD_WIDTH = 148.dp
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f

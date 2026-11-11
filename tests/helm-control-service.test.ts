@@ -2179,4 +2179,11 @@ describe('HelmControlService artifact title revision', () => {
     expect(service.listArtifacts('sessA')[0].intent).toBe('manifesto');
     expect(service.updateArtifact('sessA', id, undefined, undefined, 'normal').intent).toBe('normal');
   });
+
+  it('labels each listed artifact with the desktop strip kind label', async () => {
+    const { service } = await setup();
+    service.createArtifact('sessA', 'Page', 'html', '<p>x</p>');
+    const labels = Object.fromEntries(service.listArtifacts('sessA').map(a => [a.title, a.label]));
+    expect(labels).toEqual({ Old: 'MD', Page: 'HTML' });
+  });
 });

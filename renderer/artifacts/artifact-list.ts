@@ -6,9 +6,10 @@
 import type { Artifact, ArtifactIntent } from '../../src/types/artifact.js';
 import type { FilterPreferenceState } from '../../src/types/filter-preference.js';
 import { coerceTriState, matchesTriStateGroup } from '../stores/filter-preferences.js';
+import { ARTIFACT_KIND_LABELS, artifactKindLabel, type ArtifactKindLabel } from '../../src/session/artifact-kind-label.js';
 
-export const ARTIFACT_KIND_LABELS = ['MD', 'HTML', 'IMG', 'BIN', 'COMPACT'] as const;
-export type ArtifactKindLabel = typeof ARTIFACT_KIND_LABELS[number];
+export { ARTIFACT_KIND_LABELS, artifactKindLabel, type ArtifactKindLabel };
+
 export const ARTIFACT_INTENTS = ['manifesto', 'normal'] as const satisfies readonly ArtifactIntent[];
 export const ARTIFACT_SORTS = ['created', 'updated', 'az'] as const;
 export type ArtifactSort = typeof ARTIFACT_SORTS[number];
@@ -40,17 +41,6 @@ export function normalizeArtifactListPrefs(saved: unknown): ArtifactListPrefs {
     intents: group(ARTIFACT_INTENTS, src.intents),
     sort: (ARTIFACT_SORTS as readonly unknown[]).includes(src.sort) ? src.sort as ArtifactSort : defaultArtifactListPrefs().sort,
   };
-}
-
-/** Badge label: IMG for image-based markdown, BIN for binary, COMPACT for a compaction snapshot, otherwise MD/HTML. */
-export function artifactKindLabel(a: Artifact): ArtifactKindLabel {
-  if (a.source === 'manual') {
-    const content = a.versions[a.versions.length - 1]?.content ?? '';
-    if (content.startsWith('![')) return 'IMG';
-    if (content.includes('Open in system viewer')) return 'BIN';
-  }
-  if (a.kind === 'compact') return 'COMPACT';
-  return a.kind === 'markdown' ? 'MD' : 'HTML';
 }
 
 const SORTERS: Record<ArtifactSort, (a: Artifact, b: Artifact) => number> = {

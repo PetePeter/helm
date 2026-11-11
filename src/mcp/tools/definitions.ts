@@ -1740,7 +1740,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_list',
     title: 'List Session Artifacts',
     description:
-      'List the artifacts owned by the NAMED session (sessionId argument, not your own auth context — this is the session-addressed surface a paired phone uses). Returns id, title, kind, intent, versionCount, timestamps, and the attachments metadata (id, filename, contentType, sizeBytes, createdAt) for each — call session_artifact_get to read one, or session_artifact_download for an attachment\'s bytes.',
+      'List the artifacts owned by the NAMED session (sessionId argument, not your own auth context — this is the session-addressed surface a paired phone uses). Returns id, title, kind, intent, label (MD|HTML|IMG|BIN|COMPACT), versionCount, timestamps, and the attachments metadata (id, filename, contentType, sizeBytes, createdAt) for each — call session_artifact_get to read one, or session_artifact_download for an attachment\'s bytes.',
     inputSchema: {
       type: 'object',
       properties: {

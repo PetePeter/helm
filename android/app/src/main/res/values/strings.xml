@@ -383,15 +383,14 @@
     <string name="artifacts_intent_manifesto">Persistent manifesto context</string>
     <string name="artifacts_intent_manifesto_help">Supplied after session context resets.</string>
     <string name="artifacts_intent_manifesto_badge">Manifesto</string>
+    <string name="artifacts_intent_normal">Normal</string>
+    <string name="artifacts_sort_created">Created</string>
+    <string name="artifacts_sort_updated">Updated</string>
+    <string name="artifacts_sort_az">A–Z</string>
+    <string name="artifacts_expand">⤢ Open</string>
+    <string name="artifacts_none_match">No artifacts match these filters.</string>
     <string name="artifacts_view_source">View source</string>
     <string name="artifacts_view_rendered">View rendered</string>
-    <plurals name="artifacts_version_count">
-        <item quantity="one">%1$d version</item>
-        <item quantity="other">%1$d versions</item>
-    </plurals>
-    <string name="artifacts_kind_markdown">Markdown</string>
-    <string name="artifacts_kind_html">HTML</string>
-    <string name="artifacts_kind_compact">Compact</string>
     <string name="artifacts_version_glyph">v%1$d</string>
 
     <!--

@@ -351,6 +351,10 @@ internal fun phoneScaffoldActions(input: PhoneActionContext): PhoneScaffoldActio
                 home.swipeSession(input.listedSessionIds, targetId, step, canSwipe = true)
             },
             onOpenArtifact = { home.selectArtifact(it.id) },
+            onPreviewArtifact = { artifact ->
+                home.openArtifactId = artifact.id
+                home.selectedSessionId?.let { session -> client.artifacts.readArtifact(session, artifact.id, version = null) }
+            },
             onNewArtifact = home::startArtifactCreate,
             onOpenPlan = { home.openPlan(it.id) },
             onSpawnForPlan = input.spawnForPlan,
@@ -538,6 +542,8 @@ internal data class PhoneSessionActions(
     val onOverflow: () -> Unit,
     val onSwipeSession: (String, Int) -> Boolean,
     val onOpenArtifact: (HelmArtifact) -> Unit,
+    /** Strip card tap: show its body inline without leaving the tab. */
+    val onPreviewArtifact: (HelmArtifact) -> Unit,
     val onNewArtifact: () -> Unit,
     val onOpenPlan: (HelmPlanSummary) -> Unit,
     val onSpawnForPlan: (HelmPlanSummary) -> Unit,

@@ -62,6 +62,8 @@ data class HelmArtifact(
     val updatedAtEpochMs: Long,
     val attachments: List<HelmArtifactAttachment> = emptyList(),
     val intent: ArtifactIntent = ArtifactIntent.Normal,
+    /** The desktop strip's kind label (MD/HTML/IMG/BIN/COMPACT) — see [artifactLabel]. */
+    val label: String = artifactLabel(null, kind),
 )
 
 /**
@@ -421,6 +423,7 @@ class ArtifactRepository {
             updatedAtEpochMs = (entry.opt("updatedAt") as? Number)?.toLong() ?: 0L,
             attachments = parseAttachments(entry.opt("attachments")),
             intent = ArtifactIntent.fromWire(entry.opt("intent")),
+            label = artifactLabel(entry.opt("label"), entry.opt("kind") as? String ?: ""),
         )
     }
 

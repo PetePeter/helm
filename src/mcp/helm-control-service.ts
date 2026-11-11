@@ -1,4 +1,5 @@
 import type { SessionEtaInput } from '../session/session-eta.js';
+import { artifactKindLabel, type ArtifactKindLabel } from '../session/artifact-kind-label.js';
 import { expireAfterMs } from '../session/prompt-staleness.js';
 import type { ChatTurnUsage } from '../session/chat/chat-bridge.js';
 import { EventEmitter } from 'node:events';
@@ -916,6 +917,7 @@ export class HelmControlService extends EventEmitter {
     title: string;
     kind: ArtifactKind;
     intent: ArtifactIntent;
+    label: ArtifactKindLabel;
     versionCount: number;
     createdAt: number;
     updatedAt: number;
@@ -927,6 +929,7 @@ export class HelmControlService extends EventEmitter {
       title: a.title,
       kind: a.kind,
       intent: a.intent ?? 'normal',
+      label: artifactKindLabel(a),
       versionCount: a.versions.length,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,

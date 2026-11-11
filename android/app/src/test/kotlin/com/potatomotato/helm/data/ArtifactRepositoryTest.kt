@@ -96,6 +96,20 @@ class ArtifactRepositoryTest {
     }
 
     @Test
+    fun `the desktop strip label parses and a missing or unknown one falls back to the kind`() {
+        repo.listArrived(
+            "s1",
+            parse(
+                """[{"id":"img","kind":"markdown","label":"IMG"},{"id":"old","kind":"compact"},""" +
+                    """{"id":"page","kind":"html","label":"???"},{"id":"plain","kind":"markdown"}]""",
+            ),
+        )
+
+        val labels = (repo.list.value as ArtifactList.Ready).artifacts.map { it.label }
+        assertEquals(listOf("IMG", "COMPACT", "HTML", "MD"), labels)
+    }
+
+    @Test
     fun `a list answer that is not an array leaves the previous list standing`() {
         repo.listArrived("s1", listArray())
 

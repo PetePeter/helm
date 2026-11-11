@@ -1,0 +1,21 @@
+{
+  "_comment": "Artifact strip filter/sort rules, shared by renderer/artifacts/artifact-list.ts (vitest) and the Android ArtifactListRules (JUnit). Each case: prefs (missing keys = either) -> expected ids in order.",
+  "artifacts": [
+    { "id": "md",      "title": "Charlie", "kind": "markdown", "label": "MD",      "intent": "normal",    "createdAt": 1, "updatedAt": 30 },
+    { "id": "html",    "title": "alpha",   "kind": "html",     "label": "HTML",    "intent": "normal",    "createdAt": 3, "updatedAt": 10 },
+    { "id": "compact", "title": "Bravo",   "kind": "compact",  "label": "COMPACT", "intent": "manifesto", "createdAt": 2, "updatedAt": 20 },
+    { "id": "img",     "title": "delta",   "kind": "markdown", "label": "IMG",     "intent": "normal",    "createdAt": 5, "updatedAt": 5 },
+    { "id": "bin",     "title": "Echo",    "kind": "markdown", "label": "BIN",     "intent": "normal",    "createdAt": 4, "updatedAt": 1 }
+  ],
+  "cases": [
+    { "name": "defaults: everything, newest update first", "prefs": {}, "expected": ["md", "compact", "html", "img", "bin"] },
+    { "name": "yes chip narrows to that kind", "prefs": { "kinds": { "HTML": "yes" } }, "expected": ["html"] },
+    { "name": "two yes chips union", "prefs": { "kinds": { "IMG": "yes", "BIN": "yes" } }, "expected": ["img", "bin"] },
+    { "name": "no chip excludes", "prefs": { "kinds": { "COMPACT": "no", "MD": "no" } }, "expected": ["html", "img", "bin"] },
+    { "name": "manifesto yes", "prefs": { "intents": { "manifesto": "yes" } }, "expected": ["compact"] },
+    { "name": "manifesto no", "prefs": { "intents": { "manifesto": "no" } }, "expected": ["md", "html", "img", "bin"] },
+    { "name": "sort created", "prefs": { "sort": "created" }, "expected": ["img", "bin", "html", "compact", "md"] },
+    { "name": "sort A-Z is case-insensitive", "prefs": { "sort": "az" }, "expected": ["html", "compact", "md", "img", "bin"] },
+    { "name": "garbage prefs fall back to defaults", "prefs": { "kinds": { "MD": "maybe" }, "sort": "random" }, "expected": ["md", "compact", "html", "img", "bin"] }
+  ]
+}

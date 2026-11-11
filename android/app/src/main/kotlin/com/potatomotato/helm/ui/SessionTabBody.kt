@@ -33,8 +33,12 @@ internal fun SessionTabBody(
 
         SessionTab.Artifacts -> ArtifactsScreen(
             state = state.artifactList,
+            read = state.artifactRead,
+            selectedId = state.homeState.openArtifactId,
             capabilities = state.capabilities,
-            onOpen = actions.session.onOpenArtifact,
+            onPreview = actions.session.onPreviewArtifact,
+            onExpand = actions.session.onOpenArtifact,
+            onPull = actions.destination.onArtifactPull,
             onNew = actions.session.onNewArtifact,
         )
 
