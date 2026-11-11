@@ -566,6 +566,29 @@ describe('Stop — G8 loop driving, stacked on the same event', () => {
     expect((result!.body as { reason: string }).reason).toContain('still claimed and open');
   });
 
+  it('a pending compact silences the loop too — the turn must end so /clear lands', async () => {
+    const { injector } = makeInjector(
+      { loop: { stopBlock: () => 'continue' } },
+      { compactRequestedAt: Date.now() },
+    );
+    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+  });
+
+  it('breaker: after 10 blocks in 2 minutes the Stop passes, and re-arms once the window clears', async () => {
+    vi.useFakeTimers({ now: 1_000 });
+    try {
+      const { injector } = makeInjector({ loop: { stopBlock: () => 'continue' } });
+      for (let i = 0; i < 10; i++) {
+        expect((await injector.respond(hookEvent({ event: 'Stop' })))!.body).toHaveProperty('decision', 'block');
+      }
+      expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+      vi.setSystemTime(1_000 + 2 * 60_000);
+      expect((await injector.respond(hookEvent({ event: 'Stop' })))!.body).toHaveProperty('decision', 'block');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('NEVER asks the loop decider on StopFailure — the worst thing G8 could do is retry a stall', async () => {
     const decider = { stopBlock: () => 'continue forever' };
     const { injector } = makeInjector({ loop: decider });

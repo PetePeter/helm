@@ -28,6 +28,8 @@ import {
   writeLargeTextTempFile,
 } from '../../session/large-text-temp-file.js';
 
+/** Four Escs, spaced so the CLI reads each as its own key. */
+const QUICK_COMPACT_ESC_BURST = '{Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{Esc}';
 const DEFAULT_DELIVERY_VERIFY_DELAY_MS = 4000;
 const DEFAULT_CLEAR_SETTLE_DELAY_MS = 1500;
 const DEFAULT_CLEAR_COMMAND = '/clear';
@@ -711,6 +713,10 @@ export class HelmSessionDeliveryService {
       });
     }, withdrawCompactRequest)
       .finally(() => this.compactsPending.delete(session.id));
+    // A half-typed composer or open menu can swallow the /clear: an even Esc burst
+    // unwedges it (pairs cancel Esc-Esc toggles) and interrupts any turn, whose Stop
+    // the injector lets through while the compact is pending.
+    await this.deliverActionSequence(session.id, QUICK_COMPACT_ESC_BURST);
     // Never clear mid-turn: a session quick-compacting itself finishes its turn first.
     if (this.handover) {
       this.handover.runWhenIdle(session.id, clear);

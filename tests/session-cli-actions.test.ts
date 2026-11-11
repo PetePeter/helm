@@ -290,11 +290,11 @@ describe('session_quick_compact', () => {
     await afterIdle();
     await vi.waitFor(() => expect(armed).toHaveLength(1));
 
-    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(deliveredText(1)).toBe('/clear{Enter}');
     expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', 'Load the configured rules');
     // The shared reload scheduler arms the transcript pointer only after the configured sequence.
     expect(reloadEvents).toEqual(['Load the configured rules', 'arm']);
-    expect(armed[0].deliveriesBefore).toBe(1);
+    expect(armed[0].deliveriesBefore).toBe(2);
     const prompt = armed[0].text;
     expect(prompt).toContain(result.transcriptFile);
     expect(prompt).toContain('next: wire the CLI');
@@ -312,9 +312,10 @@ describe('session_quick_compact', () => {
     Object.assign(session, { cliTranscriptPath: log });
 
     const result = await service.quickCompactSession('s1', {});
-    expect(deliverSpy).not.toHaveBeenCalled();
+    expect(deliverSpy).toHaveBeenCalledTimes(1);
+    expect(deliveredText(0)).toBe('{Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{Esc}');
     await release();
-    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(deliveredText(1)).toBe('/clear{Enter}');
     if ('transcriptFile' in result) rmSync(result.transcriptFile, { force: true });
   });
 
@@ -348,7 +349,7 @@ describe('session_quick_compact', () => {
 
     const result = await service.quickCompactSession('s1', {});
     await afterIdle();
-    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(deliveredText(1)).toBe('/clear{Enter}');
     rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
   });
 
@@ -380,8 +381,8 @@ describe('session_quick_compact', () => {
     expect(second).not.toHaveProperty('transcriptFile');
     expect(third).toMatchObject({ ok: true, action: 'compact', handoverPending: false });
     await release();
-    expect(deliverSpy).toHaveBeenCalledTimes(1);
-    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(deliverSpy).toHaveBeenCalledTimes(2);
+    expect(deliveredText(1)).toBe('/clear{Enter}');
     rmSync((first as { transcriptFile: string }).transcriptFile, { force: true });
   });
 
@@ -415,7 +416,7 @@ describe('session_quick_compact', () => {
 
     const result = await service.quickCompactSession('s1', {});
     await afterIdle();
-    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(deliveredText(1)).toBe('/clear{Enter}');
     expect(armed).toHaveLength(1);
     rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
   });
@@ -430,7 +431,7 @@ describe('session_quick_compact', () => {
     await afterIdle();
 
     expect(session.frozen).toBe(false);
-    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(deliveredText(1)).toBe('/clear{Enter}');
     expect(armed).toHaveLength(1);
     rmSync(result.transcriptFile, { force: true });
   });

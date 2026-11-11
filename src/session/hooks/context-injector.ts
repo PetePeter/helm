@@ -134,6 +134,10 @@ const TOTAL_CAP_CHARS = 2500;
 const COMPACT_PENDING_TTL_MS = 10 * 60_000;
 /** Prompts between manifesto reminders: often enough to matter, rare enough not to be noise. */
 const MANIFESTO_REMINDER_PROMPTS = 10;
+/** Stop blocks allowed per session inside the window before Stop passes unblocked: a CLI
+ *  that keeps re-stopping is not listening, and blocking it further only wedges it. */
+const STOP_BLOCK_LIMIT = 10;
+const STOP_BLOCK_WINDOW_MS = 2 * 60_000;
 
 function truncate(text: string, cap: number): string {
   return text.length <= cap ? text : text.slice(0, cap - 1) + '…';
@@ -148,6 +152,8 @@ export class ContextInjector {
   /** Open-todo Stop reminder: once per user turn, re-armed by the next prompt. */
   private readonly stopTodosNudged = new Set<string>();
   private readonly stopEtaNudged = new Set<string>();
+  /** Recent Stop-block times per session, epoch ms — the breaker's window. */
+  private readonly stopBlocks = new Map<string, number[]>();
   /** Last context reset (SessionStart compact/clear or PreCompact) per session, epoch ms. */
   private readonly contextResetAt = new Map<string, number>();
   /** Per session: the manifesto versions last seen, and prompts since they changed. */
@@ -167,6 +173,7 @@ export class ContextInjector {
     this.stopNudged.delete(sessionId);
     this.stopTodosNudged.delete(sessionId);
     this.stopEtaNudged.delete(sessionId);
+    this.stopBlocks.delete(sessionId);
     this.contextResetAt.delete(sessionId);
     this.manifestoWatch.delete(sessionId);
   }
@@ -497,6 +504,21 @@ export class ContextInjector {
   // -- D. Stop: the one-shot nudge -----------------------------------------
 
   private respondStop(event: HookEvent, session: SessionInfo): InjectorResponse {
+    // A requested compact asked the turn to end: nothing may hold it open.
+    if (this.compactPending(session)) return null;
+    const now = Date.now();
+    const recent = (this.stopBlocks.get(session.id) ?? []).filter(at => now - at < STOP_BLOCK_WINDOW_MS);
+    if (recent.length >= STOP_BLOCK_LIMIT) {
+      this.stopBlocks.set(session.id, recent);
+      logger.info(`[HookInject] Stop breaker session=${session.id} (${session.name}): ${recent.length} blocks in window, passing`);
+      return null;
+    }
+    const response = this.stopBlock(event, session);
+    if (response) this.stopBlocks.set(session.id, [...recent, now]);
+    return response;
+  }
+
+  private stopBlock(event: HookEvent, session: SessionInfo): InjectorResponse {
     // G8 FIRST: continuation into an auto-implement follow-up, then the
     // one-shot recap verification. Exactly one block per Stop event — when
     // the loop speaks, the nudge below stays silent (and its ledger intact).
@@ -510,13 +532,10 @@ export class ContextInjector {
     // The plan nudge fires once per session (the second Stop always passes);
     // the todo reminder once per user turn.
     const nudge = plan && !this.stopNudged.has(session.id);
-    // A requested compact makes todo/ETA nudges moot: the turn ends so the
-    // compact can run, and the nudges re-arm once it lands.
-    const bookkeeping = !this.compactPending(session);
-    const openTodos = !bookkeeping || this.stopTodosNudged.has(session.id)
+    const openTodos = this.stopTodosNudged.has(session.id)
       ? []
       : (this.deps.getTodos?.(session.id) ?? []).filter(todo => todo.status === 'open');
-    const openEta = bookkeeping && session.eta !== undefined && !this.stopEtaNudged.has(session.id);
+    const openEta = session.eta !== undefined && !this.stopEtaNudged.has(session.id);
     if (!nudge && openTodos.length === 0 && !openEta) return null;
 
     const lines: string[] = [];

@@ -326,7 +326,10 @@ nothing) is the common case by design:
   configurable. `StopFailure` is never blocked or retried — a red alert may
   accompany the event without changing that decision. G8's loop decision
   (below) runs BEFORE this nudge on the same event; exactly one block is
-  ever emitted per Stop.
+  ever emitted per Stop. Two overrides silence every Stop block: a pending
+  compact (the turn must end so `/clear` lands — Quick Compact sends an even
+  Esc burst first to unwedge the composer), and a breaker of 10 blocks per
+  session within 2 minutes (a CLI that keeps re-stopping is not listening).
   Open todos add their own reminder to the same block: it lists them and asks
   the LLM to finish, mark done or delete them. It fires once per user turn
   (the next prompt re-arms it), so a todo that waits on someone else costs
