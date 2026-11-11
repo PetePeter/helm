@@ -41,6 +41,8 @@ fun <T> LoadBody(
     isEmpty: (T) -> Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    /** False when the screen carries its own refresh control (the plan board's toolbar). */
+    refreshStrip: Boolean = true,
     content: @Composable (T) -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
@@ -77,7 +79,7 @@ fun <T> LoadBody(
             }
 
             is LoadView.Ready -> {
-                RefreshStrip(refreshing = view.refreshing, onRefresh = onRefresh)
+                if (refreshStrip) RefreshStrip(refreshing = view.refreshing, onRefresh = onRefresh)
                 Box(modifier = Modifier.weight(1f)) {
                     if (isEmpty(view.data)) LoadNote(emptyText) else content(view.data)
                 }

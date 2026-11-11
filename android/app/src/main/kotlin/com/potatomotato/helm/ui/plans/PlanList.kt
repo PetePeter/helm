@@ -25,7 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.CleanupState
 import com.potatomotato.helm.ui.components.ConfirmDelete
-import com.potatomotato.helm.ui.sequences.CleanupRow
+import com.potatomotato.helm.ui.sequences.ClearAction
 import com.potatomotato.helm.ui.sequences.LaneTools
 import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmPlanSequence
@@ -93,14 +93,16 @@ fun PlanList(
         Column(modifier = Modifier.fillMaxSize()) {
             // Above the LoadBody, not inside it, so an EMPTY board — exactly
             // where a first plan is wanted — still offers it.
+            // One toolbar line: create plan, create sequence, clear — the board below keeps the height.
             Row(
                 modifier = Modifier.padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
                 horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 GhostButton(stringResource(R.string.plan_new_action), { creating = true }, Modifier.weight(1f))
                 GhostButton(stringResource(R.string.sequence_new_action), { creatingSequence = true }, Modifier.weight(1f))
+                ClearAction(cleanup, onClear = { confirmingClear = true }, modifier = Modifier.weight(1f))
             }
-            CleanupRow(cleanup, onClear = { confirmingClear = true })
             PlanWriteLine(write, onDismissWrite)
             PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, taskLinks, onRefresh, lanes.onOpenSequence, Modifier.weight(1f))
         }
@@ -154,6 +156,7 @@ private fun PlanBoard(
         isEmpty = { it.isEmpty() },
         onRefresh = onRefresh,
         modifier = modifier,
+        refreshStrip = false,
     ) { rows ->
         val lanes = (sequences as? LoadView.Ready)?.data.orEmpty()
         val startableIds = PlanStartability.of(rows)

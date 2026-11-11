@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -58,12 +59,19 @@ fun PrimaryButton(
 
 /** The quiet one — transparent, hairline border, dim label. Never a fill. */
 @Composable
-fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun GhostButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentColor: Color = HelmColors.Dim,
+) {
     OutlinedButton(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
         border = BorderStroke(HelmSize.Hairline, HelmColors.Line),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = HelmColors.Dim),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor, disabledContentColor = HelmColors.Faint),
     ) {
         Text(text = text)
     }
