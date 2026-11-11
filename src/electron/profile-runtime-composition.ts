@@ -1,6 +1,5 @@
 import { dirname, join } from 'node:path';
 import { statSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import type { ConfigLoader } from '../config/loader.js';
 import type { UserProfileRecord, UserProfileStore } from '../config/user-profile-store.js';
 import { HandoverDelivery } from '../session/handover-delivery.js';
@@ -13,7 +12,12 @@ import { KeepWarmer } from '../session/keep-warmer.js';
 import { MessNotifier } from '../session/mess-notifier.js';
 import { SessionContextUsageTracker } from '../session/session-context-usage-tracker.js';
 import { SessionQuotaUsageTracker } from '../session/session-quota-usage-tracker.js';
-import { isClaudeSubscriptionQuotaEnvironment, type SessionQuotaUsageSnapshot } from '../session/quota-usage.js';
+import {
+  isClaudeSubscriptionQuotaEnvironment,
+  quotaScope,
+  readCodexTranscriptQuota,
+  type SessionQuotaUsageSnapshot,
+} from '../session/quota-usage.js';
 import { inferCliProvider } from '../session/hooks/hook-providers.js';
 import { resolveSessionContextSize, type ApiSessionContextSize } from '../session/context-size.js';
 import { dormantAfterMs } from '../session/prompt-staleness.js';
@@ -280,10 +284,30 @@ export class ProfileRuntimeComposition {
       chatService.setChatBroker(chatBroker);
       this.chatServices.set(userProfileId, chatService);
 
+      const quotaUsageTracker = new SessionQuotaUsageTracker({
+        sessionManager: runtime.sessionManager,
+        scopeFor: session => {
+          const cli = runtime.configLoader.getCliTypeEntry(session.cliType);
+          if (session.remote || session.apiTool || session.comfyUiTool || !cli) return null;
+          return quotaScope(userProfileId, inferCliProvider(cli) ?? undefined, {
+            ...(process.env as Record<string, string | undefined>),
+            ...(resolveConfiguredSpawnEnv(runtime.configLoader, session.cliType) ?? {}),
+          });
+        },
+      });
+      quotaUsageTracker.start();
+      this.quotaUsageTrackers.set(userProfileId, quotaUsageTracker);
+
       const contextUsageTracker = new SessionContextUsageTracker({
         sessionManager: runtime.sessionManager,
         resolve: session => {
           const cli = runtime.configLoader.getCliTypeEntry(session.cliType);
+          // Codex has no statusline; its subscription windows ride the same
+          // transcript the context read uses, so both refresh together.
+          if (!session.remote && cli && inferCliProvider(cli) === 'codex') {
+            const quota = readCodexTranscriptQuota(session.cliTranscriptPath);
+            if (quota !== undefined) quotaUsageTracker.report(session.id, quota);
+          }
           return resolveSessionContextSize({
             cliTranscriptPath: session.cliTranscriptPath,
             provider: cli?.provider,
@@ -298,27 +322,6 @@ export class ProfileRuntimeComposition {
       });
       contextUsageTracker.start(hookReceiver);
       this.contextUsageTrackers.set(userProfileId, contextUsageTracker);
-
-      const quotaUsageTracker = new SessionQuotaUsageTracker({
-        sessionManager: runtime.sessionManager,
-        scopeFor: session => {
-          const cli = runtime.configLoader.getCliTypeEntry(session.cliType);
-          if (session.remote || session.apiTool || session.comfyUiTool || !cli || inferCliProvider(cli) !== 'claude') return null;
-          // The profile + provider + config directory form a
-          // conservative auth scope. Hash it before retaining it in memory.
-          const env = {
-            ...(process.env as Record<string, string | undefined>),
-            ...(resolveConfiguredSpawnEnv(runtime.configLoader, session.cliType) ?? {}),
-          };
-          if (!isClaudeSubscriptionQuotaEnvironment(env)) return null;
-          const configDir = env.CLAUDE_CONFIG_DIR ?? '';
-          return createHash('sha256')
-            .update(`${userProfileId}\0claude\0${configDir}`)
-            .digest('hex');
-        },
-      });
-      quotaUsageTracker.start();
-      this.quotaUsageTrackers.set(userProfileId, quotaUsageTracker);
 
       const delivery = this.deliveryServices.get(userProfileId)!;
       this.registerStartupPromptWatcher(runtime, stateDetector, hookReceiver, notificationManager, delivery);

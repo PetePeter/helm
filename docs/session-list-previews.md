@@ -88,6 +88,15 @@ graph LR
 
 - **Why the tracker owns the history:** every snapshot already passes through `SessionContextUsageTracker.storeUsage`, so each reading lands in `contextHistory` without a second producer. The history is capped at `CONTEXT_HISTORY_LIMIT` (120) points, and a reading equal to the last one is skipped, so idle refreshes do not flatten the trend.
 - **Why it is persisted:** a restored session keeps its trend, including any `/compact` drops, which appear as ordinary points.
+- **Subscription quota (5h / weekly):** `SessionQuotaUsageTracker` holds one runtime-only snapshot per account scope (`quotaScope`: profile + provider + `CLAUDE_CONFIG_DIR` / `CODEX_HOME`) and shows it on the ring's hover card. Claude reports it on the statusline; Codex has no statusline, so `readCodexTranscriptQuota` reads `rate_limits` from the latest `token_count` in its rollout JSONL on each transcript refresh. Windows are matched by length (300 / 10080 min), not slot, and stamped with the log line's time, so an idle Codex drops its bars after 15 min like Claude.
+
+```mermaid
+graph LR
+  CS[Claude statusline] --> Q[SessionQuotaUsageTracker]
+  CT[Codex rollout token_count] --> Q
+  Q -->|quotaUsage, same scope| SI[SessionInfo]
+```
+
 - **Colour:** the graph is `--accent`, turning `--status-blocked` (amber) above the amber limit and `--danger` above the red limit. With no known window it scales to the peak; with no limits it stays green.
 
 ### Warning limits — per CLI type

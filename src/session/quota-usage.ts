@@ -11,6 +11,9 @@ export interface SessionQuotaUsageSnapshot {
   measuredAtEpochMs: number;
 }
 
+import { createHash } from 'node:crypto';
+import { tailLines } from './transcript-usage.js';
+
 type JsonRecord = Record<string, unknown>;
 
 export const SESSION_QUOTA_USAGE_MAX_AGE_MS = 15 * 60_000;
@@ -65,6 +68,84 @@ export function isClaudeSubscriptionQuotaEnvironment(env: Record<string, string 
     'CLAUDE_CODE_USE_VERTEX',
     'CLAUDE_CODE_USE_FOUNDRY',
   ].some(name => Boolean(env[name]?.trim()));
+}
+
+const FIVE_HOUR_WINDOW_MINUTES = 300;
+const WEEKLY_WINDOW_MINUTES = 7 * 24 * 60;
+/** token_count lines arrive every turn, so a small tail always holds the latest. */
+const CODEX_QUOTA_TAIL_BYTES = 256 * 1024;
+
+/** Codex reports limits by slot; the slot order is not a contract, the window length is. */
+function codexWindow(limits: JsonRecord, minutes: number, now: number): SessionQuotaWindowSnapshot | undefined {
+  const window = [limits.primary, limits.secondary].map(record).find(value => value?.window_minutes === minutes);
+  return window && parseWindow({ used_percentage: window.used_percent, resets_at: window.resets_at }, now);
+}
+
+/**
+ * Codex writes `rate_limits` on each `token_count` event in its rollout JSONL.
+ * undefined = not a token_count line; null = a line without both windows.
+ * The snapshot is stamped with the line's own time so an old log is never fresh.
+ */
+export function parseCodexRateLimits(
+  line: unknown,
+  now = Date.now(),
+): SessionQuotaUsageSnapshot | null | undefined {
+  const value = record(line);
+  const payload = record(value?.payload);
+  if (value?.type !== 'event_msg' || payload?.type !== 'token_count') return undefined;
+  const limits = record(payload.rate_limits);
+  if (!limits) return null;
+  const fiveHour = codexWindow(limits, FIVE_HOUR_WINDOW_MINUTES, now);
+  const weekly = codexWindow(limits, WEEKLY_WINDOW_MINUTES, now);
+  if (!fiveHour || !weekly) return null;
+  const measuredAt = typeof value.timestamp === 'string' ? Date.parse(value.timestamp) : NaN;
+  return { fiveHour, weekly, measuredAtEpochMs: Number.isFinite(measuredAt) ? measuredAt : now };
+}
+
+/** The latest Codex quota in a transcript tail; undefined when unreadable or never reported. */
+export function readCodexTranscriptQuota(
+  path: string | undefined,
+  now = Date.now(),
+): SessionQuotaUsageSnapshot | null | undefined {
+  if (!path) return undefined;
+  let lines: string[];
+  try {
+    lines = tailLines(path, CODEX_QUOTA_TAIL_BYTES);
+  } catch {
+    return undefined;
+  }
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let line: unknown;
+    try {
+      line = JSON.parse(lines[i]);
+    } catch {
+      continue; // blank, or a final line torn mid-write
+    }
+    const quota = parseCodexRateLimits(line, now);
+    if (quota !== undefined) return quota;
+  }
+  return undefined;
+}
+
+/**
+ * One opaque in-memory key per profile + provider + config home: sessions in a
+ * scope share one subscription account. null = no subscription quota to show.
+ */
+export function quotaScope(
+  userProfileId: string,
+  provider: string | undefined,
+  env: Record<string, string | undefined>,
+): string | null {
+  let home: string;
+  if (provider === 'claude') {
+    if (!isClaudeSubscriptionQuotaEnvironment(env)) return null;
+    home = env.CLAUDE_CONFIG_DIR ?? '';
+  } else if (provider === 'codex') {
+    home = env.CODEX_HOME ?? '';
+  } else {
+    return null;
+  }
+  return createHash('sha256').update(`${userProfileId}\0${provider}\0${home}`).digest('hex');
 }
 
 export function isFreshQuotaUsageSnapshot(
