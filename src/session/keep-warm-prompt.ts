@@ -10,7 +10,8 @@ export const HEARTBEAT_CLOSE = '[HEARTBEAT_END]';
 
 /** Default ping text: short housekeeping guidance. Per CLI: keepWarmPrompt. */
 export const KEEP_WARM_DEFAULT_TEXT =
-  'heartbeat. Check your current context size with session_get using your own HELM_SESSION_ID instead of estimating; session_info also includes it at startup. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
+  'heartbeat. Check your context level with session_get using your own HELM_SESSION_ID instead of estimating. If it is amber or red and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
+  'If you have a manifesto artifact, re-read it and bring it up to date; if the work spans turns and you have none, create one. ' +
   'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.';
 
 const MARKERS = /\[HEARTBEAT_(?:START|END)\]/gi;

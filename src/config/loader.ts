@@ -248,7 +248,8 @@ export interface CliTypeConfig {
   contextLimits?: ContextLimits;
   /** The text of a keep-warm ping (sequence syntax), sent 10 s before the short
    *  cache lapses. KeepWarmer wraps it in the heartbeat markers at send time.
-   *  Default also suggests Quick Compact near 200k and checking any in-flight
+   *  Default also suggests Quick Compact at amber/red context, refreshing the
+   *  manifesto, and checking any in-flight
    *  worker sessions. */
   keepWarmPrompt?: string;
   /**

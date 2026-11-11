@@ -110,8 +110,8 @@ of passing silently as a full-price miss.
 
 The ping's words are the CLI type's `keepWarmPrompt` (sequence syntax), set in
 the CLI type editor as **Heartbeat text**. Blank uses the default: a heartbeat
-note, a one-time reminder near 200k tokens to suggest Quick Compact, and a
-suggestion to check in-flight worker sessions. Only the words are stored. The
+note, a one-time reminder to suggest Quick Compact once the context level is amber or
+red, a nudge to re-read (or create) the manifesto artifact, and a suggestion to check in-flight worker sessions. Only the words are stored. The
 wrapper is added when the ping is sent (`buildKeepWarmPrompt` in
 `src/session/keep-warm-prompt.ts`), so every ping is
 `[HEARTBEAT_START] <text>[HEARTBEAT_END]` on one line. There is no leading
