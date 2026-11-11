@@ -395,6 +395,7 @@ export const PRELOAD_API_DOMAINS = {
     'onLlmNotify',
     'onFlashAttention',
     'onSessionSpawned',
+    'onSessionRemoved',
     'onSessionUpdated',
     'onSnapOut',
     'onSnapBack',

@@ -92,8 +92,21 @@ The row's ⋮ → **Keep cache warm** sets `SessionInfo.keepWarmUntil` (persiste
 8 hours ahead. `KeepWarmer` then sends a ping **10 s before its short cache
 lapses** (`cacheWarnMinutes` − 10 s; 4:50 for 5 min), so the next real prompt
 still hits the cheap cache. Each ping costs one short turn, which is why it is
-opt-in and lapses on its own. It skips a busy session (already warming itself)
-and a frozen one.
+opt-in and lapses on its own. While it is on, AutoFreezer leaves the session
+alone.
+
+Keep-warm is offered to **hooked** sessions only (the menu item is disabled and
+`session_set_keep_warm` refuses otherwise). Their hooks restart the cache clock
+(`lastPromptAt`) on every real cache touch — prompt submit, tool start and
+finish, session start, compaction; not Stop — and Helm stamps nothing for them
+itself. So a due clock means nothing touched the cache. The ping waits only
+while the dot is green — a hook fired within 10 min, so a long tool or thinking
+is still running and a ping would only queue behind it — and goes once it
+turns blue. Frozen sessions get none. A CLI switch to a hookless type clears
+keep-warm. The ping does not stamp the clock
+either: its UserPromptSubmit hook does. A ping that never landed (unsent in the
+composer, delivery failed) is resent every 60 s until a hook answers, instead
+of passing silently as a full-price miss.
 
 The ping's words are the CLI type's `keepWarmPrompt` (sequence syntax), set in
 the CLI type editor as **Heartbeat text**. Blank uses the default: a heartbeat
@@ -101,7 +114,9 @@ note, a one-time reminder near 200k tokens to suggest Quick Compact, and a
 suggestion to check in-flight worker sessions. Only the words are stored. The
 wrapper is added when the ping is sent (`buildKeepWarmPrompt` in
 `src/session/keep-warm-prompt.ts`), so every ping is
-`{Esc}[HEARTBEAT_START] <text>[HEARTBEAT_END]` on one line. That is what lets
+`[HEARTBEAT_START] <text>[HEARTBEAT_END]` on one line. There is no leading
+`{Esc}`: it would interrupt a working CLI, and a half-typed draft is allowed to
+get the ping appended — the markers still bound it. That is what lets
 Quick Compact drop any ping whole, whatever it says: the strip keys on the
 markers, never on the text. Markers typed into the text are removed.
 MCP clients can toggle the same persisted state with `session_set_keep_warm`;
@@ -109,9 +124,11 @@ the desktop row and Android session sheet read the same status.
 
 ```mermaid
 graph LR
-    P[last prompt] -->|cacheWarnMinutes − 10 s| K{keep-warm on?}
-    K -->|no / frozen / busy| X[nothing]
-    K -->|yes| W[wrap keepWarmPrompt in heartbeat markers] --> S[send] --> P
+    P[last cache touch<br/>hook-stamped] -->|cacheWarnMinutes − 10 s| K{keep-warm on?}
+    K -->|no / frozen / hookless / green| X[nothing]
+    K -->|yes| W[wrap keepWarmPrompt in heartbeat markers] --> S[send]
+    S -->|UserPromptSubmit hook| P
+    S -->|no hook within 60 s| W
 ```
 
 ## Row status icons

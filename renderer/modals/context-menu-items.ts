@@ -15,7 +15,7 @@ export interface ContextMenuContext {
   isSnappedOut: boolean;
   /** Name of the runtime group the target session is in, or null when ungrouped. */
   currentGroupName: string | null;
-  session: { locked: boolean; frozen: boolean; keepWarm: boolean; hidden?: boolean; remote?: boolean };
+  session: { locked: boolean; frozen: boolean; keepWarm: boolean; hidden?: boolean; remote?: boolean; hooked?: boolean };
 }
 
 export interface ContextMenuGroup {
@@ -32,7 +32,8 @@ function buildSessionControls(ctx: ContextMenuContext): ContextMenuItem[] {
     { id: 'new-session', label: '🆕 New Session', enabled: true },
     { id: 'rename-session', label: '✎ Rename', enabled: hasTarget },
     { id: 'switch-cli', label: '🔀 Switch CLI…', enabled: hasTarget },
-    { id: 'toggle-keep-warm', label: s.keepWarm ? '⏰ Stop keeping warm' : '⏰ Keep cache warm', enabled: hasTarget },
+    // Keep-warm needs CLI hooks to confirm each ping; switching it off is always allowed.
+    { id: 'toggle-keep-warm', label: s.keepWarm ? '⏰ Stop keeping warm' : '⏰ Keep cache warm', enabled: hasTarget && (s.keepWarm || !!s.hooked) },
     { id: 'toggle-freeze', label: s.frozen ? '🔥 Unfreeze' : '❄️ Freeze', enabled: hasTarget },
     { id: 'toggle-lock', label: s.locked ? '🔓 Unlock' : '🔒 Lock', enabled: hasTarget },
     ...(ctx.mode === 'session' && !s.remote ? [{

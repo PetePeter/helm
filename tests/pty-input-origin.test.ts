@@ -150,6 +150,18 @@ describe('pty:write input origin', () => {
     expect(stamped()[0][1]).toMatchObject({ lastUserPromptAt: expect.any(Number), lastUserPromptSource: 'terminal' });
   });
 
+  it('Enter in a hooked session leaves the cache timer to the UserPromptSubmit hook', async () => {
+    const { sessionManager } = setup();
+    sessionManager.updateSession('s1', { hooked: true });
+    sessionManager.updateSession.mockClear();
+
+    await handlers.get('pty:write')?.({}, 's1', '\r');
+
+    const patches = sessionManager.updateSession.mock.calls.map(([, patch]) => patch);
+    expect(patches.some(patch => 'lastPromptAt' in patch)).toBe(false);
+    expect(patches).toContainEqual(expect.objectContaining({ lastUserPromptSource: 'terminal' }));
+  });
+
   it('arms AI time for an accepted terminal Enter, but not plain typing or a frozen write', async () => {
     const now = Date.now();
     const persisted: TimeSlot[] = [];

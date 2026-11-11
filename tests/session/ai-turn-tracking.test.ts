@@ -34,7 +34,7 @@ function setup() {
   });
   detector.on('activity-change', event => {
     activity.push(event);
-    if (event.level === 'idle' && !detector.hasObservedHooks(event.sessionId)) tracker.disarmAi(event.sessionId);
+    if (event.level === 'idle' && !detector.isHooked(event.sessionId)) tracker.disarmAi(event.sessionId);
   });
 
   let onExit: ((event: { exitCode: number }) => void) | undefined;
@@ -142,13 +142,14 @@ describe('AI turn tracking', () => {
     }
   });
 
-  it('keeps a system prompt and hours of TUI repaint from creating AI time or a green dot', async () => {
+  it('keeps a system prompt and hours of TUI repaint from creating AI time or re-greening after Stop', async () => {
     const s = setup();
     try {
       await s.deliver('scheduled watchdog check');
       s.emitHook('UserPromptSubmit');
       s.emitHook('Stop');
       expect(s.activity.at(-1)?.level).toBe('inactive');
+      const afterStop = s.activity.length;
 
       for (let hour = 1; hour <= 8; hour++) {
         const now = BASE + hour * HOUR;
@@ -159,7 +160,7 @@ describe('AI turn tracking', () => {
       }
 
       expect(s.tracker.query(BASE, BASE + 24 * HOUR)).toEqual([]);
-      expect(s.activity.some(event => event.level === 'active')).toBe(false);
+      expect(s.activity.slice(afterStop).some(event => event.level === 'active')).toBe(false);
     } finally {
       s.dispose();
     }

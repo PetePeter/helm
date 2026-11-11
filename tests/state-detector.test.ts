@@ -931,98 +931,99 @@ describe('StateDetector', () => {
     });
   });
 
-  describe('hook-reported activity (G3 second producer)', () => {
+  describe('hooked sessions (hook events own the dot)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      detector.setHooked('s1', true);
+    });
+
     afterEach(() => {
+      detector.dispose();
       vi.useRealTimers();
     });
 
-    it('markHookWorking promotes to active with the same activity-change contract as PTY output', () => {
-      vi.useFakeTimers();
+    it('greens on hook activity', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.markHookWorking('s1');
+      detector.markHookActivity('s1', 'hook PreToolUse');
 
-      expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 's1', level: 'active' }),
-      );
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
 
-    it('keeps hook-reported work active until Stop, regardless of silence or repaint output', () => {
-      vi.useFakeTimers();
+    it('never greens on PTY input or output — typing is not a submitted prompt', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.markHookWorking('s1');
-      handler.mockClear();
-      vi.advanceTimersByTime(8 * 60 * 60_000);
-      detector.processOutput('s1', 'hours of TUI repaint after hook-reported work began');
+      detector.markActive('s1');
+      detector.processOutput('s1', 'a large chunk of output while the user types');
+      vi.advanceTimersByTime(200);
 
       expect(handler).not.toHaveBeenCalled();
-      detector.markHookTurnEnded('s1');
+    });
+
+    it('PTY input and output do not extend a hook green', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+      detector.markHookActivity('s1', 'hook PreToolUse');
+      handler.mockClear();
+
+      vi.advanceTimersByTime(9 * 60_000);
+      detector.markActive('s1');
+      detector.processOutput('s1', 'a large chunk of TUI repaint output after the hook');
+      vi.advanceTimersByTime(60_001);
+
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
     });
 
-    it('markHookTurnEnded leaves green immediately, without waiting out the silence timer', () => {
-      vi.useFakeTimers();
+    it('with no Stop, goes blue 10 min after the last hook and grey 5 min later', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
-
-      detector.markHookWorking('s1');
+      detector.markHookActivity('s1', 'hook PreToolUse');
+      vi.advanceTimersByTime(5 * 60_000);
+      detector.markHookActivity('s1', 'hook PostToolUse');
       handler.mockClear();
 
-      // Zero elapsed time — the drop comes from the Stop hook, not a timer.
-      detector.markHookTurnEnded('s1');
+      vi.advanceTimersByTime(10 * 60_000 - 1);
+      expect(handler).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(2);
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
 
-      expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 's1', level: 'inactive' }),
-      );
+      handler.mockClear();
+      vi.advanceTimersByTime(5 * 60_000);
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'idle' }));
     });
 
-    it('markHookTurnEnded restarts the idle countdown from the turn end', () => {
-      vi.useFakeTimers();
+    it('turn end (Stop or StopFailure) goes blue at once and grey 5 min later', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
+      detector.markHookActivity('s1', 'hook PreToolUse');
+      handler.mockClear();
 
-      detector.markHookWorking('s1');
-      vi.advanceTimersByTime(120_000); // two minutes of pre-turn silence decay timers
-      detector.markHookTurnEnded('s1');
+      detector.markHookTurnEnded('s1', 'hook StopFailure');
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
 
       handler.mockClear();
       vi.advanceTimersByTime(299_999);
       expect(handler).not.toHaveBeenCalled();
-
       vi.advanceTimersByTime(2);
-      expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 's1', level: 'idle' }),
-      );
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'idle' }));
     });
 
-    it('markHookTurnEnded emits nothing when already inactive', () => {
-      vi.useFakeTimers();
+    it('turn end emits nothing when already blue', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
-
-      detector.markHookWorking('s1');
-      detector.markHookTurnEnded('s1');
+      detector.markHookActivity('s1', 'hook PreToolUse');
+      detector.markHookTurnEnded('s1', 'hook Stop');
       handler.mockClear();
 
-      detector.markHookTurnEnded('s1');
+      detector.markHookTurnEnded('s1', 'hook Stop');
       expect(handler).not.toHaveBeenCalled();
     });
 
-    it('PTY repaint cannot override hook-reported Stop', () => {
-      vi.useFakeTimers();
-      const handler = vi.fn();
-      detector.on('activity-change', handler);
-
-      detector.markHookTurnEnded('s1');
-      handler.mockClear();
-
-      processOutput(detector, 's1', 'a genuinely large chunk of fresh terminal output');
-      vi.advanceTimersByTime(200); // past the small-chunk debounce, well under 10s
-
-      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+    it('a hook event marks an unresolved session hooked', () => {
+      detector.markHookActivity('s2', 'hook UserPromptSubmit');
+      expect(detector.isHooked('s2')).toBe(true);
     });
   });
 
@@ -1041,9 +1042,9 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.markHooksObserved('s1');
-      detector.markHookWorking('s1');
-      detector.markHookTurnEnded('s1');
+      detector.setHooked('s1', true);
+      detector.markHookActivity('s1', 'hook PreToolUse');
+      detector.markHookTurnEnded('s1', 'hook Stop');
       const lastOutputAt = detector.getLastOutputTime('s1');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
 
@@ -1061,14 +1062,14 @@ describe('StateDetector', () => {
     it('ignores a late Stop hook while frozen without refreshing last output', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
-      detector.markHooksObserved('s1');
-      detector.markHookWorking('s1');
+      detector.setHooked('s1', true);
+      detector.markHookActivity('s1', 'hook PreToolUse');
       detector.setSessionFrozen('s1', true);
       const lastOutputAt = detector.getLastOutputTime('s1');
 
       handler.mockClear();
       vi.setSystemTime(lastOutputAt + 60_000);
-      detector.markHookTurnEnded('s1');
+      detector.markHookTurnEnded('s1', 'hook Stop');
 
       expect(detector.getLastOutputTime('s1')).toBe(lastOutputAt);
       expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
@@ -1125,11 +1126,11 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
       detector.setSessionFrozen('s1', true);
-      detector.markHookWorking('s1');
+      detector.markHookActivity('s1', 'hook PreToolUse');
       expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
 
       detector.setSessionFrozen('s1', false);
-      detector.markHookWorking('s1');
+      detector.markHookActivity('s1', 'hook PreToolUse');
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });

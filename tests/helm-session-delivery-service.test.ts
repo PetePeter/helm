@@ -19,12 +19,13 @@ vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-function makeSession(overrides?: Partial<{ id: string; name: string; cliType: string; activityLevel: 'active' | 'inactive' | 'idle' }>) {
+function makeSession(overrides?: Partial<{ id: string; name: string; cliType: string; activityLevel: 'active' | 'inactive' | 'idle'; hooked: boolean }>) {
   return {
     id: overrides?.id ?? 'recv-session',
     name: overrides?.name ?? 'RecvSession',
     cliType: overrides?.cliType ?? 'claude-code',
     ...(overrides?.activityLevel ? { activityLevel: overrides.activityLevel } : {}),
+    ...(overrides?.hooked ? { hooked: true } : {}),
   };
 }
 
@@ -146,6 +147,14 @@ describe('HelmSessionDeliveryService', () => {
       const { service, sessionManager, receiver } = makeDeps();
       await service.sendTextToSession(receiver.id, 'hi', from);
       expect(sessionManager.updateSession).toHaveBeenCalledWith(receiver.id, { lastPromptAt: expect.any(Number) });
+    });
+
+    it('a hooked session leaves the cache timer to its UserPromptSubmit hook', async () => {
+      const { service, sessionManager, receiver } = makeDeps({ receiverSession: makeSession({ hooked: true }) });
+      await service.sendTextToSession(receiver.id, 'hi', { ...from, userPromptSource: 'phone' });
+      const patches = sessionManager.updateSession.mock.calls.filter(([id]) => id === receiver.id).map(([, patch]) => patch);
+      expect(patches.some(patch => 'lastPromptAt' in patch)).toBe(false);
+      expect(patches).toContainEqual({ lastUserPromptAt: expect.any(Number), lastUserPromptSource: 'phone' });
     });
 
     it('records a phone prompt separately from automated session delivery', async () => {

@@ -26,6 +26,8 @@ When a Claude Code session receives a `[HELM_MSG]` message, it should:
 
 ## Verifying a New Session
 
+`session_create` takes `expectsResponse` (default false): set it to have the `initialPrompt` envelope ask the new session to reply to you, exactly as `session_send_text` does.
+
 About five seconds after `session_create`, call `session_read_terminal`, even when `initialPrompt` was supplied. Helm also detects known folder-trust prompts during startup and reminds the live creator session to resolve them; if the creator is unavailable, Helm alerts on the blocked session. Resolve the prompt with `session_send_input`, then reread the terminal. Confirm the CLI is ready and the initial prompt arrived; report if startup is still blocked.
 
 Examples: Claude Code may ask you to trust the folder, Codex may request workspace access, and Copilot CLI may ask you to trust the directory.

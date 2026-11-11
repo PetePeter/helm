@@ -28,35 +28,54 @@ import { logger } from '../../utils/logger.js';
 /** Per-recipient capability read shared by the delivery and relay paths. */
 export type RulesViaHooksFn = (session: SessionInfo) => Promise<boolean>;
 
-export function createRulesViaHooksFn(
-  getCliTypeEntry: (cliTypeId: string) => Pick<CliTypeConfig, 'hooks' | 'provider'> | null,
-  readStatus: (hooks: CliHooksIntegration) => Promise<HookIntegrationStatus>,
-): RulesViaHooksFn {
-  return async (session) => {
-    try {
-      const entry = getCliTypeEntry(session.cliType);
-      // The top-level mapping is authoritative (auto-migrated, dropdown-editable);
-      // the legacy hooks block is the fallback for entries that predate it.
-      // `null` is an explicit "Not mapped" — it answers the question, so the
-      // legacy fallback must NOT resurrect capability the user turned off.
-      const provider = entry?.provider !== undefined ? entry.provider : entry?.hooks?.provider;
-      if (!provider || !PROMPT_INJECTION_PROVIDERS.has(provider)) return false;
-      const hooks = entry?.hooks ?? null;
-      if (!hooks) {
-        // Provider known, no hooks block: the provider's canonical config
-        // (hook-providers.ts) is what would be installed — read status by it.
-        const canonical = getHookProviderConfig(provider);
-        if (!canonical) return false;
-        const status = await readStatus(canonical as CliHooksIntegration);
-        return status === 'installed' || status === 'outdated';
-      }
-      const status = await readStatus(hooks);
-      return status === 'installed' || status === 'outdated';
-    } catch (error) {
-      logger.warn(`[HookCapability] rules-via-hooks check failed for ${session.id}: ${String(error)}`);
-      return false;
-    }
-  };
+/** Whether a CLI type's hooks are on disk, so its sessions report hook events. */
+export type HooksInstalledFn = (cliTypeId: string) => Promise<boolean>;
+
+type CliTypeHooksEntry = (cliTypeId: string) => Pick<CliTypeConfig, 'hooks' | 'provider'> | null;
+type ReadHookStatus = (hooks: CliHooksIntegration) => Promise<HookIntegrationStatus>;
+
+/**
+ * The provider a CLI type maps to. The top-level mapping is authoritative
+ * (auto-migrated, dropdown-editable); the legacy hooks block is the fallback
+ * for entries that predate it. `null` is an explicit "Not mapped" — it answers
+ * the question, so the legacy fallback must NOT resurrect what the user turned off.
+ */
+function providerOf(entry: Pick<CliTypeConfig, 'hooks' | 'provider'> | null): string | null | undefined {
+  return entry?.provider !== undefined ? entry.provider : entry?.hooks?.provider;
+}
+
+/**
+ * Installed or merely outdated (a stale block still fires) counts; not-installed
+ * or a missing interpreter does not. Every failure answers false.
+ */
+export function createHooksInstalledFn(getCliTypeEntry: CliTypeHooksEntry, readStatus: ReadHookStatus): HooksInstalledFn {
+  return (cliTypeId) => checkInstalled(getCliTypeEntry, readStatus, cliTypeId, () => true);
+}
+
+export function createRulesViaHooksFn(getCliTypeEntry: CliTypeHooksEntry, readStatus: ReadHookStatus): RulesViaHooksFn {
+  return (session) => checkInstalled(getCliTypeEntry, readStatus, session.cliType, p => PROMPT_INJECTION_PROVIDERS.has(p));
+}
+
+async function checkInstalled(
+  getCliTypeEntry: CliTypeHooksEntry,
+  readStatus: ReadHookStatus,
+  cliTypeId: string,
+  providerQualifies: (provider: string) => boolean,
+): Promise<boolean> {
+  try {
+    const entry = getCliTypeEntry(cliTypeId);
+    const provider = providerOf(entry);
+    if (!provider || !providerQualifies(provider)) return false;
+    // Provider known, no hooks block: the provider's canonical config
+    // (hook-providers.ts) is what would be installed — read status by it.
+    const hooks = entry?.hooks ?? (getHookProviderConfig(provider) as CliHooksIntegration | null);
+    if (!hooks) return false;
+    const status = await readStatus(hooks);
+    return status === 'installed' || status === 'outdated';
+  } catch (error) {
+    logger.warn(`[HookCapability] hook install check failed for ${cliTypeId}: ${String(error)}`);
+    return false;
+  }
 }
 
 export type { HookInstallerDeps };

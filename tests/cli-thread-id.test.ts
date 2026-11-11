@@ -147,7 +147,7 @@ describe('{cliThreadId} resume resolution', () => {
 
   it('resumes the id a /clear or /compact moved to, not the spawn-time name', async () => {
     sessionManager.addSession(makeSession());
-    const tracker = new HookTracker({ sessionManager, stateDetector: { markHooksObserved: () => {} } } as never);
+    const tracker = new HookTracker({ sessionManager, stateDetector: { setHooked: () => {} } } as never);
     const event = normaliseHookEvent({ cli: 'claude', event: 'SessionStart', payload: { session_id: THREAD, source: 'clear' } } as never)!;
     tracker.handle({ ...event, helmSessionId: 'sess-1' });
     tracker.dispose();

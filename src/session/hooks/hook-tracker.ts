@@ -156,7 +156,9 @@ export class HookTracker {
     // Uncorrelated (Helm did not spawn this CLI) or already closed — untouched.
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) return;
 
-    this.deps.stateDetector.markHooksObserved(sessionId);
+    // A hook event proves the session is hooked, whatever the disk check said.
+    this.deps.stateDetector.setHooked(sessionId, true);
+    if (!this.deps.sessionManager.getSession(sessionId)?.hooked) this.deps.sessionManager.updateSession(sessionId, { hooked: true });
     this.submitSignal.observe(sessionId);
 
     this.recordThreadId(sessionId, event.cliSessionId);
@@ -166,33 +168,32 @@ export class HookTracker {
       case 'SessionStart':
         // A fresh (or resumed) session: facts reset, stale stall irrelevant.
         this.facts.set(sessionId, { turns: 0, toolCounts: new Map(), filesTouched: new Set() });
-        this.restartCacheTimer(sessionId);
+        this.touchCache(sessionId, event.event);
         this.clearStall(sessionId);
         break;
 
       case 'UserPromptSubmit':
         this.getOrCreateFacts(sessionId).turns++;
         this.submitSignal.record(sessionId, this.now());
-        this.restartCacheTimer(sessionId);
+        this.touchCache(sessionId, event.event);
         this.clearStall(sessionId);
         break;
 
       case 'PreToolUse':
-        this.restartCacheTimer(sessionId);
+        this.touchCache(sessionId, event.event);
         this.clearStall(sessionId);
-        this.deps.stateDetector.markHookWorking(sessionId);
         this.deps.onTurnWorking?.(sessionId);
         break;
 
       case 'PostToolUse':
         this.recordToolUse(sessionId, event);
-        this.restartCacheTimer(sessionId);
+        this.touchCache(sessionId, event.event);
         this.clearStall(sessionId);
         this.advancePlanOnEdit(sessionId, event.toolName);
         break;
 
       case 'Stop':
-        this.deps.stateDetector.markHookTurnEnded(sessionId);
+        this.deps.stateDetector.markHookTurnEnded(sessionId, 'hook Stop');
         this.clearStall(sessionId);
         this.deps.flashAttention(sessionId);
         this.settlePlanOnStop(sessionId);
@@ -200,6 +201,8 @@ export class HookTracker {
         break;
 
       case 'StopFailure':
+        // The turn ended, just badly: blue, like Stop.
+        this.deps.stateDetector.markHookTurnEnded(sessionId, 'hook StopFailure');
         this.reportStall(sessionId, event);
         break;
 
@@ -208,7 +211,7 @@ export class HookTracker {
         this.snapshot(sessionId, event.trigger, event.transcriptPath);
         this.deps.handoverDelivery.deliverFromPreCompact(sessionId);
         this.deps.sessionManager.updateSession(sessionId, { lastCliCompactAt: this.now() });
-        this.restartCacheTimer(sessionId);
+        this.touchCache(sessionId, event.event);
         break;
 
       default:
@@ -220,11 +223,12 @@ export class HookTracker {
   /**
    * The prompt-cache timer counts from lastPromptAt. Any context mutation —
    * a prompt, a tool call or result, a start/resume/clear (SessionStart), or a
-   * compaction — rewrites
-   * the cache, so each restarts it.
+   * compaction — rewrites the cache, so each restarts it and greens the dot.
+   * For a hooked session these are the ONLY timer restarts (Stop is not one).
    */
-  private restartCacheTimer(sessionId: string): void {
+  private touchCache(sessionId: string, event: string): void {
     this.deps.sessionManager.updateSession(sessionId, { lastPromptAt: this.now() });
+    this.deps.stateDetector.markHookActivity(sessionId, `hook ${event}`);
   }
 
   /**

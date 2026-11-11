@@ -7,8 +7,6 @@
  *  delimiters, no braces, so sequence escaping ships them byte for byte. */
 export const HEARTBEAT_OPEN = '[HEARTBEAT_START]';
 export const HEARTBEAT_CLOSE = '[HEARTBEAT_END]';
-/** The prefix the CLI records: `{Esc}` clears half-typed input, then the ping starts. */
-export const HEARTBEAT_MARKER = `{Esc}${HEARTBEAT_OPEN}`;
 
 /** Default ping text: short housekeeping guidance. Per CLI: keepWarmPrompt. */
 export const KEEP_WARM_DEFAULT_TEXT =
@@ -29,5 +27,7 @@ export function buildKeepWarmPrompt(text?: string): string {
     .replace(/\s*\r?\n\s*/g, ' ')
     .trim()
     .replace(/^\{Esc\}\s*/i, '');
-  return `${HEARTBEAT_MARKER} ${body || KEEP_WARM_DEFAULT_TEXT}${HEARTBEAT_CLOSE}`;
+  // No leading {Esc}: it would interrupt a working CLI. A half-typed draft just
+  // gets the ping appended; the markers still let Quick Compact strip the ping.
+  return `${HEARTBEAT_OPEN} ${body || KEEP_WARM_DEFAULT_TEXT}${HEARTBEAT_CLOSE}`;
 }

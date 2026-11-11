@@ -85,4 +85,20 @@ describe('HelmSessionService.spawnCli — initialPrompt sender envelope', () => 
       fromSessionId: 'mobile:dev-1', fromSessionName: 'mobile:dev-1',
     });
   });
+
+  it('asks for a reply to the creator session when expectsResponse is set', () => {
+    makeServiceWithSessions({ 'creator-sid': { id: 'creator-sid', name: 'Orchestrator' } })
+      .spawnCli('claude-code', '/repo/main', 'worker', { creatorSessionId: 'creator-sid', initialPrompt: 'Build it', expectsResponse: true });
+
+    const text = spawnCalls[0].contextText as string;
+    expect(text).toMatch(/^\[HELM_MSG: expectsResponse=true\. .*session_send_text with: sessionId="creator-sid"/);
+    expect(text).toContain('"expectsResponse":true');
+  });
+
+  it('asks a phone creator for a chat_send reply when expectsResponse is set', () => {
+    makeServiceWithSessions({})
+      .spawnCli('claude-code', '/repo/main', 'worker', { creatorSessionId: 'mobile:dev-1', initialPrompt: 'Read plan', expectsResponse: true });
+
+    expect(spawnCalls[0].contextText as string).toMatch(/^\[HELM_MSG: expectsResponse=true\. .*chat_send/);
+  });
 });

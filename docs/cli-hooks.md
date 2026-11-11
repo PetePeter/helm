@@ -200,8 +200,8 @@ nothing here runs and StateDetector's timing remains the producer of record.
 ```mermaid
 flowchart LR
     R[HookEvent] --> T{HookTracker}
-    T -->|SessionStart / UserPromptSubmit / Pre+PostToolUse| W["StateDetector<br/>markHookWorking"]
-    T -->|Stop| E["StateDetector<br/>markHookTurnEnded"]
+    T -->|SessionStart / UserPromptSubmit / Pre+PostToolUse / PreCompact| W["lastPromptAt + StateDetector<br/>markHookActivity"]
+    T -->|Stop / StopFailure| E["StateDetector<br/>markHookTurnEnded"]
     W --> A[activity-change events<br/>→ dots, flash timers, phone alerts]
     E --> A
     T -->|StopFailure| S["updateSession<br/>hookStall {at, reason} — DURABLE"]
@@ -212,19 +212,21 @@ flowchart LR
     T -->|PreCompact| C["snapshot artifact<br/>+ deliverFromPreCompact"]
 ```
 
-- **Activity** — `markHookWorking` / `markHookTurnEnded` emit the same
-  `activity-change` events PTY timing does, so dots, question flow and
-  phone alerts are updated. Stop drops the dot out of green
-  immediately (the agent said it finished) and restarts the idle countdown
-  from that moment; trailing PTY output still promotes normally, so hooks
-  going silent mid-session cannot stick the dot anywhere.
+- **Activity** — every hook that restarts the cache clock (`touchCache`)
+  also greens the dot (`markHookActivity`); Stop and StopFailure turn it blue
+  at once (`markHookTurnEnded`) without touching the clock. They emit the same
+  `activity-change` events PTY timing does, so dots, question flow and phone
+  alerts are updated. A hooked session ignores PTY input and output for the
+  dot; with no hook for 10 min (an Esc interrupt sends no Stop) it goes blue on
+  its own, so nothing can stick it green. See
+  [terminal-architecture.md](terminal-architecture.md#activity-dots).
 - **Stalls** — Claude-only `StopFailure` (Claude registers it in
   `hooks.events`; Codex and Copilot have no equivalent event) is the turn
   died on an API error — the usage-limit stall reported as fact instead of
   guessed from silence. It is stored on the session as a durable
   `hookStall {at, reason}` record (serializeSession allow-list, invariant 6)
-  and deliberately NOT treated as a normal finish: no turn-end edge, no
-  green-to-blue transition from it. Any later life sign (prompt, tool use,
+  and NOT treated as a normal finish: no plan settle, no auto-memory judge
+  pass. The turn is over, though, so the dot goes blue as on Stop. Any later life sign (prompt, tool use,
   next turn, SessionStart) clears it; a re-report of the same stall neither
   re-persists nor re-flashes. Flash-attention fires on Stop and StopFailure
   — turn finished and turn died are both "look at me".

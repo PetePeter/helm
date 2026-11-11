@@ -323,8 +323,10 @@ describe('profile-owned process services', () => {
       cliType: 'claude', lastPromptAt: now - 2 * 60 * 60_000,
     });
     addSession(composition, '2', 'warm-two', {
-      cliType: 'claude', lastPromptAt: now - 2 * 60_000, keepWarmUntil: now + 60_000,
+      cliType: 'claude', lastPromptAt: now - 2 * 60_000, keepWarmUntil: now + 60_000, hooked: true,
     });
+    const delivered: string[] = [];
+    ptyManager.deliverText = async (sessionId: string) => { delivered.push(sessionId); };
     registerProfileServices(composition, ptyManager);
 
     try {
@@ -334,7 +336,7 @@ describe('profile-owned process services', () => {
       await composition.keepWarmers.get('2')!.tick();
 
       expect(composition.getRequiredRuntime('2').sessionManager.getSession('freeze-two')?.frozen).toBe(true);
-      expect(composition.getRequiredRuntime('2').sessionManager.getSession('warm-two')?.lastPromptAt).toBeGreaterThan(now - 2 * 60_000);
+      expect(new Set(delivered)).toEqual(new Set(['warm-two']));
       expect(composition.getRequiredRuntime('1').sessionManager.getSession('cache-one')?.frozen).toBeUndefined();
       expect(composition.getRequiredRuntime('1').sessionManager.getSession('cache-one')?.lastPromptAt).toBe(now - 2 * 60 * 60_000);
     } finally {

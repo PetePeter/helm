@@ -22,7 +22,7 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import { placeSessionInRuntimeGroup } from '../../session/runtime-group-placement.js';
 import { peerIdFromProxySessionId } from '../peer/proxy-identity.js';
 import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
-import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
+import { keepWarmUntilFor } from '../../session/keep-warmer.js';
 import { resolveSessionContextSize, type ApiSessionContextSize, type SessionContextSize } from '../../session/context-size.js';
 import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
 import { buildHelmMsgEnvelope } from '../../session/intersession-directive.js';
@@ -141,6 +141,8 @@ export class HelmSessionService {
       creatorSessionId?: string;
       runtimeGroupId?: string;
       initialPrompt?: string;
+      /** The envelope asks the new session to reply to its creator. */
+      expectsResponse?: boolean;
       prepareSession?: (sessionId: string) => SessionSpawnPreparation | undefined;
     } = {},
   ): { id: string; runtimeGroupId?: string; runtimeGroupName?: string } {
@@ -165,7 +167,7 @@ export class HelmSessionService {
     const initialPrompt = !opts.initialPrompt?.trim()
       ? undefined
       : opts.creatorSessionId
-        ? buildHelmMsgEnvelope({ id: opts.creatorSessionId, name: creator?.name ?? opts.creatorSessionId }, false) + opts.initialPrompt
+        ? buildHelmMsgEnvelope({ id: opts.creatorSessionId, name: creator?.name ?? opts.creatorSessionId }, opts.expectsResponse ?? false) + opts.initialPrompt
         : opts.initialPrompt;
     const { sessionId } = spawnConfiguredSession({
       ptyManager: this.ptyManager,
@@ -364,12 +366,7 @@ export class HelmSessionService {
   setSessionKeepWarm(sessionRef: string, on: boolean): { ok: true; keepWarm: boolean; keepWarmUntilEpochMs?: number } {
     const session = this.findSession(sessionRef);
     if (!session) throw new Error(`Session not found: ${sessionRef}`);
-    const now = Date.now();
-    const until = on
-      ? (session.keepWarmUntil != null && session.keepWarmUntil > now
-        ? session.keepWarmUntil
-        : now + KEEP_WARM_DEFAULT_MS)
-      : undefined;
+    const until = keepWarmUntilFor(session, on, Date.now());
     this.sessionManager.updateSession(session.id, { keepWarmUntil: until });
     logger.info(`[Session] Keep-warm ${on ? 'on' : 'off'} for ${session.name} (${session.id}) (MCP)`);
     return { ok: true, keepWarm: on, ...(until != null ? { keepWarmUntilEpochMs: until } : {}) };

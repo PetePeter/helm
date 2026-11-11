@@ -13,6 +13,7 @@ import { logger } from '../../utils/logger.js';
 import type { WindowManager } from '../window-manager.js';
 import type { PtyWriteOptions } from '../../session/delivery-context.js';
 import { normalizeProjectPath } from '../../session/project-identity.js';
+import { promptTimerStamp } from '../../session/prompt-staleness.js';
 import type { ProfileRuntimeRegistry } from '../../session/profile-runtime-registry.js';
 
 // Track cancel functions for initial prompt pre-loading per session
@@ -168,12 +169,12 @@ export function setupPtyHandlers(
         }
         // The user typing into an operator-started session takes it over.
         if (session?.reportsTo) sessionManager.updateSession(sessionId, { reportsTo: undefined });
-        // Enter submits a prompt: the session timer restarts (CLIs without hooks included).
+        // Enter submits a prompt: a hookless session's timer restarts here.
         // A frozen session dropped the keys, so no prompt was submitted.
         if (session && !session.frozen && data.includes('\r')) {
           const submittedAt = Date.now();
           sessionManager.updateSession(sessionId, {
-            lastPromptAt: submittedAt,
+            ...promptTimerStamp(session, submittedAt),
             lastUserPromptAt: submittedAt,
             lastUserPromptSource: 'terminal',
           });

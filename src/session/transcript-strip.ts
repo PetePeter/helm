@@ -14,7 +14,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type { SessionInfo } from '../types/session.js';
 import { writeLargeTextTempFile } from './large-text-temp-file.js';
-import { HEARTBEAT_MARKER, HEARTBEAT_OPEN } from './keep-warm-prompt.js';
+import { HEARTBEAT_OPEN } from './keep-warm-prompt.js';
 import { logger } from '../utils/logger.js';
 
 const TOOL_ARGS_MAX = 200;
@@ -61,7 +61,7 @@ export function isNoise(text: string): boolean {
   // block (PLUMBING_LINE / HELM_PLUMBING), and one that starts with the marker drops
   // even when its pair is unclosed. Every ping carries the pair, whatever its text.
   const p = text.toLowerCase();
-  return p.startsWith(HEARTBEAT_OPEN.toLowerCase()) || p.startsWith(HEARTBEAT_MARKER.toLowerCase())
+  return p.startsWith(HEARTBEAT_OPEN.toLowerCase())
     || NOISE_PREFIXES.some(n => text.startsWith(n));
 }
 

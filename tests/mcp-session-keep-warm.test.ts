@@ -14,8 +14,8 @@ const { callMcpTool } = await import('../src/mcp/tools/dispatcher.js');
 const { MCP_TOOLS } = await import('../src/mcp/tools/definitions.js');
 const { getAvailableTools } = await import('../src/mcp/guides/available-tools.js');
 
-function session(id: string, name: string): SessionInfo {
-  return { id, name, cliType: 'claude-code', processId: 1 };
+function session(id: string, name: string, hooked = true): SessionInfo {
+  return { id, name, cliType: 'claude-code', processId: 1, hooked };
 }
 
 describe('MCP session_set_keep_warm', () => {
@@ -29,6 +29,7 @@ describe('MCP session_set_keep_warm', () => {
     manager = new SessionManager();
     manager.addSession(session('caller-id', 'caller'));
     manager.addSession(session('worker-id', 'worker'));
+    manager.addSession(session('plain-id', 'plain', false));
     const configLoader = { getCliTypeLabel: (ref: string) => ref, getCliTypeEntry: () => ({ cacheWarnMinutes: 5 }) };
     const sessions = new HelmSessionService(manager, {} as never, configLoader as never, {} as never);
     const service = {
@@ -72,6 +73,12 @@ describe('MCP session_set_keep_warm', () => {
     await call({ sessionId: 'worker-id', on: false });
     await call({ sessionId: 'worker-id', on: false });
     expect(manager.getSession('worker-id')?.keepWarmUntil).toBeUndefined();
+  });
+
+  it('refuses to switch it on for a hookless session — nothing would confirm the ping landed', async () => {
+    await expect(call({ sessionId: 'plain-id', on: true })).rejects.toThrow(/needs CLI hooks/);
+    expect(manager.getSession('plain-id')?.keepWarmUntil).toBeUndefined();
+    await expect(call({ sessionId: 'plain-id', on: false })).resolves.toMatchObject({ keepWarm: false });
   });
 
   it('rejects a missing target and an anonymous default caller', async () => {

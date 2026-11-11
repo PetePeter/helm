@@ -10,7 +10,7 @@ const base: ContextMenuContext = {
   hasSelection: false,
   isSnappedOut: false,
   currentGroupName: null,
-  session: { locked: false, frozen: false, keepWarm: false, hidden: false },
+  session: { locked: false, frozen: false, keepWarm: false, hidden: false, hooked: true },
 };
 
 const groups = (overrides: Partial<ContextMenuContext>) =>
@@ -98,6 +98,11 @@ describe('buildContextMenuGroups', () => {
     expect(findItem(terminal, 'copy').enabled).toBe(true);
     expect(findItem(terminal, 'new-session-with-selection').enabled).toBe(true);
     expect(findItem(terminal, 'paste').enabled).toBe(false);
+  });
+
+  it('offers keep-warm only to a hooked session, but always lets it be switched off', () => {
+    expect(findItem(groups({ session: { ...base.session, hooked: false } }), 'toggle-keep-warm').enabled).toBe(false);
+    expect(findItem(groups({ session: { ...base.session, hooked: false, keepWarm: true } }), 'toggle-keep-warm').enabled).toBe(true);
   });
 
   it('disables session-targeted actions when the selected target no longer exists', () => {

@@ -129,6 +129,10 @@ export interface SessionInfo {
   /** Keep-warm is on until this epoch ms: KeepWarmer pings the session 10 s
    *  before its CLI's short prompt cache would lapse, so it never does. Persists. */
   keepWarmUntil?: number;
+  /** The CLI type's hooks are installed (or a hook event proved them): hook
+   *  events alone move the dot and the cache timer, and keep-warm is offered.
+   *  Runtime only — re-resolved from disk on every spawn. */
+  hooked?: boolean;
   /** Refuse ALL stdin — desktop keys, other sessions, schedules, chat, Mess
    *  pokes — until the user unfreezes it. Persists. */
   frozen?: boolean;

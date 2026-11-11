@@ -9,6 +9,7 @@ const mockRefreshChipBar = vi.fn().mockResolvedValue(undefined);
 let currentLocalSessions = new Map<string, { cliType: string; name: string; cwd?: string; title?: string }>();
 let persistedSessions: Array<any> = [];
 let ptyExitHandler: ((sessionId: string, exitCode: number) => void) | null = null;
+let sessionRemovedHandler: ((sessionId: string) => void) | null = null;
 
 const mockTerminalManager = {
   getOutputBuffer: vi.fn(() => ({ clear: vi.fn(), append: vi.fn() })),
@@ -177,6 +178,10 @@ describe('useAppBootstrap PTY exit cleanup', () => {
           ptyExitHandler = cb;
           return vi.fn();
         }),
+        onSessionRemoved: vi.fn((cb: (sessionId: string) => void) => {
+          sessionRemovedHandler = cb;
+          return vi.fn();
+        }),
       },
     };
   });
@@ -199,6 +204,26 @@ describe('useAppBootstrap PTY exit cleanup', () => {
 
     persistedSessions = [];
     ptyExitHandler?.('sess-1', 0);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mockTerminalManager.detachTerminal).toHaveBeenCalledWith('sess-1');
+    expect(state.sessions.map((session) => session.id)).not.toContain('sess-1');
+
+    mod.teardown();
+  });
+
+  it('drops the row when main removes the session with no PTY exit reaching the renderer (MCP close)', async () => {
+    const mod = await import('../renderer/composables/useAppBootstrap.js');
+    await mod.bootstrap({
+      terminalContainer: document.createElement('div'),
+      handleButton: vi.fn(),
+      handleRelease: vi.fn(),
+    });
+    expect(state.sessions.map((session) => session.id)).toContain('sess-1');
+
+    persistedSessions = [];
+    sessionRemovedHandler?.('sess-1');
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(0);
 

@@ -524,6 +524,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return () => ipcRenderer.removeListener('session:spawned-externally', listener);
   },
 
+  /** Main removed a session (MCP close, operator cleanup…) — drop its row even when no pty:exit follows. */
+  onSessionRemoved: (callback: (sessionId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, sessionId: string) => { callback(sessionId); };
+    ipcRenderer.on('session:removed', listener);
+    return () => ipcRenderer.removeListener('session:removed', listener);
+  },
+
   /** Subscribe to session metadata updates such as renames. */
   onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; lastOutputAt?: number; frozen?: boolean; hidden?: boolean }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: any) => { callback(data); };

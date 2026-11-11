@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { createRulesViaHooksFn } from '../../../src/session/hooks/hook-capability';
+import { createHooksInstalledFn, createRulesViaHooksFn } from '../../../src/session/hooks/hook-capability';
 import type { CliHooksIntegration } from '../../../src/config/loader';
 
 const CLAUDE: CliHooksIntegration = { provider: 'claude', configPath: '~/.claude/settings.json', events: ['UserPromptSubmit'] };
@@ -106,5 +106,18 @@ describe('createRulesViaHooksFn', () => {
       },
     );
     expect(await fn(session('claude-code'))).toBe(false);
+  });
+});
+
+describe('createHooksInstalledFn', () => {
+  it('says yes for copilot when installed — its hooks still report activity, only injection is dropped', async () => {
+    const fn = createHooksInstalledFn(() => ({ hooks: COPILOT }), async () => 'installed');
+    expect(await fn('copilot-cli')).toBe(true);
+  });
+
+  it('says no when not installed, unmapped, or the read fails', async () => {
+    expect(await createHooksInstalledFn(() => ({ hooks: CLAUDE }), async () => 'not-installed')('c')).toBe(false);
+    expect(await createHooksInstalledFn(() => ({ provider: null, hooks: CLAUDE }), async () => 'installed')('c')).toBe(false);
+    expect(await createHooksInstalledFn(() => ({ hooks: CLAUDE }), async () => { throw new Error('x'); })('c')).toBe(false);
   });
 });

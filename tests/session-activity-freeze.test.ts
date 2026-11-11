@@ -58,14 +58,14 @@ describe('session freeze activity integration', () => {
     expect(sessions.getSession('s1')?.lastActiveAt).toBe(lastActiveAt);
 
     // Frozen sessions also ignore lifecycle hooks.
-    detector.markHookWorking('s1');
-    detector.markHookTurnEnded('s1');
+    detector.markHookActivity('s1', 'hook PreToolUse');
+    detector.markHookTurnEnded('s1', 'hook Stop');
     expect(detector.getLastOutputTime('s1')).toBe(0);
     expect(sessions.getSession('s1')?.lastActiveAt).toBe(lastActiveAt);
 
     // A real thaw event allows activity to resume.
     sessions.setSessionFrozen('s1', false, NOW);
-    detector.markHookWorking('s1');
+    detector.markHookActivity('s1', 'hook PreToolUse');
     expect(sessions.getSession('s1')?.activityLevel).toBe('active');
 
     // A changed freeze event idles the row without stamping a synthetic output time.
@@ -74,7 +74,7 @@ describe('session freeze activity integration', () => {
     expect(sessions.getSession('s1')?.lastActiveAt).toBe(lastActiveAt);
     const lastOutputAt = detector.getLastOutputTime('s1');
 
-    detector.markHookTurnEnded('s1');
+    detector.markHookTurnEnded('s1', 'hook Stop');
     expect(detector.getLastOutputTime('s1')).toBe(lastOutputAt);
     expect(sessions.getSession('s1')?.lastActiveAt).toBe(lastActiveAt);
   });

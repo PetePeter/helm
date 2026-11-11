@@ -56,13 +56,31 @@ PTY Data Flow:
 
 `PtyManager.spawn({ headless: true })` starts a PTY that is no session: the one-shot CLI run behind auto memory's recording model ([auto-memory.md](auto-memory.md#real-clis-the-headless-run)). It is spawned, tracked and killed like any other PTY, so "CLIs run in embedded PTYs" holds for it, but `PtyManager` never emits `data` or `exit` for it. Those two events are where a PTY becomes a session (terminal view, activity dots, pattern matcher, session record, recycle bin), so withholding them is the whole fence. The caller reads the run from the `PtyProcess` that `spawn` returns.
 
+## Session removal reaches the renderer twice over
+
+A row leaves the Session List on `pty:exit` or on `session:removed`, whichever
+comes first; both run the same idempotent cleanup. The second exists because
+`pty:exit` is only routed for sessions main still owns: an MCP `session_close`
+removes the session before its PTY's exit lands, so that exit is dropped and
+`session:removed` is the only signal.
+
 ## Activity Dots
 
 Session cards use activity-based coloring (turn activity):
 
-- 🟢 active (green `#44cc44` — receiving user input, or hook-reported work until `Stop`)
-- 🔵 inactive (blue `#4488ff` — >10s silence)
-- ⚪ idle (grey `#555555` — >5min silence)
+- 🟢 active (green `#44cc44`)
+- 🔵 inactive (blue `#4488ff`)
+- ⚪ idle (grey `#555555`)
+
+What drives them depends on whether the session is **hooked** (`SessionInfo.hooked`: its CLI type's hooks are installed, resolved from disk at every spawn and CLI switch, or proven by any hook event):
+
+| | Hookless | Hooked |
+|---|---|---|
+| Green | PTY input, or output during an armed turn | a cache-touching hook: SessionStart, UserPromptSubmit, Pre/PostToolUse, PreCompact |
+| Blue | 10 s of PTY silence | Stop / StopFailure at once, or 10 min with no hook (Esc interrupt, crash) |
+| Grey | 5 min of PTY silence | 5 min after blue |
+
+A hooked session ignores PTY input and output for the dot: typing is not a submitted prompt, and a stray keystroke or Esc must not hold it green. Every level change is logged with its cause (`[StateDetector] <id> idle → active (hook PreToolUse, hooked)`).
 
 ### Context ring
 
@@ -83,19 +101,20 @@ flowchart LR
 - Desktop: hovering the ring (session card or a group-header dot) shows the context graph. Android: tapping the open-session ring shows the same graph.
 - `tests/session/context-limits.test.ts` and `ContextRingTest.kt` assert the same vectors, so the two never draw a different ring for one reading.
 
-User input reaches `StateDetector.markActive(sessionId)` through `PtyManager.write`, so the dot responds before the shell echoes it. System deliveries use the `system` write intent and do not make the dot green. Once a hook event is observed, hook work and `Stop` control agent activity; PTY output cannot override them. Without hooks, a user turn arms output-based activity, and fallback idle ends that turn. Output outside an armed turn, including overnight TUI repaints, does not promote the dot.
+User input reaches `StateDetector.markActive(sessionId)` through `PtyManager.write`, so a hookless dot responds before the shell echoes it. System deliveries use the `system` write intent and do not make the dot green. In a hookless session a user turn arms output-based activity, and fallback idle ends that turn. Output outside an armed turn, including overnight TUI repaints, does not promote the dot. A hooked session takes its dot from hook events alone.
 
 ```mermaid
 flowchart TD
     U[User-origin prompt or terminal input] --> A[Arm fallback turn]
     S[Watchdog · scheduler · keep-warm] --> N[No turn armed]
-    O[PTY output] --> F{Hooks observed?}
+    O[PTY input or output] --> F{Hooked?}
     F -->|no| T{Turn armed?}
     T -->|yes| G[Active dot]
     T -->|no| I[Ignore activity promotion]
     F -->|yes| I
-    W[Hook PreToolUse] --> G
-    E[Hook Stop] --> X[Inactive dot and disarm]
+    W[Hook: SessionStart · UserPromptSubmit · Pre/PostToolUse · PreCompact] --> G
+    E[Hook Stop or StopFailure] --> X[Inactive dot]
+    H[Hooked: 10 min with no hook] --> X
     D[Fallback idle] --> Y[Idle dot and disarm]
 ```
 

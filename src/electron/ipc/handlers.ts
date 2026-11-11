@@ -140,7 +140,8 @@ import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-inj
 import { getRingMemoryRequests } from '../../session/memory-idea-policy.js';
 import { resolveContextLimits } from '../../session/context-limits.js';
 import { openTaskLines } from '../../session/operator-tasks.js';
-import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
+import { createHooksInstalledFn, createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
+import { trackHookedSessions } from '../../session/hooks/hooked-sessions.js';
 import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
@@ -513,9 +514,15 @@ export function registerIPCHandlers(
   });
   stateDetector.on('activity-change', ({ sessionId, level }: { sessionId: string; level: string }) => {
     const owner = registry.findSessionOwner(sessionId);
-    if (level === 'idle' && !stateDetector.hasObservedHooks(sessionId)) owner?.timeTracker.disarmAi(sessionId);
+    if (level === 'idle' && !stateDetector.isHooked(sessionId)) owner?.timeTracker.disarmAi(sessionId);
   });
+  // Hooked sessions: hook events alone drive their dot and cache timer.
+  const hooksInstalled = createHooksInstalledFn(
+    (cliTypeId) => configLoader.getCliTypeEntry(cliTypeId),
+    (hooks) => readHookIntegrationStatus(hooks, hookDeps),
+  );
   for (const runtime of registry.all()) {
+    trackHookedSessions(runtime.sessionManager, stateDetector, hooksInstalled);
     // Every context reading feeds its profile's token ledger; unchanged readings add nothing.
     runtime.sessionManager.on('session:updated', (session: SessionUpdatedEvent) => {
       if (!session.contextUsage || session.remote) return;
@@ -811,6 +818,14 @@ export function registerIPCHandlers(
     const win = windowManager.getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send('session:spawned-externally', event);
+    }
+  });
+  sessionManager.on('session:removed', ({ session }: { session: SessionInfo }) => {
+    // Removed before its PTY exit lands (MCP close), the exit is no longer
+    // routed to the renderer — this is then the only signal the row is gone.
+    const win = windowManager.getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('session:removed', session.id);
     }
   });
   sessionManager.on('session:updated', (event) => {

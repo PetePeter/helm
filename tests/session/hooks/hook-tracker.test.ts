@@ -361,6 +361,30 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
+  it('StopFailure ends the turn like Stop: blue at once', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('claude', 'PreToolUse'));
+      s.hookReceiver.emit('hook', hookEvent('claude', 'StopFailure', { error: 'rate_limit' }));
+      expect(s.activity.at(-1)).toMatchObject({ sessionId: 's1', level: 'inactive' });
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('Stop does not restart the cache timer', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.sessionManager.updateSession('s1', { lastPromptAt: 5 });
+      s.hookReceiver.emit('hook', hookEvent('claude', 'Stop'));
+      expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBe(5);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('a system UserPromptSubmit and later repaint do not become hook-reported work', () => {
     const s = setup();
     try {
@@ -370,7 +394,8 @@ describe('HookTracker — hook events become session truth', () => {
 
       expect(s.timeTracker.query(NOW - 24 * 60 * 60_000, NOW + 24 * 60 * 60_000).filter(slot => slot.kind === 'ai'))
         .toEqual([]);
-      expect(s.activity).toEqual([]);
+      // The submit greens the dot (it touched the cache); the repaint adds nothing.
+      expect(s.activity.map(e => e.level)).toEqual(['active']);
     } finally {
       s.dispose();
     }
@@ -393,7 +418,7 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
-  it('StopFailure reports the stall as fact and explicitly NOT as a normal completion', () => {
+  it('StopFailure reports the stall as fact and ends the turn', () => {
     const s = setup();
     try {
       s.addSession();
@@ -402,8 +427,8 @@ describe('HookTracker — hook events become session truth', () => {
       const session = s.sessionManager.getSession('s1')!;
       expect(session.hookStall).toEqual({ at: NOW, reason: 'API Error: usage limit reached' });
       expect(s.updates.some(u => 'hookStall' in u)).toBe(true);
-      // Not a turn end: the dot must not pretend the agent finished.
-      expect(s.activity).toEqual([]);
+      // The turn is over (badly): blue, as on Stop; the stall carries the why.
+      expect(s.activity.map(e => e.level)).toEqual(['inactive']);
       expect(s.flashes).toEqual(['s1']);
     } finally {
       s.dispose();
@@ -492,7 +517,7 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
-  it('SessionStart clears a stale stall without claiming active work', () => {
+  it('SessionStart clears a stale stall and greens the dot (it rebuilt the cache)', () => {
     const s = setup();
     try {
       s.addSession();
@@ -501,7 +526,7 @@ describe('HookTracker — hook events become session truth', () => {
       s.hookReceiver.emit('hook', hookEvent('claude', 'SessionStart', {}));
 
       expect(s.sessionManager.getSession('s1')!.hookStall).toBeUndefined();
-      expect(s.activity).toEqual([]);
+      expect(s.activity.at(-1)).toMatchObject({ sessionId: 's1', level: 'active' });
     } finally {
       s.dispose();
     }

@@ -28,6 +28,15 @@ export function dormantAfterMs(t: StalenessThresholds | null | undefined): numbe
   return t?.noPromptCache ? Infinity : warnAfterMs(t);
 }
 
+/**
+ * The cache-timer restart for a prompt Helm saw submitted (Enter typed, a
+ * delivery). A hooked session gets none: its hooks report the real submit,
+ * and a guess here would hide a prompt that never reached the CLI.
+ */
+export function promptTimerStamp(session: { hooked?: boolean }, at: number): { lastPromptAt?: number } {
+  return session.hooked ? {} : { lastPromptAt: at };
+}
+
 /** A session never prompted, or on a CLI with no prompt cache, has nothing cached to lose: it is fresh. */
 export function promptStaleness(lastPromptAt: number | undefined, now: number, t: StalenessThresholds | null | undefined): PromptStaleness {
   if (lastPromptAt === undefined || t?.noPromptCache) return 'fresh';

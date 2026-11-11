@@ -519,10 +519,14 @@ function setupIpcListeners(): void {
     }
   });
 
-  eventsClient.onPtyExit((sessionId) => {
+  // A session leaves through its PTY exiting, or through main removing it
+  // first (an MCP close), in which case no pty:exit reaches us. Both are idempotent.
+  const dropSession = (sessionId: string): void => {
     cleanupRendererSession(sessionId, true);
     void refreshSessions();
-  });
+  };
+  eventsClient.onPtyExit(dropSession);
+  eventsClient.onSessionRemoved?.(dropSession);
 
   // Keep the session-card artifact badges live.
   eventsClient.onArtifactChanged?.(() => { void refreshArtifactCounts(); });

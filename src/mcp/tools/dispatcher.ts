@@ -667,6 +667,7 @@ export async function callMcpTool(
             ...(authContext.sessionId ? { creatorSessionId: authContext.sessionId } : {}),
             ...(typeof args.runtimeGroupId === 'string' ? { runtimeGroupId: args.runtimeGroupId } : {}),
             ...(typeof args.initialPrompt === 'string' ? { initialPrompt: args.initialPrompt } : {}),
+            ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
           },
         );
         return operatorTask ? { ...created, ...trackOperatorTask(service, operatorTask, created.id) } : created;

@@ -22,6 +22,7 @@ import {
 } from '../../session/message-flight.js';
 import { buildTranscriptResumePrompt, writeStrippedTranscript } from '../../session/transcript-strip.js';
 import { scheduleSessionReloadPrompt } from '../../session/session-reload-prompt.js';
+import { promptTimerStamp } from '../../session/prompt-staleness.js';
 import {
   buildLargeTextTempFileNotice,
   shouldSendLargeTextAsTempFile,
@@ -366,7 +367,7 @@ export class HelmSessionDeliveryService {
       const submittedAt = Date.now();
       const userPromptSource = options.userPromptSource ?? (desktopOrigin ? 'chat' : undefined);
       this.sessionManager.updateSession(session.id, {
-        lastPromptAt: submittedAt,
+        ...promptTimerStamp(session, submittedAt),
         ...(userPromptSource ? { lastUserPromptAt: submittedAt, lastUserPromptSource: userPromptSource } : {}),
       });
       return { ok: true, preambleUsed: false, verified: true, deliveryStatus: 'accepted', retryCount: 0, codexBusySubmitRecoverySent: false, ...reportTargetBusy(session, true) };
@@ -474,7 +475,7 @@ export class HelmSessionDeliveryService {
     const submittedAt = Date.now();
     const userPromptSource = options.userPromptSource ?? (desktopOrigin ? 'chat' : undefined);
     this.sessionManager.updateSession(session.id, {
-      lastPromptAt: submittedAt,
+      ...promptTimerStamp(session, submittedAt),
       ...(userPromptSource ? { lastUserPromptAt: submittedAt, lastUserPromptSource: userPromptSource } : {}),
     });
 
