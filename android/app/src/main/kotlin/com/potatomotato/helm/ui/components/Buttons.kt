@@ -15,6 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.potatomotato.helm.ui.theme.HelmSpacing
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
@@ -65,6 +68,8 @@ fun GhostButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     contentColor: Color = HelmColors.Dim,
+    /** Toolbar rows: one line of text and tight side padding, so equal-width buttons fit. */
+    compact: Boolean = false,
 ) {
     OutlinedButton(
         onClick = onClick,
@@ -72,8 +77,9 @@ fun GhostButton(
         enabled = enabled,
         border = BorderStroke(HelmSize.Hairline, HelmColors.Line),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = contentColor, disabledContentColor = HelmColors.Faint),
+        contentPadding = if (compact) PaddingValues(horizontal = HelmSpacing.Sm) else ButtonDefaults.ContentPadding,
     ) {
-        Text(text = text)
+        Text(text = text, maxLines = if (compact) 1 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
     }
 }
 

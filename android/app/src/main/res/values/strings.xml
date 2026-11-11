@@ -125,6 +125,8 @@
     <string name="plans_lane_collapse">Collapse this group</string>
     <string name="plans_lane_expand">Expand this group</string>
     <string name="plans_lane_edit_glyph">✎</string>
+    <string name="plans_toolbar_new_plan">＋ Plan</string>
+    <string name="plans_toolbar_new_sequence">＋ Sequence</string>
     <string name="plan_detail_loading">Reading plan…</string>
     <!-- The app bar's title before the record itself has arrived to name it. -->
     <string name="plan_detail_title">Plan</string>
@@ -568,7 +570,6 @@
     <string name="permission_settings">Open settings</string>
 
     <!-- Plan and sequence writes (P-0812). -->
-    <string name="plan_new_action">New plan</string>
     <string name="plan_new_title">New plan</string>
     <string name="plan_new_confirm">Create plan</string>
     <string name="plan_edit_title">Edit plan</string>
@@ -606,7 +607,6 @@
     <string name="plan_write_update_sequence">Edit sequence</string>
     <string name="plan_write_delete_sequence">Delete sequence</string>
     <string name="plan_write_clear_unused">Clear unused</string>
-    <string name="sequence_new_action">New sequence</string>
     <string name="sequence_new_title">New sequence</string>
     <string name="sequence_edit_title">Edit sequence</string>
     <string name="sequence_field_mission">Mission</string>

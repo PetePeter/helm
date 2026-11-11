@@ -6,6 +6,7 @@ import androidx.compose.ui.res.stringResource
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.CleanupState
 import com.potatomotato.helm.data.HelmPlanSequence
+import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.theme.HelmColors
 
@@ -17,6 +18,8 @@ data class LaneTools(
     val onCreateSequence: (title: String, mission: String) -> Unit,
     val onClearUnused: () -> Unit,
     val onOpenSequence: (HelmPlanSequence) -> Unit,
+    /** Drag-and-drop between lanes; a null sequence id is "No sequence". */
+    val onMovePlan: (HelmPlanSummary, sequenceId: String?) -> Unit,
 )
 
 /** "Clear unused", live only once the desktop's counts say there is something to clear. */
@@ -28,5 +31,6 @@ fun ClearAction(cleanup: CleanupState, onClear: () -> Unit, modifier: Modifier =
         modifier = modifier,
         enabled = cleanup is CleanupState.Ready && !cleanup.counts.nothingToClear,
         contentColor = HelmColors.Danger,
+        compact = true,
     )
 }

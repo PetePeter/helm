@@ -1,5 +1,20 @@
 package com.potatomotato.helm.ui.plans
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import com.potatomotato.helm.ui.theme.HelmRadius
+import kotlin.math.roundToInt
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -99,12 +114,12 @@ fun PlanList(
                 horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                GhostButton(stringResource(R.string.plan_new_action), { creating = true }, Modifier.weight(1f))
-                GhostButton(stringResource(R.string.sequence_new_action), { creatingSequence = true }, Modifier.weight(1f))
+                GhostButton(stringResource(R.string.plans_toolbar_new_plan), { creating = true }, Modifier.weight(1f), compact = true)
+                GhostButton(stringResource(R.string.plans_toolbar_new_sequence), { creatingSequence = true }, Modifier.weight(1f), compact = true)
                 ClearAction(cleanup, onClear = { confirmingClear = true }, modifier = Modifier.weight(1f))
             }
             PlanWriteLine(write, onDismissWrite)
-            PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, taskLinks, onRefresh, lanes.onOpenSequence, Modifier.weight(1f))
+            PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, taskLinks, onRefresh, lanes.onOpenSequence, lanes.onMovePlan, Modifier.weight(1f))
         }
         if (creatingSequence) {
             SequenceFormDialog(
@@ -147,6 +162,7 @@ private fun PlanBoard(
     taskLinks: TaskLinks,
     onRefresh: () -> Unit,
     onEditLane: (HelmPlanSequence) -> Unit,
+    onMovePlan: (HelmPlanSummary, String?) -> Unit,
     modifier: Modifier,
 ) {
     LoadBody(
@@ -169,10 +185,15 @@ private fun PlanBoard(
             onSpawn = onSpawn,
             taskLinks = taskLinks,
             onEditLane = onEditLane,
+            onMovePlan = onMovePlan,
         )
     }
 }
 
+/**
+ * The lanes and their rows. Long-press a row to lift it; the lane section under
+ * the finger lights up and the drop reassigns the plan ([LaneDrop] decides where).
+ */
 @Composable
 private fun PlanBuckets(
     buckets: List<PlanBucket>,
@@ -183,37 +204,97 @@ private fun PlanBuckets(
     onSpawn: (HelmPlanSummary) -> Unit,
     taskLinks: TaskLinks,
     onEditLane: (HelmPlanSequence) -> Unit,
+    onMovePlan: (HelmPlanSummary, String?) -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        for (bucket in buckets) {
-            // The ungrouped bucket's header says so rather than being unlabelled:
-            // an unheaded run of rows under the last lane reads as part of it.
-            // It folds like any other, under a key no lane can collide with.
-            val laneKey = bucket.sequence?.id ?: UNGROUPED_KEY
-            val collapsed = laneKey in collapsedLaneIds
-            item(key = "lane:$laneKey") {
-                LaneHeader(
-                    sequence = bucket.sequence,
-                    count = bucket.plans.size,
-                    collapsed = collapsed,
-                    onToggle = { onToggleLane(laneKey) },
-                    onEdit = bucket.sequence?.let { lane -> { onEditLane(lane) } },
-                )
-            }
-            if (collapsed) continue
-            for (plan in bucket.plans) {
-                item(key = plan.id) {
-                    PlanRow(
-                        plan = plan,
-                        // Suggestions are outside the frontier while awaiting triage,
-                        // so only ordinary unfinished plans get the blocked indicator.
-                        blocked = shouldShowBlockedIndicator(plan.status, plan.id, startableIds),
-                        onClick = { onOpen(plan) },
-                        onSpawn = { onSpawn(plan) },
-                        taskLinks = taskLinks,
+    val listState = rememberLazyListState()
+    var dragging by remember { mutableStateOf<HelmPlanSummary?>(null) }
+    var dragY by remember { mutableFloatStateOf(0f) }
+    val edge = with(LocalDensity.current) { DRAG_EDGE.toPx() }
+    fun visible() = listState.layoutInfo.visibleItemsInfo.map { LaneDrop.Item(it.key.toString(), it.offset, it.size) }
+    val hoverLane = dragging?.let { LaneDrop.laneAt(visible(), dragY) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            for (bucket in buckets) {
+                // The ungrouped bucket's header says so rather than being unlabelled:
+                // an unheaded run of rows under the last lane reads as part of it.
+                // It folds like any other, under a key no lane can collide with.
+                val laneKey = bucket.sequence?.id ?: LaneDrop.UNGROUPED
+                val collapsed = laneKey in collapsedLaneIds
+                item(key = LaneDrop.HEADER_PREFIX + laneKey) {
+                    LaneHeader(
+                        sequence = bucket.sequence,
+                        count = bucket.plans.size,
+                        collapsed = collapsed,
+                        onToggle = { onToggleLane(laneKey) },
+                        onEdit = bucket.sequence?.let { lane -> { onEditLane(lane) } },
+                        dropTarget = hoverLane == laneKey,
                     )
                 }
+                if (collapsed) continue
+                for (plan in bucket.plans) {
+                    item(key = plan.id) {
+                        Box(
+                            modifier = Modifier
+                                .alpha(if (dragging?.id == plan.id) DRAGGED_ALPHA else 1f)
+                                .pointerInput(plan.id) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { touch ->
+                                            val top = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == plan.id }?.offset ?: 0
+                                            dragY = top + touch.y
+                                            dragging = plan
+                                        },
+                                        onDrag = { change, amount ->
+                                            change.consume()
+                                            dragY += amount.y
+                                            // Near an edge the board scrolls under the still finger.
+                                            val height = listState.layoutInfo.viewportSize.height
+                                            when {
+                                                dragY < edge -> listState.dispatchRawDelta(-AUTOSCROLL_STEP)
+                                                dragY > height - edge -> listState.dispatchRawDelta(AUTOSCROLL_STEP)
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            val target = LaneDrop.laneAt(visible(), dragY)
+                                            if (target != null && LaneDrop.isMove(plan.sequenceId, target)) {
+                                                onMovePlan(plan, LaneDrop.sequenceIdOf(target))
+                                            }
+                                            dragging = null
+                                        },
+                                        onDragCancel = { dragging = null },
+                                    )
+                                },
+                        ) {
+                            PlanRow(
+                                plan = plan,
+                                // Suggestions are outside the frontier while awaiting triage,
+                                // so only ordinary unfinished plans get the blocked indicator.
+                                blocked = shouldShowBlockedIndicator(plan.status, plan.id, startableIds),
+                                onClick = { onOpen(plan) },
+                                onSpawn = { onSpawn(plan) },
+                                taskLinks = taskLinks,
+                            )
+                        }
+                    }
+                }
             }
+        }
+        // The lifted row's title follows the finger.
+        dragging?.let { plan ->
+            Text(
+                text = plan.title,
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .offset { IntOffset(0, dragY.roundToInt()) }
+                    .padding(horizontal = HelmSpacing.Gutter)
+                    .fillMaxWidth()
+                    .background(HelmColors.Surface2, RoundedCornerShape(HelmRadius.Sm))
+                    .border(HelmSize.Hairline, HelmColors.Accent, RoundedCornerShape(HelmRadius.Sm))
+                    .padding(HelmSpacing.Md),
+            )
         }
     }
 }
@@ -233,12 +314,14 @@ private fun LaneHeader(
     collapsed: Boolean,
     onToggle: () -> Unit,
     onEdit: (() -> Unit)?,
+    dropTarget: Boolean,
 ) {
     Column {
         Hairline(color = HelmColors.Separator)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (dropTarget) Modifier.background(HelmColors.Surface2) else Modifier)
                 .heightIn(min = HelmSize.TouchTarget)
                 .clickable(
                     // The label is what a screen reader announces for the tap,
@@ -365,4 +448,6 @@ private const val CARET_CLOSED = "›"
 private const val CARET_OPEN = "⌄"
 
 /** The ungrouped bucket has no id, so the list key needs one that is not a lane's. */
-private const val UNGROUPED_KEY = "ungrouped"
+private val DRAG_EDGE = 56.dp
+private const val AUTOSCROLL_STEP = 24f
+private const val DRAGGED_ALPHA = 0.4f

@@ -221,6 +221,7 @@ internal fun phoneScaffoldActions(input: PhoneActionContext): PhoneScaffoldActio
                 onCreateSequence = { title, mission -> planDir?.let { client.plans.createSequence(it, title, mission) } },
                 onClearUnused = { planDir?.let(client.plans::clearUnused) },
                 onOpenSequence = { home.openSequence(it.id) },
+                onMovePlan = { plan, sequenceId -> planDir?.let { client.plans.assignSequence(it, plan.id, sequenceId) } },
             ),
             onAskTime = input.setTimeAsk,
             onFetchTime = { client.workspace.refreshTime(it) },
