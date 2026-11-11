@@ -52,4 +52,16 @@ describe('ContextRing hover card quota rows', () => {
     expect(document.querySelectorAll('.quota-row')).toHaveLength(0);
     stale.unmount();
   });
+
+  it('keeps a whole-pixel gap between the quota ring and the context ring', () => {
+    for (const size of [14, 16]) {
+      const wrapper = mount(ContextRing, { props: { activityLevel: 'idle', size, quotaUsage: quota(10, 10), contextUsage: { tokens: 1000, window: 200_000 } } });
+      const thickness = Number(wrapper.attributes('style')!.match(/--ring-thickness: (\d+)px/)![1]);
+      const quotaRadius = Number(wrapper.find('.quota-ring__arc').attributes('d')!.match(/ A([\d.]+)/)![1]);
+      const gap = quotaRadius - thickness / 2 - size / 2;
+      expect(gap).toBeGreaterThanOrEqual(2);
+      expect(Number.isInteger(gap)).toBe(true);
+      wrapper.unmount();
+    }
+  });
 });

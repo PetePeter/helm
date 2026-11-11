@@ -1151,7 +1151,7 @@ describe('ContextRing', () => {
     const mk = (tokens: number) => mount(ContextRing, { props: { activityLevel: 'active', contextUsage: usage(tokens) } });
     const ok = mk(100_000);
     expect(ok.find('.context-ring__arc').exists()).toBe(true);
-    expect(ok.attributes('style')).toContain('--ring-fill: 0.5');
+    expect(ok.find('.context-ring__fill').attributes('style')).toContain('stroke-dasharray: 50 100');
     expect(ok.find('.context-ring__inner').classes()).toContain('level-ok');
     expect(mk(170_000).find('.context-ring__inner').classes()).toContain('level-warn');
     expect(mk(190_000).find('.context-ring__inner').classes()).toContain('level-hot');

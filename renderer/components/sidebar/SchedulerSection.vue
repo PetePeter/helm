@@ -185,7 +185,7 @@ onUnmounted(() => {
   padding: 1px 5px;
   border-radius: 999px;
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;

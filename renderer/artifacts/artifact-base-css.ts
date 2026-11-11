@@ -24,11 +24,11 @@ body {
   line-height: 1.6;
 }
 h1, h2 { font-size: 20px; margin: 0 0 8px; border-bottom: 1px solid #222222; padding-bottom: 4px; }
-h3 { font-size: 14px; margin: 16px 0 4px; color: #4fd08b; }
+h3 { font-size: 14px; margin: 16px 0 4px; color: #ccff00; }
 p { margin: 4px 0; }
 ul, ol { margin: 4px 0; padding-left: 16px; }
 li { line-height: 1.55; margin: 4px 0; }
-code { background: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; color: #4fd08b; }
+code { background: #1a1a1a; padding: 4px 8px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; color: #ccff00; }
 pre { background: #1a1a1a; padding: 8px 16px; border-radius: 8px; overflow: auto; }
 pre code { background: none; padding: 0; }
 pre.mermaid { background: transparent; padding: 8px 0; text-align: center; }
@@ -38,7 +38,7 @@ table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12px; 
 th, td { border: 1px solid #222222; padding: 4px 8px; text-align: left; }
 th { background: #1a1a1a; color: #999; }
 a { color: #6c8cff; }
-a:focus-visible { outline: 2px solid #4fd08b; outline-offset: 2px; }
+a:focus-visible { outline: 2px solid #ccff00; outline-offset: 2px; }
 img { max-width: 100%; border-radius: 8px; border: 1px solid #222222; }
 svg { max-width: 100%; height: auto; }
 `.trim();

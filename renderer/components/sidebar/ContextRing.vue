@@ -29,15 +29,26 @@ const limits = computed(() => resolveContextLimits(
   props.contextUsage?.window,
 ));
 const ring = computed(() => (props.contextUsage ? contextRing(props.contextUsage.tokens, limits.value) : undefined));
-const thickness = computed(() => Math.max(2, Math.round(props.size * 0.2)));
+// Whole-pixel radii keep the stroke edges crisp; a fractional edge anti-aliases the gap away.
+const thickness = computed(() => Math.max(2, Math.round(props.size * 0.18)));
+const quotaGap = computed(() => Math.max(2, Math.round(props.size * 0.12)));
 const quota = computed(() => (props.quotaUsage && isFreshQuotaUsageSnapshot(props.quotaUsage, Date.now(), SESSION_QUOTA_USAGE_MAX_AGE_MS)
   ? props.quotaUsage
   : null));
+const indicatorSize = computed(() => props.size + (quota.value ? 2 * (quotaGap.value + thickness.value) : 0));
+const ringRadius = computed(() => (props.size - thickness.value) / 2);
+const quotaRadius = computed(() => (indicatorSize.value - thickness.value) / 2);
+/** Half-circle arc around the indicator's centre; `from` is the start side, sweeping clockwise. */
+function quotaArc(from: 'left' | 'right'): string {
+  const c = indicatorSize.value / 2;
+  const r = quotaRadius.value;
+  const [x0, x1] = from === 'left' ? [c - r, c + r] : [c + r, c - r];
+  return `M${x0} ${c} A${r} ${r} 0 0 1 ${x1} ${c}`;
+}
 const style = computed(() => ({
   '--ring-size': `${props.size}px`,
-  '--indicator-size': `${props.size + (quota.value ? 10 : 0)}px`,
+  '--indicator-size': `${indicatorSize.value}px`,
   '--ring-thickness': `${thickness.value}px`,
-  '--ring-fill': String(ring.value?.fill ?? 0),
   '--dot-size': `${Math.max(4, Math.round(props.size * 0.38))}px`,
 }));
 
@@ -68,31 +79,39 @@ function showCard(event: MouseEvent): void {
     @mouseenter="showCard"
     @mouseleave="cardAt = null"
   >
-    <svg v-if="quota" class="quota-ring" viewBox="0 0 32 32" aria-hidden="true">
-      <path class="quota-ring__track" vector-effect="non-scaling-stroke" d="M2 16 A14 14 0 0 1 30 16" />
-      <path class="quota-ring__track" vector-effect="non-scaling-stroke" d="M30 16 A14 14 0 0 1 2 16" />
+    <svg v-if="quota" class="quota-ring" :viewBox="`0 0 ${indicatorSize} ${indicatorSize}`" aria-hidden="true">
+      <path class="quota-ring__track" :d="quotaArc('left')" />
+      <path class="quota-ring__track" :d="quotaArc('right')" />
       <path
         class="quota-ring__arc"
         :class="`level-${quotaUsageLevel(quota.fiveHour.usedPercent)}`"
-        vector-effect="non-scaling-stroke"
         pathLength="100"
         :style="{ strokeDasharray: `${100 - quota.fiveHour.usedPercent} 100` }"
-        d="M2 16 A14 14 0 0 1 30 16"
+        :d="quotaArc('left')"
       />
       <path
         class="quota-ring__arc"
         :class="`level-${quotaUsageLevel(quota.weekly.usedPercent)}`"
-        vector-effect="non-scaling-stroke"
         pathLength="100"
         :style="{ strokeDasharray: `${100 - quota.weekly.usedPercent} 100` }"
-        d="M30 16 A14 14 0 0 1 2 16"
+        :d="quotaArc('right')"
       />
     </svg>
     <span
       class="context-ring__inner"
       :class="[ring && `level-${ring.level}`, { 'has-ring': ring, overflow: ring?.overflow }]"
     >
-      <span v-if="ring" class="context-ring__arc" />
+      <svg v-if="ring" class="context-ring__arc" :viewBox="`0 0 ${size} ${size}`" aria-hidden="true">
+        <circle class="context-ring__track" :cx="size / 2" :cy="size / 2" :r="ringRadius" />
+        <circle
+          class="context-ring__fill"
+          :cx="size / 2"
+          :cy="size / 2"
+          :r="ringRadius"
+          pathLength="100"
+          :style="{ strokeDasharray: `${ring.fill * 100} 100` }"
+        />
+      </svg>
       <span class="context-ring__dot" :style="{ background: getActivityColor(activityLevel) }" />
     </span>
     <Teleport to="body">
@@ -159,12 +178,18 @@ function showCard(event: MouseEvent): void {
 .context-ring__arc {
   position: absolute;
   inset: 0;
-  border-radius: 50%;
-  background: conic-gradient(var(--ring-color) calc(var(--ring-fill) * 360deg), var(--border) 0);
-  /* Punch the middle out so the card behind shows through, whatever its fill. */
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-thickness)), #000 calc(100% - var(--ring-thickness)));
-  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-thickness)), #000 calc(100% - var(--ring-thickness)));
+  width: 100%;
+  height: 100%;
+  /* Start the fill at twelve o'clock, like the phone. */
+  transform: rotate(-90deg);
 }
+.context-ring__track,
+.context-ring__fill {
+  fill: none;
+  stroke-width: var(--ring-thickness);
+}
+.context-ring__track { stroke: var(--border); }
+.context-ring__fill { stroke: var(--ring-color); }
 .context-ring__dot {
   width: var(--dot-size);
   height: var(--dot-size);

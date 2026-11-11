@@ -15,11 +15,11 @@ export function buildSplashHtml(version: string, logoUrl?: string): string {
       color-scheme: dark;
       --bg: #0a0a0a;
       --panel: rgba(17, 17, 17, 0.94);
-      --accent: #4fd08b;
-      --accent-soft: rgba(79, 208, 139, 0.24);
+      --accent: #ccff00;
+      --accent-soft: rgba(204, 255, 0, 0.24);
       --text: #eeeeee;
       --muted: #9a9a9a;
-      --border: rgba(79, 208, 139, 0.24);
+      --border: rgba(204, 255, 0, 0.24);
       font-family: "Segoe UI", Arial, sans-serif;
     }
 
@@ -37,7 +37,7 @@ export function buildSplashHtml(version: string, logoUrl?: string): string {
       display: grid;
       place-items: center;
       background:
-        radial-gradient(circle at top, rgba(79, 208, 139, 0.18), transparent 42%),
+        radial-gradient(circle at top, rgba(204, 255, 0, 0.18), transparent 42%),
         linear-gradient(180deg, rgba(17, 17, 17, 0.98), rgba(10, 10, 10, 1));
       color: var(--text);
     }
@@ -60,7 +60,7 @@ export function buildSplashHtml(version: string, logoUrl?: string): string {
       display: grid;
       place-items: center;
       color: var(--accent);
-      background: linear-gradient(180deg, rgba(79, 208, 139, 0.12), rgba(79, 208, 139, 0.04));
+      background: linear-gradient(180deg, rgba(204, 255, 0, 0.12), rgba(204, 255, 0, 0.04));
       box-shadow: inset 0 0 0 1px var(--accent-soft);
       font-size: 34px;
       font-weight: 700;

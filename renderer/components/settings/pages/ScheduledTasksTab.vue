@@ -421,7 +421,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
 .st-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .st-title { margin: 0; font-size: 1.5rem; color: var(--text-primary); }
 .st-count { color: var(--text-secondary); font-size: 0.85rem; }
-.st-create-btn { margin-left: auto; padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.9rem; }
+.st-create-btn { margin-left: auto; padding: 8px 16px; background: var(--accent); color: var(--accent-contrast); border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.9rem; }
 .st-create-btn:hover { opacity: 0.9; }
 .st-create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .st-form { background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; }
@@ -445,7 +445,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
 .st-form-error { margin: 0; color: #ff6666; font-size: 0.85rem; }
 .st-form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
 .st-btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.95rem; }
-.st-btn--primary { background: var(--accent); color: white; }
+.st-btn--primary { background: var(--accent); color: var(--accent-contrast); }
 .st-btn--primary:hover:not(:disabled) { opacity: 0.9; }
 .st-btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .st-btn--secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); padding: 10px 20px; }

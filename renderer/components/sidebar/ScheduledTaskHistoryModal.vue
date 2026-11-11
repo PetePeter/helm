@@ -302,6 +302,6 @@ defineExpose({ handleButton });
   background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 0.82rem;
 }
 .sth-btn:hover { border-color: var(--accent); }
-.sth-btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sth-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 .sth-btn--primary:hover { opacity: 0.9; }
 </style>

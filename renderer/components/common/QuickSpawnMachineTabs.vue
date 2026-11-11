@@ -58,7 +58,7 @@ function onFocusout(event: FocusEvent): void {
 
 .dir-picker-machine--active {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .quick-spawn-status {

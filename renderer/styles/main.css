@@ -10,18 +10,20 @@
   --bg-secondary: #111111;
   --bg-tertiary: #1a1a1a;
   --bg-hover: #252525;
-  --accent: #4fd08b;
-  --accent-hover: #73df9f;
-  /* Readable text on --accent (light green) — used as the flash text colour. */
-  --accent-contrast: #05130b;
+  /* Lime, shared with the phone (HelmColors.Accent). Activity dots keep their own greens. */
+  --accent: #ccff00;
+  --accent-rgb: 204, 255, 0;
+  --accent-hover: #ddff4d;
+  /* Readable text on --accent — the phone's OnAccent; also the flash text colour. */
+  --accent-contrast: #0d1200;
   --text-primary: #eee;
   --text-secondary: #999;
   --text-dim: #555;
   --border: #222222;
-  --focus: rgba(79, 208, 139, 0.3);
+  --focus: rgba(var(--accent-rgb), 0.3);
   /* Selected / active surfaces: a tinted fill plus accent text, never a
      coloured edge bar. Gamepad focus is a separate inset ring. */
-  --accent-tint: rgba(79, 208, 139, 0.12);
+  --accent-tint: rgba(var(--accent-rgb), 0.12);
   --focus-ring: inset 0 0 0 1.5px var(--accent);
 
   /* Semantic colours. One red and one blue, so the same meaning cannot drift
@@ -524,7 +526,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   margin-left: 5px;
   padding: 0 5px;
   font-size: 10px;
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   background: var(--accent);
   border-radius: 999px;
 }
@@ -1025,7 +1027,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-note:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
 .session-kebab.card-col-focused {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   border-color: var(--accent);
 }
 .session-state-btn:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
@@ -1052,14 +1054,14 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-jump-key {
   display: inline-flex;
   align-items: center;
-  background: rgba(79, 208, 139, 0.08);
-  border: 1px solid rgba(79, 208, 139, 0.25);
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
   border-radius: 3px;
   padding: 0 4px;
   font-size: 10px;
   font-weight: 600;
   font-family: monospace;
-  color: rgba(79, 208, 139, 0.6);
+  color: rgba(var(--accent-rgb), 0.6);
   line-height: 1.5;
   flex-shrink: 0;
   min-width: 20px;
@@ -1078,13 +1080,13 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   min-width: 18px;
   margin-right: 8px;
   padding: 0 4px;
-  background: rgba(79, 208, 139, 0.08);
-  border: 1px solid rgba(79, 208, 139, 0.25);
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
   border-radius: 3px;
   font-size: 10px;
   font-weight: 600;
   font-family: monospace;
-  color: rgba(79, 208, 139, 0.6);
+  color: rgba(var(--accent-rgb), 0.6);
   line-height: 1.5;
 }
 .session-working-plan {
@@ -1167,7 +1169,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 }
 .session-state-btn.card-col-focused {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   border-color: var(--accent);
 }
 .session-state-dropdown {
@@ -1360,7 +1362,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   padding: 0 5px;
   border-radius: 9px;
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
   font-size: 11px;
   font-weight: 700;
   display: flex;
@@ -1796,7 +1798,7 @@ kbd {
 .modifier-toggle--active {
   background: var(--accent);
   border-color: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
 }
 
 .modifier-toggle:hover {
@@ -1974,7 +1976,7 @@ kbd {
   font-size: var(--font-size-sm);
   font-weight: 500;
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   margin-left: var(--spacing-sm);
 }
 
@@ -2554,7 +2556,7 @@ kbd {
   font-size: var(--font-size-sm);
   font-weight: 600;
   background: var(--accent);
-  color: #000;
+  color: var(--accent-contrast);
   flex-shrink: 0;
 }
 
@@ -2889,8 +2891,8 @@ kbd {
 }
 @keyframes artifact-pulse {
   0% { box-shadow: 0 0 0 0 var(--focus); }
-  70% { box-shadow: 0 0 0 8px rgba(79, 208, 139, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(79, 208, 139, 0); }
+  70% { box-shadow: 0 0 0 8px rgba(var(--accent-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
 }
 
 /* ── Settings screen: shared look for every page ─────────────────────────────

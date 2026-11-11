@@ -25,6 +25,7 @@ import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
 import { keepWarmUntilFor } from '../../session/keep-warmer.js';
 import { resolveSessionContextSize, type ApiSessionContextSize, type SessionContextSize } from '../../session/context-size.js';
 import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
+import { isFreshQuotaUsageSnapshot, SESSION_QUOTA_USAGE_MAX_AGE_MS } from '../../session/quota-usage.js';
 import { buildHelmMsgEnvelope } from '../../session/intersession-directive.js';
 
 /**
@@ -496,7 +497,9 @@ export class HelmSessionService {
         ...(context.window !== undefined ? { window: context.window } : {}),
         ...(context.level ? { level: context.level } : {}),
       } } : {}),
-      ...(session.quotaUsage != null ? { quotaUsage: session.quotaUsage } : { quotaUsage: null }),
+      // Stale readings are dropped here so every consumer (phone, MCP) gets the desktop's freshness rule.
+      quotaUsage: session.quotaUsage && isFreshQuotaUsageSnapshot(session.quotaUsage, Date.now(), SESSION_QUOTA_USAGE_MAX_AGE_MS)
+        ? session.quotaUsage : null,
       ...(cliEntry?.noPromptCache ? { noPromptCache: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),
       ...(session.eta ? { eta: { ...session.eta } } : {}),

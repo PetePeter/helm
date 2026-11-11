@@ -353,7 +353,7 @@ defineExpose({ handleButton });
   background: var(--bg-primary); border: 1px solid var(--border);
   border-radius: 6px; padding: 6px 10px;
 }
-.rb-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 208, 139, 0.25); }
+.rb-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25); }
 .rb-search input {
   flex: 1; background: none; border: none; outline: none;
   color: var(--text-primary); font-size: 0.85rem; font-family: inherit;

@@ -281,7 +281,7 @@ defineExpose({ focus, focusEnd, setHeight });
 
 .prompt-textarea__info:hover {
   background: var(--accent);
-  color: var(--bg-primary);
+  color: var(--accent-contrast);
 }
 
 .prompt-textarea__resize-grip {

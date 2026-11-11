@@ -65,6 +65,24 @@ describe('HelmSessionService.listSessions', () => {
     expect(fresh.lastPromptAtEpochMs).toBeUndefined();
   });
 
+  it('drops a stale quota reading so the phone follows the desktop freshness rule', () => {
+    const now = Date.now();
+    const quota = (measuredAtEpochMs: number) => ({
+      fiveHour: { usedPercent: 40, resetsAtEpochMs: now + 3_600_000 },
+      weekly: { usedPercent: 10, resetsAtEpochMs: now + 86_400_000 },
+      measuredAtEpochMs,
+    });
+    const sessionManager = makeSessionManager([
+      { id: 'fresh', name: 'A', cliType: 'claude-code', quotaUsage: quota(now - 60_000) } as any,
+      { id: 'stale', name: 'B', cliType: 'claude-code', quotaUsage: quota(now - 60 * 60_000) } as any,
+    ]);
+    const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, makeConfigLoader() as any, makePlanManager() as any);
+
+    const [fresh, stale] = service.listSessions();
+    expect(fresh.quotaUsage?.fiveHour.usedPercent).toBe(40);
+    expect(stale.quotaUsage).toBeNull();
+  });
+
   it('serializes only bounded active todos and omits an empty list', () => {
     const sessionManager = makeSessionManager([{ id: 's1', name: 'A', cliType: 'claude-code' }]);
     const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, makeConfigLoader() as any, makePlanManager() as any);

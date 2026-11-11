@@ -11,7 +11,7 @@ describe('StatsChart configuration', () => {
       columns: [1, 2], labels: ['A', 'B'],
       series: [
         { key: 'cli:codex', label: 'Codex', color: '#5aa9ff', type: 'bar', axis: 'tokens', values: [10, 20] },
-        { key: 'cli:claude', label: 'Claude', color: '#4fd08b', type: 'bar', axis: 'tokens', values: [30, 40] },
+        { key: 'cli:claude', label: 'Claude', color: '#ccff00', type: 'bar', axis: 'tokens', values: [30, 40] },
       ],
     };
 
@@ -36,7 +36,7 @@ describe('StatsChart configuration', () => {
     const model: ChartModel = {
       columns: [1], labels: ['A'],
       series: [
-        { key: 'multiplier', label: 'AI ×', color: '#4fd08b', type: 'line', axis: 'multiplier', values: [2.5] },
+        { key: 'multiplier', label: 'AI ×', color: '#ccff00', type: 'line', axis: 'multiplier', values: [2.5] },
         { key: 'tokens', label: 'Tokens', color: '#f0b34a', type: 'bar', axis: 'tokens', values: [1250] },
       ],
     };

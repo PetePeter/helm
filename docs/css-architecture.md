@@ -23,7 +23,7 @@ The shared token vocabulary is:
 | --- | --- |
 | Surfaces | `--bg-primary`, `--bg-secondary`, `--bg-tertiary`, `--bg-hover` |
 | Text | `--text-primary`, `--text-secondary`, `--text-dim` |
-| Accent and focus | `--accent`, `--accent-hover`, `--accent-contrast`, `--focus` |
+| Accent and focus | `--accent` (lime `#ccff00`, shared with the phone), `--accent-rgb` (for `rgba(var(--accent-rgb), a)` — never a literal), `--accent-hover`, `--accent-contrast` (text on an accent fill — never white), `--focus` |
 | Semantic state | `--danger`, `--danger-border`, `--info`, `--status-*` |
 | Shape and spacing | `--radius-*`, `--spacing-*` |
 | Type and effects | `--font-size-*`, `--font-mono`, `--shadow*` |

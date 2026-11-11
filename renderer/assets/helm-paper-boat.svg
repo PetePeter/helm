@@ -3,6 +3,6 @@
   <path d="M54 164L121 104L121 164H54Z" fill="#F4FAF6" stroke="#E2F4E6" stroke-width="6" stroke-linejoin="round"/>
   <path d="M121 88L121 164L181 146L121 88Z" fill="#F8FFFA" stroke="#E2F4E6" stroke-width="6" stroke-linejoin="round"/>
   <path d="M49 163H205L179 187H78L49 163Z" fill="#F4FAF6" stroke="#E2F4E6" stroke-width="6" stroke-linejoin="round"/>
-  <path d="M77 198C91 189 105 189 119 198C133 207 147 207 161 198C175 189 189 189 203 198" stroke="#4FD08B" stroke-width="8" stroke-linecap="round"/>
-  <text x="147" y="139" fill="#4FD08B" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" text-anchor="middle">|&gt;</text>
+  <path d="M77 198C91 189 105 189 119 198C133 207 147 207 161 198C175 189 189 189 203 198" stroke="#ccff00" stroke-width="8" stroke-linecap="round"/>
+  <text x="147" y="139" fill="#ccff00" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" text-anchor="middle">|&gt;</text>
 </svg>

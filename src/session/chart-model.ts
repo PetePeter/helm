@@ -21,7 +21,7 @@ export interface ChartModelSeries {
 
 const COLOR_BY_ROLE = {
   you: '#5aa9ff',
-  ai: '#4fd08b',
+  ai: '#ccff00',
   tokens: '#f0b34a',
 } as const;
 

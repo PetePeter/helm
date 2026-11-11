@@ -18,7 +18,7 @@ const chartModel: ChartModel = {
   labels: ['Mon 28'],
   series: [
     { key: 'you', label: 'You', color: '#5aa9ff', type: 'bar', axis: 'minutes', values: [10] },
-    { key: 'ai', label: 'AI', color: '#4fd08b', type: 'bar', axis: 'minutes', values: [5] },
+    { key: 'ai', label: 'AI', color: '#ccff00', type: 'bar', axis: 'minutes', values: [5] },
     { key: 'tokens', label: 'Tokens', color: '#f0b34a', type: 'line', axis: 'tokens', values: [1_200] },
   ],
 };

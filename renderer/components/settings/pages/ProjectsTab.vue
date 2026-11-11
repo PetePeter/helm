@@ -385,7 +385,7 @@ async function onSetMainDir(projectId: string, dirPath: string): Promise<void> {
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   text-transform: uppercase;
   flex-shrink: 0;
 }
