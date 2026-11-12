@@ -13,19 +13,37 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+function makeDeps() {
+  return {
+    getCompleted: vi.fn().mockResolvedValue(true),
+    setCompleted: vi.fn().mockResolvedValue({ success: true }),
+    getTools: vi.fn().mockResolvedValue([]),
+    getProjects: vi.fn().mockResolvedValue([]),
+    browseDirectory: vi.fn().mockResolvedValue(null),
+    createProject: vi.fn().mockResolvedValue({ success: true }),
+    spawnSession: vi.fn().mockResolvedValue(true),
+    openSettings: vi.fn(),
+    openPane: vi.fn(),
+  };
+}
+
+describe('FirstRunOnboarding header button', () => {
+  it('Close on the Configure page (reopened from 🚀) dismisses the guide', async () => {
+    const flow = useFirstRunOnboarding(makeDeps());
+    await flow.open();
+    wrapper = mount(FirstRunOnboarding, { props: { flow }, attachTo: document.body });
+    await nextTick();
+
+    const close = document.body.querySelector<HTMLButtonElement>('.onboarding-header button');
+    expect(close?.textContent?.trim()).toBe('Close');
+    close?.click();
+    await vi.waitFor(() => expect(flow.visible.value).toBe(false));
+  });
+});
+
 describe('FirstRunOnboarding workspace guide', () => {
   it('shows each workspace entry and opens the matching pane where available', async () => {
-    const deps = {
-      getCompleted: vi.fn().mockResolvedValue(true),
-      setCompleted: vi.fn().mockResolvedValue({ success: true }),
-      getTools: vi.fn().mockResolvedValue([]),
-      getProjects: vi.fn().mockResolvedValue([]),
-      browseDirectory: vi.fn().mockResolvedValue(null),
-      createProject: vi.fn().mockResolvedValue({ success: true }),
-      spawnSession: vi.fn().mockResolvedValue(true),
-      openSettings: vi.fn(),
-      openPane: vi.fn(),
-    };
+    const deps = makeDeps();
     const flow = useFirstRunOnboarding(deps);
     await flow.open();
     wrapper = mount(FirstRunOnboarding, { props: { flow }, attachTo: document.body });

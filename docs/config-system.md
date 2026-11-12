@@ -177,16 +177,28 @@ claude-code:
   initialPromptDelay: 2000    # ms to wait before sending first item (default 2000 for AI CLIs, 0 for generic)
 ```
 
-Resume templates accept two placeholders:
+### Placeholders
 
-| Placeholder | Source | Used by |
-|---|---|---|
-| `{cliSessionName}` | UUID Helm mints at spawn | claude (`--session-id`/`--resume`), copilot, codex rename |
-| `{cliThreadId}` | The CLI's own `session_id`, captured from its hook events (`SessionInfo.cliThreadId`) | codex: `codex resume {cliThreadId}` |
+Every `{name}` a command or action template may use lives in one list,
+[`src/config/template-placeholders.ts`](../src/config/template-placeholders.ts). Helm fills templates from it
+(`fillTemplate`) and the Tool editor's **placeholder help** chip shows it per field; an unknown `{token}` in a field
+turns the input red with a warning (it would otherwise reach the CLI literally). Save is not blocked.
+
+| Field | Placeholders |
+|---|---|
+| `spawnCommand`, `resumeCommand`, `continueCommand`, `renameCommand` | `{cliSessionName}` — UUID Helm mints at spawn; `{cliThreadId}` — the CLI's own id from its hooks (`SessionInfo.cliThreadId`), falling back to `{cliSessionName}` until one is reported |
+| `headlessCommand` | `{promptFile}`, `{outputFile}` |
+| `helmActions.compact` / `.export` | `{instruction}` / `{path}` — plus sequence keys (`{Enter}`, `{Wait 500}`, …) as in every action field |
+
+The legacy `$instruction` / `$instructions` / `$path` spellings in older configs are still filled, as whole tokens.
+
+```mermaid
+graph LR
+  R[template-placeholders.ts] -->|fillTemplate| S[spawn / resume / continue / rename / headless / actions]
+  R -->|FIELD_PLACEHOLDERS, unknownPlaceholders| E[Tool editor placeholder help + red warning]
+```
 
 `headlessCommand` is a different kind of template: a whole shell line that runs the CLI once with no terminal UI, reads its prompt from `{promptFile}` and leaves its reply in `{outputFile}`. It is what lets a real CLI be picked as auto memory's recording model. A type without one cannot be picked. Nothing is built in: the Tool Editor offers a suggested line for Claude Code and Codex, and it counts once saved. See [auto-memory.md](auto-memory.md#real-clis-the-headless-run).
-
-`{cliThreadId}` has no fallback. If the CLI never reported an id (no hooks block, or a session from before capture existed), the literal placeholder reaches the CLI and the resume fails visibly. See [cli-hooks.md](cli-hooks.md#thread-id-capture).
 
 No `terminal` field — all CLIs run as embedded PTY sessions (no external window config). `initialPrompt` items are sent in order; use `{Wait N}` within sequences for inter-item timing.
 

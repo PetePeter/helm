@@ -8,6 +8,8 @@
  * argument, and a reply scraped from a terminal carries the shell's own echo.
  */
 
+import { fillTemplate } from '../config/template-placeholders.js';
+
 export const PROMPT_FILE_PLACEHOLDER = '{promptFile}';
 export const OUTPUT_FILE_PLACEHOLDER = '{outputFile}';
 
@@ -55,7 +57,5 @@ export function headlessCommandProblem(command: string | undefined): string | un
  * one of them is code.
  */
 export function fillHeadlessCommand(command: string, files: { promptFile: string; outputFile: string }): string {
-  return command
-    .replaceAll(PROMPT_FILE_PLACEHOLDER, files.promptFile)
-    .replaceAll(OUTPUT_FILE_PLACEHOLDER, files.outputFile);
+  return fillTemplate(command, files);
 }

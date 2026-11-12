@@ -98,7 +98,8 @@ onUnmounted(() => modalStack.pop('first-run-onboarding'));
       <main class="onboarding-card">
         <header class="onboarding-header">
           <div class="onboarding-brand"><span>H</span><b>Helm</b><small>steer your fleet of agents</small></div>
-          <button class="btn btn--secondary btn--sm focusable" @click="flow.showConfiguration">{{ stage === 'configure' || stage === 'success' ? 'Close' : 'Skip to optional setup' }}</button>
+          <button v-if="stage === 'configure' || stage === 'success'" class="btn btn--secondary btn--sm focusable" @click="flow.finish">Close</button>
+          <button v-else class="btn btn--secondary btn--sm focusable" @click="flow.showConfiguration">Skip to optional setup</button>
         </header>
 
         <div v-if="stage !== 'configure'" class="onboarding-layout">

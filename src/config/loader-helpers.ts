@@ -22,9 +22,9 @@ export interface HelmActionMap {
   /** Reset/clear context. No parameters. Example: "/clear{Enter}". When blank, falls back to
    *  legacy clearCommand then '/clear' (unlike compact/export, clear is never "unsupported"). */
   clear?: string;
-  /** Compact context. $instruction is replaced with the caller's focus. Example: "/compact $instruction{Enter}". */
+  /** Compact context. {instruction} is replaced with the caller's focus. Example: "/compact {instruction}{Enter}". */
   compact?: string;
-  /** Export session detail to a file. $path is replaced with the caller-supplied path. Example: "/export $path{Enter}". */
+  /** Export session detail to a file. {path} is replaced with the caller-supplied path. Example: "/export {path}{Enter}". */
   export?: string;
   /** Interrupt the CLI (cancel a turn, close menus, empty the composer). Sent before
    *  quick compact's /clear. Blank falls back to an even Esc burst. Example: "{Esc}{Wait 150}{Esc}". */

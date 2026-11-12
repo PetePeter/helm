@@ -1,6 +1,7 @@
 import type { ConfigLoader, SequenceListItem } from '../config/loader.js';
 import { parseSubmitSuffix } from '../mcp/submit-suffix.js';
 import { logger } from '../utils/logger.js';
+import { fillTemplate, sessionTemplateValues } from '../config/template-placeholders.js';
 import { scheduleInitialPrompt } from './initial-prompt.js';
 import type { DeliveryContext } from './delivery-context.js';
 import { deliverPromptSequenceToSession } from './sequence-delivery.js';
@@ -104,7 +105,7 @@ export function resolveInitialPromptConfig(
 ): { initialPrompt?: SequenceListItem[]; initialPromptDelay?: number; renameCommand?: string } {
   if (!cliEntry) return {};
   const renameCommand = cliEntry.renameCommand && cliSessionName
-    ? cliEntry.renameCommand.replace('{cliSessionName}', cliSessionName)
+    ? fillTemplate(cliEntry.renameCommand, sessionTemplateValues(cliSessionName))
     : undefined;
   return {
     initialPrompt: cliEntry.initialPrompt,

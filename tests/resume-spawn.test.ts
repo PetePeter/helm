@@ -173,6 +173,20 @@ describe('pty:spawn resume logic', () => {
     }));
   });
 
+  it('fills the session placeholders in continueCommand too', async () => {
+    configLoader.getCliTypeEntry.mockReturnValue({
+      name: 'Claude Code',
+      command: 'claude',
+      continueCommand: 'claude --continue --name={cliSessionName}',
+      initialPromptDelay: 100,
+    } as CliTypeConfig);
+
+    const handler = handlers.get('pty:spawn')!;
+    await handler({}, 'sid-1', 'claude', [], '/work', 'claude-code', undefined, 'hub-sid-1');
+
+    expect(ptyManager.spawn).toHaveBeenCalledWith(expect.objectContaining({ rawCommand: 'claude --continue --name=hub-sid-1' }));
+  });
+
   it('treats a resume of an already-live PTY as success without respawning (main-spawned operator race)', async () => {
     sessions.set('sid-live', { id: 'sid-live', name: 'Helm', cliType: 'claude-code', processId: 77 });
     ptyManager.has.mockImplementation((id: string) => id === 'sid-live');

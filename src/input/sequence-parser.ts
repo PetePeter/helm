@@ -96,6 +96,26 @@ function canonicalizeComboPart(token: string): string {
 }
 function canonicalizeKey(token: string): string { return KEY_ALIASES[token.toLowerCase()] ?? token; }
 
+/**
+ * True when `{token}` names something the parser acts on — a key, combo,
+ * modifier hold/release, wait or no-submit. parseToken itself is lenient (any
+ * word becomes a key); this is the strict check editors use to flag typos.
+ */
+export function isKnownSequenceToken(token: string): boolean {
+  const action = parseToken(token);
+  if (!action) return false;
+  const known = (part: string) => part.length === 1 || part in KEY_LOOKUP || part in MODIFIER_LOOKUP;
+  switch (action.type) {
+    case 'key': return known(action.key);
+    case 'combo': return action.keys.every(known);
+    case 'modDown':
+    case 'modUp': return action.key in MODIFIER_LOOKUP;
+    default: return true;
+  }
+}
+const KEY_LOOKUP: Record<string, true> = Object.fromEntries(Object.values(KEY_ALIASES).map(key => [key, true]));
+const MODIFIER_LOOKUP: Record<string, true> = Object.fromEntries(Object.values(MODIFIER_ALIASES).map(key => [key, true]));
+
 export function formatSequencePreview(actions: SequenceAction[]): string { return actions.map(formatAction).join(' → '); }
 function formatAction(action: SequenceAction): string {
   switch (action.type) {

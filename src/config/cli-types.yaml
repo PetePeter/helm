@@ -23,8 +23,8 @@
   largeTextAsTempFile: true
   helmActions:
     clear: /clear{Enter}
-    compact: /compact $instruction{Enter}
-    export: /export $path{Enter} {Wait 5000}
+    compact: /compact {instruction}{Enter}
+    export: /export {path}{Enter} {Wait 5000}
   startupPrompts:
     - regex: 'do\s+you\s+trust\s+the\s+files\s+in\s+this\s+folder\?'
   # Model context window fallback for the phone's context badge. Claude's
@@ -115,8 +115,8 @@
   largeTextAsTempFile: true
   helmActions:
     clear: /clear{Enter}
-    compact: /compact $instruction{Enter}
-    export: /export $path{Enter} {Wait 5000}
+    compact: /compact {instruction}{Enter}
+    export: /export {path}{Enter} {Wait 5000}
   startupPrompts:
     - regex: 'confirm\s+folder\s+trust'
     - regex: 'do\s+you\s+trust\s+the\s+files\s+in\s+this\s+folder\?'

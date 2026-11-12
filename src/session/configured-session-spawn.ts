@@ -6,6 +6,7 @@ import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo } from '../types/session.js';
 import type { PtyManager, PtyProcess } from './pty-manager.js';
 import type { DeliveryContext } from './delivery-context.js';
 import { logger } from '../utils/logger.js';
+import { fillTemplate, sessionTemplateValues } from '../config/template-placeholders.js';
 import { toHeaderSafeName } from '../utils/header-safe-name.js';
 import { normalizeProjectPath } from './project-identity.js';
 import { getApiSessionHost } from './api/api-session-host.js';
@@ -260,21 +261,20 @@ function resolveSpawnCommand(options: {
   fallbackCommand?: string;
   fallbackArgs?: string[];
 }): { rawCommand?: string; command?: string; args?: string[] } {
+  // {cliThreadId} follows the CLI when /clear or /compact moves it to a new
+  // id; before any hook reports one, the spawn-time name is still current.
+  const values = sessionTemplateValues(options.cliSessionName, options.cliThreadId);
   if (options.isResume) {
     if (options.cfg?.resumeCommand) {
-      // {cliThreadId} follows the CLI when /clear or /compact moves it to a new
-      // id; before any hook reports one, the spawn-time name is still current.
-      const rawCommand = options.cfg.resumeCommand
-        .replaceAll('{cliSessionName}', options.cliSessionName)
-        .replaceAll('{cliThreadId}', options.cliThreadId ?? options.cliSessionName);
+      const rawCommand = fillTemplate(options.cfg.resumeCommand, values);
       warnIfMissingPlaceholder('resumeCommand', options.cfg.resumeCommand, rawCommand);
       return { rawCommand };
     }
     if (options.cfg?.continueCommand) {
-      return { rawCommand: options.cfg.continueCommand };
+      return { rawCommand: fillTemplate(options.cfg.continueCommand, values) };
     }
   } else if (options.cfg?.spawnCommand) {
-    const rawCommand = options.cfg.spawnCommand.replaceAll('{cliSessionName}', options.cliSessionName);
+    const rawCommand = fillTemplate(options.cfg.spawnCommand, values);
     warnIfMissingPlaceholder('spawnCommand', options.cfg.spawnCommand, rawCommand);
     return { rawCommand };
   }
@@ -295,7 +295,7 @@ function resolveSpawnCommand(options: {
 }
 
 function warnIfMissingPlaceholder(field: string, template: string, resolved: string): void {
-  if (template === resolved && !template.includes('{cliThreadId}')) {
+  if (template === resolved) {
     logger.warn(`[ConfiguredSessionSpawn] ${field} has no {cliSessionName}/{cliThreadId} placeholder: ${template}`);
   }
 }

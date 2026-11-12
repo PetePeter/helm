@@ -1,4 +1,5 @@
 import { logger } from '../../utils/logger.js';
+import { fillTemplate } from '../../config/template-placeholders.js';
 import { assertSessionWritable } from '../../session/frozen.js';
 import { randomUUID } from 'node:crypto';
 import type { ConfigLoader } from '../../config/loader.js';
@@ -34,7 +35,7 @@ const QUICK_COMPACT_ESC_BURST = '{Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{E
 const DEFAULT_DELIVERY_VERIFY_DELAY_MS = 4000;
 const DEFAULT_CLEAR_SETTLE_DELAY_MS = 1500;
 const DEFAULT_CLEAR_COMMAND = '/clear';
-const API_COMPACT_COMMAND = '/compact $instruction{Enter}';
+const API_COMPACT_COMMAND = '/compact {instruction}{Enter}';
 
 /** Advisory returned by worker-control actions — CLIs process clear/compact/export asynchronously. */
 const ACTION_WAIT_NOTE =
@@ -70,22 +71,6 @@ function summarizeDelivery(
     retryCount: verification.retryCount,
     codexBusySubmitRecoverySent: verification.codexBusySubmitRecoverySent ?? false,
   };
-}
-
-/** Accepted spellings of a placeholder — shipped defaults once said $instructions. */
-const ACTION_PARAM_ALIASES: Record<string, string> = { $instructions: '$instruction' };
-
-/**
- * Replace $-prefixed placeholders (e.g. $instruction, $path) in an action template.
- * Matches whole tokens only: a substring replace turned "$instructions" into
- * "<value>s", and a stray "/compact s" wedges Codex's composer. Unknown tokens
- * are left as typed.
- */
-function substituteActionParams(template: string, params: Record<string, string>): string {
-  return template.replace(/\$[A-Za-z_]\w*/g, (token) => {
-    const key = ACTION_PARAM_ALIASES[token] ?? token;
-    return Object.prototype.hasOwnProperty.call(params, key) ? params[key] : token;
-  });
 }
 
 function getDeliveryVerifyDelayMs(): number {
@@ -780,7 +765,7 @@ export class HelmSessionDeliveryService {
 
   /**
    * Compact a session's context via its configured helmActions.compact command.
-   * $instruction is substituted with the caller's focus (empty if omitted).
+   * {instruction} is substituted with the caller's focus (empty if omitted).
    */
   async compactSession(
     sessionRef: string,
@@ -791,7 +776,7 @@ export class HelmSessionDeliveryService {
       return { ok: true, action: 'compact', sessionId: session.id, handoverPending: false, note: ALREADY_COMPACTED_NOTE };
     }
     const template = this.requireActionTemplate(session.cliType, 'compact');
-    const sequence = substituteActionParams(template, { $instruction: options?.instruction?.trim() ?? '' });
+    const sequence = fillTemplate(template, { instruction: options?.instruction?.trim() ?? '' });
 
     const handoverText = options?.handover?.trim();
     const handover = this.handover;
@@ -848,7 +833,7 @@ export class HelmSessionDeliveryService {
 
   /**
    * Export a session's detail to a caller-supplied file path via its configured
-   * helmActions.export command. $path is substituted; the path is echoed back so
+   * helmActions.export command. {path} is substituted; the path is echoed back so
    * the caller can read the file once the CLI finishes writing it.
    */
   async exportSession(
@@ -861,7 +846,7 @@ export class HelmSessionDeliveryService {
     }
     const session = this.requireRunningSession(sessionRef);
     const template = this.requireActionTemplate(session.cliType, 'export');
-    const sequence = substituteActionParams(template, { $path: exportPath });
+    const sequence = fillTemplate(template, { path: exportPath });
 
     logger.info(`[HelmSessionDelivery] session_export for "${session.name}" (${session.id}) → ${exportPath}`);
     await this.deliverActionSequence(session.id, sequence);

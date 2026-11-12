@@ -10,6 +10,7 @@ import { HEARTBEAT_CLOSE, HEARTBEAT_OPEN, KEEP_WARM_DEFAULT_TEXT } from '../../.
 import { ref, watch, computed, onMounted } from 'vue';
 import PromptTextarea from '../../common/PromptTextarea.vue';
 import PillTabs from '../primitives/PillTabs.vue';
+import TemplateFieldInput from './TemplateFieldInput.vue';
 import { useAutosave } from '../../../composables/useAutosave.js';
 import { toolsClient } from '../../../ipc/clients.js';
 import type { ToolEditorApiConfig, ToolEditorComfyUiConfig } from '../../../stores/modal-bridge.js';
@@ -627,11 +628,11 @@ onMounted(async () => {
 
       <fieldset class="te-section" v-show="section === 'launch'">
         <legend class="te-section__legend">Launch</legend>
-        <div class="te-field"><label for="te-spawn">Spawn Command</label><input id="te-spawn" v-model="spawnCommand" type="text" placeholder="e.g. codex --dangerously-bypass-approvals-and-sandbox" class="focusable te-input te-input--mono" /></div>
-        <div class="te-field"><label for="te-resume">Resume Command</label><input id="te-resume" v-model="resumeCommand" type="text" placeholder="Template for resuming sessions" class="focusable te-input te-input--mono" /></div>
-        <div class="te-field"><label for="te-continue">Continue Command</label><input id="te-continue" v-model="continueCommand" type="text" placeholder="Template for continuing sessions" class="focusable te-input te-input--mono" /></div>
-        <div class="te-field"><label for="te-headless">Headless Command <span class="te-params">params: <code>{promptFile}</code> <code>{outputFile}</code></span></label><input id="te-headless" v-model="headlessCommand" type="text" :title="HEADLESS_COMMAND_HINT" placeholder="Blank = this tool cannot be the Auto memory recording model" class="focusable te-input te-input--mono" /></div>
-        <div class="te-field"><label for="te-rename">Rename Command</label><input id="te-rename" v-model="renameCommand" type="text" placeholder="Template for renaming sessions" class="focusable te-input te-input--mono" /></div>
+        <TemplateFieldInput v-model="spawnCommand" field="spawnCommand" input-id="te-spawn" label="Spawn Command" placeholder="e.g. codex --dangerously-bypass-approvals-and-sandbox" />
+        <TemplateFieldInput v-model="resumeCommand" field="resumeCommand" input-id="te-resume" label="Resume Command" placeholder="Template for resuming sessions" />
+        <TemplateFieldInput v-model="continueCommand" field="continueCommand" input-id="te-continue" label="Continue Command" placeholder="Template for continuing sessions" />
+        <TemplateFieldInput v-model="headlessCommand" field="headlessCommand" input-id="te-headless" label="Headless Command" :title="HEADLESS_COMMAND_HINT" placeholder="Blank = this tool cannot be the Auto memory recording model" />
+        <TemplateFieldInput v-model="renameCommand" field="renameCommand" input-id="te-rename" label="Rename Command" placeholder="Template for renaming sessions" />
       </fieldset>
 
       <fieldset class="te-section" v-show="section === 'behaviour'">
@@ -691,22 +692,10 @@ onMounted(async () => {
           action unsupported — its MCP tool then returns an error. Default is an implied Enter; add
           <code>{NoSend}</code> to suppress it, and <code>{Wait N}</code> to hold the MCP call's return by N ms.
         </p>
-        <div class="te-field">
-          <label for="te-action-clear">Clear <span class="te-params">no params</span></label>
-          <input id="te-action-clear" v-model="helmActionClear" type="text" placeholder="e.g. /clear{Enter}" class="focusable te-input te-input--mono" />
-        </div>
-        <div class="te-field">
-          <label for="te-action-compact">Compact <span class="te-params">params: <code>$instruction</code></span></label>
-          <input id="te-action-compact" v-model="helmActionCompact" type="text" placeholder="e.g. /compact $instruction{Enter}" class="focusable te-input te-input--mono" />
-        </div>
-        <div class="te-field">
-          <label for="te-action-export">Export <span class="te-params">params: <code>$path</code></span></label>
-          <input id="te-action-export" v-model="helmActionExport" type="text" placeholder="e.g. /export $path{Enter}" class="focusable te-input te-input--mono" />
-        </div>
-        <div class="te-field">
-          <label for="te-action-stop">Stop <span class="te-params">sent before quick compact; blank = Esc burst</span></label>
-          <input id="te-action-stop" v-model="helmActionStop" type="text" placeholder="e.g. {Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{Esc}" class="focusable te-input te-input--mono" />
-        </div>
+        <TemplateFieldInput v-model="helmActionClear" field="clear" input-id="te-action-clear" label="Clear" placeholder="e.g. /clear{Enter}" />
+        <TemplateFieldInput v-model="helmActionCompact" field="compact" input-id="te-action-compact" label="Compact" placeholder="e.g. /compact {instruction}{Enter}" />
+        <TemplateFieldInput v-model="helmActionExport" field="export" input-id="te-action-export" label="Export" placeholder="e.g. /export {path}{Enter}" />
+        <TemplateFieldInput v-model="helmActionStop" field="stop" input-id="te-action-stop" label="Stop" note="sent before quick compact; blank = Esc burst" placeholder="e.g. {Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{Esc}" />
       </fieldset>
 
       <fieldset class="te-section te-section--prompts" v-show="section === 'prompts'">
@@ -741,8 +730,6 @@ onMounted(async () => {
 .tool-editor__body { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md) 22px; }
 .te-error { margin: 0; padding: 6px 10px; border: 1px solid rgba(255, 82, 82, 0.5); border-radius: var(--radius-sm); color: var(--danger); background: rgba(255, 82, 82, 0.08); font-size: var(--font-size-sm); }
 .te-identity { margin: 0; color: var(--text-dim); font-size: 11px; font-family: var(--font-mono); user-select: text; }
-.te-params { color: var(--text-dim); font-weight: 400; font-size: 0.85em; margin-left: var(--spacing-xs); }
-.te-params code { color: #ffd479; }
 .te-env-list { display: flex; flex-direction: column; gap: var(--spacing-sm); }
 .te-env-item { align-items: center; }
 .te-env-item--readonly { opacity: 0.85; }

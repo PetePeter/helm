@@ -1063,8 +1063,8 @@ export const MCP_TOOLS: McpTool[] = [
     title: 'Compact Session Context',
     description:
       'Compact a target session by delivering its configured compact command into its PTY. ' +
-      'The sequence comes from the CLI config helmActions.compact, where the $instruction placeholder is replaced with ' +
-      'the optional instruction you supply (e.g. "/compact $instruction"). ' +
+      'The sequence comes from the CLI config helmActions.compact, where the {instruction} placeholder is replaced with ' +
+      'the optional instruction you supply (e.g. "/compact {instruction}"). ' +
       'DESTINATION: sessionId is REQUIRED. Returns an error if the target CLI has no compact action configured. ' +
       'The CLI processes the compaction asynchronously — wait ~1 min before reading results. ' +
       'Pass "handover" to have a note pasted back automatically once the compaction settles — this is how a session ' +
@@ -1079,7 +1079,7 @@ export const MCP_TOOLS: McpTool[] = [
         instruction: {
           type: 'string',
           description:
-            'Optional focus for the compaction, substituted into the CLI command\'s $instruction placeholder. ' +
+            'Optional focus for the compaction, substituted into the CLI command\'s {instruction} placeholder. ' +
             'Omit if the configured command takes no argument.',
         },
         handover: {
@@ -1177,8 +1177,8 @@ export const MCP_TOOLS: McpTool[] = [
     title: 'Export Session To File',
     description:
       'Export a target session\'s detail to a file by delivering its configured export command into its PTY. ' +
-      'The sequence comes from the CLI config helmActions.export, where the $path placeholder is replaced with the ' +
-      'caller-supplied path (e.g. "/export $path"). The CLI itself writes the file; Helm only supplies the path and ' +
+      'The sequence comes from the CLI config helmActions.export, where the {path} placeholder is replaced with the ' +
+      'caller-supplied path (e.g. "/export {path}"). The CLI itself writes the file; Helm only supplies the path and ' +
       'echoes it back in the result. Use this to harvest an old session\'s knowledge into a temp file WITHOUT paying to ' +
       'reactivate it. DESTINATION: sessionId is REQUIRED. Returns an error if the target CLI has no export action configured. ' +
       'The CLI writes the file asynchronously — wait ~1 min, then read the file at the returned path.',
@@ -1191,7 +1191,7 @@ export const MCP_TOOLS: McpTool[] = [
         },
         path: {
           type: 'string',
-          description: 'Absolute file path the CLI should write the export to, substituted into the $path placeholder (required).',
+          description: 'Absolute file path the CLI should write the export to, substituted into the {path} placeholder (required).',
         },
       },
       required: ['sessionId', 'path'],
