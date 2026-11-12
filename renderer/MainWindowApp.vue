@@ -531,7 +531,7 @@ const contextMenuSessionFlags = computed(() => {
   return {
     locked: !!s?.locked,
     frozen: !!s?.frozen,
-    keepWarm: s?.keepWarmUntil !== undefined && s.keepWarmUntil > Date.now(),
+    keepWarm: !!s?.keepWarm,
     hooked: !!s?.hooked,
     hidden: !!s?.hidden,
     remote: !!s?.remote,

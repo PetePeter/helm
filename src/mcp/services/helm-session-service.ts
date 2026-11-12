@@ -22,7 +22,7 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import { placeSessionInRuntimeGroup } from '../../session/runtime-group-placement.js';
 import { peerIdFromProxySessionId } from '../peer/proxy-identity.js';
 import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
-import { keepWarmUntilFor } from '../../session/keep-warmer.js';
+import { keepWarmFor } from '../../session/keep-warmer.js';
 import { resolveSessionContextSize, type ApiSessionContextSize, type SessionContextSize } from '../../session/context-size.js';
 import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
 import { isFreshQuotaUsageSnapshot, SESSION_QUOTA_USAGE_MAX_AGE_MS } from '../../session/quota-usage.js';
@@ -364,13 +364,12 @@ export class HelmSessionService {
     return { ok: true, frozen };
   }
 
-  setSessionKeepWarm(sessionRef: string, on: boolean): { ok: true; keepWarm: boolean; keepWarmUntilEpochMs?: number } {
+  setSessionKeepWarm(sessionRef: string, on: boolean): { ok: true; keepWarm: boolean } {
     const session = this.findSession(sessionRef);
     if (!session) throw new Error(`Session not found: ${sessionRef}`);
-    const until = keepWarmUntilFor(session, on, Date.now());
-    this.sessionManager.updateSession(session.id, { keepWarmUntil: until });
+    this.sessionManager.updateSession(session.id, { keepWarm: keepWarmFor(session, on) });
     logger.info(`[Session] Keep-warm ${on ? 'on' : 'off'} for ${session.name} (${session.id}) (MCP)`);
-    return { ok: true, keepWarm: on, ...(until != null ? { keepWarmUntilEpochMs: until } : {}) };
+    return { ok: true, keepWarm: on };
   }
 
   /** AI-side mission write; validation lives in SessionManager (shared with IPC). */
@@ -487,8 +486,7 @@ export class HelmSessionService {
       ...(session.remote ? { remote: { ...session.remote } } : {}),
       ...(session.locked ? { locked: true } : {}),
       ...(session.frozen ? { frozen: true } : {}),
-      ...(session.keepWarmUntil != null && session.keepWarmUntil > Date.now()
-        ? { keepWarmUntilEpochMs: session.keepWarmUntil } : {}),
+      ...(session.keepWarm ? { keepWarm: true } : {}),
       ...(session.lastPromptAt != null ? { lastPromptAtEpochMs: session.lastPromptAt } : {}),
       cacheWarnMinutes: warnAfterMs(cliEntry) / 60_000,
       cacheExpireMinutes: expireAfterMs(cliEntry) / 60_000,

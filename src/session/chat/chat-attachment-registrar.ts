@@ -11,7 +11,7 @@
  *
  * THE ANSWER. Take Helm's own copy through the machinery that already exists
  * for exactly this: artifact attachments. They are per-session, they survive
- * until the session ends, they are already capped at 10MB, and they are already
+ * until the session ends, they are already size-capped, and they are already
  * reachable from a phone through the allow-listed `session_artifact_*` family.
  * Building a second store beside them would have duplicated all four properties
  * and given the user two places to look for one file.
@@ -60,7 +60,7 @@ export interface ChatAttachmentRegistrarDeps {
 export function createChatAttachmentRegistrar(deps: ChatAttachmentRegistrarDeps) {
   return (sessionId: string, filePath: string): ChatAttachmentRef | undefined => {
     try {
-      // stat before read: a 10MB refusal should not cost 10MB of memory first.
+      // stat before read: an oversize refusal should not cost its size in memory first.
       const source = statSync(filePath);
       if (!source.isFile() || source.size > MAX_ATTACHMENT_BYTES) return undefined;
       const artifact = chatFilesArtifact(deps.artifacts, sessionId);
@@ -87,7 +87,7 @@ export function createChatAttachmentRegistrar(deps: ChatAttachmentRegistrarDeps)
 export function createChatAttachmentUploader(deps: ChatAttachmentRegistrarDeps) {
   return (sessionId: string, input: AddAttachmentInput): ChatUploadedAttachment => {
     if (input.content.byteLength > MAX_ATTACHMENT_BYTES) {
-      throw new Error('Attachment exceeds 10MB size limit');
+      throw new Error(`Attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`);
     }
 
     const artifact = chatFilesArtifact(deps.artifacts, sessionId);

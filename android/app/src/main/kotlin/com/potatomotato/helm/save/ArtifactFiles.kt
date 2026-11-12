@@ -1,5 +1,7 @@
 package com.potatomotato.helm.save
 
+import java.io.InputStream
+
 /**
  * Where a downloaded artifact lands on THIS phone.
  *
@@ -11,12 +13,13 @@ package com.potatomotato.helm.save
 interface ArtifactFiles {
 
     /**
-     * Write the bytes to the device's storage and say where they landed.
+     * Copy [content] to the device's storage and say where it landed. A stream,
+     * not bytes: an attachment can be 100 MiB, too big to hold in memory.
      * Throws when the file cannot be written; the caller turns that into the
      * failure the row reads.
      */
     @Throws(Exception::class)
-    fun save(filename: String, mimeType: String, bytes: ByteArray): SavedFile
+    fun save(filename: String, mimeType: String, content: InputStream): SavedFile
 }
 
 /**

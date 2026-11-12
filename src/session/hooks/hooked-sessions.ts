@@ -35,7 +35,7 @@ export function trackHookedSessions(
     if (previous !== undefined && session.hooked) {
       stateDetector.setHooked(session.id, false);
       // Keep-warm needs hooks; left on, it would only exempt the session from freezing.
-      sessionManager.updateSession(session.id, { hooked: false, keepWarmUntil: undefined });
+      sessionManager.updateSession(session.id, { hooked: false, keepWarm: undefined });
     }
     resolve(session.id, session.cliType);
   };

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ArtifactAttachmentManager } from '../src/session/artifact-attachment-manager.js';
+import { ArtifactAttachmentManager, MAX_ATTACHMENT_BYTES } from '../src/session/artifact-attachment-manager.js';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -45,11 +45,11 @@ describe('ArtifactAttachmentManager', () => {
     expect(readFileSync(absPath, 'utf8')).toBe('hello world');
   });
 
-  it('rejects files over 10MB', () => {
-    const bigContent = Buffer.alloc(10 * 1024 * 1024 + 1);
+  it('rejects files over the attachment cap', () => {
+    const bigContent = Buffer.alloc(MAX_ATTACHMENT_BYTES + 1);
     expect(() => {
       manager.add('artifact-1', { filename: 'big.bin', content: bigContent });
-    }).toThrow('exceeds 10MB');
+    }).toThrow('exceeds the 100 MB size limit');
   });
 
   it('stores generated media with its copied size and SHA-256, then deletes it with the artifact', async () => {

@@ -31,7 +31,6 @@ import { MAX_ATTACHMENT_BYTES, type ArtifactAttachment } from '../types/artifact
 import { ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES, resolveSliceWindow } from './artifact-download.js';
 import type { SliceWindow } from './artifact-download.js';
 import { logger } from '../utils/logger.js';
-import { MAX_GENERATED_MEDIA_BYTES } from './generated-media-policy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -60,12 +59,12 @@ export class ArtifactAttachmentManager {
 
   /**
    * Add a file attachment for an artifact. Returns the attachment metadata.
-   * Throws if the file exceeds 10MB.
+   * Throws if the file exceeds MAX_ATTACHMENT_BYTES.
    */
   add(artifactId: string, input: AddAttachmentInput): ArtifactAttachment {
     const safeFilename = sanitizeFilename(input.filename);
     if (input.content.byteLength > MAX_ATTACHMENT_BYTES) {
-      throw new Error('Attachment exceeds 10MB size limit');
+      throw new Error(`Attachment exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`);
     }
 
     const now = Date.now();
@@ -102,8 +101,8 @@ export class ArtifactAttachmentManager {
   ): Promise<ArtifactAttachment> {
     const source = statSync(input.filePath);
     if (!source.isFile()) throw new Error('Generated media result is not a file');
-    if (source.size <= 0 || source.size > MAX_GENERATED_MEDIA_BYTES) {
-      throw new Error(`Generated media must be between 1 byte and ${MAX_GENERATED_MEDIA_BYTES} bytes`);
+    if (source.size <= 0 || source.size > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`Generated media must be between 1 byte and ${MAX_ATTACHMENT_BYTES} bytes`);
     }
     const safeFilename = sanitizeFilename(input.filename);
     const id = randomUUID();
@@ -115,8 +114,8 @@ export class ArtifactAttachmentManager {
     try {
       copyFileSync(input.filePath, storagePath);
       const copied = statSync(storagePath);
-      if (!copied.isFile() || copied.size <= 0 || copied.size > MAX_GENERATED_MEDIA_BYTES) {
-        throw new Error(`Generated media must be between 1 byte and ${MAX_GENERATED_MEDIA_BYTES} bytes`);
+      if (!copied.isFile() || copied.size <= 0 || copied.size > MAX_ATTACHMENT_BYTES) {
+        throw new Error(`Generated media must be between 1 byte and ${MAX_ATTACHMENT_BYTES} bytes`);
       }
       const hash = createHash('sha256');
       for await (const chunk of createReadStream(storagePath)) hash.update(chunk);
@@ -199,9 +198,7 @@ export class ArtifactAttachmentManager {
   ): { bytes: Buffer; window: SliceWindow; total: number } {
     const path = this.getPath(artifactId, attachmentId);
     const total = statSync(path).size;
-    const attachment = this.get(artifactId, attachmentId);
-    const sizeLimit = attachment?.generatedMedia ? MAX_GENERATED_MEDIA_BYTES : MAX_ATTACHMENT_BYTES;
-    if (total > sizeLimit) throw new Error(`Attachment exceeds its ${sizeLimit}-byte download limit`);
+    if (total > MAX_ATTACHMENT_BYTES) throw new Error(`Attachment exceeds its ${MAX_ATTACHMENT_BYTES}-byte download limit`);
     const window = resolveSliceWindow(total, offset, length);
     if (window.length === 0) return { bytes: Buffer.alloc(0), window, total };
 

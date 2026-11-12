@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import com.potatomotato.helm.ui.control.SessionSheet
 import com.potatomotato.helm.ui.share.ShareWaitDialog
 import com.potatomotato.helm.data.ShareState
-import com.potatomotato.helm.data.isKeepWarmEnabled
 
 @Composable
 internal fun PhoneOverlays(state: PhoneScaffoldState, actions: PhoneScaffoldActions, atRoot: Boolean) {
@@ -19,7 +18,7 @@ internal fun PhoneOverlays(state: PhoneScaffoldState, actions: PhoneScaffoldActi
         BackHandler(onBack = actions.overlay.onBackToThread)
         SessionSheet(
             sessionName = session.name,
-            keepWarm = isKeepWarmEnabled(session.keepWarmUntilEpochMs, System.currentTimeMillis()),
+            keepWarm = session.keepWarm,
             frozen = session.frozen,
             capabilities = state.capabilities,
             onDismiss = actions.overlay.onBackToThread,

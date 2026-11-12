@@ -41,7 +41,7 @@ function decodeAttachmentInput(input: {
   const padding = input.contentBase64.endsWith('==') ? 2 : input.contentBase64.endsWith('=') ? 1 : 0;
   const decodedSize = Math.floor(input.contentBase64.length * 3 / 4) - padding;
   if (decodedSize > MAX_ATTACHMENT_BYTES) {
-    throw new Error('File exceeds 10MB size limit');
+    throw new Error(`File exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`);
   }
   return {
     filename: input.filename,
@@ -226,7 +226,7 @@ export function setupArtifactHandlers(
     try {
       const fileStat = await stat(filePath);
       if (fileStat.size > MAX_ATTACHMENT_BYTES) {
-        throw new Error('File exceeds 10MB size limit');
+        throw new Error(`File exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB size limit`);
       }
       const buffer = await readFile(filePath);
       const filename = basename(filePath);

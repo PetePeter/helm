@@ -56,8 +56,8 @@ export interface SessionCardSession {
   lastPromptAt?: number;
   lastUserPromptAt?: number;
   lastUserPromptSource?: UserPromptSource;
-  /** Keep-warm is on until this epoch ms. */
-  keepWarmUntil?: number;
+  /** Keep-warm is on until switched off. */
+  keepWarm?: boolean;
   eta?: SessionEta;
   mission?: SessionMission;
 }
@@ -233,8 +233,7 @@ const stateLabel = computed(() => STATE_LABELS[props.sessionState] || '💤 Idle
 const statusIcons = computed(() => [
   props.session.locked && { icon: '🔒', title: 'Locked against closure' },
   props.session.frozen && { icon: '❄️', title: 'Frozen — no input reaches it' },
-  props.session.keepWarmUntil !== undefined && props.session.keepWarmUntil > Date.now()
-    && { icon: '⏰', title: `Keeping cache warm until ${new Date(props.session.keepWarmUntil).toLocaleTimeString()}` },
+  props.session.keepWarm && { icon: '⏰', title: 'Keeping cache warm' },
   scheduledTaskTooltip.value && { icon: '🕒', title: scheduledTaskTooltip.value, className: 'session-status-scheduled-task' },
 ].filter((x): x is { icon: string; title: string; className?: string } => !!x));
 /** The row's own line: the mission when set, else the CLI's terminal title. */

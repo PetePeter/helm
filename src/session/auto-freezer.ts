@@ -39,7 +39,7 @@ export class AutoFreezer {
     for (const session of this.sessionManager.getAllSessions()) {
       if (session.frozen || session.role === 'operator') continue;
       // The user asked for this session to stay warm: never shut it while that holds.
-      if (session.keepWarmUntil !== undefined && session.keepWarmUntil >= now) continue;
+      if (session.keepWarm) continue;
       const thresholds = this.thresholds(session.cliType);
       if (promptStaleness(session.lastPromptAt, now, thresholds) !== 'expired') continue;
       logger.info(`[AutoFreezer] Freezing ${session.name} (${session.id}) — long prompt cache expired`

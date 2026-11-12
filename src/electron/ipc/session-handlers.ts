@@ -14,7 +14,7 @@ import { CONTEXT_MENU_ACTION_IDS, type ContextMenuAction } from '../../types/con
 import { resolveWindowIconPath } from '../window-icon.js';
 import { applyNavigationPolicy } from '../navigation-policy.js';
 import { logger } from '../../utils/logger.js';
-import { keepWarmUntilFor } from '../../session/keep-warmer.js';
+import { keepWarmFor } from '../../session/keep-warmer.js';
 
 /** Helm's strip-and-reload actions, owned by the MCP control service (one implementation for MCP and UI). */
 export interface TranscriptActions {
@@ -165,12 +165,12 @@ export function setupSessionHandlers(
     }
   });
 
-  /** Keep the prompt cache warm for the default window, or switch it off. */
+  /** Keep the prompt cache warm until switched off, or switch it off. */
   ipcMain.handle('session:setKeepWarm', (_event, id: string, on: boolean) => {
     try {
       const session = sessionManager.getSession(id);
       if (!session) throw new Error(`Session not found: ${id}`);
-      sessionManager.updateSession(id, { keepWarmUntil: keepWarmUntilFor(session, on, Date.now()) });
+      sessionManager.updateSession(id, { keepWarm: keepWarmFor(session, on) });
       logger.info(`[Session] Keep-warm ${on ? 'on' : 'off'} for ${id} (UI)`);
       return { success: true };
     } catch (error) {

@@ -1418,7 +1418,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_set_keep_warm',
     title: 'Keep Session Cache Warm',
-    description: 'Keep a session\'s prompt cache warm until its existing 8-hour limit, or turn keep-warm off. Pings use the CLI type\'s prompt just before its short-cache window lapses; active and frozen sessions are skipped. Omit sessionId to target your own session.',
+    description: 'Keep a session\'s prompt cache warm until turned off. Pings use the CLI type\'s prompt just before its short-cache window lapses; active and frozen sessions are skipped. Omit sessionId to target your own session.',
     inputSchema: {
       type: 'object',
       properties: {

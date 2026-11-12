@@ -612,11 +612,11 @@ class ChatRepository(
 
     /** Begin (or resume) a fetch of the file hanging off one message. */
     fun pullStarted(key: String, attachment: ChatAttachment): Boolean =
-        attachmentPulls.pullStarted(key, attachment.sizeBytes, attachment.sha256, attachment.generatedMedia)
+        attachmentPulls.pullStarted(key, attachment.sizeBytes, attachment.sha256)
 
     fun nextAsk(key: String, sliceBytes: Int): Long? = attachmentPulls.nextAsk(key, sliceBytes)
 
-    fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): ByteArray? =
+    fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): java.io.File? =
         attachmentPulls.sliceArrived(key, offset, bytes, eof)
 
     fun pullFailed(key: String, message: String) = attachmentPulls.pullFailed(key, message)

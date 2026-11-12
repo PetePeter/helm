@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 import java.io.IOException
+import java.io.InputStream
 
 /**
  * The one place this app writes into the user-visible Downloads folder — and
@@ -27,7 +28,7 @@ import java.io.IOException
 internal object MediaStoreDownloads {
 
     /**
-     * Write [bytes] as [filename] into `Downloads/Helm` and say where they landed.
+     * Copy [content] as [filename] into `Downloads/Helm` and say where they landed.
      *
      * With [replaceExisting] the rows already using that name IN OUR FOLDER are
      * removed first, so the name the user is told is the name they get. The scope
@@ -57,7 +58,7 @@ internal object MediaStoreDownloads {
         context: Context,
         filename: String,
         mimeType: String,
-        bytes: ByteArray,
+        content: InputStream,
         replaceExisting: Boolean,
     ): SavedFile {
         val resolver = context.contentResolver
@@ -90,7 +91,7 @@ internal object MediaStoreDownloads {
 
         val claim = claimName(resolver, collection, relativePath, filename, mimeType, replaceExisting, from)
         try {
-            resolver.openOutputStream(claim.uri)?.use { it.write(bytes) }
+            resolver.openOutputStream(claim.uri)?.use { content.copyTo(it) }
                 ?: throw IOException("The phone would not open the file for writing")
             val released = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
             resolver.update(claim.uri, released, null, null)

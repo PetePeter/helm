@@ -45,7 +45,7 @@ class AttachmentPullsTest {
                 val to = minOf(from + slice, source.size)
                 val bytes = if (from >= to) ByteArray(0) else source.copyOfRange(from, to)
                 val answer = pulls.sliceArrived(key, offset, bytes, eof = to >= source.size)
-                if (answer != null) whole = answer
+                if (answer != null) whole = answer.readBytes()
             }
         }
         return whole
@@ -129,7 +129,7 @@ class AttachmentPullsTest {
             val from = offset.toInt()
             val to = minOf(from + 100, source.size)
             whole = pulls.sliceArrived(key, offset, source.copyOfRange(from, to), eof = to >= source.size)
-                ?: whole
+                ?.readBytes() ?: whole
         }
 
         assertTrue(source.contentEquals(whole))
@@ -157,17 +157,25 @@ class AttachmentPullsTest {
     }
 
     @Test
-    fun `normal files keep the smaller limit while generated media may use the larger limit`() {
+    fun `one 100 MiB limit - the limit itself is fetched, a byte more is refused`() {
+        assertTrue(pulls.pullStarted(key, AttachmentPulls.MAX_ATTACHMENT_BYTES))
+        pulls.pullCancelled(key)
+
         assertFalse(pulls.pullStarted(key, AttachmentPulls.MAX_ATTACHMENT_BYTES + 1))
         assertTrue(pulls.pullState(key) is PullState.Failed)
-
-        assertTrue(pulls.pullStarted(key, AttachmentPulls.MAX_ATTACHMENT_BYTES + 1, generatedMedia = true))
     }
 
     @Test
-    fun `a generated file larger than the generated media limit is rejected`() {
-        assertFalse(pulls.pullStarted(key, AttachmentPulls.MAX_GENERATED_MEDIA_BYTES + 1, generatedMedia = true))
-        assertTrue(pulls.pullState(key) is PullState.Failed)
+    fun `the part-file lives on disk until the pull is saved, then is removed`() {
+        val content = byteArrayOf(1, 2, 3)
+        assertTrue(pulls.pullStarted(key, content.size.toLong()))
+        askAll(slice = content.size)
+
+        val part = pulls.sliceArrived(key, 0, content, eof = true)!!
+        assertTrue(content.contentEquals(part.readBytes()))
+
+        pulls.pullSaved(key, "Downloads/Helm/x", "content://x")
+        assertFalse(part.exists())
     }
 
     @Test
@@ -175,16 +183,16 @@ class AttachmentPullsTest {
         val content = byteArrayOf(1, 2, 3)
         val digest = MessageDigest.getInstance("SHA-256").digest(content)
             .joinToString("") { "%02x".format(it) }
-        assertTrue(pulls.pullStarted(key, content.size.toLong(), digest, generatedMedia = true))
+        assertTrue(pulls.pullStarted(key, content.size.toLong(), digest))
         assertEquals(0L, askAll(slice = content.size).first())
 
-        assertTrue(content.contentEquals(pulls.sliceArrived(key, 0, content, eof = true)))
+        assertTrue(content.contentEquals(pulls.sliceArrived(key, 0, content, eof = true)?.readBytes()))
     }
 
     @Test
     fun `a generated transfer with a wrong SHA-256 is discarded`() {
         val content = byteArrayOf(1, 2, 3)
-        assertTrue(pulls.pullStarted(key, content.size.toLong(), "0".repeat(64), generatedMedia = true))
+        assertTrue(pulls.pullStarted(key, content.size.toLong(), "0".repeat(64)))
         askAll(slice = content.size)
 
         assertNull(pulls.sliceArrived(key, 0, content, eof = true))

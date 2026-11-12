@@ -49,7 +49,7 @@ export function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(isNumber(s.lastUserPromptAt) && isUserPromptSource(s.lastUserPromptSource)
       ? { lastUserPromptAt: s.lastUserPromptAt, lastUserPromptSource: s.lastUserPromptSource }
       : {}),
-    ...(isNumber(s.keepWarmUntil) ? { keepWarmUntil: s.keepWarmUntil } : {}),
+    ...(s.keepWarm ? { keepWarm: true } : {}),
     // Durable hook-derived stall (G3). Absent = not stalled; omitted key means
     // the same as no stall, so a cleared stall simply drops off disk.
     ...(isHookStall(s.hookStall) ? { hookStall: s.hookStall } : {}),
@@ -172,6 +172,13 @@ export function loadSessions(sessionsFile?: string, expectedProfileId?: string):
         if ('loopDriving' in session) {
           delete (session as Record<string, unknown>).loopDriving;
         }
+        // Keep-warm used to lapse at keepWarmUntil; it is now on until switched off.
+        const legacy = session as unknown as Record<string, unknown>;
+        if ('keepWarmUntil' in legacy) {
+          if (isNumber(legacy.keepWarmUntil)) session.keepWarm = true;
+          delete legacy.keepWarmUntil;
+        }
+        if (session.keepWarm !== true) delete session.keepWarm;
         // Rehydrate chat bindings, dropping retired-provider fields.
         return hydrateChatBindings(session);
       })

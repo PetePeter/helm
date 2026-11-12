@@ -22,6 +22,7 @@ import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.save.SavedFile
 import com.potatomotato.helm.data.ArtifactRules
 import kotlin.coroutines.resume
+import java.io.InputStream
 import com.potatomotato.helm.wire.MobileRecord
 
 
@@ -287,12 +288,12 @@ class ArtifactClient internal constructor(
      * The default refuses, so a build that never wires it fails legibly on the
      * tile rather than pretending to have saved something.
      */
-    var saveAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> SavedFile = { _, _, _ ->
+    var saveAttachment: (filename: String, mimeType: String, content: InputStream) -> SavedFile = { _, _, _ ->
         throw IllegalStateException(HelmClient.NO_FILE_SINK)
     }
 
     /** Temporary image previews use app cache; explicit downloads use [saveAttachment]. */
-    var savePreviewAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> SavedFile = { _, _, _ ->
+    var savePreviewAttachment: (filename: String, mimeType: String, content: InputStream) -> SavedFile = { _, _, _ ->
         throw IllegalStateException(HelmClient.NO_FILE_SINK)
     }
 
@@ -335,7 +336,7 @@ class ArtifactClient internal constructor(
      * get them wrong.
      */
     fun pullAttachment(sessionId: String, pulls: AttachmentPulls, target: PullTarget): Boolean {
-        if (!pulls.pullStarted(target.key, target.sizeBytes, target.sha256, target.generatedMedia)) return false
+        if (!pulls.pullStarted(target.key, target.sizeBytes, target.sha256)) return false
         return fillPipeline(sessionId, pulls, target)
     }
 
@@ -415,10 +416,12 @@ class ArtifactClient internal constructor(
             // is the name the file was stored under, and the metadata row may be
             // older than a rename.
             val name = blob.filename.takeIf { it.isNotBlank() } ?: target.filename
-            val saved = if (target.previewOnly) {
-                savePreviewAttachment(name, target.mimeType, whole)
-            } else {
-                saveAttachment(name, target.mimeType, whole)
+            val saved = whole.inputStream().use { content ->
+                if (target.previewOnly) {
+                    savePreviewAttachment(name, target.mimeType, content)
+                } else {
+                    saveAttachment(name, target.mimeType, content)
+                }
             }
             pulls.pullSaved(target.key, saved.location, saved.uri, previewOnly = target.previewOnly)
         } catch (error: Exception) {

@@ -88,11 +88,11 @@ when it runs.
 
 ## Keep warm
 
-The row's ⋮ → **Keep cache warm** sets `SessionInfo.keepWarmUntil` (persisted)
-8 hours ahead. `KeepWarmer` then sends a ping **10 s before its short cache
+The row's ⋮ → **Keep cache warm** sets `SessionInfo.keepWarm` (persisted) until
+it is switched off — no time limit. `KeepWarmer` then sends a ping **10 s before its short cache
 lapses** (`cacheWarnMinutes` − 10 s; 4:50 for 5 min), so the next real prompt
 still hits the cheap cache. Each ping costs one short turn, which is why it is
-opt-in and lapses on its own. While it is on, AutoFreezer leaves the session
+opt-in. A legacy `keepWarmUntil` window in `sessions.yaml` loads as on. While it is on, AutoFreezer leaves the session
 alone.
 
 Keep-warm is offered to **hooked** sessions only (the menu item is disabled and
@@ -145,7 +145,7 @@ is drawn both above and below the terminal, where the eyes are while typing.
 resolved `cacheWarnMinutes` / `cacheExpireMinutes`. The Android chat shows the
 same orange / red / blue banner above the thread (with Unfreeze when frozen),
 and rows show the same 🔒 ❄️ ⏰ icons as the desktop (`locked`,
-`keepWarmUntilEpochMs` ride the summary too). A message refused because the session is frozen
+`keepWarm` ride the summary too). A message refused because the session is frozen
 settles as `Delivery.Frozen` — matched on the desktop's "is frozen" wording —
 with an **Unfreeze & send** action that calls `session_set_frozen` and resends.
 The long-press session sheet offers the same keep-warm on/off control as the

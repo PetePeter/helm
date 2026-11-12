@@ -17,6 +17,7 @@ import {
   type ArtifactUploadOpenInput,
 } from '../src/mobile/mobile-artifact-upload';
 import type { ArtifactAttachment } from '../src/types/artifact-attachment';
+import { MAX_ATTACHMENT_BYTES } from '../src/types/artifact-attachment';
 
 const FILE = Buffer.from('the quick brown fox jumps over the lazy dog');
 const SHA = createHash('sha256').update(FILE).digest('hex');
@@ -197,7 +198,7 @@ describe('MobileArtifactUploadService', () => {
 
   it('refuses an upload past the attachment size cap', () => {
     const { service } = makeService();
-    expect(() => service.open('device-1', openInput({ sizeBytes: 11 * 1024 * 1024, sha256: SHA })))
+    expect(() => service.open('device-1', openInput({ sizeBytes: MAX_ATTACHMENT_BYTES + 1, sha256: SHA })))
       .toThrow(/cap/);
   });
 

@@ -173,8 +173,8 @@ export interface SessionSummary {
   noPromptCache?: boolean;
   /** True when deliberate session closure is blocked. */
   locked?: boolean;
-  /** Keep-warm is on until this epoch ms (absent when off or lapsed). */
-  keepWarmUntilEpochMs?: number;
+  /** Keep-warm is on (absent when off). */
+  keepWarm?: boolean;
   /** The session's mission TL;DR, who set it, and when (epoch ms). */
   mission?: { text: string; setBy: 'user' | 'ai'; setAt: number };
   /** The LLM's expected completion time, in epoch milliseconds. */

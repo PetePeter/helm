@@ -27,7 +27,7 @@ class AndroidLogFiles(private val context: Context) : LogFiles {
             // A log export is only ever read by a person, so only the location
             // matters here; the uri the write also hands back is for the caller
             // that needs to OPEN the file, which this one does not.
-            MediaStoreDownloads.write(context, filename, mimeType, bytes, replaceExisting = true).location
+            MediaStoreDownloads.write(context, filename, mimeType, bytes.inputStream(), replaceExisting = true).location
         } else {
             writeToAppFolder(filename, bytes)
         }

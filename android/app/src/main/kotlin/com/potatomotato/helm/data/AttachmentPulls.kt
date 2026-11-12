@@ -3,6 +3,7 @@ package com.potatomotato.helm.data
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 
 /**
  * One file to fetch from the desktop, slice by slice, whatever row is showing it.
@@ -56,8 +57,8 @@ fun artifactAttachmentKey(artifactId: String, attachmentId: String): String =
 class AttachmentPulls {
 
     companion object {
-        const val MAX_ATTACHMENT_BYTES = 10L * 1024 * 1024
-        const val MAX_GENERATED_MEDIA_BYTES = 64L * 1024 * 1024
+        /** Mirrors the desktop's `MAX_ATTACHMENT_BYTES` (src/types/artifact-attachment.ts). */
+        const val MAX_ATTACHMENT_BYTES = 100L * 1024 * 1024
     }
 
     private val _pulls = MutableStateFlow<Map<String, PullState>>(emptyMap())
@@ -74,22 +75,22 @@ class AttachmentPulls {
      * double tap cannot start two loops writing into one buffer. A resumed fetch
      * keeps what already arrived: the rewind is to the gap, not to zero.
      */
-    fun pullStarted(key: String, sizeBytes: Long, sha256: String? = null, generatedMedia: Boolean = false): Boolean {
+    fun pullStarted(key: String, sizeBytes: Long, sha256: String? = null): Boolean {
         if (_pulls.value[key] is PullState.Pulling) return false
-        val maximum = if (generatedMedia) MAX_GENERATED_MEDIA_BYTES else MAX_ATTACHMENT_BYTES
-        if (sizeBytes !in 1..maximum) {
-            transfers.remove(key)
-            setPull(key, PullState.Failed("File exceeds the ${maximum / (1024 * 1024)} MiB transfer limit"))
+        if (sizeBytes !in 1..MAX_ATTACHMENT_BYTES) {
+            transfers.remove(key)?.discard()
+            setPull(key, PullState.Failed("File exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)} MiB transfer limit"))
             return false
         }
         val expectedHash = sha256?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
         if (sha256 != null && expectedHash == null) {
-            transfers.remove(key)
+            transfers.remove(key)?.discard()
             setPull(key, PullState.Failed("File integrity metadata is invalid"))
             return false
         }
         val current = transfers[key]
         val transfer = if (current == null || current.total != sizeBytes || current.expectedSha256 != expectedHash) {
+            current?.discard()
             AttachmentTransfer(sizeBytes, expectedHash).also { transfers[key] = it }
         } else current
         // A retry rewinds to the gap: answers to the asks that died with the
@@ -110,12 +111,12 @@ class AttachmentPulls {
         transfers[key]?.nextAsk(sliceBytes, ATTACHMENT_PIPELINE)
 
     /**
-     * Take one slice. Returns the complete file when that slice was the last one,
-     * and null while there is more to come — so the caller has exactly one signal
+     * Take one slice. Returns the complete file (on disk, until [pullSaved] or
+     * [pullCancelled] drops it) when that slice was the last one, and null while there is more to come — so the caller has exactly one signal
      * for "now save it". A slice nobody is waiting for is dropped rather than
      * failing the row: with several asks in flight a duplicate is a normal event.
      */
-    fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): ByteArray? {
+    fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): File? {
         val transfer = transfers[key] ?: return null
         if (!transfer.accept(offset, bytes, eof)) return null
         if (!transfer.done) {
@@ -123,9 +124,9 @@ class AttachmentPulls {
             return null
         }
         return try {
-            transfer.bytes()
+            transfer.file()
         } catch (error: Exception) {
-            transfers.remove(key)
+            transfers.remove(key)?.discard()
             setPull(key, PullState.Failed(error.message ?: "File integrity check failed"))
             null
         }
@@ -141,13 +142,13 @@ class AttachmentPulls {
 
     /** The bytes reached the device. The row becomes an open button. */
     fun pullSaved(key: String, location: String, uri: String, previewOnly: Boolean = false) {
-        transfers.remove(key)
+        transfers.remove(key)?.discard()
         setPull(key, PullState.Ready(location, uri, previewOnly))
     }
 
     /** Abandon a fetch and its part-file. Nothing half-written is kept. */
     fun pullCancelled(key: String) {
-        transfers.remove(key)
+        transfers.remove(key)?.discard()
         setPull(key, PullState.Idle)
     }
 

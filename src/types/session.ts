@@ -126,9 +126,9 @@ export interface SessionInfo {
   /** Timestamp and source of the last actual user-submitted prompt. */
   lastUserPromptAt?: number;
   lastUserPromptSource?: UserPromptSource;
-  /** Keep-warm is on until this epoch ms: KeepWarmer pings the session 10 s
+  /** Keep-warm is on until switched off: KeepWarmer pings the session 10 s
    *  before its CLI's short prompt cache would lapse, so it never does. Persists. */
-  keepWarmUntil?: number;
+  keepWarm?: boolean;
   /** The CLI type's hooks are installed (or a hook event proved them): hook
    *  events alone move the dot and the cache timer, and keep-warm is offered.
    *  Runtime only — re-resolved from disk on every spawn. */

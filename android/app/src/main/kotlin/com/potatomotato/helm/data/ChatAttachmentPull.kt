@@ -1,5 +1,7 @@
 package com.potatomotato.helm.data
 
+import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
 
 /**
@@ -56,9 +58,17 @@ sealed interface PullState {
  *    half, and looks like the desktop sent something broken.
  *  - A failure keeps what arrived, so a retry resumes rather than restarting.
  *    On BLE that is the difference between a lost minute and a lost transfer.
+ *
+ * In-order bytes go straight to [spool] on disk, hashed as they land: a file of
+ * up to 100 MiB held in memory (twice, once assembled) would kill the app.
+ * Only the few slices that overtake the gap wait in memory.
  */
-class AttachmentTransfer(val total: Long, val expectedSha256: String? = null) {
-    private val parts = mutableListOf<ByteArray>()
+class AttachmentTransfer(
+    val total: Long,
+    val expectedSha256: String? = null,
+    private val spool: File = File.createTempFile("helm-pull-", ".part"),
+) {
+    private val digest = expectedSha256?.let { MessageDigest.getInstance("SHA-256") }
 
     /** Slices that arrived ahead of the gap, keyed by where they start. */
     private val early = mutableMapOf<Long, ByteArray>()
@@ -121,8 +131,7 @@ class AttachmentTransfer(val total: Long, val expectedSha256: String? = null) {
         if (eof) end = minOf(end ?: Long.MAX_VALUE, offset + bytes.size)
 
         if (offset == received) {
-            parts += bytes
-            received += bytes.size
+            append(bytes)
             drain()
         } else {
             early[offset] = bytes
@@ -136,9 +145,14 @@ class AttachmentTransfer(val total: Long, val expectedSha256: String? = null) {
     private fun drain() {
         while (true) {
             val next = early.remove(received) ?: return
-            parts += next
-            received += next.size
+            append(next)
         }
+    }
+
+    private fun append(bytes: ByteArray) {
+        FileOutputStream(spool, true).use { it.write(bytes) }
+        digest?.update(bytes)
+        received += bytes.size
     }
 
     /**
@@ -153,23 +167,23 @@ class AttachmentTransfer(val total: Long, val expectedSha256: String? = null) {
     }
 
     /**
-     * The whole file. Only meaningful once [done]; asking early would hand back
-     * a truncated file that nothing downstream could tell from a complete one,
-     * so it refuses instead.
+     * The whole file, on disk. Only meaningful once [done]; asking early would
+     * hand back a truncated file that nothing downstream could tell from a
+     * complete one, so it refuses instead. Owned by this transfer — [discard]
+     * removes it once it has been copied out.
      */
-    fun bytes(): ByteArray {
+    fun file(): File {
         check(done) { "the transfer is not finished" }
-        val out = ByteArray(received.toInt())
-        var at = 0
-        for (part in parts) {
-            part.copyInto(out, at)
-            at += part.size
+        if (digest != null && expectedSha256 != null) {
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            check(MessageDigest.isEqual(actual.toByteArray(), expectedSha256.toByteArray())) { "File integrity check failed" }
         }
-        expectedSha256?.let { expected ->
-            val actual = MessageDigest.getInstance("SHA-256").digest(out).joinToString("") { "%02x".format(it) }
-            check(MessageDigest.isEqual(actual.toByteArray(), expected.toByteArray())) { "File integrity check failed" }
-        }
-        return out
+        return spool
+    }
+
+    /** Drop the part-file. The transfer is finished with, saved or abandoned. */
+    fun discard() {
+        spool.delete()
     }
 
     /** What the tile should say right now. */

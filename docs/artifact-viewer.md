@@ -213,7 +213,7 @@ is caught by the next startup sweep.
 section manages the side store for the selected artifact:
 
 - **Add** — native picker (`artifact:pickAndReadFile`) → `artifact:attachmentAdd`
-  (base64 in, 10 MB cap, body untouched — attachments are a side store, and any
+  (base64 in, 100 MB cap, body untouched — attachments are a side store, and any
   body links stay as the AI/user wrote them).
 - **Open** — `artifact:openAttachment` (shell-open the stored file).
 - **Delete** — `artifact:attachmentDelete`; a body link to a deleted

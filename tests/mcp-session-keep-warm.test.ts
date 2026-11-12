@@ -7,7 +7,6 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 vi.mock('../src/session/persistence.js', () => ({ saveSessions: () => {}, loadSessions: () => [] }));
 
-const { KEEP_WARM_DEFAULT_MS } = await import('../src/session/keep-warmer.js');
 const { SessionManager } = await import('../src/session/manager.js');
 const { HelmSessionService } = await import('../src/mcp/services/helm-session-service.js');
 const { callMcpTool } = await import('../src/mcp/tools/dispatcher.js');
@@ -55,29 +54,26 @@ describe('MCP session_set_keep_warm', () => {
     expect(getAvailableTools().map((tool) => tool.name)).toContain('session_set_keep_warm');
   });
 
-  it('defaults to the authenticated caller and exposes the same deadline in session_list', async () => {
+  it('defaults to the authenticated caller and exposes it in session_list', async () => {
     await call({ on: true });
-    const expected = Date.now() + KEEP_WARM_DEFAULT_MS;
-    expect(manager.getSession('caller-id')?.keepWarmUntil).toBe(expected);
-    expect(manager.getSession('worker-id')?.keepWarmUntil).toBeUndefined();
-    expect((await list()).find((s: any) => s.id === 'caller-id')?.keepWarmUntilEpochMs).toBe(expected);
+    expect(manager.getSession('caller-id')?.keepWarm).toBe(true);
+    expect(manager.getSession('worker-id')?.keepWarm).toBeUndefined();
+    expect((await list()).find((s: any) => s.id === 'caller-id')?.keepWarm).toBe(true);
   });
 
   it('targets an explicit session by exact name and turns it off repeatedly', async () => {
     await call({ sessionId: 'worker', on: true });
-    const until = manager.getSession('worker-id')?.keepWarmUntil;
-    expect(until).toBe(Date.now() + KEEP_WARM_DEFAULT_MS);
     vi.advanceTimersByTime(60 * 60_000);
     await call({ sessionId: 'worker-id', on: true });
-    expect(manager.getSession('worker-id')?.keepWarmUntil).toBe(until);
+    expect(manager.getSession('worker-id')?.keepWarm).toBe(true);
     await call({ sessionId: 'worker-id', on: false });
     await call({ sessionId: 'worker-id', on: false });
-    expect(manager.getSession('worker-id')?.keepWarmUntil).toBeUndefined();
+    expect(manager.getSession('worker-id')?.keepWarm).toBeUndefined();
   });
 
   it('refuses to switch it on for a hookless session — nothing would confirm the ping landed', async () => {
     await expect(call({ sessionId: 'plain-id', on: true })).rejects.toThrow(/needs CLI hooks/);
-    expect(manager.getSession('plain-id')?.keepWarmUntil).toBeUndefined();
+    expect(manager.getSession('plain-id')?.keepWarm).toBeUndefined();
     await expect(call({ sessionId: 'plain-id', on: false })).resolves.toMatchObject({ keepWarm: false });
   });
 

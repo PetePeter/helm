@@ -68,8 +68,8 @@ data class HelmSession(
     val frozen: Boolean = false,
     /** Protected from closure. */
     val locked: Boolean = false,
-    /** Desktop-clock epoch ms until which keep-warm pings run; null when off. */
-    val keepWarmUntilEpochMs: Long? = null,
+    /** Keep-warm pings run until switched off. */
+    val keepWarm: Boolean = false,
     /** Desktop-clock epoch ms of the last prompt — the clock the cache windows count from. */
     val lastPromptAtEpochMs: Long? = null,
     /** The CLI type's short / long prompt-cache windows, in minutes. */
@@ -88,7 +88,7 @@ data class HelmSession(
     fun statusIcons(nowMs: Long): String = listOfNotNull(
         "🔒".takeIf { locked },
         "❄️".takeIf { frozen },
-        "⏰".takeIf { isKeepWarmEnabled(keepWarmUntilEpochMs, nowMs) },
+        "⏰".takeIf { keepWarm },
     ).joinToString(" ")
 
     /**
@@ -123,10 +123,6 @@ data class HelmSession(
     val groupLabel: String
         get() = machineName?.let { "🖥 $it" } ?: projectLabel
 }
-
-/** True only while the desktop-clock keep-warm deadline is still in the future. */
-internal fun isKeepWarmEnabled(untilEpochMs: Long?, nowMs: Long): Boolean =
-    untilEpochMs?.let { it > nowMs } == true
 
 enum class CacheStage { Fresh, Warn, Expired, Frozen }
 
@@ -272,7 +268,7 @@ object SessionWire {
             pendingSubagents = ((summary.opt("pendingSubagents") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
             frozen = summary.opt("frozen") == true,
             locked = summary.opt("locked") == true,
-            keepWarmUntilEpochMs = (summary.opt("keepWarmUntilEpochMs") as? Number)?.toLong(),
+            keepWarm = summary.opt("keepWarm") == true,
             lastPromptAtEpochMs = (summary.opt("lastPromptAtEpochMs") as? Number)?.toLong(),
             cacheWarnMinutes = (summary.opt("cacheWarnMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 5,
             cacheExpireMinutes = (summary.opt("cacheExpireMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 60,

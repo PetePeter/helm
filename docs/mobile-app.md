@@ -387,7 +387,7 @@ sequenceDiagram
     P->>P: stage copy + sha256, pick session
     P->>P: shareRefusal() — link, protocol, allow-list, size cap
     P->>G: session_share_file_add {sessionId, filename, sizeBytes, sha256}
-    G->>U: openShare (session must exist, cap 10 MB)
+    G->>U: openShare (session must exist, cap 100 MB)
     U-->>P: {uploadId, maxSliceBytes}
     P->>U: blob slices (uploadId)
     P->>G: session_share_file_commit {uploadId, draft:false}
@@ -398,10 +398,12 @@ sequenceDiagram
     P->>P: attachToDraft → open the session's chat
 ```
 
-**Size cap — 10 MB on either link, refused on the phone before a byte leaves.**
+**Size cap — 100 MB on either link, refused on the phone before a byte leaves.**
 That is the desktop's own upload ceiling (`MAX_ATTACHMENT_BYTES`). BLE was once
 held to 2 MB for speed; the user chose the bigger file over the shorter wait, so
-a 10 MB file over Bluetooth is a minutes-long transfer by design.
+a 100 MB file over Bluetooth is a ~30-minute transfer by design. Downloads
+spool to a part-file on disk as slices land (`AttachmentTransfer`), so a
+100 MB file never sits in the phone's memory.
 
 ### Chat attach — the send button's second mode
 
@@ -420,7 +422,7 @@ flowchart LR
   M -->|Send, or text typed| S[send message]
 ```
 
-The desktop's 10 MB check at slot-open is the backstop, not the message. The
+The desktop's 100 MB check at slot-open is the backstop, not the message. The
 share reuses the artifact upload's slot machinery (`mobile-artifact-upload.ts`
 on the desktop, `pumpSlices` in `HelmClient`) — only the open/commit pair and
 where the committed bytes land differ. A slot opened for a share can never be

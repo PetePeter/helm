@@ -24,7 +24,7 @@ function setup(patch: Record<string, unknown> = {}) {
   const sessions = new SessionManager();
   sessions.addSession({
     id: 's1', name: 'worker', cliType: 'test', processId: 1, workingDir: 'C:/w', hooked: true,
-    keepWarmUntil: NOW + HOUR, lastPromptAt: NOW - KEEP_WARM_AFTER_MS, ...patch,
+    keepWarm: true, lastPromptAt: NOW - KEEP_WARM_AFTER_MS, ...patch,
   });
   const sent: Array<[string, string]> = [];
   const clock = { now: NOW };
@@ -76,7 +76,7 @@ describe('KeepWarmer', () => {
 
   it("sends the CLI type's own keepWarmPrompt inside the fixed markers", async () => {
     const sessions = new SessionManager();
-    sessions.addSession({ id: 's1', name: 'w', cliType: 'codex', processId: 1, hooked: true, keepWarmUntil: NOW + HOUR, lastPromptAt: NOW - HOUR });
+    sessions.addSession({ id: 's1', name: 'w', cliType: 'codex', processId: 1, hooked: true, keepWarm: true, lastPromptAt: NOW - HOUR });
     const sent: string[] = [];
     const warmer = new KeepWarmer(sessions, async (_id, text) => { sent.push(text); }, () => ({ keepWarmPrompt: 'still there?' }), { now: () => NOW });
     await warmer.tick();
@@ -104,7 +104,7 @@ describe('KeepWarmer', () => {
       { lastPromptAt: NOW - KEEP_WARM_AFTER_MS + 1 },
       { hooked: false },
       { frozen: true },
-      { keepWarmUntil: undefined },
+      { keepWarm: undefined },
     ]) {
       const { warmer, sent } = setup(patch);
       await warmer.tick();
@@ -112,10 +112,11 @@ describe('KeepWarmer', () => {
     }
   });
 
-  it('switches itself off once its window has passed', async () => {
-    const { sessions, warmer, sent } = setup({ keepWarmUntil: NOW - 1 });
+  it('never switches itself off — still pinging a day later', async () => {
+    const { sessions, warmer, sent, clock } = setup({ lastPromptAt: NOW + 24 * HOUR - KEEP_WARM_AFTER_MS });
+    clock.now = NOW + 24 * HOUR;
     await warmer.tick();
-    expect(sent).toEqual([]);
-    expect(sessions.getSession('s1')?.keepWarmUntil).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(sessions.getSession('s1')?.keepWarm).toBe(true);
   });
 });

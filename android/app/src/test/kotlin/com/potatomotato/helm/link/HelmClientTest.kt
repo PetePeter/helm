@@ -1486,7 +1486,7 @@ class HelmClientTest {
         var savedName: String? = null
         client.artifacts.saveAttachment = { name, _, bytes ->
             savedName = name
-            saved = bytes
+            saved = bytes.readBytes()
             SavedFile("Downloads/Helm/chart.png", "content://downloads/7")
         }
 
@@ -1510,7 +1510,7 @@ class HelmClientTest {
         var previewBytes: ByteArray? = null
         client.artifacts.saveAttachment = { _, _, _ -> error("a preview must not save to Downloads") }
         client.artifacts.savePreviewAttachment = { _, _, bytes ->
-            previewBytes = bytes
+            previewBytes = bytes.readBytes()
             SavedFile("Temporary preview", "content://previews/1")
         }
 

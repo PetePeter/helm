@@ -89,10 +89,10 @@ describe('artifact:attachmentAdd', () => {
     expect(artifactManager.get(artifactId)!.versions[0].content).toBe('# body');
   });
 
-  it('refuses files over 10MB before decoding', () => {
+  it('refuses files over the attachment cap before decoding', () => {
     // The check uses the base64 length (raw ≈ 3/4 of it), so exceed 4/3 of the cap.
-    const huge = 'A'.repeat(Math.ceil(10 * 1024 * 1024 * 4 / 3) + 1024);
-    expect(() => addAttachment({ filename: 'big.bin', contentBase64: huge })).toThrow('10MB');
+    const huge = 'A'.repeat(Math.ceil(MAX_ATTACHMENT_BYTES * 4 / 3) + 1024);
+    expect(() => addAttachment({ filename: 'big.bin', contentBase64: huge })).toThrow('100 MB');
   });
 
   it('refuses an unknown artifact id', () => {
@@ -156,9 +156,9 @@ describe('artifact:chatAttachmentUpload', () => {
   });
 
   it('rejects oversized content before creating a Chat files artifact', () => {
-    const huge = 'A'.repeat(Math.ceil(10 * 1024 * 1024 * 4 / 3) + 1024);
+    const huge = 'A'.repeat(Math.ceil(MAX_ATTACHMENT_BYTES * 4 / 3) + 1024);
 
-    expect(() => uploadChatAttachment({ filename: 'large.bin', contentBase64: huge })).toThrow('10MB');
+    expect(() => uploadChatAttachment({ filename: 'large.bin', contentBase64: huge })).toThrow('100 MB');
     expect(artifactManager.getForSession(SESSION).map(item => item.title)).toEqual(['Report']);
   });
 });

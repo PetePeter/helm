@@ -268,7 +268,7 @@ session age, any pending handover note, and the PreCompact
   `stripTranscript` Quick Compact uses (tool noise reduced to one-liners, role
   headings demoted to `###`), uncapped. The raw `transcript.jsonl` stays
   attached as the lossless copy. Missing (`Copilot` sends none) → both say
-  so; over the 10MB attachment cap → inlined without the attachment, and the
+  so; over the 100MB attachment cap → inlined without the attachment, and the
   drop is logged — never a truncated attachment, never a silently missing one.
 - The artifact's kind is **`compact`** — markdown underneath (renders,
   downloads as `.md`), its own kind so desktop and phone badge it COMPACT.

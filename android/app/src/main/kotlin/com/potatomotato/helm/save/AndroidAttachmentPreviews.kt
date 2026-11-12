@@ -4,13 +4,14 @@ import android.content.Context
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 
 /** Stores a ComfyUI image opened for preview without adding it to user Downloads. */
 class AndroidAttachmentPreviews(context: Context) {
     private val appContext = context.applicationContext
 
     @Throws(IOException::class)
-    fun save(filename: String, mimeType: String, bytes: ByteArray): SavedFile {
+    fun save(filename: String, mimeType: String, content: InputStream): SavedFile {
         val directory = File(appContext.cacheDir, PREVIEW_DIRECTORY)
         if (!directory.isDirectory && !directory.mkdirs()) {
             throw IOException("Could not create image preview cache")
@@ -19,7 +20,7 @@ class AndroidAttachmentPreviews(context: Context) {
             .ifBlank { "image" }
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
         val file = File(directory, "${System.nanoTime()}-$safeName")
-        file.outputStream().use { it.write(bytes) }
+        file.outputStream().use { content.copyTo(it) }
         val uri = FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", file)
         return SavedFile("Temporary preview", uri.toString())
     }

@@ -48,7 +48,7 @@ const sessionFlags = computed(() => {
   return {
     locked: !!session?.locked,
     frozen: !!session?.frozen,
-    keepWarm: !!session?.keepWarmUntil && session.keepWarmUntil > Date.now(),
+    keepWarm: !!session?.keepWarm,
     hooked: !!session?.hooked,
   };
 });

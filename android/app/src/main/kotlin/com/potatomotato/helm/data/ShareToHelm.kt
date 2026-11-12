@@ -11,19 +11,17 @@ import java.util.Locale
  * Share-to-Helm: one file from the Android share sheet (or the chat composer's
  * attach mode) lands in the Helm inbox (docs/mobile-app.md).
  *
- * One cap on either link: the desktop's own 10 MB ceiling. BLE used to be held
+ * One cap on either link: the desktop's own 100 MiB ceiling. BLE used to be held
  * to 2 MB for speed; the user chose the bigger file over the shorter wait. The
  * refusal happens HERE, before a byte leaves — the desktop's cap is the
  * backstop, not the message.
  */
-const val MAX_SHARE_BYTES: Long = MAX_STAGED_BYTES.toLong()
-
 /** The tool a share opens with — what the permitted-tools answer must grant. */
 const val METHOD_SHARE_ADD = "session_share_file_add"
 
 /** The cap while a link is held; null with no link. */
 fun shareCapBytes(holderRank: Int?): Long? = when (holderRank) {
-    RANK_LAN, RANK_BLE -> MAX_SHARE_BYTES
+    RANK_LAN, RANK_BLE -> MAX_STAGED_BYTES
     else -> null
 }
 

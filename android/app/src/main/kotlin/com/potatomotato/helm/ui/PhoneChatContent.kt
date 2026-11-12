@@ -102,10 +102,9 @@ internal fun phoneChatActions(input: PhoneChatActionContext) = PhoneChatActions(
         input.scope.launch {
             try {
                 val saved = withContext(Dispatchers.IO) {
-                    val bytes = input.appContext.contentResolver.openInputStream(Uri.parse(uri))
-                        ?.use { it.readBytes() }
+                    input.appContext.contentResolver.openInputStream(Uri.parse(uri))
+                        ?.use { input.artifactFiles.save(attachment.filename, attachment.mimeType, it) }
                         ?: error(CANNOT_WRITE_FILE)
-                    input.artifactFiles.save(attachment.filename, attachment.mimeType, bytes)
                 }
                 input.client.artifacts.state.attachmentPulls.pullSaved(
                     artifactAttachmentKey(attachment.artifactId, attachment.attachmentId),

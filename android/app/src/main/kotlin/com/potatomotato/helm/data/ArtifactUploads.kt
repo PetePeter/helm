@@ -89,11 +89,11 @@ const val UPLOAD_MIN_PROTOCOL = 4
 /**
  * The per-file staging guard. The desktop commits an upload into the same store
  * its own imports use, and that store refuses past
- * `MAX_ATTACHMENT_BYTES` (10 MB, src/session/artifact-attachment-manager.ts) —
+ * `MAX_ATTACHMENT_BYTES` (100 MiB, src/types/artifact-attachment.ts) —
  * so staging a bigger file would only buy a refusal AFTER every byte crossed
  * the link. Mirrored here so the refusal happens before the pick is staged.
  */
-const val MAX_STAGED_BYTES = 10 * 1024 * 1024
+const val MAX_STAGED_BYTES = AttachmentPulls.MAX_ATTACHMENT_BYTES
 
 sealed interface StageVerdict {
     data object Ok : StageVerdict

@@ -92,11 +92,7 @@ describe('SessionCard menu and status icons', () => {
   it('shows every status that applies, side by side', () => {
     expect(icons(mountCard())).toEqual([]);
     expect(icons(mountCard({ locked: true }))).toEqual(['🔒']);
-    expect(icons(mountCard({ locked: true, frozen: true, keepWarmUntil: Date.now() + 60_000 }))).toEqual(['🔒', '❄️', '⏰']);
-  });
-
-  it('an expired keep-warm shows no alarm clock', () => {
-    expect(icons(mountCard({ keepWarmUntil: Date.now() - 1 }))).toEqual([]);
+    expect(icons(mountCard({ locked: true, frozen: true, keepWarm: true }))).toEqual(['🔒', '❄️', '⏰']);
   });
 
   it('a locked session still cannot be closed', () => {

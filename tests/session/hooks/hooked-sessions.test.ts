@@ -46,13 +46,13 @@ describe('trackHookedSessions', () => {
     sessions.addSession({ id: 'a', name: 'a', cliType: 'claude', processId: 1 });
     await flush();
 
-    sessions.updateSession('a', { keepWarmUntil: Date.now() + 60_000 });
+    sessions.updateSession('a', { keepWarm: true });
     sessions.updateSession('a', { cliType: 'plain' });
     await flush();
 
     expect(sessions.getSession('a')?.hooked).toBe(false);
     // Keep-warm needs hooks: left on, it would only exempt the session from freezing.
-    expect(sessions.getSession('a')?.keepWarmUntil).toBeUndefined();
+    expect(sessions.getSession('a')?.keepWarm).toBeUndefined();
     expect(detector.isHooked('a')).toBe(false);
   });
 

@@ -1,12 +1,13 @@
 /** Freeze: a frozen session takes no input from anyone until unfrozen. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import YAML from 'yaml';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PtyManager, type PtyFactory, type PtyProcess } from '../src/session/pty-manager.js';
 import { SessionManager } from '../src/session/manager.js';
-import { saveSessions, loadSessions } from '../src/session/session-persistence.js';
+import { saveSessions, loadSessions, serializeSession } from '../src/session/session-persistence.js';
 import { deliverPromptSequenceToSession } from '../src/session/sequence-delivery.js';
 
 vi.mock('../src/utils/logger.js', () => ({
@@ -64,6 +65,23 @@ describe('session freeze', () => {
     sessions.setSessionFrozen('s1', true);
     saveSessions(sessions.getAllSessions(), file);
     expect(loadSessions(file)[0].frozen).toBe(true);
+  });
+
+  it('keep-warm survives a restart, and a legacy lapsing keepWarmUntil loads as on', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'helm-freeze-'));
+    directories.push(dir);
+    const file = join(dir, 'sessions.yaml');
+    const { sessions } = setup();
+    sessions.updateSession('s1', { keepWarm: true });
+    saveSessions(sessions.getAllSessions(), file);
+    expect(loadSessions(file)[0].keepWarm).toBe(true);
+
+    const legacy = { ...serializeSession(sessions.getSession('s1')!), keepWarmUntil: 1 };
+    delete legacy.keepWarm;
+    writeFileSync(file, YAML.stringify({ sessions: [legacy] }));
+    const [loaded] = loadSessions(file);
+    expect(loaded.keepWarm).toBe(true);
+    expect(loaded).not.toHaveProperty('keepWarmUntil');
   });
 
   it('the operator can never be frozen — it is how frozen sessions get thawed', () => {

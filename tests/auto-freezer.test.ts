@@ -33,14 +33,14 @@ describe('AutoFreezer', () => {
     }
   });
 
-  it('never freezes while keep-warm is on, and freezes once it has lapsed', () => {
-    const on = setup({ lastPromptAt: NOW - 61 * MIN, keepWarmUntil: NOW + MIN });
+  it('never freezes while keep-warm is on, and freezes once it is off', () => {
+    const on = setup({ lastPromptAt: NOW - 61 * MIN, keepWarm: true });
     on.freezer.tick();
     expect(on.sessions.getSession('s1')?.frozen).toBeFalsy();
 
-    const lapsed = setup({ lastPromptAt: NOW - 61 * MIN, keepWarmUntil: NOW - 1 });
-    lapsed.freezer.tick();
-    expect(lapsed.sessions.getSession('s1')?.frozen).toBe(true);
+    const off = setup({ lastPromptAt: NOW - 61 * MIN });
+    off.freezer.tick();
+    expect(off.sessions.getSession('s1')?.frozen).toBe(true);
   });
 
   it('thawing restarts the clock so the session does not refreeze on the next tick', () => {

@@ -127,7 +127,7 @@ describe('chat attachment registrar', () => {
       filename: 'large.bin',
       content: Buffer.alloc(MAX_ATTACHMENT_BYTES + 1),
       contentType: 'application/octet-stream',
-    })).toThrow('10MB');
+    })).toThrow('100 MB');
     expect(artifacts.creates).toBe(0);
   });
 
@@ -153,7 +153,7 @@ describe('chat attachment registrar', () => {
 
   it('gives up quietly on a file past the size limit', () => {
     const path = join(sourceDir, 'huge.bin');
-    writeFileSync(path, Buffer.alloc(11 * 1024 * 1024));
+    writeFileSync(path, Buffer.alloc(MAX_ATTACHMENT_BYTES + 1));
 
     expect(register('s1', path)).toBeUndefined();
   });

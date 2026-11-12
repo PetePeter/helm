@@ -323,7 +323,7 @@ describe('profile-owned process services', () => {
       cliType: 'claude', lastPromptAt: now - 2 * 60 * 60_000,
     });
     addSession(composition, '2', 'warm-two', {
-      cliType: 'claude', lastPromptAt: now - 2 * 60_000, keepWarmUntil: now + 60_000, hooked: true,
+      cliType: 'claude', lastPromptAt: now - 2 * 60_000, keepWarm: true, hooked: true,
     });
     const delivered: string[] = [];
     ptyManager.deliverText = async (sessionId: string) => { delivered.push(sessionId); };

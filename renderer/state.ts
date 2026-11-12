@@ -33,8 +33,8 @@ export interface Session {
   /** Epoch ms and source of the last actual user-submitted prompt. */
   lastUserPromptAt?: number;
   lastUserPromptSource?: UserPromptSource;
-  /** Keep-warm is on until this epoch ms (KeepWarmer pings the session). */
-  keepWarmUntil?: number;
+  /** Keep-warm is on until switched off (KeepWarmer pings the session). */
+  keepWarm?: boolean;
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */
   createdByPeerId?: string;
   /** Remote row (`peer_attach`): this terminal views `sessionId` running on `peerId`. */

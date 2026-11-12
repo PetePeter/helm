@@ -8,7 +8,6 @@ import type { Artifact } from '../../types/artifact.js';
 import type { PtyProcess } from '../pty-manager.js';
 import type { ChatAttachmentRef } from '../chat/chat-bridge.js';
 import { logger } from '../../utils/logger.js';
-import { MAX_GENERATED_MEDIA_BYTES } from '../generated-media-policy.js';
 import {
   applyComfyUiProfile,
   COMFYUI_IMAGE_SIZE_OPTIONS,
@@ -272,7 +271,7 @@ export class ComfyUiSessionHost {
           filename: file.filename,
           contentType: file.mimeType,
         });
-        if (stored.sizeBytes > MAX_GENERATED_MEDIA_BYTES || !stored.sha256) throw new Error('Generated media failed its storage integrity check');
+        if (stored.sizeBytes > MAX_ATTACHMENT_BYTES || !stored.sha256) throw new Error('Generated media failed its storage integrity check');
         // Close can race the async copy/hash in addGeneratedMediaFromFile. The
         // session removal pass may have run before the row reached the index;
         // remove this late result instead of leaving it behind after close.

@@ -2,7 +2,6 @@ package com.potatomotato.helm.ui.keyboard
 
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.permits
-import com.potatomotato.helm.data.isKeepWarmEnabled
 import com.potatomotato.helm.ui.Destination
 import com.potatomotato.helm.ui.PhoneScaffoldActions
 import com.potatomotato.helm.ui.PhoneScaffoldState
@@ -29,7 +28,7 @@ internal fun dispatchKeyCommand(command: KeyCommand, context: KeyCommandContext)
         is KeyCommand.SelectSession -> state.listedSessionIds.getOrNull(command.index)?.let { selectSession(state, it) }
         is KeyCommand.RunAction -> state.open?.let { session ->
             val catalogue = sessionActions(
-                keepWarm = isKeepWarmEnabled(session.keepWarmUntilEpochMs, System.currentTimeMillis()),
+                keepWarm = session.keepWarm,
                 frozen = session.frozen,
                 capabilities = state.capabilities,
             )
@@ -83,7 +82,7 @@ private fun showSessionsThread(state: PhoneScaffoldState) {
 private fun selectAction(action: SessionAction, context: KeyCommandContext) {
     val session = context.state.open ?: return
     val catalogue = sessionActions(
-        keepWarm = isKeepWarmEnabled(session.keepWarmUntilEpochMs, System.currentTimeMillis()),
+        keepWarm = session.keepWarm,
         frozen = session.frozen,
         capabilities = context.state.capabilities,
     )

@@ -385,7 +385,7 @@ different ids for one file. A failure to take the copy is logged and dropped; a
 message that lost its file still beats no message.
 
 **Why artifact attachments and not a new store.** They are already per-session,
-already capped at 10MB, already pruned with the session, and already reachable
+already capped at 100MB, already pruned with the session, and already reachable
 from a phone through the allow-listed `session_artifact_*` family. A second
 store would have duplicated all four and given the user two places to look. All
 of a session's chat files sit under **one** artifact (`Chat files`), so a chatty

@@ -6,6 +6,7 @@ import android.os.Environment
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 
 /**
  * The real sink: a downloaded artifact becomes a file the user can open.
@@ -24,11 +25,11 @@ import java.io.IOException
 class AndroidArtifactFiles(private val context: Context) : ArtifactFiles {
 
     @Throws(IOException::class)
-    override fun save(filename: String, mimeType: String, bytes: ByteArray): SavedFile =
+    override fun save(filename: String, mimeType: String, content: InputStream): SavedFile =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStoreDownloads.write(context, filename, mimeType, bytes, replaceExisting = false)
+            MediaStoreDownloads.write(context, filename, mimeType, content, replaceExisting = false)
         } else {
-            saveToAppFolder(filename, bytes)
+            saveToAppFolder(filename, content)
         }
 
     /**
@@ -37,12 +38,12 @@ class AndroidArtifactFiles(private val context: Context) : ArtifactFiles {
      * handed to another app throws FileUriExposedException on anything modern.
      */
     @Throws(IOException::class)
-    private fun saveToAppFolder(filename: String, bytes: ByteArray): SavedFile {
+    private fun saveToAppFolder(filename: String, content: InputStream): SavedFile {
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: throw IOException("No storage on the phone to write into")
         val existing = dir.list()?.toSet() ?: emptySet()
         val file = File(dir, FileNames.disambiguated(existing, filename))
-        file.writeBytes(bytes)
+        file.outputStream().use { content.copyTo(it) }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         return SavedFile("${file.name} (in Helm's app folder)", uri.toString())
     }

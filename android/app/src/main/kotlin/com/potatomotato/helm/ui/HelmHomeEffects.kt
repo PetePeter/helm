@@ -306,7 +306,7 @@ internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: Hel
         val ready = state.artifactSave as? ArtifactSave.Ready ?: return@LaunchedEffect
         try {
             val path = withContext(Dispatchers.IO) {
-                state.artifactFiles.save(ready.file.filename, ready.file.mimeType, ready.file.bytes)
+                state.artifactFiles.save(ready.file.filename, ready.file.mimeType, ready.file.bytes.inputStream())
             }
             // Done first: saveLanded changes artifactSave, which cancels this effect.
             client.workspace.control.noticed(SessionAction.SaveArtifact, ActionOutcome.Done)

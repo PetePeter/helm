@@ -64,9 +64,8 @@ class CacheStageTest {
         assertEquals("🔒", parse("locked" to true).statusIcons(now))
         assertEquals(
             "🔒 ❄️ ⏰",
-            parse("locked" to true, "frozen" to true, "keepWarmUntilEpochMs" to now + min).statusIcons(now),
+            parse("locked" to true, "frozen" to true, "keepWarm" to true).statusIcons(now),
         )
-        assertEquals("", parse("keepWarmUntilEpochMs" to now - 1).statusIcons(now))
     }
 
 }

@@ -35,7 +35,7 @@ class AttachmentTransferTest {
         assertTrue(transfer.accept(3, byteArrayOf(4, 5, 6), eof = true))
 
         assertTrue(transfer.done)
-        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), transfer.bytes())
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), transfer.file().readBytes())
     }
 
     @Test
@@ -68,7 +68,7 @@ class AttachmentTransferTest {
         // Closing the gap folds in everything that was waiting behind it.
         transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
         assertTrue(transfer.done)
-        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9), transfer.bytes())
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9), transfer.file().readBytes())
     }
 
     @Test
@@ -104,7 +104,7 @@ class AttachmentTransferTest {
         transfer.accept(3, byteArrayOf(4, 5, 6), eof = true)
 
         assertTrue(transfer.done)
-        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), transfer.bytes())
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), transfer.file().readBytes())
     }
 
     @Test
@@ -124,7 +124,7 @@ class AttachmentTransferTest {
         transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
 
         // Nothing downstream could tell a short file from a complete one.
-        val error = runCatching { transfer.bytes() }.exceptionOrNull()
+        val error = runCatching { transfer.file().readBytes() }.exceptionOrNull()
         assertTrue(error is IllegalStateException)
     }
 
@@ -135,7 +135,7 @@ class AttachmentTransferTest {
         transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
 
         assertTrue(transfer.accept(3, ByteArray(0), eof = true))
-        assertArrayEquals(byteArrayOf(1, 2, 3), transfer.bytes())
+        assertArrayEquals(byteArrayOf(1, 2, 3), transfer.file().readBytes())
     }
 
     @Test
@@ -230,7 +230,7 @@ class ChatRepositoryPullTest {
         assertNull(chats.sliceArrived(key, 0, ByteArray(slice) { 1 }, eof = false))
         assertEquals(PullState.Pulling(slice.toLong(), slice * 2L), chats.pullState(key))
 
-        val whole = chats.sliceArrived(key, slice.toLong(), ByteArray(slice) { 2 }, eof = true)
+        val whole = chats.sliceArrived(key, slice.toLong(), ByteArray(slice) { 2 }, eof = true)?.readBytes()
         assertEquals(slice * 2, whole?.size)
         assertEquals(1.toByte(), whole?.first())
         assertEquals(2.toByte(), whole?.last())

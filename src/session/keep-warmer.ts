@@ -14,18 +14,15 @@ export function keepWarmAfterMs(t: StalenessThresholds | null | undefined): numb
   return dormantAfterMs(t) - KEEP_WARM_MARGIN_MS;
 }
 
-/** How long one "Keep warm" switch-on lasts before it turns itself off. */
-export const KEEP_WARM_DEFAULT_MS = 8 * 3_600_000;
-
 /**
- * The keepWarmUntil a switch-on/off writes — the one rule both the desktop
- * toggle and MCP use. On keeps a running window; off clears it. Hookless
- * sessions are refused: nothing would confirm a ping landed.
+ * The keepWarm a switch-on/off writes — the one rule both the desktop toggle
+ * and MCP use. On stays on until switched off. Hookless sessions are refused:
+ * nothing would confirm a ping landed.
  */
-export function keepWarmUntilFor(session: Pick<SessionInfo, 'name' | 'hooked' | 'keepWarmUntil'>, on: boolean, now: number): number | undefined {
+export function keepWarmFor(session: Pick<SessionInfo, 'name' | 'hooked'>, on: boolean): true | undefined {
   if (!on) return undefined;
   if (!session.hooked) throw new Error(`Keep-warm needs CLI hooks; ${session.name} has none installed`);
-  return session.keepWarmUntil !== undefined && session.keepWarmUntil > now ? session.keepWarmUntil : now + KEEP_WARM_DEFAULT_MS;
+  return true;
 }
 
 /** A ping whose submit no hook confirmed (it never reached the CLI) is resent this much later. */
@@ -38,7 +35,7 @@ export type KeepWarmConfig = StalenessThresholds & { keepWarmPrompt?: string };
  * Keeps a session's prompt cache warm on request: just before its CLI's short
  * cache lapses (cacheWarnMinutes minus 10 s) it sends one tiny prompt, so the
  * next real prompt still hits the cheap cache. Each ping costs a short turn,
- * so it is opt-in per session and lapses at `keepWarmUntil`.
+ * so it is opt-in per session and stays on until switched off.
  *
  * Hooked sessions only: their hooks restart the cache clock (lastPromptAt) on
  * every real cache touch, so a due clock means nothing touched it — whatever
@@ -74,13 +71,7 @@ export class KeepWarmer {
     const now = this.now();
     for (const session of this.sessionManager.getAllSessions()) {
       if (session.comfyUiTool) continue;
-      if (session.keepWarmUntil === undefined) { this.lastPingAt.delete(session.id); continue; }
-      if (now > session.keepWarmUntil) {
-        logger.info(`[KeepWarmer] Keep-warm on ${session.name} (${session.id}) expired`);
-        this.sessionManager.updateSession(session.id, { keepWarmUntil: undefined });
-        this.lastPingAt.delete(session.id);
-        continue;
-      }
+      if (!session.keepWarm) { this.lastPingAt.delete(session.id); continue; }
       // Green = a hook fired within the last few minutes: a tool or thinking is still running, so a
       // ping would only queue behind it. Green cannot stick (blue 10 min after the last hook).
       if (!session.hooked || session.frozen || session.activityLevel === 'active') continue;

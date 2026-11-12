@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import type { ComfyUiProfileConfig } from '../../config/loader.js';
 import { mimeForPath } from '../../electron/helm-img-protocol.js';
-import { MAX_GENERATED_MEDIA_BYTES } from '../generated-media-policy.js';
+import { MAX_ATTACHMENT_BYTES } from '../../types/artifact-attachment.js';
 import { comfyUiMaxReferenceImages } from './comfyui-config.js';
 import { applyComfyInputImages, hasMatchingComfyImageSignature } from './comfyui-image-input.js';
 
@@ -117,8 +117,8 @@ export async function runComfyPrompt(input: {
     }
     if (imagePaths.length > 0) {
       const totalBytes = imagePaths.reduce((total, path) => total + statSync(path).size, 0);
-      if (totalBytes > MAX_GENERATED_MEDIA_BYTES) {
-        throw new Error(`ComfyUI reference images exceed the ${MAX_GENERATED_MEDIA_BYTES}-byte total limit`);
+      if (totalBytes > MAX_ATTACHMENT_BYTES) {
+        throw new Error(`ComfyUI reference images exceed the ${MAX_ATTACHMENT_BYTES}-byte total limit`);
       }
       const uploadedNames: string[] = [];
       for (const [index, imagePath] of imagePaths.entries()) {
@@ -189,8 +189,8 @@ export async function runComfyPrompt(input: {
 async function uploadInputImage(endpoint: string, imagePath: string, signal: AbortSignal): Promise<string> {
   const stat = statSync(imagePath);
   if (!stat.isFile()) throw new Error('ComfyUI image input must be a file');
-  if (stat.size > MAX_GENERATED_MEDIA_BYTES) {
-    throw new Error(`ComfyUI image input exceeds the ${MAX_GENERATED_MEDIA_BYTES}-byte limit`);
+  if (stat.size > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`ComfyUI image input exceeds the ${MAX_ATTACHMENT_BYTES}-byte limit`);
   }
   const mimeType = mimeForPath(imagePath);
   const extension = extname(imagePath).toLowerCase();
@@ -254,8 +254,8 @@ async function downloadOutputs(
     });
     if (!response.ok) throw new Error(`ComfyUI could not return ${file.filename} (HTTP ${response.status})`);
     const contentLength = Number(response.headers.get('content-length') ?? 0);
-    if (contentLength > MAX_GENERATED_MEDIA_BYTES) throw new Error(`Generated media exceeds the ${MAX_GENERATED_MEDIA_BYTES}-byte limit`);
-    const bytes = await readBoundedBody(response, MAX_GENERATED_MEDIA_BYTES);
+    if (contentLength > MAX_ATTACHMENT_BYTES) throw new Error(`Generated media exceeds the ${MAX_ATTACHMENT_BYTES}-byte limit`);
+    const bytes = await readBoundedBody(response, MAX_ATTACHMENT_BYTES);
     if (bytes.length === 0) throw new Error('ComfyUI returned an empty generated media file');
     const ext = extname(file.filename).replace(/[^.a-z0-9]/gi, '').slice(0, 12) || (input.profile.kind === 'video' ? '.mp4' : '.png');
     const stem = basename(file.filename, extname(file.filename)).replace(/[^a-z0-9_-]/gi, '_').slice(0, 60) || 'result';
