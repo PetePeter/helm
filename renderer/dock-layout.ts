@@ -202,7 +202,7 @@ export function isDockCollapsed(
 /**
  * Pane ids eligible for gamepad focus cycling in deterministic tree order.
  *
- * Panes under a collapsed edge dock are excluded, but a revealed autohide dock
+ * Panes under a collapsed edge dock (rail or tab strip) are excluded, but a revealed autohide dock
  * participates like a pinned one — an opened pane the user can see must be a
  * pane the user can focus.
  */
@@ -210,7 +210,7 @@ export function listFocusablePanes(node: DockNode | null, revealed: readonly Pan
   if (!node || node.type === 'empty') return [];
   if (node.type === 'group') return [...node.tabs];
   if (node.type === 'dock') {
-    return isDockCollapsed(node, revealed) ? [] : listFocusablePanes(node.child, revealed);
+    return isDockCollapsed(node, revealed) || node.collapsed ? [] : listFocusablePanes(node.child, revealed);
   }
   return node.children.flatMap(child => listFocusablePanes(child, revealed));
 }

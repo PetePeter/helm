@@ -87,17 +87,16 @@ function selectTab(paneId: PaneId): void {
 let restoredByFirstTap = false;
 
 /**
- * Single tap selects (restoring a collapsed dock); double tap toggles collapse.
- * `detail` counts taps in one gesture — 0 for keyboard activation, read as single.
+ * Single tap selects — activation itself restores a collapsed dock; double tap
+ * collapses. `detail` counts taps in one gesture — 0 for keyboard, read as single.
  */
 function onTabClick(event: MouseEvent, paneId: PaneId): void {
   if (event.detail >= 2) {
     if (props.collapsible && event.detail === 2 && !restoredByFirstTap) emit('set-collapsed', paneId, true);
     return;
   }
-  selectTab(paneId);
   restoredByFirstTap = !!props.collapsible && !!props.dockCollapsed;
-  if (restoredByFirstTap) emit('set-collapsed', paneId, false);
+  selectTab(paneId);
 }
 
 function onTabKey(event: KeyboardEvent, paneId: PaneId): void {

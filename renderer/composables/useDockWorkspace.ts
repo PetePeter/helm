@@ -252,9 +252,14 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
     }
   }
 
+  /** Explicitly opening a pane (tap, shortcut, view routing) restores a tab-strip collapsed dock. */
+  function activate(paneId: PaneId): void {
+    apply(setDockCollapsed(setActiveTab(layoutState.value, paneId), paneId, false));
+  }
+
   function focusPane(paneId: PaneId, focusedItemId?: string): void {
     if (!findPaneGroup(layoutState.value.root, paneId)) return;
-    apply(setActiveTab(layoutState.value, paneId));
+    activate(paneId);
     if (focusablePaneOrder.value.includes(paneId)) {
       focusedPaneId.value = paneId;
       focusRequestId.value++;
@@ -316,7 +321,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
         apply(reorderTab(layoutState.value, paneId, index));
       }
     },
-    activate: (paneId) => apply(setActiveTab(layoutState.value, paneId)),
+    activate,
     switchSessionTabs,
     pruneSessionTabs,
     setMode: (paneId, mode) => apply(setDockMode(layoutState.value, paneId, mode)),

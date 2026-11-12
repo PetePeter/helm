@@ -132,7 +132,7 @@ area never does: its tabs are not under a dock node, so the gesture is a no-op.
 stateDiagram-v2
     Open --> Open: tap tab (select)
     Open --> Collapsed: double tap tab
-    Collapsed --> Open: tap tab (select + restore)
+    Collapsed --> Open: tap tab / shortcut / any explicit open
 ```
 
 - The flag lives on the dock node and is persisted with the layout, so a
@@ -141,7 +141,12 @@ stateDiagram-v2
   `auto` track. Restoring therefore returns the exact prior size.
 - A double tap's first tap already restores a collapsed dock, so the second tap
   is swallowed rather than collapsing it again.
-- Mouse/touch only — the gamepad is unchanged.
+- Opening a pane by any explicit route (tap, keyboard shortcut, view routing)
+  restores its dock — `activate` owns that, so no caller can open a pane into a
+  hidden dock.
+- A collapsed dock's panes are not focusable, so gamepad focus cycling skips
+  them, exactly as it skips a rail-collapsed dock. The double tap itself is
+  mouse/touch only.
 
 ## Closing and restoring
 

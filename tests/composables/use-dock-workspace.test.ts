@@ -28,6 +28,30 @@ describe('useDockWorkspace', () => {
     expect(ws.isVisible(PANE_MEMORIES)).toBe(false);
   });
 
+  describe('tab-strip collapsed dock', () => {
+    it('is not visible and is skipped by focus cycling', () => {
+      const ws = useDockWorkspace(edgeDockLayout());
+      ws.setCollapsed(PANE_SESSIONS, true);
+      expect(ws.isVisible(PANE_SESSIONS)).toBe(false);
+      expect(ws.focusablePaneOrder.value).not.toContain(PANE_SESSIONS);
+    });
+
+    it('focusing one of its panes (keyboard shortcut path) restores it', () => {
+      const ws = useDockWorkspace(edgeDockLayout());
+      ws.setCollapsed(PANE_SESSIONS, true);
+      ws.focusPane(PANE_SESSIONS);
+      expect(ws.isVisible(PANE_SESSIONS)).toBe(true);
+      expect(ws.focusedPaneId.value).toBe(PANE_SESSIONS);
+    });
+
+    it('activating one of its panes restores it', () => {
+      const ws = useDockWorkspace(edgeDockLayout());
+      ws.setCollapsed(PANE_SESSIONS, true);
+      ws.activate(PANE_SESSIONS);
+      expect(ws.isVisible(PANE_SESSIONS)).toBe(true);
+    });
+  });
+
   it('focusing a background tab activates it in its own group', () => {
     const ws = useDockWorkspace(edgeDockLayout());
     ws.focusPane(PANE_MEMORIES);

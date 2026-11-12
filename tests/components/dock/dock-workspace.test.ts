@@ -109,18 +109,18 @@ describe('DockWorkspace', () => {
       expect(wrapper.emitted('set-dock-collapsed')).toEqual([[PANE_ARTIFACTS, true]]);
     });
 
-    it('single tap on a collapsed dock selects and restores', async () => {
+    it('single tap on a collapsed dock selects (activation restores it)', async () => {
       const wrapper = mountDock(true);
       await tap(wrapper, PANE_PLAN_SCREEN, 1);
       expect(wrapper.emitted('activate-pane')).toEqual([[PANE_PLAN_SCREEN]]);
-      expect(wrapper.emitted('set-dock-collapsed')).toEqual([[PANE_PLAN_SCREEN, false]]);
+      expect(wrapper.emitted('set-dock-collapsed')).toBeUndefined();
     });
 
-    it('double tap on a collapsed dock restores it and stays restored', async () => {
+    it('double tap on a collapsed dock does not collapse it again', async () => {
       const wrapper = mountDock(true);
       await tap(wrapper, PANE_ARTIFACTS, 1);
       await tap(wrapper, PANE_ARTIFACTS, 2);
-      expect(wrapper.emitted('set-dock-collapsed')).toEqual([[PANE_ARTIFACTS, false]]);
+      expect(wrapper.emitted('set-dock-collapsed')).toBeUndefined();
     });
 
     it('double tap in the main area does nothing', async () => {
