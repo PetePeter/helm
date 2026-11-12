@@ -12,8 +12,7 @@ describe('McpTab.vue', () => {
   beforeEach(() => {
     // Mock window.gamepadCli for McpCliSetup component
     (window as any).gamepadCli = {
-      configGetCliTypes: vi.fn().mockResolvedValue(['codex', 'claude-code', 'copilot-cli', 'opencode']),
-      configGetCliTypeEnv: vi.fn().mockResolvedValue([]),
+      toolsGetAll: vi.fn().mockResolvedValue({ cliTypes: {} }),
     };
   });
 

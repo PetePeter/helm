@@ -54,17 +54,16 @@ export function showScreen(screenName: string): void {
 
 const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * Renderer-side mirror of ConfigLoader.resolveCliType — same order, same rules:
- * uuid id → legacy slug → display name. The tools cache is uuid-keyed, but a
- * reference reaching the UI can still be a pre-migration slug or a label a
- * human typed, so all three have to resolve to the same record.
- */
 /** Whether this CLI type opted in to xterm mouse tracking (default off so plain drag copies). */
 export function cliTypeWantsMouseTracking(cliType: string | undefined): boolean {
   return resolveCliTypeRecord(cliType ?? '')?.mouseTracking === true;
 }
 
+/**
+ * Renderer-side mirror of ConfigLoader.resolveCliType — same order, same rules:
+ * uuid id → display name. The tools cache is uuid-keyed, but a reference
+ * reaching the UI can still be a label a human typed.
+ */
 export function resolveCliTypeRecord(cliType: string): Record<string, any> | null {
   if (typeof cliType !== 'string') return null;
   const ref = cliType.trim();
@@ -75,12 +74,8 @@ export function resolveCliTypeRecord(cliType: string): Record<string, any> | nul
   const byId = cache[ref];
   if (byId) return byId;
 
-  const entries = Object.entries(cache);
-  const byLegacyKey = entries.find(([, record]) => record?.legacyKey === ref);
-  if (byLegacyKey) return byLegacyKey[1];
-
   const wanted = ref.toLowerCase();
-  const byName = entries.find(
+  const byName = Object.entries(cache).find(
     ([, record]) => String(record?.displayName ?? record?.name ?? '').trim().toLowerCase() === wanted,
   );
   return byName ? byName[1] : null;

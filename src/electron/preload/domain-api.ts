@@ -345,7 +345,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
    */
   configGetSpawnCommand: (cliType: string) => ipcRenderer.invoke('config:getSpawnCommand', cliType),
 
-  configGetCliTypeEnv: (cliType: string) => ipcRenderer.invoke('config:getCliTypeEnv', cliType),
 
   configGetDpadConfig: () => ipcRenderer.invoke('config:getDpadConfig'),
 

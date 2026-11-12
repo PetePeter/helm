@@ -33,16 +33,45 @@ function readYaml<T>(relativePath: string): T {
 
 /**
  * CLI types are keyed by UUID on disk since the id migration — re-index the raw
- * YAML by the human slug (legacyKey) so on-disk assertions stay readable.
+ * YAML by the slugified displayName so on-disk assertions stay readable.
  */
 function readCliTypesBySlug(): Record<string, any> {
   const raw = readYaml<Record<string, any>>('cli-types.yaml');
-  return Object.fromEntries(Object.values(raw).map((e: any) => [e.legacyKey ?? e.id, e]));
+  return Object.fromEntries(Object.values(raw).map((e: any) => [slugFor(e.id, e.displayName), e]));
 }
 
-/** CLI type keys are UUIDs — map them back to slugs for order/membership assertions. */
+/**
+ * Tests address CLI types by the slug of their label ('claude-code'); real
+ * references are UUIDs, so translate. Reset per test in beforeEach. An unknown slug passes through so
+ * not-found paths still see the string the test wrote.
+ */
+const cliRefCache = new Map<string, string>();
+function cliRef(loader: any, slug: string): string {
+  // Cached so a slug keeps naming the same type after a test renames it.
+  const cached = cliRefCache.get(slug);
+  if (cached && loader.getCliTypes().includes(cached)) return cached;
+  const id = loader.getCliTypes().find((k: string) => slugify(loader.getCliTypeEntry(k)?.displayName ?? '') === slug);
+  if (!id) return slug;
+  cliRefCache.set(slug, id);
+  return id;
+}
+
+/** Inverse of cliRef: the slug a test knows this type by, surviving renames. */
+function slugFor(id: string, displayName: string | undefined): string {
+  for (const [slug, cached] of cliRefCache) if (cached === id) return slug;
+  return slugify(displayName ?? id);
+}
+
+/** addCliType mints a UUID; remember it under the key the test passed. */
+function addCli(loader: any, slug: string, ...args: any[]): string {
+  const id = loader.addCliType(slug, ...args);
+  cliRefCache.set(slug, id);
+  return id;
+}
+
+/** CLI type keys are UUIDs — map them to slugified labels for order/membership assertions. */
 function cliTypeSlugs(loader: any): string[] {
-  return loader.getCliTypes().map((id: string) => loader.getCliTypeEntry(id)?.legacyKey ?? id);
+  return loader.getCliTypes().map((id: string) => slugFor(id, loader.getCliTypeEntry(id)?.displayName));
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +87,7 @@ const CLI_TYPES = {
     initialPrompt: [],
   },
   'copilot-cli': {
-    name: 'GitHub Copilot CLI',
+    name: 'Copilot CLI',
     spawnCommand: 'copilot',
     initialPrompt: [],
   },
@@ -95,6 +124,7 @@ describe('ConfigLoader', () => {
   let loader: ConfigLoader;
 
   beforeEach(() => {
+    cliRefCache.clear();
     fs.mkdirSync(TEST_DIR, { recursive: true });
     setupTestFiles();
     loader = new ConfigLoader(TEST_DIR);
@@ -137,7 +167,7 @@ describe('ConfigLoader', () => {
 
   describe('binding profiles', () => {
     it('throws when called before load', () => {
-      expect(() => loader.getBindings('claude-code')).toThrow('Configuration not loaded');
+      expect(() => loader.getBindings(cliRef(loader, 'claude-code'))).toThrow('Configuration not loaded');
     });
 
     it('migrates legacy per-CLI bindings into one Default profile shared by every tool', () => {
@@ -145,8 +175,8 @@ describe('ConfigLoader', () => {
       expect(loader.getBindingProfiles()).toEqual([
         { id: DEFAULT_BINDING_PROFILE_ID, name: 'Default', bindings: BINDINGS['claude-code'] },
       ]);
-      expect(loader.getBindings('claude-code')).toEqual(BINDINGS['claude-code']);
-      expect(loader.getBindings('copilot-cli')).toEqual(BINDINGS['claude-code']);
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))).toEqual(BINDINGS['claude-code']);
+      expect(loader.getBindings(cliRef(loader, 'copilot-cli'))).toEqual(BINDINGS['claude-code']);
       expect(readYaml<any>('bindings.yaml')).toEqual({
         profiles: { [DEFAULT_BINDING_PROFILE_ID]: { name: 'Default', bindings: BINDINGS['claude-code'] } },
       });
@@ -156,13 +186,13 @@ describe('ConfigLoader', () => {
     it('prefers the map of a live CLI type over orphaned ones earlier in the file', () => {
       writeYaml('bindings.yaml', { 'deleted-tool': { X: { action: 'context-menu' } }, 'copilot-cli': BINDINGS['copilot-cli'] });
       loader.load();
-      expect(loader.getBindings('claude-code')).toEqual(BINDINGS['copilot-cli']);
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))).toEqual(BINDINGS['copilot-cli']);
     });
 
     it('keeps orphaned maps when no legacy key matches a live CLI type', () => {
       writeYaml('bindings.yaml', { gone: { X: { action: 'context-menu' } } });
       loader.load();
-      expect(loader.getBindings('claude-code')).toEqual({ X: { action: 'context-menu' } });
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))).toEqual({ X: { action: 'context-menu' } });
     });
 
     it('is idempotent: a second load neither re-migrates nor rewrites', () => {
@@ -180,7 +210,7 @@ describe('ConfigLoader', () => {
       writeYaml('bindings.yaml', BINDINGS);
       const again = new ConfigLoader(TEST_DIR);
       again.load();
-      expect(again.getBindings('copilot-cli')).toEqual(BINDINGS['claude-code']);
+      expect(again.getBindings(cliRef(again, 'copilot-cli'))).toEqual(BINDINGS['claude-code']);
       expect(again.getBindingProfiles()).toHaveLength(1);
     });
 
@@ -188,13 +218,13 @@ describe('ConfigLoader', () => {
       fs.unlinkSync(path.join(TEST_DIR, 'bindings.yaml'));
       loader.load();
       expect(loader.getBindingProfiles()).toEqual([]);
-      expect(loader.getBindings('claude-code')).toBeNull();
-      expect(loader.getCliTypeEntry('claude-code')?.bindingProfileId).toBeUndefined();
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))).toBeNull();
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))?.bindingProfileId).toBeUndefined();
     });
 
     it('returns null for an unknown CLI type', () => {
       loader.load();
-      expect(loader.getBindings('non-existent')).toBeNull();
+      expect(loader.getBindings(cliRef(loader, 'non-existent'))).toBeNull();
     });
 
     it('editing a shared profile changes every tool using it, and persists', () => {
@@ -202,8 +232,8 @@ describe('ConfigLoader', () => {
       loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'X', { action: 'context-menu' });
       const reloaded = new ConfigLoader(TEST_DIR);
       reloaded.load();
-      expect(reloaded.getBindings('claude-code')!.X).toEqual({ action: 'context-menu' });
-      expect(reloaded.getBindings('copilot-cli')!.X).toEqual({ action: 'context-menu' });
+      expect(reloaded.getBindings(cliRef(reloaded, 'claude-code'))!.X).toEqual({ action: 'context-menu' });
+      expect(reloaded.getBindings(cliRef(reloaded, 'copilot-cli'))!.X).toEqual({ action: 'context-menu' });
     });
 
     it('setBinding on an unknown profile throws', () => {
@@ -214,24 +244,24 @@ describe('ConfigLoader', () => {
     it('removeBinding drops a button from the profile', () => {
       loader.load();
       loader.removeBinding(DEFAULT_BINDING_PROFILE_ID, 'A');
-      expect(loader.getBindings('claude-code')).toEqual({ B: BINDINGS['claude-code'].B });
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))).toEqual({ B: BINDINGS['claude-code'].B });
     });
 
     it('a tool can point at a different profile via updateCliType, or at none', () => {
       loader.load();
       const id = loader.createBindingProfile('Copilot', DEFAULT_BINDING_PROFILE_ID);
       loader.setBinding(id, 'Y', { action: 'context-menu' });
-      loader.updateCliType('copilot-cli', 'GitHub Copilot CLI', [], 0, { bindingProfileId: id });
-      expect(loader.getBindings('copilot-cli')!.Y).toEqual({ action: 'context-menu' });
-      expect(loader.getBindings('claude-code')!.Y).toBeUndefined();
+      loader.updateCliType(cliRef(loader, 'copilot-cli'), 'Copilot CLI', [], 0, { bindingProfileId: id });
+      expect(loader.getBindings(cliRef(loader, 'copilot-cli'))!.Y).toEqual({ action: 'context-menu' });
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))!.Y).toBeUndefined();
 
-      loader.updateCliType('copilot-cli', 'GitHub Copilot CLI', [], 0, { bindingProfileId: '' });
-      expect(loader.getBindings('copilot-cli')).toBeNull();
+      loader.updateCliType(cliRef(loader, 'copilot-cli'), 'Copilot CLI', [], 0, { bindingProfileId: '' });
+      expect(loader.getBindings(cliRef(loader, 'copilot-cli'))).toBeNull();
     });
 
     it('addCliType stores the chosen profile', () => {
       loader.load();
-      const id = loader.addCliType('new', 'New Tool', [], 0, { bindingProfileId: DEFAULT_BINDING_PROFILE_ID });
+      const id = addCli(loader, 'new', 'New Tool', [], 0, { bindingProfileId: DEFAULT_BINDING_PROFILE_ID });
       expect(loader.getBindings(id)).toEqual(BINDINGS['claude-code']);
     });
 
@@ -239,18 +269,18 @@ describe('ConfigLoader', () => {
       loader.load();
       loader.renameBindingProfile(DEFAULT_BINDING_PROFILE_ID, 'Everything');
       expect(loader.getBindingProfiles()[0].name).toBe('Everything');
-      expect(loader.getBindings('claude-code')).toEqual(BINDINGS['claude-code']);
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))).toEqual(BINDINGS['claude-code']);
 
       loader.deleteBindingProfile(DEFAULT_BINDING_PROFILE_ID);
-      expect(loader.getBindings('claude-code')).toBeNull();
-      expect(loader.getCliTypeEntry('copilot-cli')?.bindingProfileId).toBeUndefined();
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))).toBeNull();
+      expect(loader.getCliTypeEntry(cliRef(loader, 'copilot-cli'))?.bindingProfileId).toBeUndefined();
     });
 
     it('createBindingProfile copies the source without sharing references', () => {
       loader.load();
       const id = loader.createBindingProfile('Copy', DEFAULT_BINDING_PROFILE_ID);
       loader.setBinding(id, 'A', { action: 'keyboard', sequence: '{Enter}' });
-      expect(loader.getBindings('claude-code')!.A).toEqual(BINDINGS['claude-code'].A);
+      expect(loader.getBindings(cliRef(loader, 'claude-code'))!.A).toEqual(BINDINGS['claude-code'].A);
     });
 
     it('createBindingProfile rejects an unknown source', () => {
@@ -286,7 +316,7 @@ describe('ConfigLoader', () => {
 
     it('getSequences returns all groups for a CLI type', () => {
       loader.load();
-      const sequences = loader.getSequences('claude-code');
+      const sequences = loader.getSequences(cliRef(loader, 'claude-code'));
       expect(Object.keys(sequences)).toEqual(['prompts', 'snippets']);
       expect(sequences['prompts']).toHaveLength(2);
       expect(sequences['snippets']).toHaveLength(1);
@@ -294,97 +324,97 @@ describe('ConfigLoader', () => {
 
     it('getSequences returns empty object for CLI without sequences', () => {
       loader.load();
-      const sequences = loader.getSequences('copilot-cli');
+      const sequences = loader.getSequences(cliRef(loader, 'copilot-cli'));
       expect(sequences).toEqual({});
     });
 
     it('getSequences returns empty object for unknown CLI', () => {
       loader.load();
-      const sequences = loader.getSequences('nonexistent');
+      const sequences = loader.getSequences(cliRef(loader, 'nonexistent'));
       expect(sequences).toEqual({});
     });
 
     it('getSequenceGroup returns specific group', () => {
       loader.load();
-      const prompts = loader.getSequenceGroup('claude-code', 'prompts');
+      const prompts = loader.getSequenceGroup(cliRef(loader, 'claude-code'), 'prompts');
       expect(prompts).toHaveLength(2);
       expect(prompts![0]).toEqual({ label: 'commit', sequence: 'use skill(commit)' });
     });
 
     it('getSequenceGroup returns null for unknown group', () => {
       loader.load();
-      expect(loader.getSequenceGroup('claude-code', 'nonexistent')).toBeNull();
+      expect(loader.getSequenceGroup(cliRef(loader, 'claude-code'), 'nonexistent')).toBeNull();
     });
 
     it('getSequenceGroup returns null for unknown CLI', () => {
       loader.load();
-      expect(loader.getSequenceGroup('nonexistent', 'prompts')).toBeNull();
+      expect(loader.getSequenceGroup(cliRef(loader, 'nonexistent'), 'prompts')).toBeNull();
     });
 
     it('setSequenceGroup creates a new group', () => {
       loader.load();
-      loader.setSequenceGroup('copilot-cli', 'shortcuts', [
+      loader.setSequenceGroup(cliRef(loader, 'copilot-cli'), 'shortcuts', [
         { label: 'clear', sequence: '/clear{Enter}' },
       ]);
-      const group = loader.getSequenceGroup('copilot-cli', 'shortcuts');
+      const group = loader.getSequenceGroup(cliRef(loader, 'copilot-cli'), 'shortcuts');
       expect(group).toHaveLength(1);
       expect(group![0]).toEqual({ label: 'clear', sequence: '/clear{Enter}' });
     });
 
     it('setSequenceGroup updates an existing group', () => {
       loader.load();
-      loader.setSequenceGroup('claude-code', 'prompts', [
+      loader.setSequenceGroup(cliRef(loader, 'claude-code'), 'prompts', [
         { label: 'only', sequence: 'one item' },
       ]);
-      const group = loader.getSequenceGroup('claude-code', 'prompts');
+      const group = loader.getSequenceGroup(cliRef(loader, 'claude-code'), 'prompts');
       expect(group).toHaveLength(1);
       expect(group![0].label).toBe('only');
     });
 
     it('setSequenceGroup persists to disk', () => {
       loader.load();
-      loader.setSequenceGroup('copilot-cli', 'actions', [
+      loader.setSequenceGroup(cliRef(loader, 'copilot-cli'), 'actions', [
         { label: 'test', sequence: 'npm test{Enter}' },
       ]);
       const fresh = new ConfigLoader(TEST_DIR);
       fresh.load();
-      expect(fresh.getSequenceGroup('copilot-cli', 'actions')).toHaveLength(1);
+      expect(fresh.getSequenceGroup(cliRef(fresh, 'copilot-cli'), 'actions')).toHaveLength(1);
     });
 
     it('setSequenceGroup throws for unknown CLI type', () => {
       loader.load();
-      expect(() => loader.setSequenceGroup('nonexistent', 'g', [])).toThrow('Unknown CLI type');
+      expect(() => loader.setSequenceGroup(cliRef(loader, 'nonexistent'), 'g', [])).toThrow('Unknown CLI type');
     });
 
     it('removeSequenceGroup deletes a group', () => {
       loader.load();
-      loader.removeSequenceGroup('claude-code', 'prompts');
-      expect(loader.getSequenceGroup('claude-code', 'prompts')).toBeNull();
+      loader.removeSequenceGroup(cliRef(loader, 'claude-code'), 'prompts');
+      expect(loader.getSequenceGroup(cliRef(loader, 'claude-code'), 'prompts')).toBeNull();
       // Other groups preserved
-      expect(loader.getSequenceGroup('claude-code', 'snippets')).toHaveLength(1);
+      expect(loader.getSequenceGroup(cliRef(loader, 'claude-code'), 'snippets')).toHaveLength(1);
     });
 
     it('removeSequenceGroup cleans up empty sequences object', () => {
       loader.load();
-      loader.removeSequenceGroup('claude-code', 'prompts');
-      loader.removeSequenceGroup('claude-code', 'snippets');
-      expect(loader.getSequences('claude-code')).toEqual({});
+      loader.removeSequenceGroup(cliRef(loader, 'claude-code'), 'prompts');
+      loader.removeSequenceGroup(cliRef(loader, 'claude-code'), 'snippets');
+      expect(loader.getSequences(cliRef(loader, 'claude-code'))).toEqual({});
     });
 
     it('removeSequenceGroup persists to disk', () => {
       loader.load();
-      loader.removeSequenceGroup('claude-code', 'snippets');
+      loader.removeSequenceGroup(cliRef(loader, 'claude-code'), 'snippets');
       const fresh = new ConfigLoader(TEST_DIR);
       fresh.load();
-      expect(fresh.getSequenceGroup('claude-code', 'snippets')).toBeNull();
-      expect(fresh.getSequenceGroup('claude-code', 'prompts')).toHaveLength(2);
+      expect(fresh.getSequenceGroup(cliRef(fresh, 'claude-code'), 'snippets')).toBeNull();
+      expect(fresh.getSequenceGroup(cliRef(fresh, 'claude-code'), 'prompts')).toHaveLength(2);
     });
 
     it('removeSequenceGroup is a no-op for nonexistent group', () => {
       loader.load();
-      loader.removeSequenceGroup('claude-code', 'nonexistent');
+      loader.removeSequenceGroup(cliRef(loader, 'claude-code'), 'nonexistent');
       // No throw, sequences unchanged
-      expect(loader.getSequences('claude-code')).toHaveProperty('prompts');
+      expect(loader.getSequences(cliRef(loader, 'claude-code'))).toHaveProperty('prompts');
     });
   });
 
@@ -395,11 +425,11 @@ describe('ConfigLoader', () => {
   describe('Tools CRUD', () => {
     it('addCliType adds a new CLI type and persists', () => {
       loader.load();
-      loader.addCliType('new-tool', 'New Tool', 'echo');
+      addCli(loader, 'new-tool', 'New Tool', 'echo');
 
       expect(cliTypeSlugs(loader)).toContain('new-tool');
-      expect(loader.getCliTypeName('new-tool')).toBe('New Tool');
-      expect(loader.getSpawnConfig('new-tool')).toEqual({ command: 'echo', args: [] });
+      expect(loader.getCliTypeName(cliRef(loader, 'new-tool'))).toBe('New Tool');
+      expect(loader.getSpawnConfig(cliRef(loader, 'new-tool'))).toEqual({ command: 'echo', args: [] });
 
       const onDisk = readCliTypesBySlug();
       expect(onDisk['new-tool']).toBeDefined();
@@ -408,39 +438,39 @@ describe('ConfigLoader', () => {
 
     it('addCliType throws if key already exists', () => {
       loader.load();
-      expect(() => loader.addCliType('claude-code', 'X', ''))
-        .toThrow('CLI type already exists: claude-code');
+      expect(() => addCli(loader, 'Claude Code', 'X', ''))
+        .toThrow('CLI type already exists: Claude Code');
     });
 
     it('updateCliType updates an existing CLI type', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'CC Updated', 'cc');
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC Updated', 'cc');
 
-      expect(loader.getCliTypeName('claude-code')).toBe('CC Updated');
-      expect(loader.getSpawnConfig('claude-code')).toEqual({ command: 'cc', args: [] });
+      expect(loader.getCliTypeName(cliRef(loader, 'claude-code'))).toBe('CC Updated');
+      expect(loader.getSpawnConfig(cliRef(loader, 'claude-code'))).toEqual({ command: 'cc', args: [] });
     });
 
     it('updateCliType saves and clears the context window and manual context limits', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'Claude Code', [], 0, { contextWindow: 1_000_000, contextLimits: { amber: 300_000, red: 400_000 } });
-      expect(loader.getCliTypeEntry('claude-code')).toMatchObject({ contextWindow: 1_000_000, contextLimits: { amber: 300_000, red: 400_000 } });
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [], 0, { contextWindow: 1_000_000, contextLimits: { amber: 300_000, red: 400_000 } });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))).toMatchObject({ contextWindow: 1_000_000, contextLimits: { amber: 300_000, red: 400_000 } });
 
-      loader.updateCliType('claude-code', 'Claude Code', [], 0, { contextLimits: { amber: 400_000, red: 300_000 } });
-      expect(loader.getCliTypeEntry('claude-code')?.contextLimits).toBeUndefined();
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [], 0, { contextLimits: { amber: 400_000, red: 300_000 } });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))?.contextLimits).toBeUndefined();
 
-      loader.updateCliType('claude-code', 'Claude Code', [], 0, { contextWindow: 0, contextLimits: null });
-      expect(loader.getCliTypeEntry('claude-code')?.contextWindow).toBeUndefined();
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [], 0, { contextWindow: 0, contextLimits: null });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))?.contextWindow).toBeUndefined();
     });
 
     it('updateCliType throws for non-existent key', () => {
       loader.load();
-      expect(() => loader.updateCliType('nope', 'X', ''))
+      expect(() => loader.updateCliType(cliRef(loader, 'nope'), 'X', ''))
         .toThrow('CLI type not found: nope');
     });
 
     it('removeCliType removes and persists', () => {
       loader.load();
-      loader.removeCliType('copilot-cli');
+      loader.removeCliType(cliRef(loader, 'copilot-cli'));
 
       expect(cliTypeSlugs(loader)).not.toContain('copilot-cli');
 
@@ -450,7 +480,7 @@ describe('ConfigLoader', () => {
 
     it('removeCliType throws for non-existent key', () => {
       loader.load();
-      expect(() => loader.removeCliType('nope')).toThrow('CLI type not found: nope');
+      expect(() => loader.removeCliType(cliRef(loader, 'nope'))).toThrow('CLI type not found: nope');
     });
 
     it('initialPromptDelay is preserved through updateCliType', () => {
@@ -462,7 +492,7 @@ describe('ConfigLoader', () => {
           initialPromptDelay: 3000,
         },
         'copilot-cli': {
-          name: 'GitHub Copilot CLI',
+          name: 'Copilot CLI',
           spawnCommand: 'copilot',
           initialPrompt: [],
         },
@@ -470,9 +500,9 @@ describe('ConfigLoader', () => {
       loader.load();
 
       // Update name and command — delay should survive
-      loader.updateCliType('claude-code', 'CC Renamed', 'cc2', [{ label: 'New', sequence: 'new prompt' }]);
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC Renamed', 'cc2', [{ label: 'New', sequence: 'new prompt' }]);
 
-      const entry = loader.getCliTypeEntry('claude-code');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry).not.toBeNull();
       expect(entry!.name).toBe('CC Renamed');
       expect(entry!.spawnCommand).toBe('cc2');
@@ -495,23 +525,23 @@ describe('ConfigLoader', () => {
       });
       loader.load();
 
-      const entry = loader.getCliTypeEntry('claude-code');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.initialPromptDelay).toBe(1500);
     });
 
     it('initialPromptDelay is undefined when not set in config', () => {
       loader.load();
-      const entry = loader.getCliTypeEntry('claude-code');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.initialPromptDelay).toBeUndefined();
     });
 
     it('addCliType stores helmActions, dropping blank fields', () => {
       loader.load();
-      loader.addCliType('worker', 'Worker', [], 0, {
+      addCli(loader, 'worker', 'Worker', [], 0, {
         helmActions: { clear: '/clear{Enter}', compact: '  ', export: '/export $path{Enter}' },
       });
 
-      const entry = loader.getCliTypeEntry('worker');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'worker'));
       expect(entry!.helmActions).toEqual({ clear: '/clear{Enter}', export: '/export $path{Enter}' });
       const onDisk = readCliTypesBySlug();
       expect(onDisk['worker'].helmActions).toEqual({ clear: '/clear{Enter}', export: '/export $path{Enter}' });
@@ -520,59 +550,59 @@ describe('ConfigLoader', () => {
     it('persists ComfyUI tool config on add and update, including clearing it', () => {
       loader.load();
       const comfyUi = cloneDefaultComfyUiConfigForKind('image');
-      loader.addCliType('comfy-tool', 'ComfyUI Image', [], 0, { comfyUi });
-      expect(loader.getCliTypeEntry('comfy-tool')!.comfyUi).toEqual(comfyUi);
-      expect(loader.getCliTypeEntry('comfy-tool')!.noPromptCache).toBe(true);
+      addCli(loader, 'comfy-tool', 'ComfyUI Image', [], 0, { comfyUi });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'comfy-tool'))!.comfyUi).toEqual(comfyUi);
+      expect(loader.getCliTypeEntry(cliRef(loader, 'comfy-tool'))!.noPromptCache).toBe(true);
 
       const saved = new ConfigLoader(TEST_DIR);
       saved.load();
-      expect(saved.getCliTypeEntry('comfy-tool')!.comfyUi).toEqual(comfyUi);
+      expect(saved.getCliTypeEntry(cliRef(saved, 'comfy-tool'))!.comfyUi).toEqual(comfyUi);
 
-      loader.updateCliType('comfy-tool', 'ComfyUI Image', [], 0, { comfyUi: null });
-      expect(loader.getCliTypeEntry('comfy-tool')!.comfyUi).toBeUndefined();
+      loader.updateCliType(cliRef(loader, 'comfy-tool'), 'ComfyUI Image', [], 0, { comfyUi: null });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'comfy-tool'))!.comfyUi).toBeUndefined();
 
       const fresh = new ConfigLoader(TEST_DIR);
       fresh.load();
-      expect(fresh.getCliTypeEntry('comfy-tool')!.comfyUi).toBeUndefined();
+      expect(fresh.getCliTypeEntry(cliRef(fresh, 'comfy-tool'))!.comfyUi).toBeUndefined();
     });
 
     it('persists an explicit no-prompt-cache opt-out for ComfyUI tools', () => {
       loader.load();
       const comfyUi = cloneDefaultComfyUiConfigForKind('image');
-      loader.addCliType('comfy-opt-out', 'ComfyUI opt out', [], 0, { comfyUi, noPromptCache: false });
+      addCli(loader, 'comfy-opt-out', 'ComfyUI opt out', [], 0, { comfyUi, noPromptCache: false });
 
-      expect(loader.getCliTypeEntry('comfy-opt-out')!.noPromptCache).toBe(false);
+      expect(loader.getCliTypeEntry(cliRef(loader, 'comfy-opt-out'))!.noPromptCache).toBe(false);
       const saved = new ConfigLoader(TEST_DIR);
       saved.load();
-      expect(saved.getCliTypeEntry('comfy-opt-out')!.noPromptCache).toBe(false);
+      expect(saved.getCliTypeEntry(cliRef(saved, 'comfy-opt-out'))!.noPromptCache).toBe(false);
     });
 
     it('addCliType omits helmActions entirely when all fields blank', () => {
       loader.load();
-      loader.addCliType('worker', 'Worker', [], 0, { helmActions: { clear: '', compact: '', export: '' } });
-      expect(loader.getCliTypeEntry('worker')!.helmActions).toBeUndefined();
+      addCli(loader, 'worker', 'Worker', [], 0, { helmActions: { clear: '', compact: '', export: '' } });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'worker'))!.helmActions).toBeUndefined();
     });
 
     it('updateCliType sets and later clears helmActions', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'Claude Code', [], 0, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [], 0, {
         helmActions: { compact: '/compact $instruction{Enter}' },
       });
-      expect(loader.getCliTypeEntry('claude-code')!.helmActions).toEqual({ compact: '/compact $instruction{Enter}' });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.helmActions).toEqual({ compact: '/compact $instruction{Enter}' });
 
       // Providing an all-blank map clears the field.
-      loader.updateCliType('claude-code', 'Claude Code', [], 0, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [], 0, {
         helmActions: { clear: '', compact: '', export: '' },
       });
-      expect(loader.getCliTypeEntry('claude-code')!.helmActions).toBeUndefined();
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.helmActions).toBeUndefined();
     });
 
     it('updateCliType preserves helmActions when options omit the field', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'Claude Code', [], 0, { helmActions: { clear: '/clear{Enter}' } });
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [], 0, { helmActions: { clear: '/clear{Enter}' } });
       // A later update with no helmActions key must not wipe it.
-      loader.updateCliType('claude-code', 'Claude Renamed', 'cc');
-      expect(loader.getCliTypeEntry('claude-code')!.helmActions).toEqual({ clear: '/clear{Enter}' });
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Renamed', 'cc');
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.helmActions).toEqual({ clear: '/clear{Enter}' });
     });
 
     it('helmActions round-trips from disk on fresh load', () => {
@@ -585,7 +615,7 @@ describe('ConfigLoader', () => {
         },
       });
       loader.load();
-      expect(loader.getCliTypeEntry('claude-code')!.helmActions).toEqual({
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.helmActions).toEqual({
         clear: '/clear{Enter}',
         compact: '/compact $instruction{Enter}',
         export: '/export $path{Enter}',
@@ -594,9 +624,9 @@ describe('ConfigLoader', () => {
 
     it('addCliType with initialPromptDelay saves it', () => {
       loader.load();
-      loader.addCliType('my-tool', 'My Tool', 'mytool', [{ label: 'Prompt', sequence: 'hello' }], 5000);
+      addCli(loader, 'my-tool', 'My Tool', 'mytool', [{ label: 'Prompt', sequence: 'hello' }], 5000);
 
-      const entry = loader.getCliTypeEntry('my-tool');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'my-tool'));
       expect(entry).not.toBeNull();
       expect(entry!.initialPromptDelay).toBe(5000);
 
@@ -606,11 +636,11 @@ describe('ConfigLoader', () => {
 
     it('addCliType saves disabled Helm inter-session preamble option', () => {
       loader.load();
-      loader.addCliType('my-tool', 'My Tool', [{ label: 'Prompt', sequence: 'hello' }], 5000, {
+      addCli(loader, 'my-tool', 'My Tool', [{ label: 'Prompt', sequence: 'hello' }], 5000, {
         helmPreambleForInterSession: false,
       });
 
-      const entry = loader.getCliTypeEntry('my-tool');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'my-tool'));
       expect(entry!.helmPreambleForInterSession).toBe(false);
 
       const onDisk = readCliTypesBySlug();
@@ -620,20 +650,20 @@ describe('ConfigLoader', () => {
     it('updateCliType persists disabled Helm inter-session preamble and omits enabled default', () => {
       loader.load();
 
-      loader.updateCliType('claude-code', 'Claude Code', [{ label: 'Prompt', sequence: 'hello' }], 5000, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [{ label: 'Prompt', sequence: 'hello' }], 5000, {
         helmPreambleForInterSession: false,
       });
 
-      let entry = loader.getCliTypeEntry('claude-code');
+      let entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.helmPreambleForInterSession).toBe(false);
       let onDisk = readCliTypesBySlug();
       expect(onDisk['claude-code'].helmPreambleForInterSession).toBe(false);
 
-      loader.updateCliType('claude-code', 'Claude Code', [{ label: 'Prompt', sequence: 'hello' }], 5000, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'Claude Code', [{ label: 'Prompt', sequence: 'hello' }], 5000, {
         helmPreambleForInterSession: true,
       });
 
-      entry = loader.getCliTypeEntry('claude-code');
+      entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.helmPreambleForInterSession).toBeUndefined();
       onDisk = readCliTypesBySlug();
       expect(onDisk['claude-code'].helmPreambleForInterSession).toBeUndefined();
@@ -648,16 +678,16 @@ describe('ConfigLoader', () => {
           initialPromptDelay: 3000,
         },
         'copilot-cli': {
-          name: 'GitHub Copilot CLI',
+          name: 'Copilot CLI',
           spawnCommand: 'copilot',
           initialPrompt: [],
         },
       });
       loader.load();
 
-      loader.updateCliType('claude-code', 'CC Updated', 'cc2', [{ label: 'Prompt', sequence: 'prompt' }], 7000);
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC Updated', 'cc2', [{ label: 'Prompt', sequence: 'prompt' }], 7000);
 
-      const entry = loader.getCliTypeEntry('claude-code');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.initialPromptDelay).toBe(7000);
 
       const onDisk = readCliTypesBySlug();
@@ -679,8 +709,8 @@ describe('ConfigLoader', () => {
       loader.load();
 
       // Edit only name/command — all other fields must survive
-      loader.updateCliType('claude-code', 'CC Renamed', 'cc2');
-      const entry = loader.getCliTypeEntry('claude-code')!;
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC Renamed', 'cc2');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!;
       expect(entry.name).toBe('CC Renamed');
       expect(entry.spawnCommand).toBe('cc2');
       expect(entry.sequences).toEqual({ prompts: [{ label: 'commit', sequence: 'use skill(commit)' }] });
@@ -691,10 +721,10 @@ describe('ConfigLoader', () => {
 
     it('updateCliType with options sets optional command fields', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'CC', 'cc', [], 0, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', 'cc', [], 0, {
         renameCommand: '/name {cliSessionName}',
       });
-      const entry = loader.getCliTypeEntry('claude-code')!;
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!;
       expect(entry.renameCommand).toBe('/name {cliSessionName}');
     });
 
@@ -706,30 +736,30 @@ describe('ConfigLoader', () => {
       loader = new ConfigLoader(TEST_DIR);
       loader.load();
 
-      loader.updateCliType('claude-code', 'CC', 'cc', [], 0, { renameCommand: '' });
-      const entry = loader.getCliTypeEntry('claude-code')!;
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', 'cc', [], 0, { renameCommand: '' });
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!;
       expect(entry.renameCommand).toBeUndefined();
     });
 
     it('addCliType with options stores optional command fields', () => {
       loader.load();
-      loader.addCliType('new-tool', 'New', 'newtool', [], 0, {
+      addCli(loader, 'new-tool', 'New', 'newtool', [], 0, {
         renameCommand: '/name {cliSessionName}',
         resumeCommand: 'newtool --resume {cliSessionName}',
       });
-      const entry = loader.getCliTypeEntry('new-tool')!;
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'new-tool'))!;
       expect(entry.renameCommand).toBe('/name {cliSessionName}');
       expect(entry.resumeCommand).toBe('newtool --resume {cliSessionName}');
     });
 
     it('addCliType with spawnCommand stores the full launch template', () => {
       loader.load();
-      loader.addCliType('arg-tool', 'Arg Tool', [], 0, {
+      addCli(loader, 'arg-tool', 'Arg Tool', [], 0, {
         spawnCommand: 'mytool --model opus --verbose',
       });
-      const entry = loader.getCliTypeEntry('arg-tool')!;
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'arg-tool'))!;
       expect(entry.spawnCommand).toBe('mytool --model opus --verbose');
-      expect(loader.getSpawnConfig('arg-tool')).toEqual({
+      expect(loader.getSpawnConfig(cliRef(loader, 'arg-tool'))).toEqual({
         command: 'mytool',
         args: ['--model', 'opus', '--verbose'],
       });
@@ -737,66 +767,66 @@ describe('ConfigLoader', () => {
 
     it('addCliType stores largeTextAsTempFile when enabled', () => {
       loader.load();
-      loader.addCliType('large-tool', 'Large Tool', [], 0, {
+      addCli(loader, 'large-tool', 'Large Tool', [], 0, {
         largeTextAsTempFile: true,
       });
-      const entry = loader.getCliTypeEntry('large-tool')!;
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'large-tool'))!;
       expect(entry.largeTextAsTempFile).toBe(true);
     });
 
     it('updateCliType turns Mess reminders off and omits the true default', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'CC', [], 0, { messReminders: false });
-      expect(loader.getCliTypeEntry('claude-code')!.messReminders).toBe(false);
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', [], 0, { messReminders: false });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.messReminders).toBe(false);
 
-      loader.updateCliType('claude-code', 'CC', [], 0, { messReminders: true });
-      expect(loader.getCliTypeEntry('claude-code')!.messReminders).toBeUndefined();
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', [], 0, { messReminders: true });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.messReminders).toBeUndefined();
     });
 
     it('updateCliType with spawnCommand stores the full launch template', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'CC', [], 0, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', [], 0, {
         spawnCommand: 'cc --debug --timeout 30',
       });
-      const entry = loader.getCliTypeEntry('claude-code')!;
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!;
       expect(entry.spawnCommand).toBe('cc --debug --timeout 30');
     });
 
     it('updateCliType toggles largeTextAsTempFile and omits the false default', () => {
       loader.load();
-      loader.updateCliType('claude-code', 'CC', [], 0, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', [], 0, {
         largeTextAsTempFile: true,
       });
-      expect(loader.getCliTypeEntry('claude-code')!.largeTextAsTempFile).toBe(true);
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.largeTextAsTempFile).toBe(true);
 
-      loader.updateCliType('claude-code', 'CC', [], 0, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', [], 0, {
         largeTextAsTempFile: false,
       });
-      expect(loader.getCliTypeEntry('claude-code')!.largeTextAsTempFile).toBeUndefined();
+      expect(loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!.largeTextAsTempFile).toBeUndefined();
     });
 
     it('updateCliType toggles mouseTracking and omits the false default', () => {
       loader.load();
-      loader.addCliType('mouse-tool', 'Mouse Tool', [], 0, { mouseTracking: true });
-      expect(loader.getCliTypeEntry('mouse-tool')!.mouseTracking).toBe(true);
+      addCli(loader, 'mouse-tool', 'Mouse Tool', [], 0, { mouseTracking: true });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'mouse-tool'))!.mouseTracking).toBe(true);
 
-      loader.updateCliType('mouse-tool', 'Mouse Tool', [], 0, { mouseTracking: false });
-      expect(loader.getCliTypeEntry('mouse-tool')!.mouseTracking).toBeUndefined();
+      loader.updateCliType(cliRef(loader, 'mouse-tool'), 'Mouse Tool', [], 0, { mouseTracking: false });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'mouse-tool'))!.mouseTracking).toBeUndefined();
 
-      loader.updateCliType('mouse-tool', 'Mouse Tool', [], 0, { mouseTracking: true });
-      expect(loader.getCliTypeEntry('mouse-tool')!.mouseTracking).toBe(true);
+      loader.updateCliType(cliRef(loader, 'mouse-tool'), 'Mouse Tool', [], 0, { mouseTracking: true });
+      expect(loader.getCliTypeEntry(cliRef(loader, 'mouse-tool'))!.mouseTracking).toBe(true);
     });
 
     it('addCliType with env stores environment variable entries', () => {
       loader.load();
-      loader.addCliType('env-tool', 'Env Tool', 'mytool', [], 0, {
+      addCli(loader, 'env-tool', 'Env Tool', 'mytool', [], 0, {
         env: [
           { name: 'COPILOT_PROVIDER_BASE_URL', value: 'http://192.168.56.1:1234' },
           { name: 'COPILOT_MODEL', value: 'qwen/qwen3.6-35b-a3b' },
         ],
       });
 
-      const entry = loader.getCliTypeEntry('env-tool')!;
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'env-tool'))!;
       expect(entry.env).toEqual([
         { name: 'COPILOT_PROVIDER_BASE_URL', value: 'http://192.168.56.1:1234' },
         { name: 'COPILOT_MODEL', value: 'qwen/qwen3.6-35b-a3b' },
@@ -814,14 +844,14 @@ describe('ConfigLoader', () => {
       loader = new ConfigLoader(TEST_DIR);
       loader.load();
 
-      loader.updateCliType('claude-code', 'CC', 'cc', [], 0, {
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', 'cc', [], 0, {
         env: [
           { name: 'COPILOT_PROVIDER_TYPE', value: 'openai' },
           { name: 'COPILOT_MODEL', value: 'qwen' },
         ],
       });
 
-      const entry = loader.getCliTypeEntry('claude-code')!;
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!;
       expect(entry.env).toEqual([
         { name: 'COPILOT_PROVIDER_TYPE', value: 'openai' },
         { name: 'COPILOT_MODEL', value: 'qwen' },
@@ -836,8 +866,8 @@ describe('ConfigLoader', () => {
       loader = new ConfigLoader(TEST_DIR);
       loader.load();
 
-      loader.updateCliType('claude-code', 'CC', [], 0, { spawnCommand: '' });
-      const entry = loader.getCliTypeEntry('claude-code')!;
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', [], 0, { spawnCommand: '' });
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!;
       expect(entry.spawnCommand).toBeUndefined();
     });
 
@@ -852,19 +882,19 @@ describe('ConfigLoader', () => {
       loader = new ConfigLoader(TEST_DIR);
       loader.load();
 
-      loader.updateCliType('claude-code', 'CC', 'cc', [], 0, { env: [] });
-      const entry = loader.getCliTypeEntry('claude-code')!;
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'CC', 'cc', [], 0, { env: [] });
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'))!;
       expect(entry.env).toBeUndefined();
     });
 
     it('spawnCommand round-trip preserves on disk', () => {
       loader.load();
-      loader.addCliType('rt-tool', 'RT', [], 0, { spawnCommand: 'rt --flag value' });
+      addCli(loader, 'rt-tool', 'RT', [], 0, { spawnCommand: 'rt --flag value' });
 
       const fresh = new ConfigLoader(TEST_DIR);
       fresh.load();
-      expect(fresh.getCliTypeEntry('rt-tool')!.spawnCommand).toBe('rt --flag value');
-      expect(fresh.getSpawnConfig('rt-tool')).toEqual({
+      expect(fresh.getCliTypeEntry(cliRef(fresh, 'rt-tool'))!.spawnCommand).toBe('rt --flag value');
+      expect(fresh.getSpawnConfig(cliRef(fresh, 'rt-tool'))).toEqual({
         command: 'rt',
         args: ['--flag', 'value'],
       });
@@ -885,7 +915,7 @@ describe('ConfigLoader', () => {
 
       const fresh = new ConfigLoader(TEST_DIR);
       fresh.load();
-      expect(fresh.getCliTypeEntry('claude-code')!.env).toEqual([
+      expect(fresh.getCliTypeEntry(cliRef(fresh, 'claude-code'))!.env).toEqual([
         { name: 'COPILOT_PROVIDER_BASE_URL', value: 'http://localhost:1234' },
         { name: 'COPILOT_MODEL', value: 'qwen' },
       ]);
@@ -893,11 +923,11 @@ describe('ConfigLoader', () => {
 
     it('getSpawnConfig preserves quoted args for complex CLI options', () => {
       loader.load();
-      loader.addCliType('codex', 'Codex CLI', [], 0, {
+      addCli(loader, 'codex', 'Codex CLI', [], 0, {
         spawnCommand: 'codex --full-auto -c \'model="gpt-5"\' --cd "X:\\coding\\My Project"',
       });
 
-      expect(loader.getSpawnConfig('codex')).toEqual({
+      expect(loader.getSpawnConfig(cliRef(loader, 'codex'))).toEqual({
         command: 'codex',
         args: ['--full-auto', '-c', 'model="gpt-5"', '--cd', 'X:\\coding\\My Project'],
       });
@@ -916,12 +946,12 @@ describe('ConfigLoader', () => {
       loader = new ConfigLoader(TEST_DIR);
       loader.load();
 
-      loader.updateCliType('claude-code', 'New Name', 'new-cmd');
+      loader.updateCliType(cliRef(loader, 'claude-code'), 'New Name', 'new-cmd');
 
       // Reload from disk
       const fresh = new ConfigLoader(TEST_DIR);
       fresh.load();
-      const entry = fresh.getCliTypeEntry('claude-code')!;
+      const entry = fresh.getCliTypeEntry(cliRef(fresh, 'claude-code'))!;
       expect(entry.name).toBe('New Name');
       expect(entry.spawnCommand).toBe('new-cmd');
       expect(entry.sequences).toEqual({ prompts: [{ label: 'x', sequence: 'y' }] });
@@ -940,7 +970,7 @@ describe('ConfigLoader', () => {
       });
       loader.load();
 
-      const entry = loader.getCliTypeEntry('claude-code');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.initialPrompt).toEqual([{ label: 'Prompt', sequence: 'hello world' }]);
       expect(entry!.initialPromptDelay).toBe(1000);
 
@@ -959,7 +989,7 @@ describe('ConfigLoader', () => {
       });
       loader.load();
 
-      const entry = loader.getCliTypeEntry('claude-code');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.initialPrompt).toEqual([]);
     });
 
@@ -973,7 +1003,7 @@ describe('ConfigLoader', () => {
       });
       loader.load();
 
-      const entry = loader.getCliTypeEntry('claude-code');
+      const entry = loader.getCliTypeEntry(cliRef(loader, 'claude-code'));
       expect(entry!.initialPrompt).toEqual([{ label: 'Cmd', sequence: '/clear{Enter}' }]);
     });
   });
@@ -987,7 +1017,7 @@ describe('ConfigLoader', () => {
       });
       loader.load();
 
-      const bindings = loader.getBindings('claude-code');
+      const bindings = loader.getBindings(cliRef(loader, 'claude-code'));
       expect(bindings).toHaveProperty('Sandwich');
       expect(bindings!['Sandwich']).toEqual({ action: 'keyboard', sequence: '{Escape}' });
     });
@@ -1001,7 +1031,7 @@ describe('ConfigLoader', () => {
       });
       loader.load();
 
-      const bindings = loader.getBindings('claude-code');
+      const bindings = loader.getBindings(cliRef(loader, 'claude-code'));
       expect(bindings).toHaveProperty('Xbox');
       expect(bindings!['Xbox']).toEqual({ action: 'keyboard', sequence: '{Enter}' });
     });
@@ -1012,7 +1042,7 @@ describe('ConfigLoader', () => {
 
       // Re-load and verify
       loader.load();
-      const bindings = loader.getBindings('claude-code');
+      const bindings = loader.getBindings(cliRef(loader, 'claude-code'));
       expect(bindings).toHaveProperty('Sandwich');
       expect(bindings!['Sandwich']).toEqual({ action: 'keyboard', keys: ['Ctrl', 'w'] });
     });
@@ -1151,7 +1181,7 @@ describe('ConfigLoader', () => {
       loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'RightStickUp', { action: 'scroll', direction: 'up', lines: 3 } as any);
       loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'RightStickDown', { action: 'scroll', direction: 'down' } as any);
 
-      const bindings = loader.getBindings('claude-code')!;
+      const bindings = loader.getBindings(cliRef(loader, 'claude-code'))!;
       expect(bindings['RightStickUp']).toEqual({ action: 'scroll', direction: 'up', lines: 3 });
       expect(bindings['RightStickDown']).toEqual({ action: 'scroll', direction: 'down' });
     });
@@ -1163,7 +1193,7 @@ describe('ConfigLoader', () => {
       // Reload from disk
       const freshLoader = new ConfigLoader(TEST_DIR);
       freshLoader.load();
-      const bindings = freshLoader.getBindings('claude-code')!;
+      const bindings = freshLoader.getBindings(cliRef(freshLoader, 'claude-code'))!;
       expect(bindings['RightStickUp']).toEqual({ action: 'scroll', direction: 'up' });
     });
   });
@@ -1364,13 +1394,13 @@ describe('ConfigLoader', () => {
     it('builds spawn config with command', () => {
       writeYaml('cli-types.yaml', { test: { name: 'Test', spawnCommand: 'python' } });
       loader.load();
-      expect(loader.getSpawnConfig('test')).toEqual({ command: 'python', args: [] });
+      expect(loader.getSpawnConfig(cliRef(loader, 'test'))).toEqual({ command: 'python', args: [] });
     });
 
     it('builds spawn config without command', () => {
       writeYaml('cli-types.yaml', { test: { name: 'Test', spawnCommand: '' } });
       loader.load();
-      expect(loader.getSpawnConfig('test')).toEqual({ command: '', args: [] });
+      expect(loader.getSpawnConfig(cliRef(loader, 'test'))).toEqual({ command: '', args: [] });
     });
   });
 });

@@ -228,8 +228,6 @@ export interface CliTypeConfig {
   id?: string;
   /** Free-text human label. Authoritative — `name` is kept in sync as a deprecated alias. */
   displayName?: string;
-  /** The pre-UUID slug key this entry was migrated from. Diagnostic only. */
-  legacyKey?: string;
   /** @deprecated Alias of displayName, kept so existing readers keep working. */
   name: string;
   /** Extra environment variables injected into the spawned CLI process. */
@@ -688,9 +686,8 @@ export class ConfigLoader {
     // Re-key slug-based CLI types to UUIDs. Runs after the profile migration so
     // types it just imported are covered too; rewrites the file directly, hence
     // the reload.
-    if (migrateCliTypeIds(defaultCliTypeMigrationFiles(this.profileConfigDir))) {
-      this.cliTypeStore.load();
-    }
+    const slugToId = migrateCliTypeIds(defaultCliTypeMigrationFiles(this.profileConfigDir));
+    if (slugToId) this.cliTypeStore.load();
     // Merge ComfyUI presets only into tools a user already configured. Fresh
     // installs remain free of optional ComfyUI tool entries.
     if (ownsGlobalConfig && this.userProfileId === '1'
@@ -698,7 +695,7 @@ export class ConfigLoader {
       this.cliTypeStore.load();
     }
     if (ownsGlobalConfig) {
-      this.migrateLegacyBindings();
+      this.migrateLegacyBindings(slugToId);
       this.sharedConfigState.globalLoaded = true;
     }
   }
@@ -723,11 +720,13 @@ export class ConfigLoader {
    * Tool refs are written before the profile: if we die in between, the legacy
    * file is still on disk, so the next load re-runs this and converges.
    */
-  private migrateLegacyBindings(): void {
+  /** `slugToId` comes from a CLI type migration in the same load: legacy maps are slug-keyed. */
+  private migrateLegacyBindings(slugToId: ReadonlyMap<string, string> | null): void {
     const legacy = this.bindingStore.takeLegacy();
     if (!legacy) return;
     const keys = Object.keys(legacy);
     const owned = keys.find((key) => {
+      if (slugToId?.has(key)) return true;
       try { return !!this.cliTypeStore.resolve(key); } catch { return false; }
     });
     const chosen = legacy[owned ?? keys[0]];
@@ -1546,9 +1545,8 @@ export class ConfigLoader {
     maybeOptions?: CliTypeOptions,
   ): string {
     this.ensureLoaded();
-    // `key` is now only a caller-supplied slug — identity is a freshly minted
-    // UUID so a later rename never has to re-key anything. The slug is kept as
-    // `legacyKey` so callers that still address CLI types by slug resolve.
+    // `key` is only a caller-supplied handle checked for collisions — identity
+    // is a freshly minted UUID so a later rename never has to re-key anything.
     if (this.cliTypeStore.get(key)) {
       throw new Error(`CLI type already exists: ${key}`);
     }
@@ -1563,10 +1561,7 @@ export class ConfigLoader {
     const options = isCliTypeOptions(initialPromptDelayOrOptions)
       ? initialPromptDelayOrOptions
       : maybeOptions;
-    // A brand-new type has no pre-UUID history, so it gets no legacyKey — the
-    // slug is only meaningful when it is the key an older config addressed.
     const tool: CliTypeConfig = { id, displayName: name, name, initialPrompt, initialPromptDelay };
-    if (key && key !== name) tool.legacyKey = key;
     const spawnCommand = options?.spawnCommand?.trim() || legacyCommand;
     if (spawnCommand) tool.spawnCommand = spawnCommand;
     if (options?.env !== undefined && options.env.length > 0) tool.env = options.env;

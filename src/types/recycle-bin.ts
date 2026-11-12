@@ -13,7 +13,7 @@ export interface RecycleBinEntry {
   sessionId: string;
   /** Display name the session had when closed. */
   name: string;
-  /** CLI type (e.g. 'claude-code'), used to re-spawn on restore. */
+  /** CLI type UUID, used to re-spawn on restore. */
   cliType: string;
   /** Working directory the session ran in — also its recycle-bin group. */
   workingDir: string;

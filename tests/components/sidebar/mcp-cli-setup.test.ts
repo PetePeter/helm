@@ -35,13 +35,49 @@ async function mountSetup() {
   return wrapper;
 }
 
+const CODEX_ID = '1a2b3c4d-0000-4000-8000-000000000001';
+const OPENCODE_ID = '1a2b3c4d-0000-4000-8000-000000000002';
+const CLAUDE_ID = '1a2b3c4d-0000-4000-8000-000000000003';
+
+/** CLI types reach the renderer keyed by UUID, exactly as tools:getAll returns them. */
+function stubCliTypes(cliTypes: Record<string, Record<string, unknown>>): void {
+  (window as any).gamepadCli = { toolsGetAll: vi.fn().mockResolvedValue({ cliTypes }) };
+}
+
+describe('McpCliSetup.vue env lookup by CLI family', () => {
+  beforeEach(() => setPlatform('win32'));
+  afterEach(() => { delete (window as any).helmPlatform; });
+
+  // Regression: env was looked up by pre-UUID slug ('claude-code'), so once
+  // types were UUID-keyed no snippet ever carried its env lines.
+  it('puts a UUID-keyed claude type env into the claude snippet', async () => {
+    stubCliTypes({
+      [CLAUDE_ID]: { id: CLAUDE_ID, displayName: 'Work Claude', provider: 'claude', env: [{ name: 'ANTHROPIC_BASE_URL', value: 'x' }] },
+    });
+    const text = (await mountSetup()).text();
+    expect(text).toMatch(/set ANTHROPIC_BASE_URL=x\s*claude mcp add/);
+    // Only the claude family gets it.
+    expect(text.match(/ANTHROPIC_BASE_URL/g)).toHaveLength(1);
+  });
+
+  it('infers the family from the spawn command when no provider is set', async () => {
+    stubCliTypes({
+      [OPENCODE_ID]: { id: OPENCODE_ID, displayName: 'Mine', spawnCommand: 'opencode --x', env: [{ name: 'OC', value: '1' }] },
+    });
+    const text = (await mountSetup()).text();
+    // Exactly one snippet (opencode's) carries it.
+    expect(text.match(/set OC=1/g)).toHaveLength(1);
+    expect(text).toMatch(/set OC=1\s*if not exist/);
+  });
+});
+
 describe('McpCliSetup.vue OS-dependent behavior', () => {
   beforeEach(() => {
     // Provide an env var per CLI so envSetupLines() is exercised.
-    (window as any).gamepadCli = {
-      configGetCliTypes: vi.fn().mockResolvedValue(['codex', 'opencode']),
-      configGetCliTypeEnv: vi.fn().mockResolvedValue([{ name: 'FOO', value: 'bar' }]),
-    };
+    stubCliTypes({
+      [CODEX_ID]: { id: CODEX_ID, displayName: 'Codex', provider: 'codex', env: [{ name: 'FOO', value: 'bar' }] },
+      [OPENCODE_ID]: { id: OPENCODE_ID, displayName: 'OpenCode', spawnCommand: 'opencode', env: [{ name: 'FOO', value: 'bar' }] },
+    });
   });
 
   afterEach(() => {
@@ -100,10 +136,7 @@ describe('McpCliSetup.vue OS-dependent behavior', () => {
  */
 describe('McpCliSetup.vue placeholder preservation', () => {
   beforeEach(() => {
-    (window as any).gamepadCli = {
-      configGetCliTypes: vi.fn().mockResolvedValue(['claude', 'copilot', 'codex']),
-      configGetCliTypeEnv: vi.fn().mockResolvedValue([]),
-    };
+    stubCliTypes({});
   });
 
   afterEach(() => {

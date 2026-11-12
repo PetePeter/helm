@@ -34,7 +34,7 @@ Context lookup is deliberately limited to `session_info` and `session_get`: read
 
 - **`sessionId`** (string, optional) — Helm session UUID if the caller authenticated with a session-scoped token (HELM_MCP_TOKEN). Undefined if using a global auth token.
 - **`sessionName`** (string, optional) — Display name of the session (`HELM_SESSION_NAME` env var at session startup). Undefined for global token callers.
-- **`cliType`** (string, optional) — CLI type identity of the session. A UUID — pass it back verbatim, never show it to a human; `session_list` / `session_read_terminal` carry `cliTypeName` alongside it for that. Pre-UUID slugs (`'claude-code'`, `'copilot-cli'`) and display names still resolve. Undefined for global token callers. See [config-system.md](config-system.md#cli-type-identity).
+- **`cliType`** (string, optional) — CLI type identity of the session. A UUID — pass it back verbatim, never show it to a human; `session_list` / `session_read_terminal` carry `cliTypeName` alongside it for that. Display names still resolve; pre-UUID slugs (`'claude-code'`) do not. Undefined for global token callers. See [config-system.md](config-system.md#cli-type-identity).
 - **`workingDir`** (string, optional) — Working directory the session was spawned in. Undefined for global token callers.
 
 ### MCP Endpoint Context
@@ -85,7 +85,7 @@ Response:
   "result": {
     "sessionId": "a1b2c3d4-e5f6-...",
     "sessionName": "Claude-Main",
-    "cliType": "claude-code",
+    "cliType": "5e1f5c1e-6c2f-4d54-9a3f-1c7d9b2a4e10",
     "workingDir": "X:\\coding\\gamepad-cli-hub",
     "mcp_url": "http://127.0.0.1:47373/mcp",
     "mcp_token": "eyJhbGciOi...",

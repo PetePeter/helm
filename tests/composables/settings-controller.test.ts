@@ -55,8 +55,8 @@ const CLAUDE_ID = '99999999-8888-4777-8666-555544443333';
 /** Two real CLI types, uuid-keyed exactly as tools:getAll returns them post-migration. */
 function twoCliTypes(): Record<string, any> {
   return {
-    [CODEX_ID]: { id: CODEX_ID, displayName: 'Codex', name: 'Codex', legacyKey: 'codex', spawnCommand: 'codex' },
-    [CLAUDE_ID]: { id: CLAUDE_ID, displayName: 'Claude', name: 'Claude', legacyKey: 'claude-code', spawnCommand: 'claude' },
+    [CODEX_ID]: { id: CODEX_ID, displayName: 'Codex', name: 'Codex', spawnCommand: 'codex' },
+    [CLAUDE_ID]: { id: CLAUDE_ID, displayName: 'Claude', name: 'Claude', spawnCommand: 'claude' },
   };
 }
 

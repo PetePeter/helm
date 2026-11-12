@@ -21,8 +21,8 @@ const CODEX_ID = '11111111-2222-4333-8444-555566667777';
 
 beforeEach(() => {
   state.cliToolsCache = {
-    [CLAUDE_ID]: { id: CLAUDE_ID, displayName: 'Claude', name: 'Claude', legacyKey: 'claude-code' },
-    [CODEX_ID]: { id: CODEX_ID, displayName: 'Codex', name: 'Codex', legacyKey: 'codex' },
+    [CLAUDE_ID]: { id: CLAUDE_ID, displayName: 'Claude', name: 'Claude' },
+    [CODEX_ID]: { id: CODEX_ID, displayName: 'Codex', name: 'Codex' },
   };
 });
 

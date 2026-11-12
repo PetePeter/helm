@@ -44,29 +44,41 @@ const emit = defineEmits<{
 }>();
 
 const useEnvVar = ref(true);
-const cliEnvs = ref(new Map<string, Array<{ name: string; value: string }>>());
+type EnvEntry = { name: string; value: string };
+type CliFamily = 'claude' | 'codex' | 'copilot' | 'opencode';
+const cliEnvs = ref(new Map<CliFamily, EnvEntry[]>());
+
+const FAMILY_WORD = /\b(claude|codex|copilot|opencode)\b/i;
+
+/**
+ * Which setup snippet a CLI type feeds. Types are UUID-keyed with free-text
+ * names, so the family comes from the stamped `provider`, else from the words
+ * in its label/spawn command (opencode has no provider, so it always guesses).
+ */
+function cliFamily(entry: Record<string, any>): CliFamily | null {
+  if (entry.provider) return entry.provider;
+  const match = FAMILY_WORD.exec(`${entry.displayName ?? ''} ${entry.spawnCommand ?? ''}`);
+  return match ? (match[1].toLowerCase() as CliFamily) : null;
+}
 
 onMounted(async () => {
   try {
-    const cliTypes = await configClient.configGetCliTypes();
-    for (const cliType of cliTypes) {
-      const env = await configClient.configGetCliTypeEnv(cliType);
-      cliEnvs.value.set(cliType, env || []);
+    const { cliTypes } = await toolsClient.toolsGetAll();
+    // First type with env per family wins — list order is the user's order.
+    for (const entry of Object.values(cliTypes ?? {}) as Array<Record<string, any>>) {
+      const family = cliFamily(entry);
+      if (family && entry.env?.length && !cliEnvs.value.has(family)) cliEnvs.value.set(family, entry.env);
     }
   } catch (error) {
     console.error('[McpCliSetup] Failed to load CLI env vars:', error);
   }
 });
 
-function envForCli(...keys: string[]): Array<{ name: string; value: string }> {
-  for (const key of keys) {
-    const env = cliEnvs.value.get(key);
-    if (env && env.length > 0) return env;
-  }
-  return [];
+function envForCli(family: CliFamily): EnvEntry[] {
+  return cliEnvs.value.get(family) ?? [];
 }
 
-function envSetupLines(entries: Array<{ name: string; value: string }>): string {
+function envSetupLines(entries: EnvEntry[]): string {
   const keyword = isWindows ? 'set ' : 'export ';
   return entries.map((e) => `${keyword}${e.name}=${e.value}`).join('\n');
 }
@@ -83,7 +95,7 @@ const codexSetup = computed(() => {
   return env ? `${env}\n${cmd}` : cmd;
 });
 
-const claudeEnv = computed(() => envForCli('claude', 'claude-code'));
+const claudeEnv = computed(() => envForCli('claude'));
 const claudeSetup = computed(() => {
   const env = envSetupLines(claudeEnv.value);
   // No X-Helm-Session-Name header, deliberately. Session names are free text and
@@ -99,7 +111,7 @@ const claudeSetup = computed(() => {
   return env ? `${env}\n${cmd}` : cmd;
 });
 
-const copilotEnv = computed(() => envForCli('copilot', 'copilot-cli'));
+const copilotEnv = computed(() => envForCli('copilot'));
 const copilotSetup = computed(() => {
   const env = envSetupLines(copilotEnv.value);
   const bearer = useEnvVar.value ? '${HELM_MCP_TOKEN}' : props.tokenLiteral;

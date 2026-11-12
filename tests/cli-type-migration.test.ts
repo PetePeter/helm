@@ -59,7 +59,7 @@ afterEach(() => fs.rmSync(TEST_DIR, { recursive: true, force: true }));
 
 describe('migrateCliTypeIds', () => {
   it('mints a uuid per entry, preserves order and every config field', () => {
-    expect(migrateCliTypeIds(files)).toBe(true);
+    expect(migrateCliTypeIds(files)).not.toBeNull();
 
     const out = read<Record<string, any>>('cli-types.yaml');
     const keys = Object.keys(out);
@@ -79,10 +79,10 @@ describe('migrateCliTypeIds', () => {
     expect(cc.env).toEqual([{ name: 'FOO', value: 'bar' }]);
   });
 
-  it('records legacyKey for every migrated entry', () => {
+  it('keeps no slug alias — the old key does not survive on the migrated entry', () => {
     migrateCliTypeIds(files);
     const out = read<Record<string, any>>('cli-types.yaml');
-    expect(Object.values(out).map(e => e.legacyKey)).toEqual(['claude-code', 'copilot-cli', 'zed']);
+    for (const entry of Object.values(out)) expect(entry).not.toHaveProperty('legacyKey');
   });
 
   it('falls back to the slug when the legacy entry has no name', () => {
@@ -110,14 +110,14 @@ describe('migrateCliTypeIds', () => {
     migrateCliTypeIds(files);
 
     const types = read<Record<string, any>>('cli-types.yaml');
-    const byLegacy = Object.fromEntries(Object.values(types).map((e: any) => [e.legacyKey, e.id]));
+    const byName = Object.fromEntries(Object.values(types).map((e: any) => [e.displayName, e.id]));
 
-    expect(read<any>('sessions.yaml').sessions[0].cliType).toBe(byLegacy['claude-code']);
+    expect(read<any>('sessions.yaml').sessions[0].cliType).toBe(byName['Claude Code']);
     expect(read<any>('sessions.yaml').sessions[0].name).toBe('S1');
-    expect(read<any>('recycle-bin.yaml').entries[0].cliType).toBe(byLegacy['copilot-cli']);
-    expect(read<any>('scheduled-tasks.yaml').tasks[0].cliType).toBe(byLegacy.zed);
+    expect(read<any>('recycle-bin.yaml').entries[0].cliType).toBe(byName.Copilot);
+    expect(read<any>('scheduled-tasks.yaml').tasks[0].cliType).toBe(byName.Zed);
     expect(read<any>('scheduled-tasks.yaml').tasks[0].scheduledTime).toBe('2026-01-01T00:00:00.000Z');
-    expect(read<any>('scheduled-task-history.yaml').entries[0].cliType).toBe(byLegacy.zed);
+    expect(read<any>('scheduled-task-history.yaml').entries[0].cliType).toBe(byName.Zed);
   });
 
   it('leaves unknown cliType values untouched', () => {
@@ -129,12 +129,12 @@ describe('migrateCliTypeIds', () => {
   it('is idempotent — a second run is a no-op and leaves files byte-identical', () => {
     write('sessions.yaml', { sessions: [{ id: 's1', name: 'S1', cliType: 'claude-code', processId: 1 }] });
 
-    expect(migrateCliTypeIds(files)).toBe(true);
+    expect(migrateCliTypeIds(files)).not.toBeNull();
     const snapshot = Object.fromEntries(
       Object.values(files).map(f => [f, fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null]),
     );
 
-    expect(migrateCliTypeIds(files)).toBe(false);
+    expect(migrateCliTypeIds(files)).toBeNull();
     for (const [file, content] of Object.entries(snapshot)) {
       expect(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null).toBe(content);
     }
@@ -142,7 +142,7 @@ describe('migrateCliTypeIds', () => {
 
   it('returns false when there is no cli-types file', () => {
     fs.rmSync(files.cliTypesFile);
-    expect(migrateCliTypeIds(files)).toBe(false);
+    expect(migrateCliTypeIds(files)).toBeNull();
   });
 
   it('leaves the originals untouched when staging fails', () => {
@@ -152,7 +152,7 @@ describe('migrateCliTypeIds', () => {
     // A directory where the staged temp file must go makes the write fail.
     fs.mkdirSync(files.cliTypesFile + '.migrating');
 
-    expect(migrateCliTypeIds(files)).toBe(false);
+    expect(migrateCliTypeIds(files)).toBeNull();
     expect(fs.readFileSync(files.cliTypesFile, 'utf8')).toBe(beforeTypes);
     expect(fs.readFileSync(files.sessionsFile, 'utf8')).toBe(beforeSessions);
   });
@@ -173,6 +173,17 @@ describe('ConfigLoader CLI type identity', () => {
     expect(added).toMatch(UUID_V4);
     expect(loader.getCliTypeEntry(added)?.id).toBe(added);
     expect(loader.getCliTypeEntry(added)?.spawnCommand).toBe('gemini');
+  });
+
+  it('drops a legacyKey left on disk by an older build', () => {
+    const id = '0b1f9a52-2c3d-4e5f-8a9b-0c1d2e3f4a5b';
+    write('cli-types.yaml', { [id]: { id, displayName: 'Old', name: 'Old', legacyKey: 'old-cli' } });
+    const loader = new ConfigLoader(TEST_DIR);
+    loader.load();
+
+    expect(loader.getCliTypeEntry(id)).not.toHaveProperty('legacyKey');
+    expect(loader.resolveCliType('old-cli')).toBeNull();
+    expect(read<Record<string, any>>('cli-types.yaml')[id]).not.toHaveProperty('legacyKey');
   });
 
   it('addCliType mints a distinct uuid for each call', () => {
@@ -201,7 +212,6 @@ describe('ConfigLoader CLI type identity', () => {
     expect(loader.getCliTypeEntry(id)?.id).toBe(id);
     expect(loader.getCliTypeEntry(id)?.displayName).toBe('Renamed Claude');
     expect(loader.getCliTypeName(id)).toBe('Renamed Claude');
-    expect(loader.getCliTypeEntry(id)?.legacyKey).toBe('claude-code');
     expect(loader.getBindings(id)).toEqual({ A: { action: 'context-menu' } });
   });
 });

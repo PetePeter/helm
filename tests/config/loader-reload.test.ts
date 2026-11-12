@@ -72,14 +72,14 @@ describe('reloadActiveProfileIfChanged', () => {
   });
 
   it('returns correct values from dedicated stores after load', () => {
-    expect(loader.getCliTypeEntry('claude-code')?.name).toBe('Original');
-    expect(loader.getBindings('claude-code')?.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
+    expect(loader.getCliTypeEntry('Original')?.name).toBe('Original');
+    expect(loader.getBindings('Original')?.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
   });
 
   it('can call reloadActiveProfileIfChanged multiple times without error', () => {
     loader.reloadActiveProfileIfChanged();
     loader.reloadActiveProfileIfChanged();
-    expect(loader.getCliTypeEntry('claude-code')?.name).toBe('Original');
+    expect(loader.getCliTypeEntry('Original')?.name).toBe('Original');
   });
 
 });

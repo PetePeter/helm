@@ -53,17 +53,12 @@ describe('getCliDisplayName', () => {
   });
 
   it('returns the record displayName for a uuid reference', () => {
-    state.cliToolsCache[CLAUDE_ID] = { id: CLAUDE_ID, displayName: 'Claude', name: 'Claude', legacyKey: 'claude-code' };
+    state.cliToolsCache[CLAUDE_ID] = { id: CLAUDE_ID, displayName: 'Claude', name: 'Claude' };
     expect(getCliDisplayName(CLAUDE_ID)).toBe('Claude');
   });
 
-  it('resolves a persisted legacy slug to the record displayName', () => {
-    state.cliToolsCache[CLAUDE_ID] = { id: CLAUDE_ID, displayName: 'Claude Code', name: 'Claude Code', legacyKey: 'claude-code' };
-    expect(getCliDisplayName('claude-code')).toBe('Claude Code');
-  });
-
   it('resolves a display-name reference case-insensitively', () => {
-    state.cliToolsCache[COPILOT_ID] = { id: COPILOT_ID, displayName: 'Copilot', name: 'Copilot', legacyKey: 'copilot-cli' };
+    state.cliToolsCache[COPILOT_ID] = { id: COPILOT_ID, displayName: 'Copilot', name: 'Copilot' };
     expect(getCliDisplayName('  copilot ')).toBe('Copilot');
   });
 

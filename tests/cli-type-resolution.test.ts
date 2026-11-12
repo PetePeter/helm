@@ -63,10 +63,10 @@ function projectStoreForTestDir(): ProjectStore {
   return projectStore;
 }
 
-/** The uuid key of the CLI type that was migrated from `slug`. */
-function idForLegacy(loader: ConfigLoader, slug: string): string {
-  const id = loader.getCliTypes().find((k) => loader.getCliTypeEntry(k)?.legacyKey === slug);
-  if (!id) throw new Error(`no cli type migrated from ${slug}`);
+/** The uuid key of the CLI type currently labelled `displayName`. */
+function idFor(loader: ConfigLoader, displayName: string): string {
+  const id = loader.getCliTypes().find((k) => loader.getCliTypeEntry(k)?.displayName === displayName);
+  if (!id) throw new Error(`no cli type named ${displayName}`);
   return id;
 }
 
@@ -92,7 +92,7 @@ afterEach(() => fs.rmSync(TEST_DIR, { recursive: true, force: true }));
 describe('ConfigLoader.resolveCliType', () => {
   it('resolves by uuid id', () => {
     const loader = loadedLoader();
-    const id = idForLegacy(loader, 'claude-code');
+    const id = idFor(loader, 'Claude Code');
     expect(id).toMatch(UUID_V4);
 
     const resolved = loader.resolveCliType(id);
@@ -100,16 +100,15 @@ describe('ConfigLoader.resolveCliType', () => {
     expect(resolved?.config.displayName).toBe('Claude Code');
   });
 
-  it('resolves by pre-migration legacy slug', () => {
+  it('does not resolve a pre-UUID slug — the migration leaves no slug alias behind', () => {
     const loader = loadedLoader();
-    const resolved = loader.resolveCliType('claude-code');
-    expect(resolved?.id).toBe(idForLegacy(loader, 'claude-code'));
-    expect(resolved?.config.displayName).toBe('Claude Code');
+    expect(loader.resolveCliType('claude-code')).toBeNull();
+    expect(loader.getCliTypeEntry(idFor(loader, 'Claude Code'))).not.toHaveProperty('legacyKey');
   });
 
   it('resolves by displayName case-insensitively and ignoring surrounding whitespace', () => {
     const loader = loadedLoader();
-    const expected = idForLegacy(loader, 'copilot-cli');
+    const expected = idFor(loader, 'Copilot CLI');
 
     expect(loader.resolveCliType('Copilot CLI')?.id).toBe(expected);
     expect(loader.resolveCliType('copilot cli')?.id).toBe(expected);
@@ -119,17 +118,17 @@ describe('ConfigLoader.resolveCliType', () => {
 
   it('prefers the uuid id over a displayName that collides with it', () => {
     const loader = loadedLoader();
-    const claudeId = idForLegacy(loader, 'claude-code');
+    const claudeId = idFor(loader, 'Claude Code');
     // Rename Copilot so its label is literally Claude's uuid.
-    loader.updateCliType(idForLegacy(loader, 'copilot-cli'), claudeId);
+    loader.updateCliType(idFor(loader, 'Copilot CLI'), claudeId);
 
     expect(loader.resolveCliType(claudeId)?.config.displayName).toBe('Claude Code');
   });
 
   it('throws naming the conflicting ids when a displayName is ambiguous', () => {
     const loader = loadedLoader();
-    const claudeId = idForLegacy(loader, 'claude-code');
-    const copilotId = idForLegacy(loader, 'copilot-cli');
+    const claudeId = idFor(loader, 'Claude Code');
+    const copilotId = idFor(loader, 'Copilot CLI');
     loader.updateCliType(copilotId, 'Claude Code');
 
     let thrown: unknown;
@@ -150,13 +149,12 @@ describe('ConfigLoader.resolveCliType', () => {
     expect(loader.resolveCliType('   ')).toBeNull();
   });
 
-  it('still resolves the legacy slug and the new label after a rename', () => {
+  it('resolves the uuid and the new label after a rename', () => {
     const loader = loadedLoader();
-    const id = idForLegacy(loader, 'claude-code');
+    const id = idFor(loader, 'Claude Code');
     loader.updateCliType(id, 'Claude (work)');
 
     expect(loader.resolveCliType(id)?.id).toBe(id);
-    expect(loader.resolveCliType('claude-code')?.id).toBe(id);
     expect(loader.resolveCliType('claude (work)')?.id).toBe(id);
     // The old label is gone — resolving it must miss, not fall back.
     expect(loader.resolveCliType('Claude Code')).toBeNull();
@@ -164,16 +162,15 @@ describe('ConfigLoader.resolveCliType', () => {
 
   it('keeps bindings resolvable through every handle after a rename', () => {
     const loader = loadedLoader();
-    const id = idForLegacy(loader, 'claude-code');
+    const id = idFor(loader, 'Claude Code');
     const profileId = loader.createBindingProfile('P');
     loader.setBinding(profileId, 'A', { action: 'context-menu' });
-    loader.updateCliType('claude-code', 'Claude Code', [], 0, { bindingProfileId: profileId });
+    loader.updateCliType(id, 'Claude Code', [], 0, { bindingProfileId: profileId });
 
     loader.updateCliType(id, 'Claude (work)');
 
     const expected = { A: { action: 'context-menu' } };
     expect(loader.getBindings(id)).toEqual(expected);
-    expect(loader.getBindings('claude-code')).toEqual(expected);
     expect(loader.getBindings('Claude (work)')).toEqual(expected);
   });
 });
@@ -204,11 +201,11 @@ describe('spawnConfiguredSession — cliType resolution', () => {
 
     spawnConfiguredSession({
       ptyManager, sessionManager, configLoader: loader,
-      cliType: 'claude-code',
+      cliType: 'Claude Code',
       cwd: TEST_DIR,
     });
 
-    expect(added[0].cliType).toBe(idForLegacy(loader, 'claude-code'));
+    expect(added[0].cliType).toBe(idFor(loader, 'Claude Code'));
     expect(added[0].name).toBe('Claude Code');
   });
 
@@ -227,7 +224,7 @@ describe('spawnConfiguredSession — cliType resolution', () => {
 
   it('never passes a uuid through as the executable name', () => {
     const loader = loadedLoader();
-    const id = idForLegacy(loader, 'claude-code');
+    const id = idFor(loader, 'Claude Code');
     // A type with no command templates at all — the old code would have run the uuid.
     loader.updateCliType(id, 'Claude Code', undefined, undefined, { spawnCommand: '' });
     const { ptyManager, sessionManager } = harness();
@@ -268,7 +265,7 @@ describe('MCP session_create — cliType resolution', () => {
 
   it('resolves a displayName and a uuid to the same CLI type', () => {
     const loader = loadedLoader();
-    const id = idForLegacy(loader, 'claude-code');
+    const id = idFor(loader, 'Claude Code');
     const added: Array<Record<string, unknown>> = [];
     const service = makeService(loader, added);
 
@@ -337,9 +334,9 @@ describe('ScheduledTaskManager — cliType resolution', () => {
     saveScheduledTasks([]);
   });
 
-  it('spawns the right CLI for a task stored under the pre-rename handle', async () => {
+  it('spawns the right CLI for a task whose CLI type was renamed after it was stored', async () => {
     const loader = loadedLoader();
-    const id = idForLegacy(loader, 'claude-code');
+    const id = idFor(loader, 'Claude Code');
     const sessionManager = new FakeSessionManager();
     const ptyManager = new FakePtyManager();
     manager = new ScheduledTaskManager(
@@ -347,12 +344,12 @@ describe('ScheduledTaskManager — cliType resolution', () => {
       { getItem: () => undefined } as any, loader as any,
     );
 
-    // Task was created before the rename, so it still names the old slug.
+    // Task was created before the rename; its uuid reference must survive it.
     manager.createTask({
       title: 'Nightly',
       planIds: [],
       initialPrompt: 'go',
-      cliType: 'claude-code',
+      cliType: id,
       scheduledTime: new Date(Date.now() - 1000),
       dirPath: TEST_DIR,
     });
@@ -379,7 +376,7 @@ describe('ScheduledTaskManager — cliType resolution', () => {
       title: 'Outside',
       planIds: [],
       initialPrompt: 'go',
-      cliType: 'claude-code',
+      cliType: 'Claude Code',
       scheduledTime: new Date(Date.now() - 1000),
       dirPath: outside,
     });

@@ -102,7 +102,6 @@ export const PRELOAD_API_DOMAINS = {
     'configSetSessionGroupPrefs',
     'configRemoveBookmarkedDir',
     'configGetSpawnCommand',
-    'configGetCliTypeEnv',
     'configGetDpadConfig',
     'configGetStickConfig',
     'configGetWorkspaceLayout',

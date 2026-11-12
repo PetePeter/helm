@@ -38,7 +38,6 @@ graph LR
     ID --> ST[scheduled tasks]
     DN[displayName] --> UI[UI · MCP]
     DN -.resolve.-> ID
-    LK[legacyKey · old slug] -.resolve.-> ID
 ```
 
 ### Resolution
@@ -46,8 +45,9 @@ graph LR
 `ConfigLoader.resolveCliType(ref)` is the single choke point. Every cliType reference supplied by a human or an agent — MCP `session_create`, scheduled tasks, IPC — goes through it. It resolves in order:
 
 1. exact `id` (uuid)
-2. `legacyKey` — the pre-UUID slug, e.g. `claude-code`. Kept indefinitely; agents and docs in the wild still use it.
-3. `displayName`, trimmed and case-insensitive
+2. `displayName`, trimmed and case-insensitive
+
+Pre-UUID slugs (`claude-code`) do not resolve. The slug alias was dropped once every persisted reference had been migrated: keeping it meant a second, invisible name per type that nothing in the UI showed or let you change.
 
 An ambiguous `displayName` throws `AmbiguousCliTypeError` naming the conflicting ids rather than silently picking one — the settings UI blocks duplicate names on add, clone and rename, so this only fires on a hand-edited YAML. An unknown reference returns `null`; nothing falls back to treating the reference as an executable name.
 
@@ -57,7 +57,7 @@ The display label helper is presentation-only: it never throws or returns a UUID
 
 ### Migration
 
-`src/config/cli-type-migration.ts` runs from `ConfigLoader.load()`. A `cli-types.yaml` whose entries have no `id` is pre-UUID: each entry gets a minted uuid, `displayName` from the old `name`, and `legacyKey` set to the old slug, preserving order. The slug→uuid map is then applied to persisted sessions, recycle-bin entries, and scheduled tasks plus their history. Staged write, verify, then swap — a failure leaves the originals untouched. Running it again is a no-op.
+`src/config/cli-type-migration.ts` runs from `ConfigLoader.load()`. A `cli-types.yaml` whose entries have no `id` is pre-UUID: each entry gets a minted uuid and `displayName` from the old `name`, preserving order. The slug is not kept; `CliTypeStore.load()` strips any `legacyKey` an older build wrote. The slug→uuid map is then applied to persisted sessions, recycle-bin entries, and scheduled tasks plus their history. Staged write, verify, then swap — a failure leaves the originals untouched. Running it again is a no-op.
 
 ## Profiles
 

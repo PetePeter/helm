@@ -47,7 +47,7 @@ export interface SessionInfo {
   userProfileId?: string;
   /** Display name for the session */
   name: string;
-  /** Type of CLI (e.g., 'claude-code', 'copilot-cli') */
+  /** CLI type UUID */
   cliType: string;
   /** Process ID */
   processId: number;

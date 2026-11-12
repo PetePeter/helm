@@ -24,6 +24,8 @@ function normalizeIdentity(key: string, config: CliTypeConfig | undefined, mintI
   if (!config.displayName) { config.displayName = config.name || key; changed = true; }
   // Keep the deprecated alias in sync — legacy readers still use it.
   if (config.name !== config.displayName) { config.name = config.displayName; changed = true; }
+  // Pre-UUID slug alias written by older builds; slugs no longer resolve.
+  if ('legacyKey' in config) { delete (config as { legacyKey?: unknown }).legacyKey; changed = true; }
   return changed;
 }
 
@@ -81,8 +83,7 @@ export class CliTypeStore {
    *
    * Resolution order, most to least authoritative:
    *   1. the UUID identity (the map key) — never changes, never ambiguous
-   *   2. `legacyKey`, the pre-UUID slug — keeps persisted references working
-   *   3. `displayName`, trimmed and case-insensitive — the human-friendly handle
+   *   2. `displayName`, trimmed and case-insensitive — the human-friendly handle
    *
    * A display name shared by two types throws rather than picking one; an
    * unknown reference returns null rather than falling back to anything.
@@ -94,10 +95,6 @@ export class CliTypeStore {
 
     const byId = this.data[trimmed];
     if (byId) return { id: trimmed, config: byId };
-
-    for (const [id, config] of Object.entries(this.data)) {
-      if (config?.legacyKey === trimmed) return { id, config };
-    }
 
     const wanted = trimmed.toLowerCase();
     const byName = Object.entries(this.data).filter(

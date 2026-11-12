@@ -74,26 +74,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Re-key CLI types by UUID and rewrite every reference to the old slugs.
- * Returns true when a migration was performed, false when it was unnecessary
- * (already migrated, no config) or aborted (nothing was written).
+ * Returns the slug→uuid map when a migration was performed — the caller's
+ * legacy-bindings fold needs it, since slugs do not resolve afterwards — or
+ * null when it was unnecessary (already migrated, no config) or aborted.
  */
-export function migrateCliTypeIds(files: CliTypeMigrationFiles): boolean {
+export function migrateCliTypeIds(files: CliTypeMigrationFiles): ReadonlyMap<string, string> | null {
   const rawTypes = readYamlFile(files.cliTypesFile);
-  if (!isRecord(rawTypes)) return false;
+  if (!isRecord(rawTypes)) return null;
 
   const entries = Object.entries(rawTypes).filter(([, cfg]) => isRecord(cfg)) as [string, Record<string, unknown>][];
-  if (entries.length === 0) return false;
+  if (entries.length === 0) return null;
 
-  // cli-types.yaml is swapped first, so a crash (or a failed rename) between
-  // that swap and the downstream ones leaves the types re-keyed while sessions
-  // still point at slugs. An `id` on every entry therefore cannot
-  // be the whole idempotence story — it would strand those references forever.
-  // Instead, rebuild the slug map from the recorded legacyKeys and re-run the
-  // downstream rewrite; it stages nothing when there is nothing left to fix,
-  // which is the normal case on every subsequent launch.
-  if (entries.every(([, cfg]) => typeof cfg.id === 'string' && cfg.id.length > 0)) {
-    return repairDanglingSlugReferences(files, entries);
-  }
+  if (entries.every(([, cfg]) => typeof cfg.id === 'string' && cfg.id.length > 0)) return null;
 
   const slugToId = new Map<string, string>();
   const migrated: Record<string, Record<string, unknown>> = {};
@@ -104,7 +96,7 @@ export function migrateCliTypeIds(files: CliTypeMigrationFiles): boolean {
       || slug;
     slugToId.set(slug, id);
     // Order of insertion is the order of `entries`, so list order survives.
-    migrated[id] = { ...cfg, id, displayName, name: displayName, legacyKey: slug };
+    migrated[id] = { ...cfg, id, displayName, name: displayName };
   }
 
   const staged: StagedWrite[] = [{ filePath: files.cliTypesFile, text: YAML.stringify(migrated) }];
@@ -113,34 +105,7 @@ export function migrateCliTypeIds(files: CliTypeMigrationFiles): boolean {
   collectRekeyedList(files.scheduledTasksFile, 'tasks', slugToId, staged);
   collectRekeyedList(files.scheduledTaskHistoryFile, 'entries', slugToId, staged);
 
-  return commit(staged);
-}
-
-/**
- * Post-migration sweep for references the swap phase never reached. Uses the
- * `legacyKey` each migrated entry carries, so it needs no state of its own.
- */
-function repairDanglingSlugReferences(
-  files: CliTypeMigrationFiles,
-  entries: [string, Record<string, unknown>][],
-): boolean {
-  const slugToId = new Map<string, string>();
-  for (const [id, cfg] of entries) {
-    if (typeof cfg.legacyKey === 'string' && cfg.legacyKey && cfg.legacyKey !== id) {
-      slugToId.set(cfg.legacyKey, id);
-    }
-  }
-  if (slugToId.size === 0) return false;
-
-  const staged: StagedWrite[] = [];
-  collectRekeyedList(files.sessionsFile, 'sessions', slugToId, staged);
-  collectRekeyedList(files.recycleBinFile, 'entries', slugToId, staged);
-  collectRekeyedList(files.scheduledTasksFile, 'tasks', slugToId, staged);
-  collectRekeyedList(files.scheduledTaskHistoryFile, 'entries', slugToId, staged);
-  if (staged.length === 0) return false;
-
-  logger.warn(`[Config] CLI type migration: repairing ${staged.length} file(s) still holding pre-UUID slugs`);
-  return commit(staged);
+  return commit(staged) ? slugToId : null;
 }
 
 /**
