@@ -31,6 +31,12 @@ export interface DockGroupNode {
   type: 'group';
   tabs: PaneId[];
   activeTab: PaneId;
+  /**
+   * Shrunk along its parent split's axis by a double tap on a tab: to its header
+   * row when stacked, to an icon strip when side by side. Split sizes are
+   * untouched, so restoring returns the exact prior size. Omitted when false.
+   */
+  collapsed?: true;
 }
 
 /** Canonical root for a valid workspace whose registered panes are all closed. */
@@ -42,12 +48,6 @@ export interface DockDockNode {
   type: 'dock';
   side: DockSide;
   mode: DockMode;
-  /**
-   * Shrunk to its tab strip by a double tap on a tab. Independent of `mode`:
-   * split sizes are untouched, so restoring returns the exact prior size.
-   * Omitted when false.
-   */
-  collapsed?: true;
   child: DockNode;
 }
 

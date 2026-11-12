@@ -94,9 +94,8 @@ The dock names a pane (tab + rail tooltip) and collapses it (rail). **Pane
 components render content only** — no section header, no collapse toggle. A pane
 that draws its own title bar is duplicating the dock and is a bug.
 
-Likewise there are exactly two collapse concepts, both owned by the dock node:
-its `mode` (collapse to a rail) and its `collapsed` flag (collapse to the tab
-strip, below).
+Likewise there are exactly two collapse concepts, both in the layout model: a
+dock's `mode` (collapse to a rail) and a tab group's `collapsed` flag (below).
 
 | Mode | Behaviour |
 |------|-----------|
@@ -123,10 +122,16 @@ only a collapse chevron, which on a left/right dock laid out as a blank
 full-width strip along the bottom edge. A pinned dock's space is reclaimed
 by closing the pane (the View menu restores it).
 
-### Tab-strip collapse
+### Tab group collapse
 
-Any edge dock — the left one included — can shrink to its tab strip. The main
-area never does: its tabs are not under a dock node, so the gesture is a no-op.
+Any tab group — the main one included — can collapse along the split it sits
+in. Collapsing every group can leave a void; that is allowed. A group that is
+the whole workspace has no split to give space to, so the gesture is a no-op.
+
+| Parent split | Collapsed look |
+|--------------|----------------|
+| vertical (neighbour above/below) | header row only |
+| horizontal (neighbour beside) | narrow column of tab icons |
 
 ```mermaid
 stateDiagram-v2
@@ -135,18 +140,15 @@ stateDiagram-v2
     Collapsed --> Open: tap tab / shortcut / any explicit open
 ```
 
-- The flag lives on the dock node and is persisted with the layout, so a
-  collapsed dock stays collapsed across restarts.
-- Split `sizes` are never touched; the parent split just gives the dock an
-  `auto` track. Restoring therefore returns the exact prior size.
-- A double tap's first tap already restores a collapsed dock, so the second tap
-  is swallowed rather than collapsing it again.
+- The flag lives on the group node and is persisted with the layout, so a
+  collapsed group stays collapsed across restarts.
+- Split `sizes` are never touched; the parent split just gives the group (or
+  the edge dock wrapping it) an `auto` track. Restoring returns the exact size.
 - Opening a pane by any explicit route (tap, keyboard shortcut, view routing)
-  restores its dock — `activate` owns that, so no caller can open a pane into a
-  hidden dock.
-- A collapsed dock's panes are not focusable, so gamepad focus cycling skips
-  them, exactly as it skips a rail-collapsed dock. The double tap itself is
-  mouse/touch only.
+  restores its group — `activate` owns that, so no caller can open a pane into
+  a collapsed group. A double tap's second tap is therefore swallowed.
+- A collapsed group's panes are not focusable, so gamepad focus cycling skips
+  them, as it skips a rail-collapsed dock. The double tap is mouse/touch only.
 
 ## Closing and restoring
 

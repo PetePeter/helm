@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, type Component, type CSSProperties } from 'vue';
-import type { DockMode, DockNodePath, DockNode, DockSide, PaneId } from '../../dock-types.js';
+import type { DockMode, DockNodePath, DockNode, DockSide, PaneId, SplitDirection } from '../../dock-types.js';
 import { DOCK_MIN_TRACK_PX, DOCK_SPLITTER_PX, getPaneDescriptor } from '../../dock-types.js';
 import { isDockCollapsed, listPanes } from '../../dock-layout.js';
 import DockSplitter from './DockSplitter.vue';
@@ -17,10 +17,8 @@ const props = defineProps<{
   paneComponents: Readonly<Record<PaneId, Component>>;
   revealedPaneIds: readonly PaneId[];
   draggedPaneId?: PaneId | null;
-  /** Set on everything under an edge dock; header collapse is a dock-only gesture. */
-  inDock?: boolean;
-  /** The enclosing edge dock is collapsed to its tab strip. */
-  dockCollapsed?: boolean;
+  /** Direction of the nearest enclosing split — the axis a tab group collapses along. */
+  axis?: SplitDirection | null;
 }>();
 
 const emit = defineEmits<{
@@ -31,7 +29,7 @@ const emit = defineEmits<{
   'reveal-pane': [paneId: PaneId];
   'autohide-close': [paneId: PaneId];
   'set-dock-mode': [paneId: PaneId, mode: DockMode];
-  'set-dock-collapsed': [paneId: PaneId, collapsed: boolean];
+  'set-group-collapsed': [paneId: PaneId, collapsed: boolean];
   'drag-start': [paneId: PaneId, event: PointerEvent];
   'dock-edge': [paneId: PaneId, side: DockSide];
   'reorder-tab': [paneId: PaneId, index: number];
@@ -44,6 +42,15 @@ const dockAnchorPaneId = computed(() => dockPaneIds.value[0]);
 const dockContentVisible = computed(() =>
   props.node.type !== 'dock' || !collapsed(props.node));
 
+/**
+ * A tab group collapsed along its parent split, alone or as an edge dock's only
+ * child. It takes an `auto` track; its siblings take the space.
+ */
+function shrunk(node: DockNode): boolean {
+  if (node.type === 'dock') return shrunk(node.child);
+  return node.type === 'group' && !!node.collapsed;
+}
+
 /** Collapse state comes from the shared model predicate, never from local state. */
 function collapsed(node: DockNode): boolean {
   return isDockCollapsed(node, props.revealedPaneIds, props.focusedPaneId);
@@ -52,11 +59,11 @@ function collapsed(node: DockNode): boolean {
 function splitStyle(): CSSProperties {
   const node = props.node;
   if (node.type !== 'split') return {};
-  // A collapsed dock gets an auto (rail- or tab-strip-sized) track instead of an
-  // `fr` share, so closing it hands its space back to its siblings rather than
+  // A collapsed dock or tab group gets an auto (rail/header-sized) track instead
+  // of an `fr` share, so it hands its space back to its siblings rather than
   // leaving a gap. Sizes stay in the model, so restoring returns the old share.
   const tracks = node.children.map((child, index) =>
-    props.dockCollapsed || collapsed(child) || (child.type === 'dock' && child.collapsed)
+    collapsed(child) || shrunk(child)
       ? 'auto'
       : `minmax(${DOCK_MIN_TRACK_PX}px, ${node.sizes[index]}fr)`);
   const gap = ` ${DOCK_SPLITTER_PX}px `;
@@ -144,8 +151,7 @@ function onDockFocusOut(event: FocusEvent): void {
         :pane-components="paneComponents"
         :revealed-pane-ids="revealedPaneIds"
         :dragged-pane-id="draggedPaneId"
-        :in-dock="inDock"
-        :dock-collapsed="dockCollapsed"
+        :axis="node.direction"
         @focus-pane="onFocusPane"
         @activate-pane="onActivatePane"
         @close-pane="onClosePane"
@@ -153,7 +159,7 @@ function onDockFocusOut(event: FocusEvent): void {
         @reveal-pane="(paneId) => emit('reveal-pane', paneId)"
         @autohide-close="(paneId) => emit('autohide-close', paneId)"
         @set-dock-mode="(...args) => emit('set-dock-mode', ...args)"
-        @set-dock-collapsed="(...args) => emit('set-dock-collapsed', ...args)"
+        @set-group-collapsed="(...args) => emit('set-group-collapsed', ...args)"
         @drag-start="(...args) => emit('drag-start', ...args)"
         @dock-edge="(...args) => emit('dock-edge', ...args)"
         @reorder-tab="(...args) => emit('reorder-tab', ...args)"
@@ -181,10 +187,10 @@ function onDockFocusOut(event: FocusEvent): void {
       :focus-request-id="focusRequestId ?? 0"
       :pane-components="paneComponents"
       :dragged-pane-id="draggedPaneId"
-      :collapsible="inDock"
-      :dock-collapsed="dockCollapsed"
+      :collapse-axis="axis ?? null"
+      :collapsed="!!node.collapsed"
       @focus="onFocusPane"
-      @set-collapsed="(...args) => emit('set-dock-collapsed', ...args)"
+      @set-collapsed="(...args) => emit('set-group-collapsed', ...args)"
       @activate="onActivatePane"
       @close="onClosePane"
       @drag-start="(...args) => emit('drag-start', ...args)"
@@ -199,7 +205,7 @@ function onDockFocusOut(event: FocusEvent): void {
     :class="[
       `dock-node--side-${node.side}`,
       `dock-node--mode-${node.mode}`,
-      { 'dock-node--collapsed': !dockContentVisible, 'dock-node--tabs-only': node.collapsed },
+      { 'dock-node--collapsed': !dockContentVisible },
     ]"
     :data-dock-side="node.side"
     :data-dock-collapsed="!dockContentVisible"
@@ -215,8 +221,7 @@ function onDockFocusOut(event: FocusEvent): void {
         :pane-components="paneComponents"
         :revealed-pane-ids="revealedPaneIds"
         :dragged-pane-id="draggedPaneId"
-        :in-dock="true"
-        :dock-collapsed="!!node.collapsed"
+        :axis="axis"
         @focus-pane="onFocusPane"
         @activate-pane="onActivatePane"
         @close-pane="onClosePane"
@@ -224,7 +229,7 @@ function onDockFocusOut(event: FocusEvent): void {
         @reveal-pane="(paneId) => emit('reveal-pane', paneId)"
         @autohide-close="(paneId) => emit('autohide-close', paneId)"
         @set-dock-mode="(...args) => emit('set-dock-mode', ...args)"
-        @set-dock-collapsed="(...args) => emit('set-dock-collapsed', ...args)"
+        @set-group-collapsed="(...args) => emit('set-group-collapsed', ...args)"
         @drag-start="(...args) => emit('drag-start', ...args)"
         @dock-edge="(...args) => emit('dock-edge', ...args)"
         @reorder-tab="(...args) => emit('reorder-tab', ...args)"

@@ -64,6 +64,11 @@ function group(tabs: PaneId[], activeTab: PaneId = tabs[0]): DockGroupNode {
   return { type: 'group', tabs: [...tabs], activeTab };
 }
 
+/** Carry a group's collapse flag onto a rebuilt group. */
+function keepCollapsed(from: DockGroupNode, to: DockGroupNode): DockGroupNode {
+  return from.collapsed ? { ...to, collapsed: true } : to;
+}
+
 function split(direction: SplitDirection, children: DockNode[], sizes?: number[]): DockSplitNode {
   return { type: 'split', direction, sizes: scaleSizes(sizes ?? [], children.length), children };
 }
@@ -202,15 +207,15 @@ export function isDockCollapsed(
 /**
  * Pane ids eligible for gamepad focus cycling in deterministic tree order.
  *
- * Panes under a collapsed edge dock (rail or tab strip) are excluded, but a revealed autohide dock
+ * Panes in a collapsed tab group or under a collapsed edge dock are excluded, but a revealed autohide dock
  * participates like a pinned one — an opened pane the user can see must be a
  * pane the user can focus.
  */
 export function listFocusablePanes(node: DockNode | null, revealed: readonly PaneId[] = []): PaneId[] {
   if (!node || node.type === 'empty') return [];
-  if (node.type === 'group') return [...node.tabs];
+  if (node.type === 'group') return node.collapsed ? [] : [...node.tabs];
   if (node.type === 'dock') {
-    return isDockCollapsed(node, revealed) || node.collapsed ? [] : listFocusablePanes(node.child, revealed);
+    return isDockCollapsed(node, revealed) ? [] : listFocusablePanes(node.child, revealed);
   }
   return node.children.flatMap(child => listFocusablePanes(child, revealed));
 }
@@ -219,7 +224,7 @@ export function findPaneGroup(node: DockNode | null, paneId: PaneId): DockGroupN
   if (!node) return null;
   if (node.type === 'empty') return null;
   if (node.type === 'group') {
-    return node.tabs.includes(paneId) ? { type: 'group', tabs: [...node.tabs], activeTab: node.activeTab } : null;
+    return node.tabs.includes(paneId) ? keepCollapsed(node, { type: 'group', tabs: [...node.tabs], activeTab: node.activeTab }) : null;
   }
   if (node.type === 'dock') return findPaneGroup(node.child, paneId);
   for (const child of node.children) {
@@ -267,7 +272,7 @@ export function normalizeNode(node: DockNode | null): DockNode | null {
   if (node.type === 'group') {
     if (node.tabs.length === 0) return null;
     const activeTab = node.tabs.includes(node.activeTab) ? node.activeTab : node.tabs[0];
-    return { type: 'group', tabs: [...node.tabs], activeTab };
+    return keepCollapsed(node, { type: 'group', tabs: [...node.tabs], activeTab });
   }
 
   if (node.type === 'dock') {
@@ -352,7 +357,7 @@ function removePane(root: DockNode, paneId: PaneId): DockNode | null {
     const activeTab = node.activeTab === paneId
       ? tabs[Math.min(removedIndex, tabs.length - 1)]
       : node.activeTab;
-    return { type: 'group', tabs, activeTab };
+    return keepCollapsed(node, { type: 'group', tabs, activeTab });
   });
 }
 
@@ -484,7 +489,7 @@ export function reorderTab(layout: DockWorkspaceLayout, paneId: PaneId, index: n
     if (node.type !== 'group' || !node.tabs.includes(paneId)) return node;
     const tabs = node.tabs.filter(t => t !== paneId);
     tabs.splice(Math.max(0, Math.min(index, tabs.length)), 0, paneId);
-    return { type: 'group', tabs, activeTab: node.activeTab };
+    return keepCollapsed(node, { type: 'group', tabs, activeTab: node.activeTab });
   });
   return withRoot(layout, root, layout.closed);
 }
@@ -521,19 +526,20 @@ export function setDockMode(layout: DockWorkspaceLayout, paneId: PaneId, mode: D
 }
 
 /**
- * Collapse or restore the edge dock containing a pane to its tab strip.
- * A pane in the main area is not in a dock, so this is a no-op there.
+ * Collapse or restore the tab group containing a pane along its parent split.
+ * A group that is the whole workspace has no split to give space to, so
+ * collapsing it is a no-op.
  */
-export function setDockCollapsed(layout: DockWorkspaceLayout, paneId: PaneId, collapsed: boolean): DockWorkspaceLayout {
-  let changed = false;
+export function setGroupCollapsed(layout: DockWorkspaceLayout, paneId: PaneId, collapsed: boolean): DockWorkspaceLayout {
+  const target = findPaneGroup(layout.root, paneId);
+  if (!target || !!target.collapsed === collapsed) return layout;
+  if (collapsed && listPanes(layout.root).length === target.tabs.length) return layout;
   const root = mapNode(layout.root, node => {
-    if (node.type !== 'dock' || !listPanes(node.child).includes(paneId)) return node;
-    if (!!node.collapsed === collapsed) return node;
-    changed = true;
+    if (node.type !== 'group' || !node.tabs.includes(paneId)) return node;
     const { collapsed: _was, ...rest } = node;
     return collapsed ? { ...rest, collapsed: true } : rest;
   });
-  return changed ? withRoot(layout, root, layout.closed) : layout;
+  return withRoot(layout, root, layout.closed);
 }
 
 /** Close a pane to the View menu when its descriptor permits recovery. */
@@ -572,7 +578,7 @@ export function projectVisibleLayout(
     if (node.type === 'empty') return null;
     if (node.type === 'group') {
       const tabs = node.tabs.filter(id => registeredPaneIds.has(id));
-      return tabs.length ? { type: 'group', tabs, activeTab: tabs.includes(node.activeTab) ? node.activeTab : tabs[0] } : null;
+      return tabs.length ? keepCollapsed(node, { type: 'group', tabs, activeTab: tabs.includes(node.activeTab) ? node.activeTab : tabs[0] }) : null;
     }
     if (node.type === 'dock') {
       if (!hasVisiblePane(node.child)) return null;
@@ -808,7 +814,7 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
       if (typeof activeTab !== 'string' || !tabs.includes(activeTab)) {
         throw new Error('dock layout: activeTab is not one of the group tabs');
       }
-      return { type: 'group', tabs: [...tabs as PaneId[]], activeTab };
+      return { type: 'group', tabs: [...tabs as PaneId[]], activeTab, ...(raw.collapsed === true ? { collapsed: true as const } : {}) };
     }
     case 'split': {
       const { direction, sizes, children } = raw;
@@ -838,13 +844,7 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
       const { side, mode, child } = raw;
       if (!DOCK_SIDES.includes(side as DockSide)) throw new Error(`dock layout: unknown dock side "${String(side)}"`);
       if (!DOCK_MODES.includes(mode as DockMode)) throw new Error(`dock layout: unknown dock mode "${String(mode)}"`);
-      return {
-        type: 'dock',
-        side: side as DockSide,
-        mode: dockModeFor(side as DockSide, mode as DockMode),
-        ...(raw.collapsed === true ? { collapsed: true as const } : {}),
-        child: validateNode(child, seen, profile),
-      };
+      return { type: 'dock', side: side as DockSide, mode: dockModeFor(side as DockSide, mode as DockMode), child: validateNode(child, seen, profile) };
     }
     default:
       throw new Error(`dock layout: unknown node type "${String(raw.type)}"`);

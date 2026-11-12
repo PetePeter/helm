@@ -71,17 +71,17 @@ describe('DockWorkspace', () => {
     expect(wrapper.emitted('focus-pane')).toEqual([[PANE_CHAT, 'tab:chat']]);
   });
 
-  describe('dock header collapse', () => {
-    function mountDock(collapsed: boolean, activeTab = PANE_ARTIFACTS) {
+  describe('tab group collapse', () => {
+    function mountSplit(direction: 'horizontal' | 'vertical', collapsed: boolean, activeTab = PANE_ARTIFACTS) {
       return mount(DockWorkspace, {
         props: {
           layout: layout({
             type: 'split',
-            direction: 'horizontal',
+            direction,
             sizes: [0.7, 0.3],
             children: [
               { type: 'group', tabs: [PANE_TERMINAL, PANE_MESS], activeTab: PANE_TERMINAL },
-              { type: 'dock', side: 'right', mode: 'pinned', collapsed, child: { type: 'group', tabs: [PANE_ARTIFACTS, PANE_PLAN_SCREEN], activeTab } },
+              { type: 'group', tabs: [PANE_ARTIFACTS, PANE_PLAN_SCREEN], activeTab, ...(collapsed ? { collapsed: true as const } : {}) },
             ],
           }),
           focusedPaneId: PANE_TERMINAL,
@@ -90,50 +90,60 @@ describe('DockWorkspace', () => {
       });
     }
     const tab = (paneId: string) => `[role="tab"][aria-controls="dock-pane-${paneId}"]`;
-    async function tap(wrapper: ReturnType<typeof mountDock>, paneId: string, detail: number) {
+    async function tap(wrapper: ReturnType<typeof mountSplit>, paneId: string, detail: number) {
       wrapper.get(tab(paneId)).element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail }));
       await nextTick();
     }
 
-    it('single tap on an open dock only selects', async () => {
-      const wrapper = mountDock(false);
+    it('single tap on an open group only selects', async () => {
+      const wrapper = mountSplit('vertical', false);
       await tap(wrapper, PANE_PLAN_SCREEN, 1);
       expect(wrapper.emitted('activate-pane')).toEqual([[PANE_PLAN_SCREEN]]);
-      expect(wrapper.emitted('set-dock-collapsed')).toBeUndefined();
+      expect(wrapper.emitted('set-group-collapsed')).toBeUndefined();
     });
 
-    it('double tap on an open dock collapses it', async () => {
-      const wrapper = mountDock(false);
-      await tap(wrapper, PANE_ARTIFACTS, 1);
-      await tap(wrapper, PANE_ARTIFACTS, 2);
-      expect(wrapper.emitted('set-dock-collapsed')).toEqual([[PANE_ARTIFACTS, true]]);
+    it('double tap collapses any group, the main one included', async () => {
+      const wrapper = mountSplit('vertical', false);
+      await tap(wrapper, PANE_TERMINAL, 1);
+      await tap(wrapper, PANE_TERMINAL, 2);
+      expect(wrapper.emitted('set-group-collapsed')).toEqual([[PANE_TERMINAL, true]]);
     });
 
-    it('single tap on a collapsed dock selects (activation restores it)', async () => {
-      const wrapper = mountDock(true);
+    it('single tap on a collapsed group selects (activation restores it)', async () => {
+      const wrapper = mountSplit('vertical', true);
       await tap(wrapper, PANE_PLAN_SCREEN, 1);
       expect(wrapper.emitted('activate-pane')).toEqual([[PANE_PLAN_SCREEN]]);
-      expect(wrapper.emitted('set-dock-collapsed')).toBeUndefined();
+      expect(wrapper.emitted('set-group-collapsed')).toBeUndefined();
     });
 
-    it('double tap on a collapsed dock does not collapse it again', async () => {
-      const wrapper = mountDock(true);
+    it('double tap on a collapsed group does not collapse it again', async () => {
+      const wrapper = mountSplit('vertical', true);
       await tap(wrapper, PANE_ARTIFACTS, 1);
       await tap(wrapper, PANE_ARTIFACTS, 2);
-      expect(wrapper.emitted('set-dock-collapsed')).toBeUndefined();
+      expect(wrapper.emitted('set-group-collapsed')).toBeUndefined();
     });
 
-    it('double tap in the main area does nothing', async () => {
-      const wrapper = mountDock(false);
-      await tap(wrapper, PANE_MESS, 1);
-      await tap(wrapper, PANE_MESS, 2);
-      expect(wrapper.emitted('set-dock-collapsed')).toBeUndefined();
+    it('double tap on a workspace-filling group does nothing', async () => {
+      const wrapper = mount(DockWorkspace, {
+        props: {
+          layout: layout({ type: 'group', tabs: [PANE_TERMINAL, PANE_MESS], activeTab: PANE_TERMINAL }),
+          focusedPaneId: PANE_TERMINAL,
+          paneComponents: { [PANE_TERMINAL]: PaneStub, [PANE_MESS]: PaneStub },
+        },
+      });
+      await tap(wrapper, PANE_TERMINAL, 1);
+      await tap(wrapper, PANE_TERMINAL, 2);
+      expect(wrapper.emitted('set-group-collapsed')).toBeUndefined();
     });
 
-    it('hides pane content but keeps the tabs of a collapsed dock', () => {
-      const wrapper = mountDock(true);
-      expect(wrapper.find(tab(PANE_ARTIFACTS)).exists()).toBe(true);
-      expect(wrapper.get('[data-dock-side="right"]').classes()).toContain('dock-node--tabs-only');
+    it('gives a collapsed group an auto track along its split', () => {
+      const wrapper = mountSplit('vertical', true);
+      expect((wrapper.get('.dock-node--split').element as HTMLElement).style.gridTemplateRows).toMatch(/fr\) 4px auto$/);
+    });
+
+    it('collapses stacked groups to the header and side-by-side groups to an icon strip', () => {
+      expect(mountSplit('vertical', true).find('.dock-tab-group--collapsed-vertical').exists()).toBe(true);
+      expect(mountSplit('horizontal', true).find('.dock-tab-group--collapsed-horizontal').exists()).toBe(true);
     });
   });
 

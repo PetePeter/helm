@@ -16,7 +16,7 @@ import {
   reorderTab,
   setActiveTab,
   setDockMode,
-  setDockCollapsed,
+  setGroupCollapsed,
   closePane,
   restorePane,
   normalizeNode,
@@ -489,37 +489,47 @@ describe('dock mode', () => {
   });
 });
 
-describe('dock header collapse', () => {
-  it('collapses and restores a pinned dock without touching split sizes', () => {
+describe('tab group collapse', () => {
+  it('collapses and restores a group without touching split sizes', () => {
     const base = edgeDockLayout();
-    const folded = setDockCollapsed(base, PANE_SCHEDULER, true);
-    expect(findDock(folded.root, PANE_SESSIONS)?.collapsed).toBe(true);
-    expect((folded.root as DockSplitNode).sizes).toEqual((base.root as DockSplitNode).sizes);
+    const folded = setGroupCollapsed(base, PANE_SCHEDULER, true);
+    expect(findPaneGroup(folded.root, PANE_QUICK_SPAWN)?.collapsed).toBe(true);
+    expect(findPaneGroup(folded.root, PANE_SESSIONS)?.collapsed).toBeFalsy();
 
-    const restored = setDockCollapsed(folded, PANE_SESSIONS, false);
-    expect(findDock(restored.root, PANE_SESSIONS)?.collapsed).toBeFalsy();
+    const restored = setGroupCollapsed(folded, PANE_PLAN_DIRECTORIES, false);
     expect(restored.root).toEqual(base.root);
   });
 
-  it('is a no-op for a pane in the main area', () => {
-    const base = edgeDockLayout();
-    expect(setDockCollapsed(base, PANE_TERMINAL, true)).toBe(base);
+  it('collapses the main group too', () => {
+    const folded = setGroupCollapsed(edgeDockLayout(), PANE_TERMINAL, true);
+    expect(findPaneGroup(folded.root, PANE_CHAT)?.collapsed).toBe(true);
+  });
+
+  it('is a no-op when the group is the whole workspace', () => {
+    const base: DockWorkspaceLayout = { version: DOCK_LAYOUT_VERSION, root: { type: 'group', tabs: [PANE_TERMINAL], activeTab: PANE_TERMINAL }, closed: [] };
+    expect(setGroupCollapsed(base, PANE_TERMINAL, true)).toBe(base);
+  });
+
+  it('keeps the flag through tab activation and reorder', () => {
+    let layout = setGroupCollapsed(edgeDockLayout(), PANE_TERMINAL, true);
+    layout = reorderTab(setActiveTab(layout, PANE_CHAT), PANE_CHAT, 0);
+    expect(findPaneGroup(layout.root, PANE_CHAT)?.collapsed).toBe(true);
   });
 
   it('survives a save/load round trip', () => {
-    const folded = setDockCollapsed(edgeDockLayout(), PANE_ARTIFACTS, true);
+    const folded = setGroupCollapsed(edgeDockLayout(), PANE_ARTIFACTS, true);
     const loaded = validateLayout(JSON.parse(JSON.stringify(folded)));
-    expect(findDock(loaded.root, PANE_ARTIFACTS)?.collapsed).toBe(true);
+    expect(findPaneGroup(loaded.root, PANE_ARTIFACTS)?.collapsed).toBe(true);
   });
 
   it('loads layouts saved before the flag existed as expanded', () => {
     const loaded = validateLayout(JSON.parse(JSON.stringify(edgeDockLayout())));
-    expect(findDock(loaded.root, PANE_ARTIFACTS)?.collapsed).toBeFalsy();
+    expect(findPaneGroup(loaded.root, PANE_ARTIFACTS)?.collapsed).toBeFalsy();
   });
 
-  it('is not part of the rail collapse predicate', () => {
-    const folded = setDockCollapsed(edgeDockLayout(), PANE_SESSIONS, true);
-    expect(isDockCollapsed(findDock(folded.root, PANE_SESSIONS)!)).toBe(false);
+  it('drops a collapsed group out of focus cycling', () => {
+    const folded = setGroupCollapsed(edgeDockLayout(), PANE_SESSIONS, true);
+    expect(listFocusablePanes(folded.root)).not.toContain(PANE_SESSIONS);
   });
 });
 

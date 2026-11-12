@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, type Component } from 'vue';
-import type { DockSide, PaneId } from '../../dock-types.js';
+import type { DockSide, PaneId, SplitDirection } from '../../dock-types.js';
 import { getPaneDescriptor } from '../../dock-types.js';
 import { paneShortcutHint } from '../../dock-shortcuts.js';
 import DockPane from './DockPane.vue';
@@ -13,9 +13,9 @@ const props = defineProps<{
   focusRequestId?: number;
   paneComponents: Readonly<Record<PaneId, Component>>;
   draggedPaneId?: PaneId | null;
-  /** In an edge dock: a double tap collapses the dock to its tab strip. */
-  collapsible?: boolean;
-  dockCollapsed?: boolean;
+  /** Parent split direction; null when the group is the whole workspace and cannot collapse. */
+  collapseAxis?: SplitDirection | null;
+  collapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -92,10 +92,10 @@ let restoredByFirstTap = false;
  */
 function onTabClick(event: MouseEvent, paneId: PaneId): void {
   if (event.detail >= 2) {
-    if (props.collapsible && event.detail === 2 && !restoredByFirstTap) emit('set-collapsed', paneId, true);
+    if (props.collapseAxis && event.detail === 2 && !restoredByFirstTap) emit('set-collapsed', paneId, true);
     return;
   }
-  restoredByFirstTap = !!props.collapsible && !!props.dockCollapsed;
+  restoredByFirstTap = !!props.collapsed;
   selectTab(paneId);
 }
 
@@ -144,7 +144,11 @@ function onPaneFocus(paneId: PaneId, focusedItemId?: string): void {
 </script>
 
 <template>
-  <section class="dock-tab-group" :data-dock-group-active="activeTab">
+  <section
+    class="dock-tab-group"
+    :class="collapsed && collapseAxis ? ['dock-tab-group--collapsed', `dock-tab-group--collapsed-${collapseAxis}`] : []"
+    :data-dock-group-active="activeTab"
+  >
     <div class="dock-tabs" role="tablist" data-dock-tabs :aria-label="`${activeTab} tab group`">
       <div v-for="paneId in tabs" :key="paneId" class="dock-tab-entry" :data-dock-tab-id="paneId">
         <button

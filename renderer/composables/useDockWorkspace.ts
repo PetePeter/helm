@@ -28,7 +28,7 @@ import {
   resizeSplit,
   setActiveTab,
   setDockMode,
-  setDockCollapsed,
+  setGroupCollapsed,
   validateLayout,
 } from '../dock-layout';
 import {
@@ -86,7 +86,7 @@ export interface DockWorkspace {
   /** Remove snapshots only for IDs observed before and now absent from the session list. */
   pruneSessionTabs: (previousSessionIds: readonly string[], currentSessionIds: readonly string[]) => void;
   setMode: (paneId: PaneId, mode: DockMode) => void;
-  /** Shrink the pane's edge dock to its tab strip, or restore it. No-op in the main area. */
+  /** Collapse the pane's tab group along its parent split, or restore it. */
   setCollapsed: (paneId: PaneId, collapsed: boolean) => void;
   close: (paneId: PaneId) => void;
   ensurePane: (paneId: PaneId) => void;
@@ -252,9 +252,9 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
     }
   }
 
-  /** Explicitly opening a pane (tap, shortcut, view routing) restores a tab-strip collapsed dock. */
+  /** Explicitly opening a pane (tap, shortcut, view routing) restores its collapsed group. */
   function activate(paneId: PaneId): void {
-    apply(setDockCollapsed(setActiveTab(layoutState.value, paneId), paneId, false));
+    apply(setGroupCollapsed(setActiveTab(layoutState.value, paneId), paneId, false));
   }
 
   function focusPane(paneId: PaneId, focusedItemId?: string): void {
@@ -325,7 +325,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
     switchSessionTabs,
     pruneSessionTabs,
     setMode: (paneId, mode) => apply(setDockMode(layoutState.value, paneId, mode)),
-    setCollapsed: (paneId, collapsed) => apply(setDockCollapsed(layoutState.value, paneId, collapsed)),
+    setCollapsed: (paneId, collapsed) => apply(setGroupCollapsed(layoutState.value, paneId, collapsed)),
     close: (paneId) => apply(closePane(layoutState.value, paneId)),
     ensurePane: (paneId) => {
       if (findPaneGroup(layoutState.value.root, paneId) || layoutState.value.closed.includes(paneId)) return;
