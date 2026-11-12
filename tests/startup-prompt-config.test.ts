@@ -49,3 +49,19 @@ describe('ConfigLoader.getStartupPrompts', () => {
 });
 
 afterAll(() => rmSync(profileDir, { recursive: true, force: true }));
+
+describe('ConfigLoader.getBuiltInPatterns', () => {
+  // Copilot CLI's bundled xterm-headless can throw this mid-input and leave
+  // the CLI alive but unusable; the built-in rule restarts it with resume.
+  it('gives copilot a restart rule for its xterm isWrapped crash', () => {
+    const [rule] = loader.getBuiltInPatterns(ids.copilot);
+    expect(rule.action).toBe('restart');
+    expect(new RegExp(rule.regex, 'i').test("TypeError: Cannot set properties of undefined (setting 'isWrapped')\n    at A.lineFeed")).toBe(true);
+    expect(new RegExp(rule.regex, 'i').test('Cannot set properties of undefined')).toBe(false);
+  });
+
+  it('has no built-in rules for other CLI families', () => {
+    expect(loader.getBuiltInPatterns(ids.codex)).toEqual([]);
+    expect(loader.getBuiltInPatterns(ids.unknown)).toEqual([]);
+  });
+});

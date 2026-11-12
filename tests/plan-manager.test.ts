@@ -33,6 +33,7 @@ vi.mock('../src/session/persistence.js', () => ({
 
 import { PlanManager } from '../src/session/plan-manager.js';
 import { ProjectStore } from '../src/session/project-store.js';
+import { HelmPlanService } from '../src/mcp/services/helm-plan-service.js';
 import * as persistence from '../src/session/persistence.js';
 
 describe('PlanManager', () => {
@@ -582,6 +583,25 @@ describe('PlanManager', () => {
 
       // c is pending because both a and b are not done
       expect(pm.getItem(c.id)!.status).toBe('planning');
+    });
+  });
+
+  describe('plan_nextplan_link across project directories', () => {
+    it('links plans from different directories of the same project (worktree regression)', () => {
+      const projectStore = new ProjectStore();
+      const project = projectStore.resolveForPath('/projects/app');
+      projectStore.addDirectory(project.id, '/projects/app-worktree');
+      const withProjects = new PlanManager(projectStore);
+      const service = new HelmPlanService(withProjects, {} as any, {} as any);
+      const a = withProjects.create('/projects/app', 'A', '');
+      const b = withProjects.create('/projects/app-worktree', 'B', '');
+      const other = withProjects.create('/projects/other', 'C', '');
+
+      service.linkPlans(a.id, b.id);
+
+      expect(withProjects.exportDirectory('/projects/app')!.dependencies)
+        .toContainEqual(expect.objectContaining({ fromId: a.id, toId: b.id }));
+      expect(() => service.linkPlans(a.id, other.id)).toThrow('across different projects');
     });
   });
 
@@ -1268,6 +1288,19 @@ describe('PlanManager', () => {
       expect(count).toBe(1);
       expect(pm.getItem(a.id)!.sequenceId).toBe(seq.id);
       expect(pm.getItem(b.id)!.sequenceId).toBeUndefined();
+    });
+
+    it('assigns plans from another directory of the same project (worktree regression)', () => {
+      const projectStore = new ProjectStore();
+      const project = projectStore.resolveForPath('/projects/app');
+      projectStore.addDirectory(project.id, '/projects/app-worktree');
+      const withProjects = new PlanManager(projectStore);
+      const a = withProjects.create('/projects/app', 'A', '');
+      const b = withProjects.create('/projects/app-worktree', 'B', '');
+      const seq = withProjects.createSequence('/projects/app', 's');
+
+      expect(withProjects.bulkAssignSequence([a.id, b.id], seq.id)).toBe(2);
+      expect(withProjects.getItem(b.id)!.sequenceId).toBe(seq.id);
     });
 
     it('accepts null sequenceId to unlink from sequence', () => {

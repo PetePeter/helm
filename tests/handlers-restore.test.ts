@@ -176,6 +176,7 @@ vi.mock('../src/session/plan-manager.js', () => ({
 
 vi.mock('../src/session/pattern-matcher.js', () => ({
   PatternMatcher: vi.fn(function (this: any) {
+    this.setRestartHandler = vi.fn();
     this.processOutput = vi.fn();
   }),
 }));

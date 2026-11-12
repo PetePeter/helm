@@ -218,6 +218,28 @@ describe('PtyManager', () => {
     });
   });
 
+  describe('nudgeResize', () => {
+    it('nudges a PTY that never received a real fit (stale spawn size)', async () => {
+      manager.spawn({ sessionId: 's1', command: 'test' });
+
+      await manager.nudgeResize('s1');
+
+      expect(mock.pty.resize).toHaveBeenCalledTimes(2);
+    });
+
+    // A transient shrink on a correctly sized TUI made Copilot CLI's own
+    // xterm-headless crash in lineFeed ("setting 'isWrapped'") mid-input.
+    it('leaves an already-fitted PTY alone', async () => {
+      manager.spawn({ sessionId: 's1', command: 'test' });
+      manager.resize('s1', 80, 24);
+      vi.mocked(mock.pty.resize).mockClear();
+
+      await manager.nudgeResize('s1');
+
+      expect(mock.pty.resize).not.toHaveBeenCalled();
+    });
+  });
+
   describe('kill', () => {
     it('kills the PTY and removes it', () => {
       manager.spawn({ sessionId: 's1', command: 'test' });

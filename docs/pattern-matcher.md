@@ -18,6 +18,14 @@ action types cover essentially all of it:
   longer than a human wants to babysit. This is the rate-limit case: parse the time
   out of the message and let the app resume the session unattended.
 
+A third action, **`restart`**, covers a CLI that is alive but wedged: it kills the
+PTY and, once the exit has landed (a late exit would remove the new session), restores
+it from the recycle bin — the same resume-by-`cliThreadId` path as a bin restore,
+under the same session id. Helm ships one built-in rule per CLI family, kept out of
+the user's editable list and appended after it so user rule indices stay stable:
+Copilot CLI's bundled xterm-headless can throw `Cannot set properties of undefined
+(setting 'isWrapped')` mid-input, leaving the input region dead until a restart.
+
 Rules are **per CLI type**, because the strings being matched are a property of the
 tool, not of a particular session or directory.
 

@@ -628,7 +628,25 @@ describe('HelmControlService.spawnCli', () => {
       status: 'found',
       item: { ...plan, dirPath: '/Coding/Gamepad-CLI-Hub' },
     });
-    expect(() => service.claimSessionPlan('s1', 'plan-1')).toThrow('does not belong to session directory');
+    expect(() => service.claimSessionPlan('s1', 'plan-1')).toThrow('does not belong to session project');
+  });
+
+  it('lets a session in any directory of the plan project claim it (worktree regression)', () => {
+    const { service, sessionManager, planManager } = makeService();
+    planManager.getProjectIdForDirectory.mockImplementation((dirPath: string) =>
+      dirPath === '/work' || dirPath === '/work-worktree' ? 'project-1' : null);
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: 's1', name: 'Claude', cliType: 'claude-code', workingDir: '/work-worktree',
+    });
+    const plan = { id: 'plan-1', dirPath: '/work', title: 'T', description: 'D', status: 'coding' };
+    planManager.resolveItemRef.mockReturnValue({ status: 'found', item: plan } as any);
+
+    expect(service.claimSessionPlan('s1', 'plan-1')).toEqual({ ok: true });
+
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: 's1', name: 'Claude', cliType: 'claude-code', workingDir: '/elsewhere',
+    });
+    expect(() => service.claimSessionPlan('s1', 'plan-1')).toThrow('does not belong to session project');
   });
 
   it('accepts P-id plan references when setting the explicit working plan', () => {

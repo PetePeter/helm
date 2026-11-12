@@ -126,8 +126,8 @@ export type Binding = KeyboardBinding | VoiceBinding | VoiceTalkBinding | VoiceC
 export interface PatternRule {
   /** JavaScript regex string (without delimiters). Case-insensitive matching is applied automatically. */
   regex: string;
-  /** Action to take when the regex matches. */
-  action: 'wait-until' | 'send-text';
+  /** Action to take when the regex matches. `restart` kills the CLI and resumes it in place. */
+  action: 'wait-until' | 'send-text' | 'restart';
   /**
    * wait-until only: 1-based capture group index containing the scheduled time string.
    * If omitted (or group not found), falls back to waitMs.
@@ -163,6 +163,19 @@ const BUILT_IN_STARTUP_PROMPTS: Record<'claude' | 'codex' | 'copilot', StartupPr
     { regex: 'confirm\\s+folder\\s+trust' },
     TRUST_FOLDER_PROMPT,
   ],
+};
+
+/**
+ * Rules Helm ships per CLI family, kept out of the user's editable list.
+ * Copilot CLI's bundled xterm-headless can throw this in lineFeed mid-input,
+ * leaving the CLI alive but with a dead input region — only a restart recovers.
+ */
+const BUILT_IN_PATTERNS: Partial<Record<keyof typeof BUILT_IN_STARTUP_PROMPTS, PatternRule[]>> = {
+  copilot: [{
+    regex: "Cannot set properties of undefined \\(setting 'isWrapped'\\)",
+    action: 'restart',
+    cooldownMs: 60_000,
+  }],
 };
 
 // ============================================================================
@@ -1719,6 +1732,12 @@ export class ConfigLoader {
   getPatterns(cliType: string): PatternRule[] {
     this.ensureLoaded();
     return this.cliTypeStore.get(cliType)?.patterns ?? [];
+  }
+
+  getBuiltInPatterns(cliType: string): PatternRule[] {
+    this.ensureLoaded();
+    const family = startupPromptFamily(this.cliTypeStore.get(cliType));
+    return (family && BUILT_IN_PATTERNS[family]) || [];
   }
 
   getStartupPrompts(cliType: string): StartupPromptRule[] {

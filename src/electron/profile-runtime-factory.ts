@@ -124,7 +124,8 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
   const etaTracker = new EtaTracker({ persistence: new EtaPersistence(paths.timeTrackingDir) });
   const patternMatcher = new PatternMatcher(
     (sessionId, data) => ptyManager.deliverText(sessionId, data),
-    cliType => configLoader.getPatterns(cliType),
+    // Built-ins follow the user's rules so user rule indices stay stable for cooldowns and edits.
+    cliType => [...configLoader.getPatterns(cliType), ...configLoader.getBuiltInPatterns(cliType)],
     cliType => {
       try { return configLoader.resolveCliType(cliType)?.id ?? cliType; }
       catch { return cliType; }

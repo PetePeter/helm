@@ -129,6 +129,8 @@ export class PtyManager extends EventEmitter {
   private writeCounts: Map<string, number> = new Map();
   /** Last-known PTY dimensions per session (node-pty's PtyProcess does not expose cols/rows). */
   private sizes: Map<string, { cols: number; rows: number }> = new Map();
+  /** Sessions whose size came from a real renderer fit rather than the spawn default. */
+  private fitted = new Set<string>();
   /** Timestamp of each session's most recent PTY output, for quiet-window waits. */
   private lastOutputAt: Map<string, number> = new Map();
 
@@ -251,6 +253,7 @@ export class PtyManager extends EventEmitter {
       this.bracketedPaste.clear(sessionId);
       this.writeCounts.delete(sessionId);
       this.sizes.delete(sessionId);
+      this.fitted.delete(sessionId);
       this.lastOutputAt.delete(sessionId);
       // During app shutdown every PTY dies at once; those exits are not
       // session closures, so no listener may act on them.
@@ -380,6 +383,7 @@ export class PtyManager extends EventEmitter {
     try {
       pty.resize(cols, rows);
       this.sizes.set(sessionId, { cols, rows });
+      this.fitted.add(sessionId);
       this.terminalScreenBuffer.resize(sessionId, { cols, rows });
     } catch (error) {
       logger.error(`[PTY] Resize failed for session=${sessionId}: ${error}`);
@@ -392,12 +396,14 @@ export class PtyManager extends EventEmitter {
    * region on SIGWINCH; a hidden session that never received a fit/resize keeps a
    * stale size, so text delivered to it lands in a mis-sized buffer. Sent before
    * inter-session and remote chat delivery so the recipient redraws first.
-   * No-op when size is unknown or too small to shrink.
+   * No-op once the PTY has been fitted: its size is already right, and a
+   * transient shrink mid-input crashed Copilot CLI's own xterm reflow.
+   * Also a no-op when size is unknown or too small to shrink.
    */
   async nudgeResize(sessionId: string): Promise<void> {
     const pty = this.ptys.get(sessionId);
     const size = this.sizes.get(sessionId);
-    if (!pty || !size || size.rows <= 1) return;
+    if (!pty || !size || size.rows <= 1 || this.fitted.has(sessionId)) return;
     try {
       pty.resize(size.cols, size.rows - 1);
       await new Promise<void>((resolve) => setTimeout(resolve, 30));
@@ -428,6 +434,7 @@ export class PtyManager extends EventEmitter {
     this.bracketedPaste.clear(sessionId);
     this.writeCounts.delete(sessionId);
     this.sizes.delete(sessionId);
+    this.fitted.delete(sessionId);
     this.lastOutputAt.delete(sessionId);
   }
 
@@ -459,6 +466,7 @@ export class PtyManager extends EventEmitter {
     this.bracketedPaste.clearAll();
     this.writeCounts.clear();
     this.sizes.clear();
+    this.fitted.clear();
     this.lastOutputAt.clear();
   }
 

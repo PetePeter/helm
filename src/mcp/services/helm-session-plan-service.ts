@@ -3,7 +3,6 @@ import { normalizeProjectPath } from '../../session/project-identity.js';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { PlanManager, PlanRefResolution } from '../../session/plan-manager.js';
 import type { SessionManager } from '../../session/manager.js';
-import type { PlanStatus } from '../../types/plan.js';
 import type { SessionInfo } from '../../types/session.js';
 
 /**
@@ -27,8 +26,8 @@ export class HelmSessionPlanService {
     if (!plan) {
       throw new Error(`Plan not found: ${planId}`);
     }
-    if (session.workingDir && normalizeProjectPath(plan.dirPath) !== normalizeProjectPath(session.workingDir)) {
-      throw new Error(`Plan ${planId} does not belong to session directory ${session.workingDir}`);
+    if (session.workingDir && !this.sharesProject(session, plan)) {
+      throw new Error(`Plan ${planId} does not belong to session project (directory ${session.workingDir})`);
     }
     if (plan.status === 'done' || plan.status === 'planning' || plan.status === 'suggested') {
       throw new Error(`Plan ${planId} is not active or ready`);
@@ -44,6 +43,14 @@ export class HelmSessionPlanService {
     }
     this.sessionManager.updateSession(session.id, { currentPlanId: plan.id });
     return { ok: true };
+  }
+
+  /** Plans belong to a project, so any of its directories (e.g. a worktree) may claim them. */
+  private sharesProject(session: SessionInfo, plan: { dirPath: string; projectId?: string }): boolean {
+    if (normalizeProjectPath(plan.dirPath) === normalizeProjectPath(session.workingDir!)) return true;
+    const sessionProjectId = session.projectId ?? this.planManager.getProjectIdForDirectory(session.workingDir!);
+    const planProjectId = plan.projectId ?? this.planManager.getProjectIdForDirectory(plan.dirPath);
+    return sessionProjectId !== null && sessionProjectId === planProjectId;
   }
 
   /** Move the source's active plan claim to a successor and reverse it on spawn failure. */

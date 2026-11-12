@@ -344,12 +344,13 @@ export class PlanManager extends EventEmitter {
   bulkAssignSequence(planIds: string[], sequenceId: string | null): number {
     if (planIds.length === 0) return 0;
     let count = 0;
-    const dirPath = this.items.get(planIds[0])?.dirPath;
-    if (!dirPath) return 0;
+    const first = this.items.get(planIds[0]);
+    if (!first) return 0;
+    const dirPath = first.dirPath;
 
     for (const planId of planIds) {
       const item = this.items.get(planId);
-      if (!item || item.dirPath !== dirPath) continue;
+      if (!item || !this.areInSameProject(item, first)) continue;
       if (sequenceId) {
         const sequence = this.sequences.get(sequenceId);
         if (!sequence || !this.areInSameProject(item, sequence)) continue;
@@ -930,7 +931,7 @@ export class PlanManager extends EventEmitter {
     return this.projectStore?.getById(projectId)?.canonicalPath ?? null;
   }
 
-  private areInSameProject(
+  areInSameProject(
     left: Pick<PlanItem, 'dirPath' | 'projectId'>,
     right: Pick<PlanItem | PlanSequence, 'dirPath' | 'projectId'>,
   ): boolean {

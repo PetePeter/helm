@@ -79,6 +79,7 @@ export function findRegexMatch(text: string, regex: RegExp): RegExpMatchArray | 
  * - 'send-text'  → immediately calls ptyWriteFn(sessionId, sequence)
  * - 'wait-until' → parses a scheduled time (from capture group or fixed waitMs),
  *                  sets a timer, then calls ptyWriteFn at the scheduled time
+ * - 'restart'    → hands the session to the restart handler (kill + resume in place)
  *
  * Deduplication: each rule fires at most once per session per cooldownMs window.
  * One pending schedule per session (new schedule replaces any previous for that session).
@@ -94,6 +95,7 @@ export class PatternMatcher extends EventEmitter {
   private readonly getPatternsFn: (cliType: string) => PatternRule[];
   private readonly resolveCliTypeFn: (cliType: string) => string;
 
+  private restartFn?: (sessionId: string) => void | Promise<void>;
   private pendingSchedules: Map<string, PendingSchedule> = new Map();
   private lastFired: LastFiredMap = new Map();
 
@@ -111,6 +113,11 @@ export class PatternMatcher extends EventEmitter {
     this.ptyWriteFn = ptyWriteFn;
     this.getPatternsFn = getPatternsFn;
     this.resolveCliTypeFn = resolveCliTypeFn;
+  }
+
+  /** Restarting needs the profile's recycle-bin restorer, which is wired after construction. */
+  setRestartHandler(restartFn: (sessionId: string) => void | Promise<void>): void {
+    this.restartFn = restartFn;
   }
 
   /**
@@ -144,6 +151,8 @@ export class PatternMatcher extends EventEmitter {
         this.executeSendText(sessionId, rule);
       } else if (rule.action === 'wait-until') {
         this.executeWaitUntil(sessionId, i, match, rule);
+      } else if (rule.action === 'restart') {
+        this.executeRestart(sessionId);
       }
     }
   }
@@ -209,6 +218,20 @@ export class PatternMatcher extends EventEmitter {
     Promise.resolve(this.ptyWriteFn(sessionId, output)).catch((err) => {
       logger.error(`[PatternMatcher] ptyWriteFn failed:`, err);
     });
+  }
+
+  private executeRestart(sessionId: string): void {
+    if (!this.restartFn) {
+      logger.warn(`[PatternMatcher] restart rule matched for ${sessionId} but no restart handler is wired`);
+      return;
+    }
+    logger.info(`[PatternMatcher] Restarting session ${sessionId}`);
+    const fail = (err: unknown) => logger.error(`[PatternMatcher] restart failed for ${sessionId}:`, err);
+    try {
+      Promise.resolve(this.restartFn(sessionId)).catch(fail);
+    } catch (err) {
+      fail(err);
+    }
   }
 
   private sequenceToString(actions: SequenceAction[]): string {

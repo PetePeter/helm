@@ -108,6 +108,8 @@ import { PrimaryLanAddressResolver } from '../../mobile/primary-lan-address.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
 import { MobileArtifactNotifier } from '../../mobile/mobile-artifact-notifier.js';
 import { setupProfileRuntimeDomain } from './profile-handlers.js';
+import { restartSessionWithResume } from '../../session/session-restart.js';
+import type { ProfileRuntime } from '../../session/profile-runtime.js';
 import { createAdminHandoverDelivery, createAdminOperatorTaskWatcher, sendDesktopChatToSessionOwner, createProfileRecycleBinRestorer, ringAnsweredForBoundDevice } from './profile-runtime-routing.js';
 
 /**
@@ -581,6 +583,14 @@ export function registerIPCHandlers(
     stateDetector,
     trackPromptCanceller: registerPromptCanceller,
   });
+  const wireSessionRestart = (runtime: ProfileRuntime) => runtime.patternMatcher.setRestartHandler(
+    sessionId => restartSessionWithResume({
+      ptyManager,
+      recycleBin: runtime.recycleBinManager,
+      restore: entryId => restoreRecycleBinEntry(entryId, { profileId: runtime.userProfileId }),
+    }, sessionId),
+  );
+  for (const runtime of registry.all()) wireSessionRestart(runtime);
   helmControlService.setRecycleBinService(
     adminRuntime.recycleBinManager,
     adminRuntime.userProfileId,
@@ -1046,7 +1056,11 @@ export function registerIPCHandlers(
     devices: mobileDeviceStore,
     windowManager,
     incomingWatcher,
-    onProfileAdded: id => recycleBinPurgeMaintenance.add(profileComposition.getRequiredRuntime(id)),
+    onProfileAdded: id => {
+      const runtime = profileComposition.getRequiredRuntime(id);
+      recycleBinPurgeMaintenance.add(runtime);
+      wireSessionRestart(runtime);
+    },
     onProfileRemoved: id => recycleBinPurgeMaintenance.remove(id),
     router: profileMcpRouter,
     baseServices: { userProfileId: adminRuntime.userProfileId, service: helmControlService, loopDriver, uploads: artifactUploadService, remoteService },

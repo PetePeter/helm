@@ -260,8 +260,8 @@ export class HelmPlanService {
     if (from.item.id === to.item.id) {
       throw new Error('Cannot link a plan to itself');
     }
-    if (from.item.dirPath !== to.item.dirPath) {
-      throw new Error('Cannot link plans across different directories');
+    if (!this.planManager.areInSameProject(from.item, to.item)) {
+      throw new Error('Cannot link plans across different projects');
     }
 
     const exported = this.planManager.exportDirectory(from.item.dirPath);

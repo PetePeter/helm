@@ -205,7 +205,8 @@ export async function deliverPromptSequenceToSession(input: {
    * The nudge is a transient resize. Full-screen TUIs (e.g. Copilot CLI) only
    * redraw their input region on SIGWINCH; a hidden session that never received
    * a fit keeps a stale size and renders the delivered text into a mis-sized
-   * buffer. Harmless for line-based CLIs, which ignore the size change.
+   * buffer. Fitted PTYs skip the nudge (see PtyManager.nudgeResize).
+   * Harmless for line-based CLIs, which ignore the size change.
    */
   // Stamped inside the gate: a delivery queued ahead of this one must not
   // have its submit hook mistaken for ours.

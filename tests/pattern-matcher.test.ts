@@ -375,4 +375,43 @@ describe('PatternMatcher', () => {
       });
     });
   });
+
+  describe('restart action', () => {
+    const restartRule = makeRule({ regex: "setting 'isWrapped'", action: 'restart', sequence: undefined, cooldownMs: 60_000 });
+
+    it('hands the session to the restart handler on match', () => {
+      const { pm, ptyWrite } = makeMatcher([restartRule]);
+      const restart = vi.fn();
+      pm.setRestartHandler(restart);
+
+      pm.processOutput('s1', 'copilot', "Cannot set properties of undefined (setting 'isWrapped')");
+
+      expect(restart).toHaveBeenCalledWith('s1');
+      expect(ptyWrite).not.toHaveBeenCalled();
+    });
+
+    it('restarts once per cooldown window when the crash repeats', () => {
+      const { pm } = makeMatcher([restartRule]);
+      const restart = vi.fn();
+      pm.setRestartHandler(restart);
+
+      pm.processOutput('s1', 'copilot', "setting 'isWrapped'");
+      pm.processOutput('s1', 'copilot', "setting 'isWrapped'");
+      expect(restart).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(60_000);
+      pm.processOutput('s1', 'copilot', "setting 'isWrapped'");
+      expect(restart).toHaveBeenCalledTimes(2);
+    });
+
+    it('does nothing for non-matching output', () => {
+      const { pm } = makeMatcher([restartRule]);
+      const restart = vi.fn();
+      pm.setRestartHandler(restart);
+
+      pm.processOutput('s1', 'copilot', 'all good');
+
+      expect(restart).not.toHaveBeenCalled();
+    });
+  });
 });
