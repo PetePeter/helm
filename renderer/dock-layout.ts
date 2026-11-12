@@ -272,7 +272,7 @@ export function normalizeNode(node: DockNode | null): DockNode | null {
 
   if (node.type === 'dock') {
     const child = normalizeNode(node.child);
-    return child ? { type: 'dock', side: node.side, mode: node.mode, child } : null;
+    return child ? { ...node, child } : null;
   }
 
   // Split: normalize children, drop the empties, then flatten same-direction
@@ -518,6 +518,22 @@ export function setDockMode(layout: DockWorkspaceLayout, paneId: PaneId, mode: D
   });
   if (!found) throw new Error(`dock layout: pane "${paneId}" is not docked to an edge`);
   return withRoot(layout, root, layout.closed);
+}
+
+/**
+ * Collapse or restore the edge dock containing a pane to its tab strip.
+ * A pane in the main area is not in a dock, so this is a no-op there.
+ */
+export function setDockCollapsed(layout: DockWorkspaceLayout, paneId: PaneId, collapsed: boolean): DockWorkspaceLayout {
+  let changed = false;
+  const root = mapNode(layout.root, node => {
+    if (node.type !== 'dock' || !listPanes(node.child).includes(paneId)) return node;
+    if (!!node.collapsed === collapsed) return node;
+    changed = true;
+    const { collapsed: _was, ...rest } = node;
+    return collapsed ? { ...rest, collapsed: true } : rest;
+  });
+  return changed ? withRoot(layout, root, layout.closed) : layout;
 }
 
 /** Close a pane to the View menu when its descriptor permits recovery. */
@@ -822,7 +838,13 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
       const { side, mode, child } = raw;
       if (!DOCK_SIDES.includes(side as DockSide)) throw new Error(`dock layout: unknown dock side "${String(side)}"`);
       if (!DOCK_MODES.includes(mode as DockMode)) throw new Error(`dock layout: unknown dock mode "${String(mode)}"`);
-      return { type: 'dock', side: side as DockSide, mode: dockModeFor(side as DockSide, mode as DockMode), child: validateNode(child, seen, profile) };
+      return {
+        type: 'dock',
+        side: side as DockSide,
+        mode: dockModeFor(side as DockSide, mode as DockMode),
+        ...(raw.collapsed === true ? { collapsed: true as const } : {}),
+        child: validateNode(child, seen, profile),
+      };
     }
     default:
       throw new Error(`dock layout: unknown node type "${String(raw.type)}"`);

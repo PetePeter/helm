@@ -94,7 +94,9 @@ The dock names a pane (tab + rail tooltip) and collapses it (rail). **Pane
 components render content only** — no section header, no collapse toggle. A pane
 that draws its own title bar is duplicating the dock and is a bug.
 
-Likewise there is exactly one collapse concept: a dock's `mode`.
+Likewise there are exactly two collapse concepts, both owned by the dock node:
+its `mode` (collapse to a rail) and its `collapsed` flag (collapse to the tab
+strip, below).
 
 | Mode | Behaviour |
 |------|-----------|
@@ -103,7 +105,7 @@ Likewise there is exactly one collapse concept: a dock's `mode`.
 | `hidden` | Collapsed and stays collapsed until explicitly opened |
 
 The **left dock is always `pinned`** — it is shrunk with its splitter, never
-collapsed. The model enforces this on every mode change and on load, so a layout
+collapsed to a rail. The model enforces this on every mode change and on load, so a layout
 saved while a collapse control existed is repaired rather than stranded on a rail.
 
 Reveal state (which autohide docks are currently open) is **session state, not
@@ -120,6 +122,26 @@ A pinned dock renders **no rail** and offers no collapse. Its rail used to carry
 only a collapse chevron, which on a left/right dock laid out as a blank
 full-width strip along the bottom edge. A pinned dock's space is reclaimed
 by closing the pane (the View menu restores it).
+
+### Tab-strip collapse
+
+Any edge dock — the left one included — can shrink to its tab strip. The main
+area never does: its tabs are not under a dock node, so the gesture is a no-op.
+
+```mermaid
+stateDiagram-v2
+    Open --> Open: tap tab (select)
+    Open --> Collapsed: double tap tab
+    Collapsed --> Open: tap tab (select + restore)
+```
+
+- The flag lives on the dock node and is persisted with the layout, so a
+  collapsed dock stays collapsed across restarts.
+- Split `sizes` are never touched; the parent split just gives the dock an
+  `auto` track. Restoring therefore returns the exact prior size.
+- A double tap's first tap already restores a collapsed dock, so the second tap
+  is swallowed rather than collapsing it again.
+- Mouse/touch only — the gamepad is unchanged.
 
 ## Closing and restoring
 

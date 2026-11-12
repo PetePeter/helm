@@ -28,6 +28,7 @@ import {
   resizeSplit,
   setActiveTab,
   setDockMode,
+  setDockCollapsed,
   validateLayout,
 } from '../dock-layout';
 import {
@@ -85,6 +86,8 @@ export interface DockWorkspace {
   /** Remove snapshots only for IDs observed before and now absent from the session list. */
   pruneSessionTabs: (previousSessionIds: readonly string[], currentSessionIds: readonly string[]) => void;
   setMode: (paneId: PaneId, mode: DockMode) => void;
+  /** Shrink the pane's edge dock to its tab strip, or restore it. No-op in the main area. */
+  setCollapsed: (paneId: PaneId, collapsed: boolean) => void;
   close: (paneId: PaneId) => void;
   ensurePane: (paneId: PaneId) => void;
   forgetPane: (paneId: PaneId) => void;
@@ -317,6 +320,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
     switchSessionTabs,
     pruneSessionTabs,
     setMode: (paneId, mode) => apply(setDockMode(layoutState.value, paneId, mode)),
+    setCollapsed: (paneId, collapsed) => apply(setDockCollapsed(layoutState.value, paneId, collapsed)),
     close: (paneId) => apply(closePane(layoutState.value, paneId)),
     ensurePane: (paneId) => {
       if (findPaneGroup(layoutState.value.root, paneId) || layoutState.value.closed.includes(paneId)) return;

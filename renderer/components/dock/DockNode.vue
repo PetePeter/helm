@@ -17,6 +17,10 @@ const props = defineProps<{
   paneComponents: Readonly<Record<PaneId, Component>>;
   revealedPaneIds: readonly PaneId[];
   draggedPaneId?: PaneId | null;
+  /** Set on everything under an edge dock; header collapse is a dock-only gesture. */
+  inDock?: boolean;
+  /** The enclosing edge dock is collapsed to its tab strip. */
+  dockCollapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -27,6 +31,7 @@ const emit = defineEmits<{
   'reveal-pane': [paneId: PaneId];
   'autohide-close': [paneId: PaneId];
   'set-dock-mode': [paneId: PaneId, mode: DockMode];
+  'set-dock-collapsed': [paneId: PaneId, collapsed: boolean];
   'drag-start': [paneId: PaneId, event: PointerEvent];
   'dock-edge': [paneId: PaneId, side: DockSide];
   'reorder-tab': [paneId: PaneId, index: number];
@@ -47,10 +52,13 @@ function collapsed(node: DockNode): boolean {
 function splitStyle(): CSSProperties {
   const node = props.node;
   if (node.type !== 'split') return {};
-  // A collapsed dock gets an auto (rail-sized) track instead of an `fr` share,
-  // so closing it hands its space back to its siblings rather than leaving a gap.
+  // A collapsed dock gets an auto (rail- or tab-strip-sized) track instead of an
+  // `fr` share, so closing it hands its space back to its siblings rather than
+  // leaving a gap. Sizes stay in the model, so restoring returns the old share.
   const tracks = node.children.map((child, index) =>
-    collapsed(child) ? 'auto' : `minmax(${DOCK_MIN_TRACK_PX}px, ${node.sizes[index]}fr)`);
+    props.dockCollapsed || collapsed(child) || (child.type === 'dock' && child.collapsed)
+      ? 'auto'
+      : `minmax(${DOCK_MIN_TRACK_PX}px, ${node.sizes[index]}fr)`);
   const gap = ` ${DOCK_SPLITTER_PX}px `;
   return node.direction === 'horizontal'
     ? { gridTemplateColumns: tracks.join(gap) }
@@ -136,6 +144,8 @@ function onDockFocusOut(event: FocusEvent): void {
         :pane-components="paneComponents"
         :revealed-pane-ids="revealedPaneIds"
         :dragged-pane-id="draggedPaneId"
+        :in-dock="inDock"
+        :dock-collapsed="dockCollapsed"
         @focus-pane="onFocusPane"
         @activate-pane="onActivatePane"
         @close-pane="onClosePane"
@@ -143,6 +153,7 @@ function onDockFocusOut(event: FocusEvent): void {
         @reveal-pane="(paneId) => emit('reveal-pane', paneId)"
         @autohide-close="(paneId) => emit('autohide-close', paneId)"
         @set-dock-mode="(...args) => emit('set-dock-mode', ...args)"
+        @set-dock-collapsed="(...args) => emit('set-dock-collapsed', ...args)"
         @drag-start="(...args) => emit('drag-start', ...args)"
         @dock-edge="(...args) => emit('dock-edge', ...args)"
         @reorder-tab="(...args) => emit('reorder-tab', ...args)"
@@ -170,7 +181,10 @@ function onDockFocusOut(event: FocusEvent): void {
       :focus-request-id="focusRequestId ?? 0"
       :pane-components="paneComponents"
       :dragged-pane-id="draggedPaneId"
+      :collapsible="inDock"
+      :dock-collapsed="dockCollapsed"
       @focus="onFocusPane"
+      @set-collapsed="(...args) => emit('set-dock-collapsed', ...args)"
       @activate="onActivatePane"
       @close="onClosePane"
       @drag-start="(...args) => emit('drag-start', ...args)"
@@ -185,7 +199,7 @@ function onDockFocusOut(event: FocusEvent): void {
     :class="[
       `dock-node--side-${node.side}`,
       `dock-node--mode-${node.mode}`,
-      { 'dock-node--collapsed': !dockContentVisible },
+      { 'dock-node--collapsed': !dockContentVisible, 'dock-node--tabs-only': node.collapsed },
     ]"
     :data-dock-side="node.side"
     :data-dock-collapsed="!dockContentVisible"
@@ -201,6 +215,8 @@ function onDockFocusOut(event: FocusEvent): void {
         :pane-components="paneComponents"
         :revealed-pane-ids="revealedPaneIds"
         :dragged-pane-id="draggedPaneId"
+        :in-dock="true"
+        :dock-collapsed="!!node.collapsed"
         @focus-pane="onFocusPane"
         @activate-pane="onActivatePane"
         @close-pane="onClosePane"
@@ -208,6 +224,7 @@ function onDockFocusOut(event: FocusEvent): void {
         @reveal-pane="(paneId) => emit('reveal-pane', paneId)"
         @autohide-close="(paneId) => emit('autohide-close', paneId)"
         @set-dock-mode="(...args) => emit('set-dock-mode', ...args)"
+        @set-dock-collapsed="(...args) => emit('set-dock-collapsed', ...args)"
         @drag-start="(...args) => emit('drag-start', ...args)"
         @dock-edge="(...args) => emit('dock-edge', ...args)"
         @reorder-tab="(...args) => emit('reorder-tab', ...args)"

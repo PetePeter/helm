@@ -13,6 +13,9 @@ const props = defineProps<{
   focusRequestId?: number;
   paneComponents: Readonly<Record<PaneId, Component>>;
   draggedPaneId?: PaneId | null;
+  /** In an edge dock: a double tap collapses the dock to its tab strip. */
+  collapsible?: boolean;
+  dockCollapsed?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -22,6 +25,7 @@ const emit = defineEmits<{
   'drag-start': [paneId: PaneId, event: PointerEvent];
   'dock-edge': [paneId: PaneId, side: DockSide];
   reorder: [paneId: PaneId, index: number];
+  'set-collapsed': [paneId: PaneId, collapsed: boolean];
 }>();
 
 /** Keyboard equivalents of an outer-edge drag, for users who cannot drag. */
@@ -76,6 +80,24 @@ function focusTab(paneId: PaneId): void {
 function selectTab(paneId: PaneId): void {
   emit('activate', paneId);
   emit('focus', paneId, `tab:${paneId}`);
+}
+
+// Whether the first tap of the current gesture restored a collapsed dock, so its
+// second tap does not immediately collapse it again.
+let restoredByFirstTap = false;
+
+/**
+ * Single tap selects (restoring a collapsed dock); double tap toggles collapse.
+ * `detail` counts taps in one gesture — 0 for keyboard activation, read as single.
+ */
+function onTabClick(event: MouseEvent, paneId: PaneId): void {
+  if (event.detail >= 2) {
+    if (props.collapsible && event.detail === 2 && !restoredByFirstTap) emit('set-collapsed', paneId, true);
+    return;
+  }
+  selectTab(paneId);
+  restoredByFirstTap = !!props.collapsible && !!props.dockCollapsed;
+  if (restoredByFirstTap) emit('set-collapsed', paneId, false);
 }
 
 function onTabKey(event: KeyboardEvent, paneId: PaneId): void {
@@ -142,7 +164,7 @@ function onPaneFocus(paneId: PaneId, focusedItemId?: string): void {
           :tabindex="paneId === activeTab ? 0 : -1"
           :title="tooltipFor(paneId)"
           @pointerdown="onTabPointerDown($event, paneId)"
-          @click="selectTab(paneId)"
+          @click="onTabClick($event, paneId)"
           @keydown="onTabKey($event, paneId)"
         >
           <span class="dock-tab__icon" aria-hidden="true">{{ iconFor(paneId) }}</span>

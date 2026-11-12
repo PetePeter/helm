@@ -42,6 +42,12 @@ export interface DockDockNode {
   type: 'dock';
   side: DockSide;
   mode: DockMode;
+  /**
+   * Shrunk to its tab strip by a double tap on a tab. Independent of `mode`:
+   * split sizes are untouched, so restoring returns the exact prior size.
+   * Omitted when false.
+   */
+  collapsed?: true;
   child: DockNode;
 }
 

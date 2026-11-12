@@ -16,6 +16,7 @@ import {
   reorderTab,
   setActiveTab,
   setDockMode,
+  setDockCollapsed,
   closePane,
   restorePane,
   normalizeNode,
@@ -196,9 +197,9 @@ describe('edge dock layout', () => {
   });
 });
 
-function findDock(node: DockNode, paneId: string): { side: string; mode: string } | null {
+function findDock(node: DockNode, paneId: string): Extract<DockNode, { type: 'dock' }> | null {
   if (node.type === 'dock') {
-    if (listPanes(node.child).includes(paneId)) return { side: node.side, mode: node.mode };
+    if (listPanes(node.child).includes(paneId)) return node;
     return null;
   }
   if (node.type === 'split') {
@@ -485,6 +486,40 @@ describe('dock mode', () => {
     const saved = JSON.parse(JSON.stringify(edgeDockLayout()));
     findDock(saved.root, PANE_SESSIONS)!.mode = 'autohide';
     expect(findDock(validateLayout(saved).root, PANE_SESSIONS)?.mode).toBe('pinned');
+  });
+});
+
+describe('dock header collapse', () => {
+  it('collapses and restores a pinned dock without touching split sizes', () => {
+    const base = edgeDockLayout();
+    const folded = setDockCollapsed(base, PANE_SCHEDULER, true);
+    expect(findDock(folded.root, PANE_SESSIONS)?.collapsed).toBe(true);
+    expect((folded.root as DockSplitNode).sizes).toEqual((base.root as DockSplitNode).sizes);
+
+    const restored = setDockCollapsed(folded, PANE_SESSIONS, false);
+    expect(findDock(restored.root, PANE_SESSIONS)?.collapsed).toBeFalsy();
+    expect(restored.root).toEqual(base.root);
+  });
+
+  it('is a no-op for a pane in the main area', () => {
+    const base = edgeDockLayout();
+    expect(setDockCollapsed(base, PANE_TERMINAL, true)).toBe(base);
+  });
+
+  it('survives a save/load round trip', () => {
+    const folded = setDockCollapsed(edgeDockLayout(), PANE_ARTIFACTS, true);
+    const loaded = validateLayout(JSON.parse(JSON.stringify(folded)));
+    expect(findDock(loaded.root, PANE_ARTIFACTS)?.collapsed).toBe(true);
+  });
+
+  it('loads layouts saved before the flag existed as expanded', () => {
+    const loaded = validateLayout(JSON.parse(JSON.stringify(edgeDockLayout())));
+    expect(findDock(loaded.root, PANE_ARTIFACTS)?.collapsed).toBeFalsy();
+  });
+
+  it('is not part of the rail collapse predicate', () => {
+    const folded = setDockCollapsed(edgeDockLayout(), PANE_SESSIONS, true);
+    expect(isDockCollapsed(findDock(folded.root, PANE_SESSIONS)!)).toBe(false);
   });
 });
 

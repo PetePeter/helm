@@ -311,6 +311,7 @@ onUnmounted(() => {
         @reveal-pane="onDockRevealPane"
         @autohide-close="onDockAutohideClose"
         @set-dock-mode="onDockSetMode"
+        @set-dock-collapsed="dockWorkspace.setCollapsed"
         @move-pane="onDockMovePane"
         @reorder-tab="onDockReorderTab"
         @dock-pane-edge="onDockPaneEdge"

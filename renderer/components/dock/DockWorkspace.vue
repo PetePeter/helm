@@ -25,6 +25,7 @@ const emit = defineEmits<{
   'reveal-pane': [paneId: PaneId];
   'autohide-close': [paneId: PaneId];
   'set-dock-mode': [paneId: PaneId, mode: DockMode];
+  'set-dock-collapsed': [paneId: PaneId, collapsed: boolean];
   'move-pane': [paneId: PaneId, target: DropTarget];
   'reorder-tab': [paneId: PaneId, index: number];
   'dock-pane-edge': [paneId: PaneId, side: DockSide];
@@ -123,6 +124,7 @@ const ghostLabel = computed(() => {
       @reveal-pane="(paneId) => emit('reveal-pane', paneId)"
       @autohide-close="(paneId) => emit('autohide-close', paneId)"
       @set-dock-mode="(...args) => emit('set-dock-mode', ...args)"
+      @set-dock-collapsed="(...args) => emit('set-dock-collapsed', ...args)"
       @drag-start="drag.start"
       @dock-edge="(paneId, side) => emit('dock-pane-edge', paneId, side)"
       @reorder-tab="(paneId, index) => emit('reorder-tab', paneId, index)"

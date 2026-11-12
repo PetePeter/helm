@@ -336,6 +336,13 @@ input[type='radio'] {
 .dock-node--collapsed { flex: 0 0 auto; }
 .dock-node--side-top.dock-node--collapsed,
 .dock-node--side-bottom.dock-node--collapsed { flex-direction: row; }
+/* Collapsed to its tab strip: tabs stay, panes hide, and the dock sizes to the
+ * strip (its parent split already gives it an `auto` track). */
+.dock-node--tabs-only { flex: 0 0 auto; }
+.dock-node--tabs-only .dock-node,
+.dock-node--tabs-only .dock-node__content,
+.dock-node--tabs-only .dock-tab-group { flex: 0 0 auto; }
+.dock-node--tabs-only .dock-pane { display: none; }
 .dock-node__content { flex-direction: column; }
 /* Tab strip above its panes. Without this the group inherits `row` from the
  * shared `display: flex` above, which lays the strip out as a full-height
