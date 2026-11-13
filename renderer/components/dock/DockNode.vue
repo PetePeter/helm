@@ -62,10 +62,13 @@ function splitStyle(): CSSProperties {
   // A collapsed dock or tab group gets an auto (rail/header-sized) track instead
   // of an `fr` share, so it hands its space back to its siblings rather than
   // leaving a gap. Sizes stay in the model, so restoring returns the old share.
-  const tracks = node.children.map((child, index) =>
-    collapsed(child) || shrunk(child)
-      ? 'auto'
-      : `minmax(${DOCK_MIN_TRACK_PX}px, ${node.sizes[index]}fr)`);
+  // Open shares are rescaled to sum to 1fr: below that the grid leaves free
+  // space, and hands it to the `auto` tracks — the collapsed child would keep
+  // its old size with an empty body instead of moving the splitter.
+  const folded = node.children.map(child => collapsed(child) || shrunk(child));
+  const openTotal = node.sizes.reduce((sum, size, index) => folded[index] ? sum : sum + size, 0) || 1;
+  const tracks = node.children.map((_, index) =>
+    folded[index] ? 'auto' : `minmax(${DOCK_MIN_TRACK_PX}px, ${node.sizes[index] / openTotal}fr)`);
   const gap = ` ${DOCK_SPLITTER_PX}px `;
   return node.direction === 'horizontal'
     ? { gridTemplateColumns: tracks.join(gap) }

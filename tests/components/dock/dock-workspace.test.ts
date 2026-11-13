@@ -136,9 +136,12 @@ describe('DockWorkspace', () => {
       expect(wrapper.emitted('set-group-collapsed')).toBeUndefined();
     });
 
-    it('gives a collapsed group an auto track along its split', () => {
+    // Fractions below 1fr in total leave free space that the browser hands to the
+    // `auto` track, so the splitter would not move. Open tracks must sum to 1fr.
+    it('gives a collapsed group an auto track and its siblings all the space', () => {
       const wrapper = mountSplit('vertical', true);
-      expect((wrapper.get('.dock-node--split').element as HTMLElement).style.gridTemplateRows).toMatch(/fr\) 4px auto$/);
+      expect((wrapper.get('.dock-node--split').element as HTMLElement).style.gridTemplateRows)
+        .toBe('minmax(96px, 1fr) 4px auto');
     });
 
     it('collapses stacked groups to the header and side-by-side groups to an icon strip', () => {
@@ -295,7 +298,7 @@ describe('DockWorkspace', () => {
     });
 
     const style = () => wrapper.find('.dock-node--split').attributes('style') ?? '';
-    expect(style()).toContain('minmax(96px, 0.7fr) 4px auto');
+    expect(style()).toContain('minmax(96px, 1fr) 4px auto');
 
     await wrapper.setProps({ revealedPaneIds: [PANE_ARTIFACTS] });
     await nextTick();
