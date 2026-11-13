@@ -154,8 +154,11 @@ stateDiagram-v2
 
 `closePane` removes the pane from the tree and appends it to `layout.closed`;
 empty groups and emptied docks are pruned by `normalizeNode`. Recovery is the
-**View menu** in the header, which lists open and closed panes separately and
-badges the trigger with the number of recoverable panes.
+**View menu** — in the main window, the header's ☰ app menu — which lists open
+and closed panes separately and badges the trigger with the number of
+recoverable panes. The main window slots app actions (Settings, User Guide,
+Getting Started, Open Logs Folder) beneath the pane list, so the header holds
+only the profile switcher and ☰; pop-outs keep a plain "View" trigger.
 
 `restorePane` resolves a landing spot in this order:
 

@@ -747,6 +747,19 @@ function onOpenLogsFolder(): void {
   void systemClient.systemOpenLogsFolder();
 }
 
+/** App-level actions that live in the ☰ menu after the pane list. */
+const appMenuActions = [
+  { icon: '⚙', label: 'Settings', run: () => onOpenSettings() },
+  { icon: '📖', label: 'User Guide', run: () => onOpenHelp() },
+  { icon: '🚀', label: 'Getting Started', run: () => firstRunOnboarding.open() },
+  { icon: '🐛', label: 'Open Logs Folder', run: () => onOpenLogsFolder() },
+];
+
+function runAppMenuAction(run: () => void): void {
+  dockViewMenuOpen.value = false;
+  run();
+}
+
 function onOpenHelp(): void {
   void systemClient.systemOpenHelp();
 }
@@ -1113,15 +1126,24 @@ onUnmounted(() => {
         <DockViewMenu
           :open="dockViewMenuOpen"
           :items="dockViewItems"
+          label="☰"
           @open="dockViewMenuOpen = true"
           @close="dockViewMenuOpen = false"
           @toggle="onDockViewToggle"
           @reset="onDockLayoutReset"
-        />
-        <button class="sidebar-btn" title="User Guide" @click="onOpenHelp">ℹ️</button>
-        <button class="sidebar-btn" title="Getting Started and setup topics" aria-label="Getting Started" @click="firstRunOnboarding.open">🚀</button>
-        <button class="sidebar-btn" title="Open Logs Folder" @click="onOpenLogsFolder">🐛</button>
-        <button class="sidebar-btn" title="Settings" @click="onOpenSettings">⚙</button>
+        >
+          <button
+            v-for="action in appMenuActions"
+            :key="action.label"
+            class="dock-view-menu__item"
+            type="button"
+            role="menuitem"
+            @click="runAppMenuAction(action.run)"
+          >
+            <span class="dock-view-menu__icon" aria-hidden="true">{{ action.icon }}</span>
+            <span class="dock-view-menu__label">{{ action.label }}</span>
+          </button>
+        </DockViewMenu>
       </div>
     </header>
     <StatusStrip

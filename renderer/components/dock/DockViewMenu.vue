@@ -16,10 +16,14 @@ export interface DockViewMenuItem {
   closed: boolean;
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean;
   items: readonly DockViewMenuItem[];
-}>();
+  /** Trigger text; the main window uses it as the app menu (☰) with app actions slotted in. */
+  label?: string;
+}>(), { label: 'View' });
+
+const slots = defineSlots<{ default?: () => unknown }>();
 
 const emit = defineEmits<{
   open: [];
@@ -37,18 +41,18 @@ const closedItems = computed(() => props.items.filter(item => item.closed));
     <button
       class="sidebar-btn dock-view-menu__trigger"
       type="button"
-      title="Show or hide workspace panes"
+      :title="slots.default ? 'Menu' : 'Show or hide workspace panes'"
       aria-haspopup="menu"
       :aria-expanded="open"
       @keydown.esc="emit('close')"
       @click="emit(open ? 'close' : 'open')"
     >
-      View
+      {{ label }}
       <span v-if="closedItems.length > 0" class="dock-view-menu__badge">{{ closedItems.length }}</span>
     </button>
 
     <div v-if="open" class="dock-view-menu__popover" role="menu" @keydown.esc="emit('close')">
-      <div class="dock-view-menu__heading">Open</div>
+      <div class="dock-view-menu__heading">Open panes</div>
       <button
         v-for="item in openItems"
         :key="item.id"
@@ -64,7 +68,7 @@ const closedItems = computed(() => props.items.filter(item => item.closed));
       </button>
 
       <template v-if="closedItems.length > 0">
-        <div class="dock-view-menu__heading">Closed</div>
+        <div class="dock-view-menu__heading">Closed panes</div>
         <button
           v-for="item in closedItems"
           :key="item.id"
@@ -84,6 +88,10 @@ const closedItems = computed(() => props.items.filter(item => item.closed));
       <button class="dock-view-menu__item dock-view-menu__reset" type="button" role="menuitem" @click="emit('reset')">
         Reset Layout
       </button>
+      <template v-if="slots.default">
+        <div class="dock-view-menu__separator" role="separator"></div>
+        <slot />
+      </template>
     </div>
   </div>
 </template>

@@ -121,7 +121,7 @@ src/
 
 ```
 renderer/
-├── index.html                  # Main UI template — sidebar header has ⚙ (settings) and 🐛 (open logs folder) buttons
+├── index.html                  # Main UI template
 ├── main.ts                     # Entry point — init, wiring, DOMContentLoaded, terminal manager, auto-resume (queries sessionGetAll, removes stale sessions, spawns with resumeSessionName via doSpawn)
 ├── state.ts                    # Shared AppState type + singleton (currentScreen, sessions, activeSessionId, etc.)
 ├── utils.ts                    # DOM helpers, logEvent, showScreen, toDirection
