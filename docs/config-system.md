@@ -183,6 +183,8 @@ Every `{name}` a command or action template may use lives in one list,
 [`src/config/template-placeholders.ts`](../src/config/template-placeholders.ts). Helm fills templates from it
 (`fillTemplate`) and the Tool editor's **placeholder help** chip shows it per field; an unknown `{token}` in a field
 turns the input red with a warning (it would otherwise reach the CLI literally). Save is not blocked.
+Every sequence editor (`PromptTextarea`: bindings, chip actions, scheduled tasks, plan items, initial prompts)
+shows the same chip with the sequence keys (`SEQUENCE_KEY_HELP`); both use one `PlaceholderHelp` component.
 
 | Field | Placeholders |
 |---|---|
@@ -196,6 +198,7 @@ The legacy `$instruction` / `$instructions` / `$path` spellings in older configs
 graph LR
   R[template-placeholders.ts] -->|fillTemplate| S[spawn / resume / continue / rename / headless / actions]
   R -->|FIELD_PLACEHOLDERS, unknownPlaceholders| E[Tool editor placeholder help + red warning]
+  R -->|SEQUENCE_KEY_HELP| P[Sequence editor placeholder help]
 ```
 
 `headlessCommand` is a different kind of template: a whole shell line that runs the CLI once with no terminal UI, reads its prompt from `{promptFile}` and leaves its reply in `{outputFile}`. It is what lets a real CLI be picked as auto memory's recording model. A type without one cannot be picked. Nothing is built in: the Tool Editor offers a suggested line for Claude Code and Codex, and it counts once saved. See [auto-memory.md](auto-memory.md#real-clis-the-headless-run).

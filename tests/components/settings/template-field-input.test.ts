@@ -20,8 +20,8 @@ function mountField(field: TemplateField, initial: string) {
 describe('TemplateFieldInput', () => {
   it('placeholder help lists every placeholder of the field and inserts one at the cursor', async () => {
     const { w, value } = mountField('resumeCommand', 'claude --resume=');
-    await w.find('.tf__help').trigger('click');
-    const rows = w.findAll('.tf__row');
+    await w.find('.ph-help__btn').trigger('click');
+    const rows = w.findAll('.ph-help__row');
     expect(rows.map(r => r.find('code').text())).toEqual(['{cliSessionName}', '{cliThreadId}']);
     expect(w.text()).not.toContain('Keys (sequence syntax)');
 
@@ -32,7 +32,7 @@ describe('TemplateFieldInput', () => {
 
   it('sequence fields also list the keys', async () => {
     const { w } = mountField('compact', '');
-    await w.find('.tf__help').trigger('click');
+    await w.find('.ph-help__btn').trigger('click');
     expect(w.text()).toContain('{instruction}');
     expect(w.text()).toContain('{Enter}');
     expect(w.text()).toContain('{Wait 500}');

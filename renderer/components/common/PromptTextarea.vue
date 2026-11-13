@@ -4,7 +4,7 @@
  * non-text commands such as {Enter}, {Send}, {Wait 500}, and {Ctrl+C}.
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { getSequenceSyntaxHelpText } from '../../utils.js';
+import PlaceholderHelp from './PlaceholderHelp.vue';
 
 const props = withDefaults(defineProps<{
   modelValue: string;
@@ -32,8 +32,6 @@ const emit = defineEmits<{
   (e: 'resized', heightPx: number): void;
 }>();
 
-const syntaxHelpExpanded = ref(false);
-const syntaxHelpText = getSequenceSyntaxHelpText();
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const manualHeight = ref<number | null>(null);
 let activeResizePointerId: number | null = null;
@@ -158,13 +156,6 @@ defineExpose({ focus, focusEnd, setHeight });
         spellcheck="false"
         @input="onInput"
       />
-      <button
-        type="button"
-        class="prompt-textarea__info"
-        title="Prompt syntax help"
-        aria-label="Prompt syntax help"
-        @click="syntaxHelpExpanded = !syntaxHelpExpanded"
-      >i</button>
       <div
         v-if="!props.fill"
         class="prompt-textarea__resize-grip"
@@ -179,13 +170,12 @@ defineExpose({ focus, focusEnd, setHeight });
     </div>
 
     <div class="prompt-textarea__chips" aria-label="Insert prompt command">
+      <PlaceholderHelp sequence-keys @insert="insertToken" />
       <button type="button" class="prompt-textarea__chip" @click="insertToken('{Send}')">Send</button>
       <button type="button" class="prompt-textarea__chip" @click="insertToken('{Enter}')">Enter</button>
       <button type="button" class="prompt-textarea__chip" @click="insertToken('{Wait 500}')">Wait</button>
       <button type="button" class="prompt-textarea__chip" @click="insertToken('{Ctrl+C}')">Ctrl+C</button>
     </div>
-
-    <pre v-if="syntaxHelpExpanded" class="prompt-textarea__syntax-content">{{ syntaxHelpText }}</pre>
   </div>
 </template>
 
@@ -231,7 +221,7 @@ defineExpose({ focus, focusEnd, setHeight });
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: var(--font-size-sm);
   line-height: 1.45;
-  padding: var(--spacing-sm) 34px 18px var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md) 18px;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.025);
 }
 
@@ -262,27 +252,6 @@ defineExpose({ focus, focusEnd, setHeight });
 
 .item-editor-content:focus { border-color: var(--accent); }
 
-.prompt-textarea__info {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  background: var(--bg-secondary);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  font-family: serif;
-  line-height: 18px;
-  cursor: pointer;
-}
-
-.prompt-textarea__info:hover {
-  background: var(--accent);
-  color: var(--accent-contrast);
-}
 
 .prompt-textarea__resize-grip {
   position: absolute;
@@ -332,16 +301,4 @@ defineExpose({ focus, focusEnd, setHeight });
   border-color: var(--accent);
 }
 
-.prompt-textarea__syntax-content {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-sm) 10px;
-  margin: 0;
-  font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 0.72rem;
-  line-height: 1.5;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-}
 </style>
