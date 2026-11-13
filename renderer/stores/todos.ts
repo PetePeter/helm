@@ -53,14 +53,9 @@ export const useTodosStore = defineStore('todos', () => {
     return bySession.get(sessionId) ?? [];
   }
 
-  /** Open items left — done ones are already gone from the list. */
-  function countFor(sessionId: string): number {
-    return todosFor(sessionId).length;
-  }
-
   function errorFor(sessionId: string): string {
     return errors.get(sessionId) ?? '';
   }
 
-  return { bySession, loadSession, loadSessions, todosFor, countFor, errorFor, stop };
+  return { bySession, loadSession, loadSessions, todosFor, errorFor, stop };
 });

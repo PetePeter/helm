@@ -16,10 +16,10 @@ describe('SessionList todo progress', () => {
       sessions: { todoList: async (id: string) => { asked.push(id); return todos; } },
       events: { onTodosChanged: () => () => {} },
     };
-    const cards: Array<{ todoCount: number }> = [];
+    const cards: Array<{ todos: unknown[] }> = [];
     const CardStub = {
-      props: ['session', 'todoCount'],
-      setup(props: { todoCount: number }) { cards.push(props as typeof cards[number]); return {}; },
+      props: ['session', 'todos'],
+      setup(props: { todos: unknown[] }) { cards.push(props as typeof cards[number]); return {}; },
       template: '<div />',
     };
     const base = {
@@ -52,7 +52,7 @@ describe('SessionList todo progress', () => {
       global: { plugins: [createPinia()], stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
     });
     await flushPromises();
-    expect(cards[0]?.todoCount).toBe(2);
+    expect(cards[0]?.todos).toHaveLength(2);
     expect(asked).toEqual(['s1']);
     local.unmount();
 
@@ -61,7 +61,7 @@ describe('SessionList todo progress', () => {
       global: { plugins: [createPinia()], stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
     });
     await flushPromises();
-    expect(cards[1]?.todoCount).toBe(0);
+    expect(cards[1]?.todos).toHaveLength(0);
     expect(asked).toEqual(['s1']);
     remote.unmount();
   });

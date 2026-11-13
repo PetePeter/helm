@@ -26,7 +26,7 @@ function makeCardProps(overrides: Record<string, any> = {}) {
     displayName: 'Claude',
     artifactCount: 0,
     unreadChatCount: 0,
-    todoCount: 0,
+    todos: [],
     loopContinues: 0,
     pendingSubagents: 0,
     elapsedText: '',
@@ -114,12 +114,12 @@ describe('SessionCard', () => {
   });
 
   it('shows an open-todo count chip after the session name and hides it when empty', () => {
-    const w = mount(SessionCard, { props: makeCardProps({ todoCount: 4 }) });
+    const w = mount(SessionCard, { props: makeCardProps({ todos: [1, 2, 3, 4].map(n => ({ id: `t${n}`, text: `t${n}`, status: 'open' as const, createdAt: n })) }) });
     const name = w.get('.session-name');
     const badge = w.get('.session-todo-count');
 
     expect(badge.text()).toBe('4');
-    expect(badge.attributes('title')).toBe('4 todos left');
+    expect(badge.attributes('aria-label')).toBe('4 todos left');
     expect(name.element.compareDocumentPosition(badge.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(mount(SessionCard, { props: makeCardProps() }).find('.session-todo-count').exists()).toBe(false);
   });

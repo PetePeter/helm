@@ -37,8 +37,8 @@ describe('Todos store', () => {
 
     expect(asked.sort()).toEqual(['s1', 's2']);
     expect(store.todosFor('s1').map(todo => todo.id)).toEqual(['1', '2']);
-    expect(store.countFor('s1')).toBe(2);
-    expect(store.countFor('s2')).toBe(0);
+    expect(store.todosFor('s1')).toHaveLength(2);
+    expect(store.todosFor('s2')).toHaveLength(0);
   });
 
   it('applies live MCP changes and does not replace them with an older pending snapshot', async () => {

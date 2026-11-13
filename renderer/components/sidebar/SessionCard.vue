@@ -16,6 +16,8 @@ import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, SessionMission, SessionQuotaUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import ContextRing from './ContextRing.vue';
+import TodoBadge from './TodoBadge.vue';
+import type { SessionTodo } from '../../../src/types/todo.js';
 import TickerText from '../common/TickerText.vue';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import { formatSessionEta } from '../../session-eta.js';
@@ -72,8 +74,8 @@ export interface SessionCardProps {
   displayName: string;
   artifactCount: number;
   unreadChatCount: number;
-  /** Open todos left. */
-  todoCount?: number;
+  /** Open todos left; the chip shows the count and hovers the items. */
+  todos?: readonly SessionTodo[];
   /** G8: consecutive Stop-hook auto-continues in flight. 0 = no active loop. */
   loopContinues: number;
   /** Subagents this session is waiting on. 0 = none. */
@@ -507,12 +509,7 @@ function onCardClick(e: MouseEvent): void {
           :title="`${unreadChatCount} new Chat messages`"
           :aria-label="`${unreadChatCount} new Chat messages`"
         >{{ unreadChatCount }} new</span>
-        <span
-          v-if="todoCount"
-          class="session-todo-count"
-          :title="`${todoCount} todos left`"
-          :aria-label="`${todoCount} todos left`"
-        >{{ todoCount }}</span>
+        <TodoBadge :todos="todos ?? []" />
         <span
           v-if="etaTimer"
           class="session-timer session-eta-timer"
