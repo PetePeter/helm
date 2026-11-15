@@ -112,6 +112,10 @@ export interface SessionInfo {
    *  so it reports progress, results and questions back to the operator rather
    *  than the user. Cleared once the user messages it directly. Persists. */
   reportsTo?: string;
+  /** The local session that created this one (session_create), whatever its
+   *  role. The ETA overrun watchdog's fallback when there is no `reportsTo`.
+   *  Persists. */
+  createdBySessionId?: string;
   /** When the session last received a prompt (epoch ms) — the session row's
    *  timer counts from it. Set by the UserPromptSubmit hook and by Enter typed
    *  on the desktop. Persists. */
@@ -203,6 +207,9 @@ export interface SessionEta {
   firstAt?: number;
   /** Learned confidence range (P10–P90) for this estimate, epoch ms. */
   range?: { lo: number; hi: number; samples: number };
+  /** When the overrun watchdog stopped the session for this estimate (epoch ms).
+   *  A re-set builds a fresh estimate without it, which rearms the watchdog. */
+  overrunAt?: number;
 }
 
 /**

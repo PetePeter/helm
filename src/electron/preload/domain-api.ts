@@ -754,6 +754,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
       cacheWarnMinutes?: number;
+      overrunStopPercent?: number;
       cacheExpireMinutes?: number;
       noPromptCache?: boolean;
       keepWarmPrompt?: string;
@@ -777,6 +778,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
       cacheWarnMinutes?: number;
+      overrunStopPercent?: number;
       cacheExpireMinutes?: number;
       noPromptCache?: boolean;
       keepWarmPrompt?: string;

@@ -353,6 +353,7 @@ export interface ToolEditorBridgeData {
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
   cacheWarnMinutes?: number;
+  overrunStopPercent?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
   contextWindow?: number;
@@ -409,6 +410,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;
   cacheWarnMinutes?: number;
+  overrunStopPercent?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
   contextWindow?: number;
@@ -446,6 +448,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     helmPreambleForInterSession: values.helmPreambleForInterSession !== false,
     largeTextAsTempFile: Boolean(values.largeTextAsTempFile),
     messReminders: values.messReminders !== false,
+    overrunStopPercent: Number(values.overrunStopPercent) > 0 ? Number(values.overrunStopPercent) : 0,
     ...(Number(values.cacheWarnMinutes) > 0 ? { cacheWarnMinutes: Number(values.cacheWarnMinutes) } : {}),
     ...(Number(values.cacheExpireMinutes) > 0 ? { cacheExpireMinutes: Number(values.cacheExpireMinutes) } : {}),
     mouseTracking: Boolean(values.mouseTracking),

@@ -31,7 +31,7 @@ import {
 } from '../../session/large-text-temp-file.js';
 
 /** Four Escs, spaced so the CLI reads each as its own key. */
-const QUICK_COMPACT_ESC_BURST = '{Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{Esc}';
+const STOP_ESC_BURST = '{Esc}{Wait 150}{Esc}{Wait 150}{Esc}{Wait 150}{Esc}';
 const DEFAULT_DELIVERY_VERIFY_DELAY_MS = 4000;
 const DEFAULT_CLEAR_SETTLE_DELAY_MS = 1500;
 const DEFAULT_CLEAR_COMMAND = '/clear';
@@ -699,11 +699,10 @@ export class HelmSessionDeliveryService {
       });
     }, withdrawCompactRequest)
       .finally(() => this.compactsPending.delete(session.id));
-    // A half-typed composer or open menu can swallow the /clear: the CLI's stop action
-    // (default: an even Esc burst — pairs cancel Esc-Esc toggles) unwedges it and
-    // interrupts any turn, whose Stop the injector lets through while the compact is pending.
-    const stop = this.configLoader.getCliTypeEntry(session.cliType)?.helmActions?.stop?.trim();
-    await this.deliverActionSequence(session.id, stop || QUICK_COMPACT_ESC_BURST);
+    // A half-typed composer or open menu can swallow the /clear: the stop action
+    // unwedges it and interrupts any turn, whose Stop the injector lets through
+    // while the compact is pending.
+    await this.stopSession(session.id);
     // Never clear mid-turn: a session quick-compacting itself finishes its turn first.
     if (this.handover) {
       this.handover.runWhenIdle(session.id, clear);
@@ -884,6 +883,14 @@ export class HelmSessionDeliveryService {
       );
     }
     return template;
+  }
+
+  /** Interrupt a session with its CLI's stop action (default: an even Esc burst —
+   *  pairs cancel Esc-Esc toggles): cancels a turn, closes menus, empties the composer. */
+  async stopSession(sessionRef: string): Promise<void> {
+    const session = this.requireRunningSession(sessionRef);
+    const stop = this.configLoader.getCliTypeEntry(session.cliType)?.helmActions?.stop?.trim();
+    await this.deliverActionSequence(session.id, stop || STOP_ESC_BURST);
   }
 
   /** Deliver an action sequence to a PTY with an implied submit ({NoSend} suppresses it). */

@@ -45,6 +45,7 @@ export function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.createdByPeerId ? { createdByPeerId: s.createdByPeerId } : {}),
     ...(s.createdByMobileDeviceId ? { createdByMobileDeviceId: s.createdByMobileDeviceId } : {}),
     ...(isString(s.reportsTo) ? { reportsTo: s.reportsTo } : {}),
+    ...(isString(s.createdBySessionId) ? { createdBySessionId: s.createdBySessionId } : {}),
     ...(isNumber(s.lastPromptAt) ? { lastPromptAt: s.lastPromptAt } : {}),
     ...(isNumber(s.lastUserPromptAt) && isUserPromptSource(s.lastUserPromptSource)
       ? { lastUserPromptAt: s.lastUserPromptAt, lastUserPromptSource: s.lastUserPromptSource }

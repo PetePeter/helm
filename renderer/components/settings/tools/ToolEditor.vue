@@ -61,6 +61,7 @@ export interface ToolEditorData {
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
   cacheWarnMinutes?: number;
+  overrunStopPercent?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
   contextWindow?: number;
@@ -86,6 +87,7 @@ export interface ToolEditorValues {
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
   cacheWarnMinutes?: number;
+  overrunStopPercent?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
   contextWindow: number;
@@ -124,7 +126,11 @@ const headlessCommand = ref('');
 const renameCommand = ref('');
 const helmPreambleForInterSession = ref(true);
 const largeTextAsTempFile = ref(false);
+/** Suggested ETA overrun threshold when the watchdog is first ticked. */
+const DEFAULT_OVERRUN_PERCENT = 50;
 const messReminders = ref(true);
+const overrunWatchdog = ref(false);
+const overrunPercent = ref(DEFAULT_OVERRUN_PERCENT);
 const cacheWarnMinutes = ref(DEFAULT_CACHE_WARN_MINUTES);
 const cacheExpireMinutes = ref(DEFAULT_CACHE_EXPIRE_MINUTES);
 const mouseTracking = ref(false);
@@ -307,6 +313,8 @@ function initForm(): void {
   helmPreambleForInterSession.value = d.helmPreambleForInterSession !== false;
   largeTextAsTempFile.value = Boolean(d.largeTextAsTempFile);
   messReminders.value = d.messReminders !== false;
+  overrunWatchdog.value = (d.overrunStopPercent ?? 0) > 0;
+  overrunPercent.value = d.overrunStopPercent || DEFAULT_OVERRUN_PERCENT;
   cacheWarnMinutes.value = d.cacheWarnMinutes || DEFAULT_CACHE_WARN_MINUTES;
   cacheExpireMinutes.value = d.cacheExpireMinutes || DEFAULT_CACHE_EXPIRE_MINUTES;
   mouseTracking.value = Boolean(d.mouseTracking);
@@ -405,6 +413,7 @@ function collectValues(): ToolEditorValues {
     ...(helmPreambleForInterSession.value !== true ? { helmPreambleForInterSession: helmPreambleForInterSession.value } : {}),
     largeTextAsTempFile: largeTextAsTempFile.value,
     ...(messReminders.value !== true ? { messReminders: messReminders.value } : {}),
+    overrunStopPercent: overrunWatchdog.value && overrunPercent.value > 0 ? overrunPercent.value : 0,
     cacheWarnMinutes: cacheWarnMinutes.value,
     cacheExpireMinutes: cacheExpireMinutes.value,
     mouseTracking: mouseTracking.value,
@@ -664,6 +673,9 @@ onMounted(async () => {
         <p class="te-section__hint">When enabled, large session_send_text payloads are written to a temp file and the recipient gets the file path plus reading instructions.</p>
         <label class="te-checkbox-row"><input class="focusable" v-model="messReminders" type="checkbox" /><span>Allow Mess reminders</span></label>
         <p class="te-section__hint">When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</p>
+        <label class="te-checkbox-row"><input class="focusable" v-model="overrunWatchdog" type="checkbox" /><span>Stop on ETA overrun</span></label>
+        <div class="te-field"><label for="te-overrun-percent">Overrun threshold (%)</label><input id="te-overrun-percent" v-model.number="overrunPercent" :disabled="!overrunWatchdog" type="number" min="1" step="5" class="te-input focusable" /></div>
+        <p class="te-section__hint">Breaks death spirals. Once a session runs this much past its own finish estimate, Helm sends the stop action (Helm actions) and asks whether it is stuck: if so, it asks its orchestrator, else the session that created it, else you. Once per estimate.</p>
         <label class="te-checkbox-row"><input class="focusable" v-model="mouseTracking" type="checkbox" /><span>Mouse tracking (app captures mouse; Shift+drag to select)</span></label>
         <label class="te-checkbox-row"><input class="focusable" :checked="noPromptCache" type="checkbox" @change="noPromptCache = ($event.target as HTMLInputElement).checked" /><span>No prompt cache (local model)</span></label>
         <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>

@@ -17,6 +17,7 @@ import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, Sessi
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import ContextRing from './ContextRing.vue';
 import TodoBadge from './TodoBadge.vue';
+import CountChip from './CountChip.vue';
 import type { SessionTodo } from '../../../src/types/todo.js';
 import TickerText from '../common/TickerText.vue';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
@@ -503,13 +504,14 @@ function onCardClick(e: MouseEvent): void {
         <span v-if="shortcutKey != null" class="session-jump-key">^{{ shortcutKey }}</span>
         <span v-else class="session-jump-key session-jump-key--empty" aria-hidden="true" />
         <span class="session-name">{{ displayName }}</span>
-        <span
+        <CountChip
           v-if="unreadChatCount > 0"
           class="session-chat-unread"
+          :flashing="!!flashEntry"
           :title="`${unreadChatCount} new Chat messages`"
           :aria-label="`${unreadChatCount} new Chat messages`"
-        >{{ unreadChatCount }} new</span>
-        <TodoBadge :todos="todos ?? []" />
+        >{{ unreadChatCount }} new</CountChip>
+        <TodoBadge :todos="todos ?? []" :flashing="!!flashEntry" />
         <span
           v-if="etaTimer"
           class="session-timer session-eta-timer"
@@ -607,26 +609,6 @@ function onCardClick(e: MouseEvent): void {
   color: var(--accent);
   flex-shrink: 0;
   white-space: nowrap;
-}
-
-.session-chat-unread,
-.session-todo-count {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 5px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  font-size: 10px;
-  color: var(--accent);
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-/* While the row flashes, the chips follow its beat instead of staying a dark patch. */
-.session-card:is(.flash-pulse, .flash-solid) :is(.session-chat-unread, .session-todo-count) {
-  background: transparent;
-  border-color: currentColor;
 }
 
 /* Clickable entry point that opens the session's artifact panel. */

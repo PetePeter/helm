@@ -244,6 +244,10 @@ export interface CliTypeConfig {
    * a plain shell's stdin is not a nudge, it is a stray command.
    */
   messReminders?: boolean;
+  /** ETA overrun watchdog: once a session overruns its own estimate by this
+   *  percent, Helm sends the stop action and asks it whether it is stuck.
+   *  Absent/0 = off (docs/session-eta.md). */
+  overrunStopPercent?: number;
   /** Minutes after the last prompt before the short prompt cache counts as expired:
    *  Mess pokes stop, the row has faded, an orange banner shows. Default 5. */
   cacheWarnMinutes?: number;
@@ -1573,6 +1577,7 @@ export class ConfigLoader {
     if (options?.helmPreambleForInterSession !== undefined) tool.helmPreambleForInterSession = options.helmPreambleForInterSession;
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
     if (options?.messReminders === false) tool.messReminders = false;
+    if (options?.overrunStopPercent && options.overrunStopPercent > 0) tool.overrunStopPercent = options.overrunStopPercent;
     if (options?.cacheWarnMinutes && options.cacheWarnMinutes !== DEFAULT_CACHE_WARN_MINUTES) tool.cacheWarnMinutes = options.cacheWarnMinutes;
     if (options?.cacheExpireMinutes && options.cacheExpireMinutes !== DEFAULT_CACHE_EXPIRE_MINUTES) tool.cacheExpireMinutes = options.cacheExpireMinutes;
     if (options?.contextWindow && options.contextWindow > 0) tool.contextWindow = options.contextWindow;
@@ -1663,6 +1668,10 @@ export class ConfigLoader {
         } else {
           existing.messReminders = false;
         }
+      }
+      if (options.overrunStopPercent !== undefined) {
+        if (options.overrunStopPercent > 0) existing.overrunStopPercent = options.overrunStopPercent;
+        else delete existing.overrunStopPercent;
       }
       // 0 or the default clears the key, so YAML only carries overrides.
       for (const [field, fallback] of [['cacheWarnMinutes', DEFAULT_CACHE_WARN_MINUTES], ['cacheExpireMinutes', DEFAULT_CACHE_EXPIRE_MINUTES]] as const) {

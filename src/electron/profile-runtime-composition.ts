@@ -43,6 +43,7 @@ import type { ApiSessionHost } from '../session/api/api-session-host.js';
 import type { ChatBroker } from '../session/chat/chat-broker.js';
 import { getProfileConfigDir } from '../utils/app-paths.js';
 import { createProfileRuntime } from './profile-runtime-factory.js';
+import { sweepEtaOverruns } from '../session/eta-overrun-watchdog.js';
 import type { ProfileRuntime } from '../session/profile-runtime.js';
 import { initializeMainProcessAdminGuard } from './ipc/admin-guard.js';
 
@@ -256,6 +257,20 @@ export class ProfileRuntimeComposition {
   bindQuickCompactHandler(userProfileId: string, handler: QuickCompactHandler): void {
     this.registry.getRequiredRuntime(userProfileId);
     this.quickCompactHandlers.set(userProfileId, handler);
+  }
+
+  /** ETA overrun watchdog pass over every profile (docs/session-eta.md). */
+  async sweepEtaOverruns(): Promise<void> {
+    for (const runtime of this.registry.all()) {
+      const delivery = this.deliveryServices.get(runtime.userProfileId);
+      if (!delivery) continue;
+      await sweepEtaOverruns({
+        sessions: runtime.sessionManager,
+        percentFor: cli => runtime.configLoader.getCliTypeEntry(cli)?.overrunStopPercent ?? 0,
+        stop: id => delivery.stopSession(id),
+        nudge: (id, text) => delivery.sendSystemReminder(id, text),
+      });
+    }
   }
 
   async quickCompactSession(sessionId: string, prompt: string): Promise<void> {

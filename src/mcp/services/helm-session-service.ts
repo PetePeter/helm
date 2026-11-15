@@ -189,6 +189,7 @@ export class HelmSessionService {
     if (creator) {
       this.sessionManager.updateSession(sessionId, {
         hidden: true,
+        createdBySessionId: creator.id,
         ...(creator.role === 'operator' ? { reportsTo: creator.id } : {}),
       });
     }

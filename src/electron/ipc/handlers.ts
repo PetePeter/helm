@@ -555,6 +555,7 @@ export function registerIPCHandlers(
   helmControlService.setEtaTracker?.(etaTracker);
   const etaSweepTimer = setInterval(() => {
     for (const runtime of registry.all()) sweepOverdueEtas(runtime.sessionManager, runtime.etaTracker);
+    void profileComposition.sweepEtaOverruns();
   }, 60_000);
   const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir, () => configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id), etaTracker);
   // Keep lightweight handler fixtures (and embedders that do not enable

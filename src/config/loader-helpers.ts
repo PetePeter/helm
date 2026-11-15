@@ -112,6 +112,8 @@ export type CliTypeOptions = {
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;
   cacheWarnMinutes?: number;
+  /** ETA overrun watchdog threshold in percent; 0 clears it (off). */
+  overrunStopPercent?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
   /** Context window in tokens; 0 clears it on update. */

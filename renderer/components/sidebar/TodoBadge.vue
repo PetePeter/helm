@@ -6,11 +6,12 @@
  * scrolls and clips, and a list of todos is taller than any row.
  */
 import { computed, ref } from 'vue';
+import CountChip from './CountChip.vue';
 import type { SessionTodo } from '../../../src/types/todo.js';
 
 const MAX_SHOWN = 8;
 
-const props = defineProps<{ todos: readonly SessionTodo[] }>();
+const props = defineProps<{ todos: readonly SessionTodo[]; flashing?: boolean }>();
 
 const position = ref<{ top: number; left: number } | null>(null);
 const shown = computed(() => props.todos.slice(0, MAX_SHOWN));
@@ -27,16 +28,17 @@ function hide(): void {
 </script>
 
 <template>
-  <span
+  <CountChip
     v-if="todos.length"
     class="session-todo-count"
+    :flashing="flashing"
     tabindex="0"
     :aria-label="`${todos.length} todos left`"
     @mouseenter="show"
     @focus="show"
     @mouseleave="hide"
     @blur="hide"
-  >{{ todos.length }}</span>
+  >{{ todos.length }}</CountChip>
   <Teleport v-if="position" to="body">
     <div
       class="todo-badge__popover"
