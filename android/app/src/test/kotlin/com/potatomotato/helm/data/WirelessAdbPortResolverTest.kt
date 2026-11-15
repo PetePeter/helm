@@ -9,18 +9,22 @@ import org.junit.Test
 class WirelessAdbPortResolverTest {
     @Test
     fun `uses a valid port advertised by the phone's Wi-Fi address`() {
-        assertEquals(35007, wirelessAdbPortFor("10.98.1.10", "10.98.1.10", 35007))
+        assertEquals(
+            35007,
+            wirelessAdbPortFor("10.98.1.10", listOf("fe80::1", "10.98.1.10"), 35007),
+        )
     }
 
     @Test
     fun `ignores services advertised by another device`() {
-        assertNull(wirelessAdbPortFor("10.98.1.10", "10.98.1.11", 35007))
+        assertNull(wirelessAdbPortFor("10.98.1.10", listOf("10.98.1.11"), 35007))
     }
 
     @Test
     fun `ignores invalid ports`() {
-        assertNull(wirelessAdbPortFor("10.98.1.10", "10.98.1.10", 0))
-        assertNull(wirelessAdbPortFor("10.98.1.10", "10.98.1.10", 65536))
+        val serviceHosts = listOf("10.98.1.10")
+        assertNull(wirelessAdbPortFor("10.98.1.10", serviceHosts, 0))
+        assertNull(wirelessAdbPortFor("10.98.1.10", serviceHosts, 65536))
     }
 
     @Test
@@ -29,5 +33,12 @@ class WirelessAdbPortResolverTest {
         assertTrue(needsWifiMulticastLock(apiLevel = 33, tiramisuExtensionLevel = 6))
         assertFalse(needsWifiMulticastLock(apiLevel = 33, tiramisuExtensionLevel = 7))
         assertFalse(needsWifiMulticastLock(apiLevel = 34, tiramisuExtensionLevel = 0))
+    }
+
+    @Test
+    fun `uses modern NSD address and cancellation APIs from T extension 7`() {
+        assertFalse(isAtLeastTiramisuExtension7(apiLevel = 33, tiramisuExtensionLevel = 6))
+        assertTrue(isAtLeastTiramisuExtension7(apiLevel = 33, tiramisuExtensionLevel = 7))
+        assertTrue(isAtLeastTiramisuExtension7(apiLevel = 34, tiramisuExtensionLevel = 0))
     }
 }

@@ -21,7 +21,10 @@ internal class AndroidWirelessAdbPortResolver(context: Context) : WirelessAdbPor
     private val nsd = appContext.getSystemService(NsdManager::class.java)
 
     override fun discover(localIp: String, onPortChanged: (Int?) -> Unit): AutoCloseable {
-        val manager = nsd ?: return AutoCloseable { }
+        val manager = nsd ?: run {
+            onPortChanged(null)
+            return AutoCloseable { }
+        }
         val multicastLock = createMulticastLockIfNeeded(appContext)
         return NsdDiscovery(manager, multicastLock, localIp, onPortChanged).also(NsdDiscovery::start)
     }
@@ -38,6 +41,7 @@ internal class AndroidWirelessAdbPortResolver(context: Context) : WirelessAdbPor
         private var resolving = false
         private var closed = false
         private var multicastLockHeld = false
+        private var activeResolveListener: NsdManager.ResolveListener? = null
         private val timeoutHandler = Handler(Looper.getMainLooper())
         private val timeout = Runnable {
             if (!closed) {
@@ -48,35 +52,43 @@ internal class AndroidWirelessAdbPortResolver(context: Context) : WirelessAdbPor
 
         private val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
-                discovering = true
-                if (closed) stopDiscovery()
+                dispatchToMain {
+                    discovering = true
+                    if (closed) stopDiscovery()
+                }
             }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                if (closed || !knownServices.add(serviceInfo.serviceName)) return
-                pending.addLast(serviceInfo)
-                resolveNext()
+                dispatchToMain {
+                    if (closed || !knownServices.add(serviceInfo.serviceName)) return@dispatchToMain
+                    pending.addLast(serviceInfo)
+                    resolveNext()
+                }
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                if (closed) return
-                knownServices.remove(serviceInfo.serviceName)
-                pending.removeIf { it.serviceName == serviceInfo.serviceName }
-                resolveNext()
+                dispatchToMain {
+                    if (closed) return@dispatchToMain
+                    knownServices.remove(serviceInfo.serviceName)
+                    pending.removeIf { it.serviceName == serviceInfo.serviceName }
+                    resolveNext()
+                }
             }
 
             override fun onDiscoveryStopped(serviceType: String) {
-                discovering = false
+                dispatchToMain { discovering = false }
             }
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                if (closed) return
-                onPortChanged(null)
-                close()
+                dispatchToMain {
+                    if (closed) return@dispatchToMain
+                    onPortChanged(null)
+                    closeOnMainThread()
+                }
             }
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                discovering = false
+                dispatchToMain { discovering = false }
             }
         }
 
@@ -94,42 +106,70 @@ internal class AndroidWirelessAdbPortResolver(context: Context) : WirelessAdbPor
         }
 
         private fun resolveNext() {
-            if (closed || resolving || pending.isEmpty()) return
-            val candidate = pending.removeFirst()
-            resolving = true
-            try {
-                @Suppress("DEPRECATION")
-                manager.resolveService(candidate, object : NsdManager.ResolveListener {
+            if (closed || resolving) return
+            while (pending.isNotEmpty()) {
+                val candidate = pending.removeFirst()
+                resolving = true
+                val resolveListener = object : NsdManager.ResolveListener {
                     override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                        resolving = false
-                        resolveNext()
+                        dispatchToMain {
+                            if (closed || activeResolveListener !== this) return@dispatchToMain
+                            activeResolveListener = null
+                            resolving = false
+                            resolveNext()
+                        }
                     }
 
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                        resolving = false
-                        if (closed) return
-                        if (serviceInfo.serviceName !in knownServices) {
-                            resolveNext()
-                            return
-                        }
+                        dispatchToMain {
+                            if (closed || activeResolveListener !== this) return@dispatchToMain
+                            activeResolveListener = null
+                            resolving = false
+                            if (serviceInfo.serviceName !in knownServices) {
+                                resolveNext()
+                                return@dispatchToMain
+                            }
 
-                        val port = wirelessAdbPortFor(
-                            localIp = localIp,
-                            serviceHost = serviceInfo.host?.hostAddress,
-                            port = serviceInfo.port,
-                        )
-                        if (port != null) {
-                            onPortChanged(port)
-                            close()
-                            return
+                            @Suppress("DEPRECATION")
+                            val serviceHosts = if (
+                                isAtLeastTiramisuExtension7(
+                                    Build.VERSION.SDK_INT,
+                                    tiramisuExtensionLevel(),
+                                )
+                            ) {
+                                serviceInfo.hostAddresses.mapNotNull { it.hostAddress }
+                            } else {
+                                listOfNotNull(serviceInfo.host?.hostAddress)
+                            }
+                            val port = wirelessAdbPortFor(
+                                localIp = localIp,
+                                serviceHosts = serviceHosts,
+                                port = serviceInfo.port,
+                            )
+                            if (port != null) {
+                                onPortChanged(port)
+                                closeOnMainThread()
+                                return@dispatchToMain
+                            }
+                            resolveNext()
                         }
-                        resolveNext()
                     }
-                })
-            } catch (_: RuntimeException) {
-                resolving = false
-                resolveNext()
+                }
+
+                activeResolveListener = resolveListener
+                try {
+                    @Suppress("DEPRECATION")
+                    manager.resolveService(candidate, resolveListener)
+                    return
+                } catch (_: RuntimeException) {
+                    if (activeResolveListener === resolveListener) activeResolveListener = null
+                    resolving = false
+                }
             }
+        }
+
+        private fun dispatchToMain(block: () -> Unit) {
+            if (Looper.myLooper() == timeoutHandler.looper) block() else timeoutHandler.post(block)
         }
 
         private fun stopDiscovery() {
@@ -139,12 +179,23 @@ internal class AndroidWirelessAdbPortResolver(context: Context) : WirelessAdbPor
         }
 
         override fun close() {
+            dispatchToMain(::closeOnMainThread)
+        }
+
+        private fun closeOnMainThread() {
             if (closed) return
             closed = true
             timeoutHandler.removeCallbacks(timeout)
             pending.clear()
             knownServices.clear()
             stopDiscovery()
+            activeResolveListener?.let { resolveListener ->
+                if (isAtLeastTiramisuExtension7(Build.VERSION.SDK_INT, tiramisuExtensionLevel())) {
+                    runCatching { manager.stopServiceResolution(resolveListener) }
+                }
+                activeResolveListener = null
+                resolving = false
+            }
             if (multicastLockHeld) {
                 multicastLockHeld = false
                 runCatching { multicastLock?.release() }
@@ -158,19 +209,18 @@ internal class AndroidWirelessAdbPortResolver(context: Context) : WirelessAdbPor
     }
 }
 
-internal fun wirelessAdbPortFor(localIp: String, serviceHost: String?, port: Int): Int? =
-    port.takeIf { serviceHost == localIp && it in VALID_PORT_RANGE }
+internal fun wirelessAdbPortFor(localIp: String, serviceHosts: Collection<String>, port: Int): Int? =
+    port.takeIf { localIp in serviceHosts && it in VALID_PORT_RANGE }
 
 internal fun needsWifiMulticastLock(apiLevel: Int, tiramisuExtensionLevel: Int): Boolean =
-    apiLevel < TIRAMISU || (apiLevel == TIRAMISU && tiramisuExtensionLevel < MULTICAST_LOCK_EXTENSION)
+    !isAtLeastTiramisuExtension7(apiLevel, tiramisuExtensionLevel)
+
+internal fun isAtLeastTiramisuExtension7(apiLevel: Int, tiramisuExtensionLevel: Int): Boolean =
+    apiLevel > TIRAMISU || (apiLevel == TIRAMISU && tiramisuExtensionLevel >= MULTICAST_LOCK_EXTENSION)
 
 private fun createMulticastLockIfNeeded(context: Context): WifiManager.MulticastLock? {
     val apiLevel = Build.VERSION.SDK_INT
-    val extensionLevel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU)
-    } else {
-        0
-    }
+    val extensionLevel = tiramisuExtensionLevel()
     if (!needsWifiMulticastLock(apiLevel, extensionLevel)) return null
 
     val wifi = context.getSystemService(WifiManager::class.java) ?: return null
@@ -179,6 +229,12 @@ private fun createMulticastLockIfNeeded(context: Context): WifiManager.Multicast
             setReferenceCounted(false)
         }
     }.getOrNull()
+}
+
+private fun tiramisuExtensionLevel(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU)
+} else {
+    0
 }
 
 private const val TIRAMISU = 33

@@ -173,19 +173,25 @@ internal fun SettingsMenu(actions: SettingsMenuActions) {
             open()
         }
         DisposableEffect(expanded, wirelessAdbState.enabled, wirelessAdbState.localIp) {
+            var discoveryIsActive = true
             val discovery = if (expanded && wirelessAdbState.enabled) {
                 wirelessAdbState.localIp?.let { ip ->
                     wirelessAdbPortStatus = WirelessAdbPortStatus.Loading
                     wirelessAdbPortResolver.discover(ip) { port ->
-                        wirelessAdbPortStatus = port?.let(WirelessAdbPortStatus::Resolved)
-                            ?: WirelessAdbPortStatus.Unavailable
+                        if (discoveryIsActive) {
+                            wirelessAdbPortStatus = port?.let(WirelessAdbPortStatus::Resolved)
+                                ?: WirelessAdbPortStatus.Unavailable
+                        }
                     }
                 }
             } else {
                 wirelessAdbPortStatus = WirelessAdbPortStatus.Unavailable
                 null
             }
-            onDispose { discovery?.close() }
+            onDispose {
+                discoveryIsActive = false
+                discovery?.close()
+            }
         }
         Box(
             modifier = Modifier
