@@ -133,9 +133,53 @@ sealed interface PttKey {
     }
 }
 
+/**
+ * Rebuilds the physical key from MyKey's broadcasts. Since Android 17 MyKey fires a
+ * down+up pair a few ms apart on press AND another on release, so hold arrives as two
+ * pairs. Returns the physical state to forward (true = down), or null to swallow.
+ * A classic hold (one down, one late up) still passes straight through.
+ */
+class MyKeyPairDecoder {
+    private var downAt = Long.MIN_VALUE
+    private var heldByPairs = false
+    private var heldSince = 0L
+    private var swallowUp = false
+
+    fun onBroadcast(down: Boolean, now: Long, liveCall: Boolean): Boolean? {
+        if (down) {
+            // A release pair that never came: once no call is live for a while, start over.
+            if (heldByPairs && !liveCall && now - heldSince > STALE_MS) heldByPairs = false
+            if (heldByPairs) {
+                heldByPairs = false
+                swallowUp = true
+                return false
+            }
+            downAt = now
+            return true
+        }
+        if (swallowUp) {
+            swallowUp = false
+            return null
+        }
+        if (now - downAt < PAIR_MS) {
+            heldByPairs = true
+            heldSince = now
+            return null
+        }
+        return false
+    }
+
+    private companion object {
+        const val PAIR_MS = 200L
+        const val STALE_MS = 10_000L
+    }
+}
+
 /** The key's broadcasts, heard for as long as the process lives. */
 class PttKeyReceiver : BroadcastReceiver() {
     companion object {
+        private val decoder = MyKeyPairDecoder()
+
         fun listen(context: Context) {
             val filter = IntentFilter().apply {
                 addAction(PttKey.ACTION_DOWN)
@@ -151,6 +195,11 @@ class PttKeyReceiver : BroadcastReceiver() {
             PttKey.ACTION_UP -> false
             else -> return
         }
-        PttKey.press(context, down)
+        val physical = decoder.onBroadcast(
+            down = down,
+            now = SystemClock.elapsedRealtime(),
+            liveCall = VoiceCallService.call.value != null,
+        ) ?: return
+        PttKey.press(context, physical)
     }
 }

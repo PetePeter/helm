@@ -32,3 +32,43 @@ class PttKeyTest {
         assertEquals(PttKey.Hold(false), PttKey.decide(down = false, liveCall = false, target = "s1"))
     }
 }
+
+/**
+ * Android 17 MyKey: a down+up pair a few ms apart on press, and another on release.
+ * The decoder rebuilds the physical hold; a real hold (one down, one late up) still works.
+ */
+class MyKeyPairDecoderTest {
+    private val decoder = MyKeyPairDecoder()
+
+    @Test
+    fun `a classic hold passes down and up through`() {
+        assertEquals(true, decoder.onBroadcast(down = true, now = 0, liveCall = false))
+        assertEquals(false, decoder.onBroadcast(down = false, now = 2_000, liveCall = true))
+    }
+
+    @Test
+    fun `a press pair then a release pair is one hold`() {
+        assertEquals(true, decoder.onBroadcast(down = true, now = 0, liveCall = false))
+        assertEquals(null, decoder.onBroadcast(down = false, now = 3, liveCall = false))
+        // The call is still being placed when the key is let go: the release must not start a second call.
+        assertEquals(false, decoder.onBroadcast(down = true, now = 700, liveCall = false))
+        assertEquals(null, decoder.onBroadcast(down = false, now = 703, liveCall = false))
+    }
+
+    @Test
+    fun `the next press pair after a full hold presses again`() {
+        listOf(true to 0L, false to 3L, true to 700L, false to 703L).forEach { (d, t) ->
+            decoder.onBroadcast(down = d, now = t, liveCall = true)
+        }
+        assertEquals(true, decoder.onBroadcast(down = true, now = 5_000, liveCall = true))
+        assertEquals(null, decoder.onBroadcast(down = false, now = 5_003, liveCall = true))
+    }
+
+    @Test
+    fun `a lost release pair resets once the call is over`() {
+        decoder.onBroadcast(down = true, now = 0, liveCall = false)
+        decoder.onBroadcast(down = false, now = 3, liveCall = false)
+        // The call ended and the release pair never came: the next press starts a call, not a release.
+        assertEquals(true, decoder.onBroadcast(down = true, now = 60_000, liveCall = false))
+    }
+}
