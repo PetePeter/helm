@@ -16,6 +16,22 @@ internal data class WirelessAdbState(
     val localIp: String?,
 )
 
+internal sealed interface WirelessAdbPortStatus {
+    data object Loading : WirelessAdbPortStatus
+    data class Resolved(val port: Int) : WirelessAdbPortStatus
+    data object Unavailable : WirelessAdbPortStatus
+}
+
+internal fun WirelessAdbState.localEndpoint(portStatus: WirelessAdbPortStatus): String? =
+    localIp?.let { ip ->
+        when (portStatus) {
+            WirelessAdbPortStatus.Loading -> "$ip:<loading>"
+            is WirelessAdbPortStatus.Resolved ->
+                portStatus.port.takeIf { it in 1..65535 }?.let { "$ip:$it" } ?: ip
+            WirelessAdbPortStatus.Unavailable -> ip
+        }
+    }
+
 /** Result of a local toggle request; the UI owns the system-settings launch. */
 internal sealed interface WirelessAdbToggleResult {
     data class Updated(val enabled: Boolean) : WirelessAdbToggleResult

@@ -16,6 +16,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,9 +29,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
+import com.potatomotato.helm.data.AndroidWirelessAdbPortResolver
 import com.potatomotato.helm.data.WirelessAdb
+import com.potatomotato.helm.data.WirelessAdbPortStatus
 import com.potatomotato.helm.data.WirelessAdbState
 import com.potatomotato.helm.data.WirelessAdbToggleResult
+import com.potatomotato.helm.data.localEndpoint
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.keyboard.keyboardPttEvents
@@ -69,6 +73,7 @@ internal data class SettingsMenuModel(
 internal fun settingsMenuModel(
     notificationsEnabled: Boolean,
     wirelessAdb: WirelessAdbState,
+    wirelessAdbPortStatus: WirelessAdbPortStatus = WirelessAdbPortStatus.Unavailable,
     pttBinding: PttKeyBinding = PttKeyBinding.AltSpace,
 ): SettingsMenuModel {
     val rows = buildList {
@@ -79,7 +84,8 @@ internal fun settingsMenuModel(
                 SettingsMenuRow(
                     action = SettingsMenuAction.WirelessAdb,
                     switchChecked = wirelessAdb.enabled,
-                    supportingText = wirelessAdb.localIp.takeIf { wirelessAdb.enabled },
+                    supportingText = wirelessAdb.localEndpoint(wirelessAdbPortStatus)
+                        .takeIf { wirelessAdb.enabled },
                 ),
             )
         }
@@ -96,11 +102,20 @@ internal fun settingsMenuModel(
 internal fun SettingsMenu(actions: SettingsMenuActions) {
     val context = LocalContext.current
     val wirelessAdb = remember(context) { WirelessAdb(context) }
+    val wirelessAdbPortResolver = remember(context) { AndroidWirelessAdbPortResolver(context) }
     val pttBindingStore: PttKeyBindingStore = remember(context) { sharedPttKeyBindingStore(context) }
     var wirelessAdbState by remember { mutableStateOf(wirelessAdb.readState()) }
+    var wirelessAdbPortStatus by remember {
+        mutableStateOf<WirelessAdbPortStatus>(WirelessAdbPortStatus.Unavailable)
+    }
     var pttBinding by remember { mutableStateOf(pttBindingStore.read()) }
     var choosingPttBinding by remember { mutableStateOf(false) }
-    val model = settingsMenuModel(actions.notificationsEnabled, wirelessAdbState, pttBinding)
+    val model = settingsMenuModel(
+        actions.notificationsEnabled,
+        wirelessAdbState,
+        wirelessAdbPortStatus,
+        pttBinding,
+    )
     val muted = model.mutedBadgeVisible
     val anchorDescription = stringResource(
         if (muted) R.string.settings_menu_description_muted else R.string.settings_menu_description,
@@ -130,7 +145,11 @@ internal fun SettingsMenu(actions: SettingsMenuActions) {
                 SettingsMenuAction.Notifications -> actions.onToggleNotifications()
                 SettingsMenuAction.PttBinding -> choosingPttBinding = true
                 SettingsMenuAction.WirelessAdb -> when (wirelessAdb.toggle()) {
-                    is WirelessAdbToggleResult.Updated -> wirelessAdbState = wirelessAdb.readState()
+                    is WirelessAdbToggleResult.Updated -> {
+                        val updatedState = wirelessAdb.readState()
+                        wirelessAdbState = updatedState
+                        wirelessAdbPortStatus = updatedState.portStatusForDiscovery()
+                    }
                     WirelessAdbToggleResult.NeedsDeveloperOptions -> context.startActivity(
                         Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
                     )
@@ -148,8 +167,25 @@ internal fun SettingsMenu(actions: SettingsMenuActions) {
     ) { expanded, open ->
         // Re-read after returning from Developer options so the row reflects Android's state.
         val openWithFreshState = {
-            wirelessAdbState = wirelessAdb.readState()
+            val freshState = wirelessAdb.readState()
+            wirelessAdbState = freshState
+            wirelessAdbPortStatus = freshState.portStatusForDiscovery()
             open()
+        }
+        DisposableEffect(expanded, wirelessAdbState.enabled, wirelessAdbState.localIp) {
+            val discovery = if (expanded && wirelessAdbState.enabled) {
+                wirelessAdbState.localIp?.let { ip ->
+                    wirelessAdbPortStatus = WirelessAdbPortStatus.Loading
+                    wirelessAdbPortResolver.discover(ip) { port ->
+                        wirelessAdbPortStatus = port?.let(WirelessAdbPortStatus::Resolved)
+                            ?: WirelessAdbPortStatus.Unavailable
+                    }
+                }
+            } else {
+                wirelessAdbPortStatus = WirelessAdbPortStatus.Unavailable
+                null
+            }
+            onDispose { discovery?.close() }
         }
         Box(
             modifier = Modifier
@@ -207,6 +243,9 @@ internal fun SettingsMenu(actions: SettingsMenuActions) {
         )
     }
 }
+
+private fun WirelessAdbState.portStatusForDiscovery(): WirelessAdbPortStatus =
+    if (enabled && localIp != null) WirelessAdbPortStatus.Loading else WirelessAdbPortStatus.Unavailable
 
 private fun pttBindingLabelRes(binding: PttKeyBinding): Int = when (binding) {
     PttKeyBinding.AltSpace -> R.string.settings_ptt_binding_alt_space
