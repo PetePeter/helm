@@ -623,21 +623,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 
 /* Session Cards (sidebar vertical list) — see .sessions-list below */
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-xl);
-  color: var(--text-dim);
-  text-align: center;
-  gap: var(--spacing-sm);
-}
-
-.empty-state svg {
-  opacity: 0.5;
-}
-
 .hint {
   font-size: var(--font-size-sm);
 }
@@ -659,17 +644,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   overflow-y: auto;
   flex: 1;
   min-height: 0;
-}
-
-.sessions-empty {
-  padding: var(--spacing-lg);
-  text-align: center;
-  color: var(--text-dim);
-  font-size: var(--font-size-sm);
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 /* ── Group box: header + its session rows ──────────────────── */
