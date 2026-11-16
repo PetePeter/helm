@@ -1640,6 +1640,45 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'mqtt_rule_create',
+    title: 'Create MQTT Trigger Rule',
+    description: 'Map an MQTT topic filter (+/# wildcards) to a prompt delivered to a session when a message arrives. Placeholders: {topic}, {payload}, {payload.a.b}; payload values arrive as quoted untrusted data and never as key sequences. Target: an existing session (sessionId, or targetSession:"caller" for yourself), or spawn a new session of cliType in a configured dirPath (reuse:true keeps sending to the session it spawned while it lives). minIntervalMs (default 5000) drops floods. Requires the MQTT broker to be configured and enabled in Settings.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Short rule name.' },
+        topic: { type: 'string', description: 'MQTT topic filter, e.g. timbre/+/call/agent_question.' },
+        prompt: { type: 'string', description: 'Prompt template.' },
+        targetSession: { type: 'string', enum: ['caller'], description: 'Deliver to the calling session.' },
+        sessionId: { type: 'string', description: 'Deliver to this existing session.' },
+        cliType: { type: 'string', description: 'Spawn target: CLI type id or name.' },
+        dirPath: { type: 'string', description: 'Spawn target: configured working directory.' },
+        reuse: { type: 'boolean', description: 'Spawn target: reuse the session this rule spawned.' },
+        minIntervalMs: { type: 'number', minimum: 0, description: 'Drop triggers sooner than this after the last one.' },
+        enabled: { type: 'boolean' },
+      },
+      required: ['name', 'topic', 'prompt'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'mqtt_rule_list',
+    title: 'List MQTT Trigger Rules',
+    description: 'List MQTT trigger rules with their topic, prompt and target.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'mqtt_rule_delete',
+    title: 'Delete MQTT Trigger Rule',
+    description: 'Delete an MQTT trigger rule by id.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Rule id' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'artifact_create',
     title: 'Create Artifact',
     description:

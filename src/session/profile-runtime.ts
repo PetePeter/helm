@@ -1,3 +1,4 @@
+import type { MqttTriggerManager } from './mqtt-trigger-manager.js';
 import type { ProfilePersistencePaths } from './persistence-paths.js';
 import type { ConfigLoader } from '../config/loader.js';
 import type { ArtifactAttachmentManager } from './artifact-attachment-manager.js';
@@ -37,6 +38,7 @@ export interface ProfileRuntime {
   readonly contextManager: ContextManager;
   readonly scheduledTaskManager: ScheduledTaskManager;
   readonly scheduledTaskHistoryManager: ScheduledTaskHistoryManager;
+  readonly mqttTriggerManager: MqttTriggerManager;
   readonly messManager: MessManager;
   readonly recycleBinManager: RecycleBinManager;
   readonly runtimeGroupManager: RuntimeGroupManager;

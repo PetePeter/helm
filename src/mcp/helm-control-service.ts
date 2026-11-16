@@ -28,6 +28,9 @@ import { HelmPlanAttachmentService } from './services/helm-plan-attachment-servi
 import { HelmContextService } from './services/helm-context-service.js';
 import { HelmChatService } from './services/helm-chat-service.js';
 import { HelmSchedulerService } from './services/helm-scheduler-service.js';
+import { resolveWorkingDirectory } from './services/working-dir-gate.js';
+import type { MqttTriggerManager } from '../session/mqtt-trigger-manager.js';
+import type { CreateMqttRuleParams, MqttRule } from '../types/mqtt-trigger.js';
 import { HelmProjectService } from './services/helm-project-service.js';
 import { HelmDirectoryService } from './services/helm-directory-service.js';
 import { HelmPeerService } from './services/helm-peer-service.js';
@@ -355,6 +358,7 @@ export class HelmControlService extends EventEmitter {
   private mobileDeps?: MobileDeps | null;
   private readonly mobileService: HelmMobileService;
   private readonly skillManager: SkillManager;
+  private mqttTriggerManager: MqttTriggerManager | null = null;
   private readonly skillAnalyticsManager: SkillAnalyticsManager;
 
   constructor(
@@ -518,6 +522,11 @@ export class HelmControlService extends EventEmitter {
   /** Wire the EtaTracker behind session_eta_set / session_eta_clear. */
   setEtaTracker(tracker: import('../session/eta-tracker.js').EtaTracker): void {
     this.sessionService.setEtaTracker(tracker);
+  }
+
+  /** Wire the MqttTriggerManager behind the mqtt_rule_* MCP tools. */
+  setMqttTriggerManager(manager: MqttTriggerManager): void {
+    this.mqttTriggerManager = manager;
   }
 
   /** Wire the DraftManager behind the session_draft_* MCP tools. */
@@ -2120,6 +2129,32 @@ export class HelmControlService extends EventEmitter {
 
   deleteScheduledTask(id: string): { ok: true } {
     return this.requireScheduler().deleteTask(id);
+  }
+
+  createMqttRule(params: CreateMqttRuleParams): MqttRule {
+    const manager = this.requireMqtt();
+    if (params.target?.kind === 'session' && !this.sessionManager.getSession(params.target.sessionId)) {
+      throw new Error(`Session not found: ${params.target.sessionId}`);
+    }
+    if (params.target?.kind === 'spawn') {
+      // Same gate as every other spawn path: only a configured working directory.
+      params = { ...params, target: { ...params.target, dirPath: resolveWorkingDirectory(this.configLoader, this.projectStore, params.target.dirPath).path } };
+    }
+    return manager.createRule(params);
+  }
+
+  listMqttRules(): MqttRule[] {
+    return this.requireMqtt().listRules();
+  }
+
+  deleteMqttRule(id: string): { ok: true } {
+    if (!this.requireMqtt().deleteRule(id)) throw new Error(`MQTT rule not found: ${id}`);
+    return { ok: true };
+  }
+
+  private requireMqtt(): MqttTriggerManager {
+    if (!this.mqttTriggerManager) throw new Error('MQTT triggers are not available');
+    return this.mqttTriggerManager;
   }
 
   private requireScheduler(): HelmSchedulerService {

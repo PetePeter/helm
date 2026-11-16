@@ -20,6 +20,8 @@ export interface SessionReloadPromptParams {
   sessionManager: SessionManager;
   configLoader?: ConfigLoader;
   contextText?: string;
+  /** Deliver contextText with every brace as text (it carries untrusted data). */
+  contextTextLiteral?: boolean;
   /** Let a caller hold the reload pointer until its delivery gate is ready. */
   armContextText?: (sessionId: string, text: string) => void;
   skipInitialPrompt?: boolean;
@@ -134,6 +136,7 @@ function buildPromptCompleteHandler(
         void deliverPromptSequenceToSession({
           sessionId: params.sessionId,
           text: contextText,
+          ...(params.contextTextLiteral ? { literal: true } : {}),
           ptyManager: params.ptyManager,
           sessionManager: params.sessionManager,
           configLoader: params.configLoader,

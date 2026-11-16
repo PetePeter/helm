@@ -109,6 +109,7 @@ import VoiceTab from './components/settings/pages/VoiceTab.vue';
 import UpdatesTab from './components/settings/pages/UpdatesTab.vue';
 import OperatorTab from './components/settings/pages/OperatorTab.vue';
 import AutoMemoryTab from './components/settings/pages/AutoMemoryTab.vue';
+import MqttTab from './components/settings/pages/MqttTab.vue';
 import DreamingTab from './components/settings/pages/DreamingTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/settings/pages/MobileTab.vue';
@@ -1278,6 +1279,9 @@ onUnmounted(() => {
               />
               <DreamingTab
                 v-else-if="activeTab === 'dreaming'"
+              />
+              <MqttTab
+                v-else-if="activeTab === 'mqtt'"
               />
               <SessionListSettings
                 v-else-if="activeTab === 'session-list'"

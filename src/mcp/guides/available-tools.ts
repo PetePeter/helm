@@ -121,5 +121,8 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'scheduler_update', title: 'Update Scheduler Entry', description: 'Update a pending task; use scheduleKind:"none" to discard its cadence, then provide a fresh schedule to resume.' },
     { name: 'scheduler_cancel', title: 'Cancel Scheduler Entry', description: 'Cancel a pending scheduled task.' },
     { name: 'scheduler_delete', title: 'Delete Scheduler Entry', description: 'Delete a scheduled task and cancel its pending run.' },
+    { name: 'mqtt_rule_create', title: 'Create MQTT Trigger Rule', description: 'Map an MQTT topic filter to a prompt delivered to a session (existing, caller, or spawned) when a message arrives.' },
+    { name: 'mqtt_rule_list', title: 'List MQTT Trigger Rules', description: 'List MQTT trigger rules.' },
+    { name: 'mqtt_rule_delete', title: 'Delete MQTT Trigger Rule', description: 'Delete an MQTT trigger rule by id.' },
   ];
 }

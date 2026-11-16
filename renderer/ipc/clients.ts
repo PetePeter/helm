@@ -34,6 +34,7 @@ export const contextsClient = domainClient('contexts');
 export const memoryClient = domainClient('memory');
 export const attachmentsClient = domainClient('attachments');
 export const incomingClient = domainClient('incoming');
+export const mqttClient = domainClient('mqtt');
 const baseSchedulerClient = domainClient('scheduler');
 
 /**

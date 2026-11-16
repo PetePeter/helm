@@ -28,6 +28,7 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
   { id: 'mobile', label: 'Mobile', group: 'Connections', icon: 'phone' },
   { id: 'peers', label: 'Fleet', group: 'Connections', icon: 'link' },
   { id: 'mcp', label: 'MCP server', group: 'Connections', icon: 'plug' },
+  { id: 'mqtt', label: 'MQTT triggers', group: 'Connections', icon: 'radio' },
   { id: 'cli-integrations', label: 'CLI integrations', group: 'Connections', icon: 'hook' },
   { id: 'user-profiles', label: 'Profiles', group: 'System', icon: 'users' },
   { id: 'operator', label: 'Operator', group: 'System', icon: 'mic' },
@@ -79,5 +80,6 @@ export const SETTINGS_ICONS: Record<string, string> = {
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
   users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM20 8v6M23 11h-6',
+  radio: 'M4.9 19.1a10 10 0 0 1 0-14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M19.1 4.9a10 10 0 0 1 0 14.2M12 12h.01',
   moon: 'M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13z',
 };

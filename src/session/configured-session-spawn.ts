@@ -43,6 +43,8 @@ export interface ConfiguredSessionSpawnParams {
    *  session record does not (a recycle-bin restore). Defaults to the session's. */
   resumeThreadId?: string;
   contextText?: string;
+  /** contextText carries untrusted data: deliver every brace as text. */
+  contextTextLiteral?: boolean;
   /** Leave out the CLI type's configured initial prompt (rename still runs) — an unattended run must not inherit interactive house rules. */
   skipInitialPrompt?: boolean;
   /** Delivery context for contextText; background keeps a scheduled run out of the foreground. */

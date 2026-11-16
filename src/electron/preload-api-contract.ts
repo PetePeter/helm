@@ -264,6 +264,13 @@ export const PRELOAD_API_DOMAINS = {
     'scheduledTaskListHistory',
     'scheduledTaskClearHistory',
   ],
+  mqtt: [
+    'mqttGet',
+    'mqttSetBroker',
+    'mqttCreateRule',
+    'mqttUpdateRule',
+    'mqttDeleteRule',
+  ],
   recycleBin: [
     'recycleBinList',
     'recycleBinRestore',
@@ -410,6 +417,7 @@ export const PRELOAD_API_DOMAINS = {
     'onPatternScheduleFired',
     'onPatternScheduleCancelled',
     'onScheduledTaskChanged',
+    'onMqttChanged',
     'onScheduledTaskHistoryChanged',
     'onRecycleBinChanged',
     'onRuntimeGroupChanged',

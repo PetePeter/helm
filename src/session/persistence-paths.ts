@@ -13,6 +13,7 @@ export interface ProfilePersistencePaths {
   planContextsFile: string;
   planContextBindingsFile: string;
   scheduledTasksFile: string;
+  mqttTriggersFile: string;
   scheduledTaskHistoryFile: string;
   recycleBinFile: string;
   runtimeGroupsFile: string;
@@ -67,6 +68,7 @@ export function getProfilePersistencePaths(configDir: string): ProfilePersistenc
     planContextsFile: join(configDir, 'plan-contexts.json'),
     planContextBindingsFile: join(configDir, 'plan-context-bindings.json'),
     scheduledTasksFile: join(configDir, 'scheduled-tasks.yaml'),
+    mqttTriggersFile: join(configDir, 'mqtt-triggers.yaml'),
     scheduledTaskHistoryFile: join(configDir, 'scheduled-task-history.yaml'),
     recycleBinFile: join(configDir, 'recycle-bin.yaml'),
     runtimeGroupsFile: join(configDir, 'runtime-groups.yaml'),

@@ -39,6 +39,7 @@ export const preloadDomainBuilders = {
   attachments: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'attachments'),
   incoming: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'incoming'),
   scheduler: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'scheduler'),
+  mqtt: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'mqtt'),
   recycleBin: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'recycleBin'),
   runtimeGroups: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'runtimeGroups'),
   artifacts: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'artifacts'),

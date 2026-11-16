@@ -27,7 +27,7 @@ function makeMocks(overrides?: { submitSuffix?: string; cliType?: string; provid
   return { ptyManager, sessionManager, configLoader, session };
 }
 
-function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { origin?: 'user' | 'system'; impliedSubmit?: boolean; deliveryContext?: 'background' | 'interactive'; verifyDelivery?: { label?: string; delayMs?: number; retrySubmit?: boolean; requirePromptSubmit?: boolean } }) {
+function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { literal?: boolean; origin?: 'user' | 'system'; impliedSubmit?: boolean; deliveryContext?: 'background' | 'interactive'; verifyDelivery?: { label?: string; delayMs?: number; retrySubmit?: boolean; requirePromptSubmit?: boolean } }) {
   return deliverPromptSequenceToSession({
     sessionId: 's1',
     text: input,
@@ -361,6 +361,15 @@ describe('deliverPromptSequenceToSession', () => {
 
     // Ctrl+C maps to \x03 via comboToPtySequence
     expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\x03', 'system');
+  });
+
+  it('literal delivery types every brace group as text, so untrusted data cannot fire keys', async () => {
+    const mocks = makeMocks();
+
+    await deliver('say "{Ctrl+C}{Enter}" {"a":1}', mocks, { literal: true });
+
+    expect(mocks.ptyManager.write).not.toHaveBeenCalled();
+    expect(mocks.ptyManager.deliverText).toHaveBeenCalledWith('s1', 'say "{Ctrl+C}{Enter}" {"a":1}');
   });
 
   it('modifier tokens like {Ctrl Down} are preserved', async () => {

@@ -116,6 +116,8 @@ export async function deliverPromptSequenceToSession(input: {
   sessionManager: SessionManager;
   configLoader: ConfigLoader;
   impliedSubmit?: boolean;
+  /** Treat every brace as text — for content that must never become keys (untrusted data). */
+  literal?: boolean;
   deliveryContext?: DeliveryContext;
   writeIntent?: WriteIntent;
   /** Defaults to 'system'. Set 'user' where the text is a human speaking (for example, on a phone). */
@@ -149,7 +151,7 @@ export async function deliverPromptSequenceToSession(input: {
   let codexBusySubmitRecoverySent = false;
 
   const lock = input.deliveryLock ?? sharedDeliveryLock;
-  const processedText = escapeUnrecognizedBraces(text);
+  const processedText = input.literal ? text.replace(/[{}]/g, brace => brace + brace) : escapeUnrecognizedBraces(text);
   const textDeliveryOptions: TextDeliveryOptions | undefined = deliveryContext || input.writeIntent || input.origin === 'user'
     ? {
       ...(deliveryContext ? { deliveryContext } : {}),

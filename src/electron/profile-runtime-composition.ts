@@ -174,6 +174,7 @@ export class ProfileRuntimeComposition {
     if (this.sessionRemovedHandler) this.registerSessionRemovedHandler(this.sessionRemovedHandler);
     if (this.scheduledTasksStarted) {
       runtime.scheduledTaskManager.start();
+      runtime.mqttTriggerManager.start();
       this.autoFreezers.get(profile.id)?.start();
       this.keepWarmers.get(profile.id)?.start();
     }
@@ -457,6 +458,7 @@ export class ProfileRuntimeComposition {
     if (this.scheduledTasksStarted) return;
     for (const runtime of this.registry.all()) {
       runtime.scheduledTaskManager.start();
+      runtime.mqttTriggerManager.start();
       this.autoFreezers.get(runtime.userProfileId)?.start();
       this.keepWarmers.get(runtime.userProfileId)?.start();
     }

@@ -3,6 +3,7 @@ import type { PtyWriteOptions } from '../../session/delivery-context.js';
 import type { SessionMessageFlight } from '../../session/message-flight.js';
 import type { SessionMission } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
+import type { CreateMqttRuleParams, MqttBrokerConfig, MqttRule, MqttSnapshot, UpdateMqttRuleParams } from '../../types/mqtt-trigger.js';
 import type { RecycleBinActionResult, RecycleBinEntry, RecycleBinRestoreResult } from '../../types/recycle-bin.js';
 import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { ContextMenuAction } from '../../types/context-menu.js';
@@ -1263,6 +1264,18 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_e: unknown, task: { id: string; title: string; status: string }) => { callback(task); };
     ipcRenderer.on('scheduled-task:changed', listener);
     return () => ipcRenderer.removeListener('scheduled-task:changed', listener);
+  },
+
+  /** MQTT triggers: broker (password write-only) and rules */
+  mqttGet: (): Promise<MqttSnapshot> => ipcRenderer.invoke('mqtt:get'),
+  mqttSetBroker: (update: Partial<MqttBrokerConfig>): Promise<MqttSnapshot> => ipcRenderer.invoke('mqtt:setBroker', update),
+  mqttCreateRule: (params: CreateMqttRuleParams): Promise<MqttRule> => ipcRenderer.invoke('mqtt:createRule', params),
+  mqttUpdateRule: (id: string, update: UpdateMqttRuleParams): Promise<MqttRule> => ipcRenderer.invoke('mqtt:updateRule', id, update),
+  mqttDeleteRule: (id: string): Promise<boolean> => ipcRenderer.invoke('mqtt:deleteRule', id),
+  onMqttChanged: (callback: (snapshot: MqttSnapshot) => void) => {
+    const listener = (_e: unknown, snapshot: MqttSnapshot) => { callback(snapshot); };
+    ipcRenderer.on('mqtt:changed', listener);
+    return () => ipcRenderer.removeListener('mqtt:changed', listener);
   },
 
   /** Subscribe to scheduled task history change events */

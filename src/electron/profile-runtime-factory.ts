@@ -32,6 +32,10 @@ import { EtaPersistence } from '../session/eta-persistence.js';
 import { EtaTracker } from '../session/eta-tracker.js';
 import { PatternMatcher } from '../session/pattern-matcher.js';
 import { StartupPromptWatcher } from '../session/startup-prompt-watcher.js';
+import { MqttTriggerManager } from '../session/mqtt-trigger-manager.js';
+import { loadMqttTriggers, saveMqttTriggers } from '../session/mqtt-trigger-persistence.js';
+import { deliverPromptSequenceToSession } from '../session/sequence-delivery.js';
+import { spawnConfiguredSession } from '../session/configured-session-spawn.js';
 import type { PtyManager } from '../session/pty-manager.js';
 
 export interface CreateProfileRuntimeOptions {
@@ -131,6 +135,35 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
       catch { return cliType; }
     },
   );
+  // MQTT payloads are untrusted: both paths deliver them literally (no key tokens) and in the background.
+  const mqttTriggerManager = new MqttTriggerManager({
+    initial: loadMqttTriggers(paths.mqttTriggersFile),
+    persist: state => saveMqttTriggers(state, paths.mqttTriggersFile),
+    deliver: async (sessionId, text) => {
+      await deliverPromptSequenceToSession({
+        sessionId, text, ptyManager, sessionManager, configLoader, literal: true, deliveryContext: 'background',
+      });
+    },
+    spawn: ({ cliType, dirPath, name, prompt }) => {
+      const cli = configLoader.resolveCliType(cliType);
+      if (!cli) throw new Error(`Unknown CLI type: ${cliType}`);
+      const previousActiveId = sessionManager.getActiveSession()?.id ?? null;
+      const { sessionId } = spawnConfiguredSession({
+        ptyManager, sessionManager, configLoader,
+        cliType: cli.id,
+        sessionName: name,
+        cwd: dirPath,
+        contextText: prompt,
+        contextTextLiteral: true,
+        contextDeliveryContext: 'background',
+        fallbackCompleteDelayMs: cli.config.initialPromptDelay ?? 2000,
+      });
+      // A trigger is background work: keep the user on the session they were in.
+      if (previousActiveId && sessionManager.getSession(previousActiveId)) sessionManager.setActiveSession(previousActiveId);
+      return sessionId;
+    },
+    sessionExists: sessionId => sessionManager.hasSession(sessionId),
+  });
   const startupPromptWatcher = new StartupPromptWatcher({
     getPrompts: cliType => configLoader.getStartupPrompts(cliType),
     updateSession: (sessionId, updates) => sessionManager.updateSession(sessionId, updates),
@@ -147,6 +180,7 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
     contextManager,
     scheduledTaskManager,
     scheduledTaskHistoryManager,
+    mqttTriggerManager,
     messManager,
     recycleBinManager,
     runtimeGroupManager,
@@ -167,6 +201,7 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
     startupPromptWatcher,
     dispose: () => {
       scheduledTaskManager.stop();
+      mqttTriggerManager.stop();
       patternMatcher.dispose();
       startupPromptWatcher.dispose();
       timeTracker.flush();

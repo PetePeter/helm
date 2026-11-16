@@ -1017,6 +1017,37 @@ export async function callMcpTool(
         return service.cancelScheduledTask(asString(args.id, 'id is required'));
       case 'scheduler_delete':
         return service.deleteScheduledTask(asString(args.id, 'id is required'));
+      case 'mqtt_rule_create': {
+        const spawn = args.cliType !== undefined || args.dirPath !== undefined;
+        const callerTarget = args.targetSession === 'caller';
+        if (args.targetSession !== undefined && !callerTarget) throw new Error('targetSession must be "caller" when provided');
+        if ([callerTarget, args.sessionId !== undefined, spawn].filter(Boolean).length !== 1) {
+          throw new Error('Give exactly one target: targetSession:"caller", sessionId, or cliType + dirPath');
+        }
+        const target = spawn
+          ? {
+            kind: 'spawn' as const,
+            cliType: asString(args.cliType, 'cliType is required for a spawn target'),
+            dirPath: asString(args.dirPath, 'dirPath is required for a spawn target'),
+            reuse: args.reuse === true,
+          }
+          : {
+            kind: 'session' as const,
+            sessionId: callerTarget ? requireCallerSession(authContext, 'mqtt_rule_create') : asString(args.sessionId, 'sessionId is required'),
+          };
+        return service.createMqttRule({
+          name: asString(args.name, 'name is required'),
+          topic: asString(args.topic, 'topic is required'),
+          prompt: asString(args.prompt, 'prompt is required'),
+          target,
+          ...(typeof args.minIntervalMs === 'number' ? { minIntervalMs: args.minIntervalMs } : {}),
+          ...(typeof args.enabled === 'boolean' ? { enabled: args.enabled } : {}),
+        });
+      }
+      case 'mqtt_rule_list':
+        return service.listMqttRules();
+      case 'mqtt_rule_delete':
+        return service.deleteMqttRule(asString(args.id, 'id is required'));
       case 'artifact_create': {
         const sessionId = requireCallerSession(authContext, 'artifact_create');
         if (args.filePath !== undefined) {

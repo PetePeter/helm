@@ -50,6 +50,11 @@ export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
   // Host relaunch — gated by an owned handover artifact even locally, and a
   // remote caller has no way to satisfy that gate honestly.
   'helm_restart',
+  // MQTT rules turn broker messages into prompts with an owner-trusted template
+  // and outlive the caller: a peer or phone authoring one would keep acting
+  // after revocation. Rule administration stays local.
+  'mqtt_rule_create',
+  'mqtt_rule_delete',
   // Mobile pairing + grant administration: LOCAL AI ONLY. A phone that could
   // reach these would pair further devices or widen its own allow-list — the
   // gate would be handing out the keys to itself. A peer has no business

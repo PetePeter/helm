@@ -55,6 +55,7 @@ import { OperatorSessionManager } from '../../session/operator-session-manager.j
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { setupPtyHandlers, cancelAllPrompts, registerPromptCanceller } from './pty-handlers.js';
 import { setupPlanHandlers } from './plan-handlers.js';
+import { setupMqttHandlers } from './mqtt-handlers.js';
 import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
 import { RecycleBinPurgeMaintenance } from '../recycle-bin-purge-maintenance.js';
@@ -209,6 +210,7 @@ export function registerIPCHandlers(
     memoryManager,
     scheduledTaskHistoryManager,
     scheduledTaskManager,
+    mqttTriggerManager,
     recycleBinManager,
     runtimeGroupManager,
     skillManager,
@@ -243,6 +245,7 @@ export function registerIPCHandlers(
   helmControlService.setArtifactManager(adminRuntime.artifactManager, adminRuntime.artifactAttachmentManager);
   helmControlService.setDraftManager(adminRuntime.draftManager);
   helmControlService.setTodoManager(adminRuntime.todoManager);
+  helmControlService.setMqttTriggerManager(adminRuntime.mqttTriggerManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
   // by session_artifact_attachment_commit into the SAME managed storage the
@@ -503,6 +506,7 @@ export function registerIPCHandlers(
   setupSkillHandlers(skillManager, skillAnalyticsManager);
   setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname, () => activeHelmControlService.getSuggestedPlanService(), activeRuntime.planAttachmentManager);
   setupScheduledTaskHandlers(scheduledTaskManager, scheduledTaskHistoryManager, windowManager);
+  setupMqttHandlers(mqttTriggerManager, windowManager);
   // Time tracking: the session's Helm project, else its directory, gets the credit.
   const whereIsDir = (dir: string, projectId?: string) => {
     const project = (projectId ? projectStore.getById(projectId) : undefined) ?? projectStore.findByPath(dir);
