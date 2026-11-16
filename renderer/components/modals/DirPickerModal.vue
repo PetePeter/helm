@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * Directory picker modal — select a working directory to spawn a CLI in.
  *
@@ -290,7 +291,7 @@ defineExpose({ handleButton });
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" tabindex="-1" @keydown="suppressActivationKey" @click="cancel">Cancel</button>
+          <AppButton variant="secondary" tabindex="-1" @keydown="suppressActivationKey" @click="cancel">Cancel</AppButton>
         </div>
       </div>
     </div>
@@ -370,6 +371,12 @@ defineExpose({ handleButton });
 
 .dir-picker-status--error {
   color: var(--danger);
+}
+
+.dir-picker-item__path {
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+  font-family: monospace;
 }
 
 .dir-picker-item__badge {

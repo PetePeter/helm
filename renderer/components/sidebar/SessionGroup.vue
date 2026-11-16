@@ -138,7 +138,6 @@ function onDrop(e: DragEvent): void {
     :class="[{ focused: isFocused, runtime: isRuntime }, flashClass]"
     :data-dir-path="group.dirPath"
     :data-nav-index="navIndex"
-    :data-sessions-nav-index="navIndex"
     @click="!isPeer && emit('toggleCollapse', group.dirPath)"
   >
     <span v-if="!isPeer" class="group-chevron">{{ group.collapsed ? '▲' : '▼' }}</span>
@@ -194,3 +193,139 @@ function onDrop(e: DragEvent): void {
   <slot />
   </div>
 </template>
+
+<style scoped>
+/* ── Group box: header + its session rows ──────────────────── */
+
+/* Folder groups are neutral grey; a custom group sets
+   --group-color inline from its picked palette colour. */
+.session-group-box {
+  --group-color: #5a606b;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 2px;
+  margin-top: 8px;
+  border: 3px solid color-mix(in srgb, var(--group-color) 60%, transparent);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--group-color) 10%, transparent);
+}
+.session-group-box:first-child { margin-top: 0; }
+
+/* ── Group header ─────────────────────────────────────────── */
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  min-height: 52px;
+  cursor: pointer;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid transparent;
+  background: transparent;
+  user-select: none;
+}
+.group-header:hover { background: var(--bg-tertiary); }
+.group-header.focused {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.group-chevron {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.group-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-header-trailing {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* One dot per member, kept visible when the group is collapsed. */
+.group-activity-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid rgba(115, 125, 145, 0.28);
+  border-radius: 999px;
+  background: rgba(10, 11, 13, 0.3);
+}
+
+/* ── Runtime (custom) groups ──────────────────────────────── */
+
+/* Group header action buttons (rename / close) */
+.group-header-actions {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.group-header-action {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+.group-header-action:hover {
+  background: rgba(120, 130, 150, 0.2);
+  color: var(--text-primary);
+}
+
+/* Drop-target highlighting */
+.session-group-box.drop-ok {
+  outline: 2px solid var(--activity-active, #44cc44);
+  outline-offset: 1px;
+}
+.session-group-box.drop-bad {
+  outline: 2px dashed #6a3a3a;
+  outline-offset: 1px;
+  opacity: 0.6;
+}
+
+/* The group owns this copy of the keyframes because its header is a separate scoped component. */
+@keyframes flash-beat {
+  0%,   49% { background-color: var(--bg-secondary); color: var(--text-primary); }
+  50%, 100% { background-color: var(--accent);  color: var(--accent-contrast); }
+}
+.group-header.flash-pulse {
+  animation: flash-beat 1s infinite;
+}
+.group-header.flash-solid {
+  background-color: var(--accent) !important;
+  color: var(--accent-contrast);
+}
+/* ContextRing renders the dot under its own scope id; deep keeps it readable during the group flash. */
+.group-header.flash-pulse :deep(.context-ring__dot),
+.group-header.flash-solid :deep(.context-ring__dot) {
+  box-shadow: 0 0 0 1px var(--accent-contrast);
+}
+/* ContextRing and its group buttons render descendants with child scope ids, so deep is required for inherited flash text. */
+.group-header.flash-pulse :deep(:where(span, button)),
+.group-header.flash-solid :deep(:where(span, button)) {
+  color: inherit !important;
+}
+</style>

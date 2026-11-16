@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, terminalClient, toolsClient } from '../../../ipc/clients.js';
 /**
  * McpCliSetup.vue — Extracts Global CLI Setup section from McpTab.vue
@@ -12,6 +13,8 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  */
 import { ref, computed, onMounted } from 'vue';
 import { isWindows as detectWindows, getPlatform } from '../../../utils/platform.js';
+import SectionHeader from '../primitives/SectionHeader.vue';
+import ToggleRow from '../primitives/ToggleRow.vue';
 
 const isWindows = detectWindows();
 const shellName = isWindows ? 'cmd.exe' : (getPlatform() === 'darwin' ? 'zsh' : 'bash');
@@ -164,15 +167,8 @@ function onRunInShell(command: string): void {
 
 <template>
   <div class="tg-section">
-    <h3 class="tg-section-title">Global CLI Setup</h3>
-    <div class="tg-form-row">
-      <label class="tg-label">Codex: use env var</label>
-      <input
-        v-model="useEnvVar"
-        type="checkbox"
-        class="focusable"
-      />
-    </div>
+    <SectionHeader title="Global CLI Setup" />
+    <ToggleRow v-model="useEnvVar" label="Codex: use env var" />
     <p class="settings-form__hint">
       All commands use {{ shellName }} syntax. Run them in your terminal to register Helm as an MCP.
       The <code>${{ '{' }}HELM_MCP_TOKEN{{ '}' }}</code> placeholder is stored as-is and resolved per session at launch — do not substitute it by hand.
@@ -183,12 +179,12 @@ function onRunInShell(command: string): void {
         <span class="settings-list-item__name">Codex setup</span>
         <pre class="mcp-command-block">{{ codexSetup }}</pre>
         <div class="mcp-snippet-actions">
-          <button class="btn btn--secondary btn--sm focusable" @click="copySnippet(codexSetup)">
+          <AppButton variant="secondary" size="sm" class="focusable" @click="copySnippet(codexSetup)">
             Copy
-          </button>
-          <button class="btn btn--secondary btn--sm focusable" @click="onRunInShell(codexSetup)">
+          </AppButton>
+          <AppButton variant="secondary" size="sm" class="focusable" @click="onRunInShell(codexSetup)">
             {{ runLabel }}
-          </button>
+          </AppButton>
         </div>
       </div>
     </div>
@@ -198,12 +194,12 @@ function onRunInShell(command: string): void {
         <span class="settings-list-item__name">Claude Code setup</span>
         <pre class="mcp-command-block">{{ claudeSetup }}</pre>
         <div class="mcp-snippet-actions">
-          <button class="btn btn--secondary btn--sm focusable" @click="copySnippet(claudeSetup)">
+          <AppButton variant="secondary" size="sm" class="focusable" @click="copySnippet(claudeSetup)">
             Copy
-          </button>
-          <button class="btn btn--secondary btn--sm focusable" @click="onRunInShell(claudeSetup)">
+          </AppButton>
+          <AppButton variant="secondary" size="sm" class="focusable" @click="onRunInShell(claudeSetup)">
             {{ runLabel }}
-          </button>
+          </AppButton>
         </div>
       </div>
     </div>
@@ -213,12 +209,12 @@ function onRunInShell(command: string): void {
         <span class="settings-list-item__name">Copilot CLI setup</span>
         <pre class="mcp-command-block">{{ copilotSetup }}</pre>
         <div class="mcp-snippet-actions">
-          <button class="btn btn--secondary btn--sm focusable" @click="copySnippet(copilotSetup)">
+          <AppButton variant="secondary" size="sm" class="focusable" @click="copySnippet(copilotSetup)">
             Copy
-          </button>
-          <button class="btn btn--secondary btn--sm focusable" @click="onRunInShell(copilotSetup)">
+          </AppButton>
+          <AppButton variant="secondary" size="sm" class="focusable" @click="onRunInShell(copilotSetup)">
             {{ runLabel }}
-          </button>
+          </AppButton>
         </div>
       </div>
     </div>
@@ -228,12 +224,12 @@ function onRunInShell(command: string): void {
         <span class="settings-list-item__name">OpenCode setup ⚠️ experimental — not actively tested</span>
         <pre class="mcp-command-block">{{ opencodeSetup }}</pre>
         <div class="mcp-snippet-actions">
-          <button class="btn btn--secondary btn--sm focusable" @click="copySnippet(opencodeSetup)">
+          <AppButton variant="secondary" size="sm" class="focusable" @click="copySnippet(opencodeSetup)">
             Copy
-          </button>
-          <button class="btn btn--secondary btn--sm focusable" @click="onRunInShell(opencodeSetup)">
+          </AppButton>
+          <AppButton variant="secondary" size="sm" class="focusable" @click="onRunInShell(opencodeSetup)">
             {{ runLabel }}
-          </button>
+          </AppButton>
         </div>
       </div>
     </div>

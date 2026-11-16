@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 /**
  * ChipbarActionsTab.vue — Chip bar actions CRUD with reordering.
  */
 import { ref, watch } from 'vue';
 import { CHIPBAR_TEMPLATE_DEFINITIONS } from '../../../chipbar-templates.js';
+import SettingsEmptyState from '../../common/SettingsEmptyState.vue';
 
 export interface ChipbarAction {
   label: string;
@@ -50,9 +52,9 @@ function sequencePreview(sequence: string): string {
   <div class="settings-chipbar-panel">
     <div class="settings-panel__header">
       <span class="settings-panel__title">Chip Bar Actions</span>
-      <button class="btn btn--primary btn--sm focusable" @click="emit('add')">
+      <AppButton variant="primary" size="sm" class="focusable" @click="emit('add')">
         + Add Action
-      </button>
+      </AppButton>
     </div>
 
     <div class="settings-help">
@@ -80,38 +82,38 @@ function sequencePreview(sequence: string): string {
           <span class="settings-list-item__detail">{{ sequencePreview(action.sequence) }}</span>
         </div>
         <div class="settings-list-item__actions">
-          <button
-            class="btn btn--ghost btn--sm focusable"
+          <AppButton variant="ghost" size="sm"
+            class="focusable"
             :disabled="index === 0"
             :tabindex="index === 0 ? -1 : 0"
             title="Move up"
             @click="emit('move', index, index - 1)"
           >
             ↑
-          </button>
-          <button
-            class="btn btn--ghost btn--sm focusable"
+          </AppButton>
+          <AppButton variant="ghost" size="sm"
+            class="focusable"
             :disabled="index === actions.length - 1"
             :tabindex="index === actions.length - 1 ? -1 : 0"
             title="Move down"
             @click="emit('move', index, index + 1)"
           >
             ↓
-          </button>
-          <button class="btn btn--secondary btn--sm focusable" @click="emit('edit', index)">
+          </AppButton>
+          <AppButton variant="secondary" size="sm" class="focusable" @click="emit('edit', index)">
             Edit
-          </button>
-          <button
-            class="btn btn--danger btn--sm focusable"
+          </AppButton>
+          <AppButton variant="danger" size="sm"
+            class="focusable"
             @click="onDeleteClick(index)"
           >
             {{ deleteConfirmIndex === index ? 'Confirm?' : 'Delete' }}
-          </button>
+          </AppButton>
         </div>
       </div>
-      <p v-if="actions.length === 0" class="settings-empty">
+      <SettingsEmptyState v-if="actions.length === 0" as="p">
         No chip bar actions configured
-      </p>
+      </SettingsEmptyState>
     </div>
   </div>
 </template>

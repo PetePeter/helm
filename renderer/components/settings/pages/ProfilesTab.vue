@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import ConfirmDialog from '../../modals/ConfirmDialog.vue';
 import FieldRow from '../primitives/FieldRow.vue';
 import SettingsCard from '../primitives/SettingsCard.vue';
 import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
+import EmptyState from '../../common/EmptyState.vue';
+import Badge from '../../common/Badge.vue';
 import { profileClient } from '../../../ipc/clients.js';
 
 type Profile = Awaited<ReturnType<typeof profileClient.profileList>>[number];
@@ -145,27 +148,27 @@ onUnmounted(() => stopRegistryChanged?.());
     <SettingsCard title="Create profile" class="settings-span">
       <FieldRow label="Profile name" hint="Names are visible in the desktop switcher." for="new-profile-name">
         <input id="new-profile-name" v-model="createName" class="input" maxlength="48" aria-label="New profile name" :disabled="!isAdmin" @keyup.enter="createProfile" />
-        <button class="btn btn-primary focusable" aria-label="Create profile" :disabled="!isAdmin || !createName.trim() || saving" @click="createProfile">Create</button>
+        <AppButton variant="primary" class="focusable" aria-label="Create profile" :disabled="!isAdmin || !createName.trim() || saving" @click="createProfile">Create</AppButton>
         <AdminOnlyHint :show="!isAdmin" />
       </FieldRow>
     </SettingsCard>
 
     <SettingsCard title="Profiles" class="settings-span">
-      <div v-if="profiles.length === 0" class="profiles-empty">Loading profiles…</div>
+      <EmptyState v-if="profiles.length === 0" title="Loading profiles…" loading compact />
       <div v-for="profile in profiles" :key="profile.id" class="profile-row">
         <div class="profile-row__heading">
           <strong>{{ profile.name }}</strong>
-          <span v-if="profile.id === activeProfileId" class="profile-active-badge">Active on this desktop</span>
+          <Badge v-if="profile.id === activeProfileId" class="profile-active-status" tone="accent">Active on this desktop</Badge>
           <span v-if="profile.isAdmin" class="profile-admin-badge">Admin</span>
           <span v-if="profile.hasPin" class="profile-pin-badge">PIN protected</span>
           <span class="profile-row__spacer"></span>
-          <button
+          <AppButton variant="danger"
             v-if="profile.canDelete"
-            class="btn btn-danger focusable"
+            class="focusable"
             :aria-label="`Delete ${profile.name}`"
             :disabled="!isAdmin || saving"
             @click="deleteTarget = profile"
-          >Delete</button>
+          >Delete</AppButton>
           <AdminOnlyHint v-if="profile.canDelete" :show="!isAdmin" />
           <span v-else-if="!profile.isAdmin" class="profile-delete-note">
             Delete requires no sessions, recoverable sessions, pending recycle-bin cleanup, or paired devices.
@@ -173,7 +176,7 @@ onUnmounted(() => stopRegistryChanged?.());
         </div>
         <FieldRow :label="`Name for ${profile.name}`" :for="`profile-name-${profile.id}`">
           <input :id="`profile-name-${profile.id}`" v-model="renameNames[profile.id]" class="input" maxlength="48" :aria-label="`Rename ${profile.name}`" :disabled="!isAdmin" />
-          <button class="btn btn-secondary focusable" :aria-label="`Save name for ${profile.name}`" :disabled="!isAdmin || saving || !renameNames[profile.id]?.trim() || renameNames[profile.id]?.trim() === profile.name" @click="renameProfile(profile)">Rename</button>
+          <AppButton variant="secondary" class="focusable" :aria-label="`Save name for ${profile.name}`" :disabled="!isAdmin || saving || !renameNames[profile.id]?.trim() || renameNames[profile.id]?.trim() === profile.name" @click="renameProfile(profile)">Rename</AppButton>
           <AdminOnlyHint :show="!isAdmin" />
         </FieldRow>
         <FieldRow v-if="profile.id !== activeProfileId" :label="`PIN for ${profile.name}`" :for="`profile-pin-${profile.id}`">
@@ -188,8 +191,8 @@ onUnmounted(() => stopRegistryChanged?.());
             :aria-label="`New PIN for ${profile.name}`"
             :disabled="!isAdmin"
           />
-          <button class="btn btn-secondary focusable" :aria-label="`Set PIN for ${profile.name}`" :disabled="!isAdmin || saving || !/^\d{4,12}$/.test(otherPinDrafts[profile.id] ?? '')" @click="setOtherProfilePin(profile)">Set PIN</button>
-          <button v-if="profile.hasPin" class="btn btn-secondary focusable" :aria-label="`Clear PIN for ${profile.name}`" :disabled="!isAdmin || saving" @click="clearOtherProfilePin(profile)">Clear PIN</button>
+          <AppButton variant="secondary" class="focusable" :aria-label="`Set PIN for ${profile.name}`" :disabled="!isAdmin || saving || !/^\d{4,12}$/.test(otherPinDrafts[profile.id] ?? '')" @click="setOtherProfilePin(profile)">Set PIN</AppButton>
+          <AppButton variant="secondary" v-if="profile.hasPin" class="focusable" :aria-label="`Clear PIN for ${profile.name}`" :disabled="!isAdmin || saving" @click="clearOtherProfilePin(profile)">Clear PIN</AppButton>
           <AdminOnlyHint :show="!isAdmin" />
         </FieldRow>
         <p v-if="profile.sessionCount !== undefined" class="profile-meta">
@@ -213,8 +216,8 @@ onUnmounted(() => stopRegistryChanged?.());
           maxlength="12"
           aria-label="New profile PIN"
         />
-        <button class="btn btn-primary focusable" aria-label="Set profile PIN" :disabled="!validPin || saving" @click="savePin">Set PIN</button>
-        <button v-if="activeProfile?.hasPin" class="btn btn-secondary focusable" aria-label="Clear profile PIN" :disabled="saving" @click="clearPin">Clear PIN</button>
+        <AppButton variant="primary" class="focusable" aria-label="Set profile PIN" :disabled="!validPin || saving" @click="savePin">Set PIN</AppButton>
+        <AppButton variant="secondary" v-if="activeProfile?.hasPin" class="focusable" aria-label="Clear profile PIN" :disabled="saving" @click="clearPin">Clear PIN</AppButton>
       </FieldRow>
     </SettingsCard>
 
@@ -241,12 +244,12 @@ onUnmounted(() => stopRegistryChanged?.());
 <style scoped>
 .profiles-tab { padding: 8px; }
 .profiles-intro, .profile-pin-copy { margin: 0; color: var(--text-secondary); font-size: var(--font-size-sm); line-height: 1.45; }
-.profiles-empty { padding: 10px 0; color: var(--text-dim); font-size: var(--font-size-sm); }
 .profile-row { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .profile-row:last-child { border-bottom: 0; }
 .profile-row__heading { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--text-primary); font-size: var(--font-size-sm); }
 .profile-row__spacer { flex: 1; }
-.profile-active-badge, .profile-pin-badge, .profile-admin-badge { padding: 2px 6px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); font-size: 10px; }
+.profile-active-status.badge--accent { padding: 2px 6px; border: 0; border-radius: 10px; background: var(--accent-tint); font-size: 10px; font-weight: 400; }
+.profile-pin-badge, .profile-admin-badge { padding: 2px 6px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); font-size: 10px; }
 .profile-admin-badge { font-size: var(--font-size-sm); }
 .profile-pin-badge { background: var(--bg-tertiary); color: var(--text-secondary); }
 .profile-delete-note, .profile-meta { color: var(--text-dim); font-size: 11px; }

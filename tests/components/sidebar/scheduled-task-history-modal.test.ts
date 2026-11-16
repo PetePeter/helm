@@ -71,9 +71,9 @@ describe('ScheduledTaskHistoryModal', () => {
     const runs = document.querySelectorAll('.sth-run');
     expect(runs.length).toBe(3);
 
-    expect(document.querySelector('.sth-badge--done')?.textContent).toBe('Done');
-    expect(document.querySelector('.sth-badge--failed')?.textContent).toBe('Failed');
-    expect(document.querySelector('.sth-badge--cancelled')?.textContent).toBe('Cancelled');
+    expect(document.querySelector('.badge--ok')?.textContent).toBe('Done');
+    expect(document.querySelector('.badge--error')?.textContent).toBe('Failed');
+    expect(document.querySelector('.scheduled-task-history-status.badge--neutral')?.textContent).toBe('Cancelled');
 
     wrapper.unmount();
   });
@@ -82,7 +82,7 @@ describe('ScheduledTaskHistoryModal', () => {
     const wrapper = mount(ScheduledTaskHistoryModal, { props: { visible: true }, attachTo: document.body });
     await flushPromises();
 
-    const firstRecreate = document.querySelector('.sth-btn--primary') as HTMLButtonElement;
+    const firstRecreate = document.querySelector('.app-button--primary') as HTMLButtonElement;
     firstRecreate.click();
     await flushPromises();
 
@@ -114,7 +114,7 @@ describe('ScheduledTaskHistoryModal', () => {
     const wrapper = mount(ScheduledTaskHistoryModal, { props: { visible: true }, attachTo: document.body });
     await flushPromises();
 
-    expect(document.querySelector('.sth-empty')?.textContent).toContain('No past schedules');
+    expect(document.body.textContent).toContain('No past schedules in the last 7 days');
 
     wrapper.unmount();
   });

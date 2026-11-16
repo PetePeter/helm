@@ -1057,7 +1057,8 @@ describe('FormModal.vue', () => {
     await w.vm.$nextTick();
     expect(w.find('#form-title').attributes('aria-invalid')).toBeUndefined();
 
-    await saveBtn.trigger('click');
+    const currentSaveBtn = w.findAll('button').find(b => b.text() === 'Save')!;
+    await currentSaveBtn.trigger('click');
     expect(w.emitted('save')?.[0]?.[0]).toEqual({ title: 'Ship it' });
     expect(w.emitted('update:visible')?.[0]).toEqual([false]);
     w.unmount();
@@ -1081,7 +1082,7 @@ describe('FormModal.vue', () => {
 
   it('renders browse button for browse-enabled fields', () => {
     const w = factory();
-    const browseBtn = w.findAll('.btn--sm');
+    const browseBtn = w.findAll('button').filter((button) => button.text() === '📁');
     expect(browseBtn).toHaveLength(1);
     w.unmount();
   });

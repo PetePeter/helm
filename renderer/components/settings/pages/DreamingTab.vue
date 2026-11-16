@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { configClient, eventsClient, projectsClient, schedulerClient, toolsClient } from '../../../ipc/clients.js';
 import type { ProjectRecord } from '../../../../src/types/project.js';
 import type { ScheduledTask, UpdateScheduledTaskParams } from '../../../../src/types/scheduled-task.js';
 import { DEFAULT_DREAM_PROMPT, type DreamingConfigResult } from '../../../../src/types/dreaming.js';
 import { normalizeDirPath } from '../../../utils.js';
+import EmptyState from '../../common/EmptyState.vue';
 
 const tasks = ref<ScheduledTask[]>([]);
 const projects = ref<ProjectRecord[]>([]);
@@ -268,7 +270,7 @@ onUnmounted(() => {
         />
       </label>
       <div class="dreaming-card__actions">
-        <button type="button" class="btn btn--secondary btn--sm focusable" :disabled="!promptEdited || savingPrompt" @click="resetPrompt">Reset to default</button>
+        <AppButton variant="secondary" size="sm" type="button" class="focusable" :disabled="!promptEdited || savingPrompt" @click="resetPrompt">Reset to default</AppButton>
         <span class="dreaming-status" role="status">{{ promptStatus }}</span>
       </div>
 
@@ -281,7 +283,7 @@ onUnmounted(() => {
           <p>Choose the CLI and daily schedule for each project's dream.</p>
         </div>
       </header>
-      <p v-if="dreamTasks.length === 0" class="dreaming-empty">No projects are available for dreaming.</p>
+      <EmptyState v-if="dreamTasks.length === 0" title="No projects are available for dreaming." compact />
       <div v-else class="dreaming-table-wrap">
         <table class="dreaming-table">
           <thead>
@@ -290,8 +292,8 @@ onUnmounted(() => {
               <th scope="col">
                 <label class="dreaming-header-control">
                   <span>CLI</span>
-                  <select
-                    class="btn btn--secondary btn--sm focusable"
+                  <select class="app-select app-select--secondary app-select--sm focusable"
+
                     :value="sharedCliType ?? MIXED"
                     aria-label="CLI for all projects"
                     @change="onAllCliChange"
@@ -339,8 +341,8 @@ onUnmounted(() => {
                 <small :title="projectPath(task)">{{ projectPath(task) }}</small>
               </th>
               <td>
-                <select
-                  class="btn btn--secondary btn--sm focusable"
+                <select class="app-select app-select--secondary app-select--sm focusable"
+
                   :data-focus-id="`dreaming:cli:${task.id}`"
                   :value="task.cliType"
                   :aria-label="`Select CLI for ${projectLabel(task)}`"
@@ -387,14 +389,14 @@ onUnmounted(() => {
                 />
               </td>
               <td>
-                <button
+                <AppButton variant="secondary" size="sm"
                   type="button"
-                  class="btn btn--secondary btn--sm focusable"
+                  class="focusable"
                   :data-focus-id="`dreaming:run:${task.id}`"
                   :aria-label="`Run dream now for ${projectLabel(task)}`"
                   :disabled="!task.cliType || task.status === 'executing'"
                   @click="runDreamNow(task)"
-                >Run now</button>
+                >Run now</AppButton>
               </td>
             </tr>
           </tbody>
@@ -493,8 +495,7 @@ onUnmounted(() => {
   font: inherit;
 }
 
-.dreaming-status,
-.dreaming-empty {
+.dreaming-status {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }

@@ -300,11 +300,11 @@ describe('ArtifactViewer — artifact frame link bridge', () => {
 describe('ArtifactViewer', () => {
   it('creates Normal artifacts by default', async () => {
     const { w } = await mountWith([]);
-    await w.find('.ap-btn-new').trigger('click');
+    await w.find('.ap-create-button').trigger('click');
     await w.findAll('.dropdown-item')[0].trigger('click');
     await w.find('.ap-create-title-input').setValue('Note');
     await w.find('.ap-create-body').setValue('Body');
-    await w.find('.ap-btn--primary').trigger('click');
+    await w.find('.ap-primary-action').trigger('click');
     await flushPromises();
 
     expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'Note', 'Body', undefined);
@@ -316,11 +316,11 @@ describe('ArtifactViewer', () => {
 
     expect((w.find('.ap-new-intent').element as HTMLSelectElement).value).toBe('normal');
     await w.find('.ap-new-intent').setValue('manifesto');
-    await w.find('.ap-btn-new').trigger('click');
+    await w.find('.ap-create-button').trigger('click');
     await w.findAll('.dropdown-item')[0].trigger('click');
     await w.find('.ap-create-title-input').setValue('Rules');
     await w.find('.ap-create-body').setValue('Keep this');
-    await w.find('.ap-btn--primary').trigger('click');
+    await w.find('.ap-primary-action').trigger('click');
     await flushPromises();
 
     expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'Rules', 'Keep this', undefined, 'manifesto');
@@ -329,8 +329,8 @@ describe('ArtifactViewer', () => {
   it('shows a Manifesto badge in the artifact list and detail header', async () => {
     const { w } = await mountWith([makeArtifact({ intent: 'manifesto' })]);
 
-    expect(w.findAll('.ap-intent-badge')).toHaveLength(2);
-    expect(w.findAll('.ap-intent-badge').every(badge => badge.text() === 'Manifesto')).toBe(true);
+    expect(w.findAll('.artifact-intent-label')).toHaveLength(2);
+    expect(w.findAll('.artifact-intent-label').every(badge => badge.text() === 'Manifesto')).toBe(true);
   });
 
   it('creates and selects a distinct artifact for each pasted text note', async () => {
@@ -357,10 +357,10 @@ describe('ArtifactViewer', () => {
     const { w, viewer } = await mountWith([]);
     artifactList.mockImplementation(async () => [...notes]);
     for (let i = 0; i < 2; i++) {
-      await w.find('.ap-btn-new').trigger('click');
+      await w.find('.ap-create-button').trigger('click');
       await w.findAll('.dropdown-item')[1].trigger('click');
       await flushPromises();
-      await w.find('.ap-btn--primary').trigger('click');
+      await w.find('.ap-primary-action').trigger('click');
       await flushPromises();
     }
 
@@ -444,7 +444,7 @@ describe('ArtifactViewer', () => {
   });
 
   function footBtn(w: ReturnType<typeof mount>, text: string) {
-    return w.findAll('.ap-btn').find((b) => b.text().includes(text));
+    return w.findAll('.app-button').find((b) => b.text().includes(text));
   }
 
   it('deletes the selected artifact from the footer after confirm', async () => {

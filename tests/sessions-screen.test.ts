@@ -96,14 +96,6 @@ vi.mock('../renderer/plans/plan-screen.js', () => ({
   getCurrentPlanDirPath: () => mockCurrentPlanDirPath,
 }));
 
-let mockCurrentView = 'terminal';
-vi.mock('../renderer/main-view/main-view-manager.js', () => ({
-  currentView: vi.fn(() => mockCurrentView),
-  showView: vi.fn(),
-  registerView: vi.fn(),
-  onViewChange: vi.fn(() => () => {}),
-}));
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -117,7 +109,7 @@ function buildSidebarDom(): void {
     <section id="screen-sessions" class="screen screen--active sessions-screen-section">
       <div class="sessions-list-shell">
         <div class="sessions-list" id="sessionsList"></div>
-        <div class="sessions-empty" id="sessionsEmpty" style="display:none">
+        <div id="sessionsEmpty" style="display:none">
           No active sessions
         </div>
       </div>
@@ -132,9 +124,6 @@ function buildSidebarDom(): void {
     <div class="spawn-section" id="plannerSection">
       <h3 class="section-label">Project Planner</h3>
       <div class="plans-grid" id="plansGrid"></div>
-    </div>
-    <div id="mainArea">
-      <div id="terminalContainer"></div>
     </div>
     <div id="panelSplitter"></div>
     <p id="statusTotalSessions">0</p>
@@ -296,7 +285,6 @@ describe('Sessions Screen', () => {
       return { kind: 'local-terminal', sessionId };
     });
     mockSwitchTo.mockReset();
-    mockCurrentView = 'terminal';
     state.recentSessionId = null;
     state.lastSelectedSessionId = null;
     modalOpenForTest = false;
@@ -362,6 +350,11 @@ describe('Sessions Screen', () => {
       cliTypes: [],
       directories: [],
       editingSessionId: null,
+      stateDropdownSessionId: null,
+      stateDropdownFocusIndex: 0,
+      renameDraft: '',
+      renameSelectionStart: 0,
+      renameSelectionEnd: 0,
       // navList/groups are derived from state.sessions — reset below.
       groupPrefs: { order: [], collapsed: [], bookmarked: [] },
     });
@@ -370,8 +363,6 @@ describe('Sessions Screen', () => {
       activeSessionId: null,
       currentScreen: 'sessions',
     });
-    const terminalContainer = document.getElementById('terminalContainer');
-    if (terminalContainer) terminalContainer.style.display = '';
     document.body.innerHTML = '';
   });
 
@@ -456,7 +447,6 @@ describe('Sessions Screen', () => {
     });
 
     it('Ctrl+Shift+W opens close confirm for the active terminal session', async () => {
-      mockCurrentView = 'terminal';
       state.activeSessionId = 's-1';
       state.recentSessionId = 's-1';
       state.sessions = [{
@@ -1442,43 +1432,33 @@ describe('Sessions Screen', () => {
       expect(mockShowSessionMenu).toHaveBeenCalledWith('s-0');
     });
 
-    it('A at col=1 dispatches open-state-dropdown on the focused session card', () => {
-      const card = document.createElement('div');
-      card.className = 'session-card';
-      card.dataset.sessionId = 's-0';
-      document.body.appendChild(card);
-
-      let eventDispatched = false;
-      card.addEventListener('open-state-dropdown', () => { eventDispatched = true; });
-
+    it('A at col=1 opens the focused session dropdown through screen state', () => {
       sessionsState.cardColumn = 1;
       const result = sessions.handleSessionsScreenButton('A');
 
       expect(result).toBe(true);
-      expect(eventDispatched).toBe(true);
-      card.remove();
+      expect(sessionsState.stateDropdownSessionId).toBe('s-0');
+      expect(sessionsState.stateDropdownFocusIndex).toBe(4); // idle
     });
 
-    it('A in the state dropdown selects the focused option', async () => {
-      const dropdown = document.createElement('div');
-      dropdown.className = 'session-state-dropdown';
-      const idle = document.createElement('button');
-      idle.className = 'session-state-option active';
-      idle.textContent = 'Idle';
-      const planning = document.createElement('button');
-      planning.className = 'session-state-option dropdown-focused';
-      planning.textContent = 'Planning';
-      const onPlanningClick = vi.fn();
-      planning.addEventListener('click', onPlanningClick);
-      dropdown.append(idle, planning);
-      document.body.appendChild(dropdown);
-
+    it('D-pad moves dropdown focus and A selects the focused session state', async () => {
+      sessionsState.stateDropdownSessionId = 's-dropdown-test';
+      sessionsState.stateDropdownFocusIndex = 1;
+      expect(sessions.handleSessionsScreenButton('DPadDown')).toBe(true);
+      expect(sessionsState.stateDropdownFocusIndex).toBe(2);
       const result = sessions.handleSessionsScreenButton('A');
 
       expect(result).toBe(true);
       await flush();
-      expect(onPlanningClick).toHaveBeenCalled();
-      dropdown.remove();
+      expect(mockSessionSetState).toHaveBeenCalledWith('s-dropdown-test', 'planning');
+      expect(sessionsState.stateDropdownSessionId).toBeNull();
+    });
+
+    it('B closes the session dropdown', () => {
+      sessionsState.stateDropdownSessionId = 's-0';
+
+      expect(sessions.handleSessionsScreenButton('B')).toBe(true);
+      expect(sessionsState.stateDropdownSessionId).toBeNull();
     });
 
     it('setSessionPreviewMode persists the preview mode with the group prefs', async () => {
@@ -1527,142 +1507,65 @@ describe('Sessions Screen', () => {
       sessionsState.sessionsFocusIndex = 1; // first session card
     });
 
-    function enterRenameMode(renderInsideCard = false): HTMLInputElement {
+    function enterRenameMode(): void {
       sessionsState.editingSessionId = 's-0';
-      // Create the input manually since Vue owns the row rendering in these tests.
-      const input = document.createElement('input');
-      input.className = 'session-rename-input';
-      input.type = 'text';
-      input.value = 'Alpha';
-      if (renderInsideCard) {
-        const card = document.createElement('div');
-        card.className = 'session-card';
-        card.dataset.sessionId = 's-0';
-        card.appendChild(input);
-        document.body.appendChild(card);
-      } else {
-        document.body.appendChild(input);
-      }
-      return input;
+      sessionsState.renameDraft = 'Alpha';
+      sessionsState.renameSelectionStart = 0;
+      sessionsState.renameSelectionEnd = 'Alpha'.length;
     }
 
     it('A button commits rename when editing', async () => {
-      const input = enterRenameMode();
-      input.value = 'NewName';
+      enterRenameMode();
+      sessionsState.renameDraft = 'NewName';
       const result = sessions.handleSessionsScreenButton('A');
       expect(result).toBe(true);
       await flush();
       expect((window as any).gamepadCli.sessionRename).toHaveBeenCalledWith('s-0', 'NewName');
-      input.remove();
-    });
-
-    it('A button commits rename from the inline editing row', async () => {
-      const input = enterRenameMode(true);
-      input.value = 'InlineName';
-      const result = sessions.handleSessionsScreenButton('A');
-      expect(result).toBe(true);
-      await flush();
-      expect((window as any).gamepadCli.sessionRename).toHaveBeenCalledWith('s-0', 'InlineName');
-      input.closest('.session-card')?.remove();
     });
 
     it('B button cancels rename when editing', () => {
-      const input = enterRenameMode();
+      enterRenameMode();
       const result = sessions.handleSessionsScreenButton('B');
       expect(result).toBe(true);
       expect(sessionsState.editingSessionId).toBeNull();
       expect((window as any).gamepadCli.sessionRename).not.toHaveBeenCalled();
-      input.remove();
     });
 
-    it('D-pad Left moves caret left', () => {
-      const input = enterRenameMode();
-      input.setSelectionRange(3, 3);
+    it('D-pad Left collapses the rename selection one character left', () => {
+      enterRenameMode();
+      sessionsState.renameSelectionStart = 3;
+      sessionsState.renameSelectionEnd = 3;
       const result = sessions.handleSessionsScreenButton('DPadLeft');
       expect(result).toBe(true);
-      expect(input.selectionStart).toBe(2);
-      expect(input.selectionEnd).toBe(2);
-      input.remove();
+      expect(sessionsState.renameSelectionStart).toBe(2);
+      expect(sessionsState.renameSelectionEnd).toBe(2);
     });
 
-    it('D-pad Right moves caret right', () => {
-      const input = enterRenameMode();
-      input.setSelectionRange(2, 2);
+    it('D-pad Right collapses the rename selection one character right', () => {
+      enterRenameMode();
+      sessionsState.renameSelectionStart = 2;
+      sessionsState.renameSelectionEnd = 2;
       const result = sessions.handleSessionsScreenButton('DPadRight');
       expect(result).toBe(true);
-      expect(input.selectionStart).toBe(3);
-      expect(input.selectionEnd).toBe(3);
-      input.remove();
+      expect(sessionsState.renameSelectionStart).toBe(3);
+      expect(sessionsState.renameSelectionEnd).toBe(3);
     });
 
     it('D-pad Up/Down consumed during rename', () => {
-      const input = enterRenameMode();
+      enterRenameMode();
       const indexBefore = sessionsState.sessionsFocusIndex;
       expect(sessions.handleSessionsScreenButton('DPadUp')).toBe(true);
       expect(sessions.handleSessionsScreenButton('DPadDown')).toBe(true);
       expect(sessionsState.sessionsFocusIndex).toBe(indexBefore);
-      input.remove();
     });
 
     it('other buttons consumed during rename', () => {
-      const input = enterRenameMode();
+      enterRenameMode();
       expect(sessions.handleSessionsScreenButton('X')).toBe(true);
       expect(sessions.handleSessionsScreenButton('Y')).toBe(true);
       expect(sessions.handleSessionsScreenButton('LeftBumper')).toBe(true);
-      input.remove();
     });
 
-  });
-
-  describe('updateSessionsFocus', () => {
-    it('scrolls the focused rendered session item into view without mutating focus classes', () => {
-      const scrollIntoView = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoView;
-
-      const list = document.getElementById('sessionsList')!;
-      const unrelated = document.createElement('div');
-      unrelated.setAttribute('data-nav-index', '2');
-      const unrelatedScroll = vi.fn();
-      unrelated.scrollIntoView = unrelatedScroll;
-      document.body.append(unrelated);
-      list.innerHTML = `
-        <div class="group-header" data-nav-index="1" data-sessions-nav-index="1"></div>
-        <div class="session-card" data-nav-index="2" data-sessions-nav-index="2">
-          <button class="session-state-btn"></button>
-          <button class="session-rename"></button>
-          <button class="session-close"></button>
-        </div>
-      `;
-
-      sessionsState.activeFocus = 'sessions';
-      sessionsState.sessionsFocusIndex = 2;
-      sessionsState.cardColumn = 4;
-
-      sessions.updateSessionsFocus();
-
-      const card = list.querySelector('.session-card') as HTMLElement;
-      const closeBtn = list.querySelector('.session-close') as HTMLElement;
-      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
-      expect(unrelatedScroll).not.toHaveBeenCalled();
-      expect(card.classList.contains('focused')).toBe(false);
-      expect(closeBtn.classList.contains('card-col-focused')).toBe(false);
-      unrelated.remove();
-    });
-
-    it('does not scroll when sessions are not the active focus zone', () => {
-      const scrollIntoView = vi.fn();
-      Element.prototype.scrollIntoView = scrollIntoView;
-
-      const list = document.getElementById('sessionsList')!;
-      list.innerHTML = `<div class="session-card" data-nav-index="2"></div>`;
-
-      sessionsState.activeFocus = 'spawn';
-      sessionsState.sessionsFocusIndex = 2;
-
-      sessions.updateSessionsFocus();
-
-      expect(scrollIntoView).not.toHaveBeenCalled();
-    });
   });
 
 });

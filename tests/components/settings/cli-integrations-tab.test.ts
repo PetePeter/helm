@@ -86,7 +86,7 @@ async function factory() {
 }
 
 function section(wrapper: Awaited<ReturnType<typeof factory>>, title: string) {
-  const found = wrapper.findAll('.tg-section').find(s => s.find('.tg-section-title').text() === title);
+  const found = wrapper.findAll('.tg-section').find(s => s.find('.section-header__title').text() === title);
   if (!found) throw new Error(`No section titled "${title}"`);
   return found;
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * DraftPane: the `draft` tool window, one pad per session.
  *
@@ -140,14 +141,14 @@ function onKeydown(event: KeyboardEvent): void {
       <article v-for="(entry, index) in history" :key="`${entry.at}-${index}`" class="draft-pane__entry">
         <div class="draft-pane__meta"><strong>{{ new Date(entry.at).toLocaleString() }}</strong> via {{ entry.via === 'chat' ? 'Chat' : 'CLI' }}</div>
         <pre>{{ entry.text }}</pre>
-        <button type="button" class="btn btn--sm" @click="copySend(entry)">Copy text</button>
+        <AppButton variant="secondary" size="sm" type="button" @click="copySend(entry)">Copy text</AppButton>
       </article>
     </div>
     <template v-else>
     <div v-if="conflict" class="draft-pane__conflict" role="alert">
       <span>The draft was changed while you were typing.</span>
-      <button type="button" class="btn btn--sm" data-draft-keep-mine @click="keepMine">Keep mine</button>
-      <button type="button" class="btn btn--sm" data-draft-take-theirs @click="takeTheirs">Take theirs</button>
+      <AppButton variant="secondary" size="sm" type="button" data-draft-keep-mine @click="keepMine">Keep mine</AppButton>
+      <AppButton variant="secondary" size="sm" type="button" data-draft-take-theirs @click="takeTheirs">Take theirs</AppButton>
     </div>
     <textarea
       ref="inputRef"
@@ -166,14 +167,13 @@ function onKeydown(event: KeyboardEvent): void {
       <span v-if="error" class="draft-pane__error" role="alert">{{ error }}</span>
       <span v-else>{{ status }}</span>
       <span class="draft-pane__size" :class="{ 'is-over': bytes > DRAFT_MAX_BYTES }">{{ size }}</span>
-      <button
+      <AppButton variant="primary" size="sm"
         type="button"
-        class="btn btn--primary btn--sm"
         data-draft-send
         :title="`Send via ${sendTarget} and clear (Ctrl+Enter)`"
         :disabled="loading || !text.trim()"
         @click="send"
-      >Send</button>
+      >Send</AppButton>
     </footer>
     </template>
   </section>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, terminalClient, toolsClient } from '../../../ipc/clients.js';
 /**
  * ProjectsTab.vue — Project list CRUD with expandable directory management.
@@ -9,6 +10,7 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  */
 import { ref, onMounted } from 'vue';
 import { useAppStore } from '../../../stores/app.js';
+import EmptyState from '../../common/EmptyState.vue';
 
 interface ProjectRecord {
   id: string;
@@ -167,11 +169,11 @@ async function onSetMainDir(projectId: string, dirPath: string): Promise<void> {
   <div class="settings-projects-panel">
     <div class="settings-panel__header">
       <span class="settings-panel__title">Projects</span>
-      <button
-        class="btn btn--secondary btn--sm focusable"
+      <AppButton variant="secondary" size="sm"
+        class="focusable"
         title="Add project"
         @click="onAddProject"
-      >+ Add Project</button>
+      >+ Add Project</AppButton>
     </div>
 
     <p v-if="errorMessage" class="settings-project-error">{{ errorMessage }}</p>
@@ -211,20 +213,20 @@ async function onSetMainDir(projectId: string, dirPath: string): Promise<void> {
             @dblclick="startEditing(project)"
           >{{ project.name }}</span>
 
-          <button
+          <AppButton variant="secondary" size="sm"
             v-if="editingId !== project.id"
-            class="btn btn--secondary btn--sm focusable"
+            class="focusable"
             title="Rename project"
             @click="startEditing(project)"
-          >Rename</button>
+          >Rename</AppButton>
 
-          <button
-            class="btn btn--danger btn--sm focusable"
+          <AppButton variant="danger" size="sm"
+            class="focusable"
             title="Deletes this project and all Helm plans owned by it"
             @click="onDeleteClick(project.id)"
           >
             {{ deleteConfirmId === project.id ? 'Confirm?' : 'Delete' }}
-          </button>
+          </AppButton>
         </div>
 
         <!-- Expanded directory list -->
@@ -239,27 +241,25 @@ async function onSetMainDir(projectId: string, dirPath: string): Promise<void> {
             class="settings-project-dir"
           >
             <span class="settings-project-dir__path">{{ altPath }}</span>
-            <button
-              class="btn btn--secondary btn--sm focusable"
+            <AppButton variant="secondary" size="sm"
+              class="focusable"
               title="Set as main directory"
               @click="onSetMainDir(project.id, altPath)"
-            >Set as Main</button>
-            <button
-              class="btn btn--ghost btn--sm focusable"
+            >Set as Main</AppButton>
+            <AppButton variant="ghost" size="sm"
+              class="focusable"
               title="Remove directory"
               @click="onRemoveDir(project.id, altPath)"
-            >×</button>
+            >×</AppButton>
           </div>
-          <button
-            class="btn btn--secondary btn--sm focusable settings-project-add-dir"
+          <AppButton variant="secondary" size="sm"
+            class="focusable settings-project-add-dir"
             @click="onAddDir(project.id)"
-          >+ Add Directory</button>
+          >+ Add Directory</AppButton>
         </div>
       </div>
 
-      <p v-if="projects.length === 0" class="settings-empty">
-        No projects yet.
-      </p>
+      <EmptyState v-if="projects.length === 0" title="No projects yet." compact />
     </div>
   </div>
 </template>
@@ -345,15 +345,6 @@ async function onSetMainDir(projectId: string, dirPath: string): Promise<void> {
   outline: none;
 }
 
-.settings-project-badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--bg-tertiary, #2a2a3e);
-  color: var(--text-secondary, #888);
-  text-transform: uppercase;
-}
-
 /* ── Expanded directory list ─────────────────────────────────────────────── */
 
 .settings-project-dirs {
@@ -402,15 +393,6 @@ async function onSetMainDir(projectId: string, dirPath: string): Promise<void> {
 .settings-project-add-dir {
   margin-top: 8px;
   align-self: flex-start;
-}
-
-/* ── Empty state ──────────────────────────────────────────────────────────── */
-
-.settings-empty {
-  color: var(--text-secondary, #888);
-  font-size: 13px;
-  text-align: center;
-  padding: 24px 0;
 }
 
 .settings-project-error {

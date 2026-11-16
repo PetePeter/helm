@@ -207,3 +207,62 @@ defineExpose({ handleButton });
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.context-menu-overlay {
+  background: transparent;
+  align-items: stretch;
+  justify-content: stretch;
+}
+/* RuntimeGroupMoveSubmenu renders this same shared menu surface in a sibling
+ * teleported tree, so these shared classes must remain global. */
+:global(.context-menu) {
+  position: fixed;
+  min-width: 240px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  background: var(--context-menu-bg);
+  border: 1px solid var(--context-menu-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  padding: 4px 0;
+  z-index: 1001;
+}
+:global(.context-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--context-menu-text);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  user-select: none;
+}
+:global(.context-menu-header) {
+  padding: 8px 14px 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+:global(.context-menu-item:hover) { background: var(--context-menu-hover); }
+:global(.context-menu-item--selected) { background: var(--context-menu-selected); color: white; }
+:global(.context-menu-item--disabled) { opacity: 0.4; cursor: default; pointer-events: none; }
+:global(.context-menu-item--cancel) {
+  border-top: 1px solid var(--context-menu-cancel-border);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+:global(.context-menu-separator) {
+  height: 1px;
+  background: var(--context-menu-border);
+  margin: 4px 8px;
+}
+</style>

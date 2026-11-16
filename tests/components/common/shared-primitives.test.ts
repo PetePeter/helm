@@ -5,7 +5,6 @@ import { mount } from '@vue/test-utils';
 import PanelHeader from '../../../renderer/components/common/PanelHeader.vue';
 import SearchField from '../../../renderer/components/common/SearchField.vue';
 import ListRow from '../../../renderer/components/common/ListRow.vue';
-import Chip from '../../../renderer/components/common/Chip.vue';
 import FilterChip from '../../../renderer/components/common/FilterChip.vue';
 import EmptyState from '../../../renderer/components/common/EmptyState.vue';
 
@@ -64,18 +63,6 @@ describe('shared UI primitives', () => {
     expect(wrapper.emitted('click')).toHaveLength(1);
   });
 
-  it('keeps Chip display-only so it cannot be mistaken for a filter control', () => {
-    const wrapper = mount(Chip, {
-      props: { label: 'Coding', tone: 'accent', selected: true, disabled: true },
-    });
-
-    expect(wrapper.element.tagName).toBe('SPAN');
-    expect(wrapper.find('button').exists()).toBe(false);
-    expect(wrapper.attributes('aria-pressed')).toBeUndefined();
-    expect(wrapper.emitted()).toEqual({});
-    expect(wrapper.text()).toBe('Coding');
-  });
-
   it.each([
     ['yes', 'true'],
     ['no', 'false'],
@@ -110,5 +97,15 @@ describe('shared UI primitives', () => {
     expect(wrapper.find('[aria-hidden="true"]').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('🧠');
     expect(wrapper.find('button').exists()).toBe(false);
+  });
+
+  it('supports compact EmptyState sizing for inline empty content', () => {
+    const wrapper = mount(EmptyState, {
+      props: { title: 'No schedules yet', hint: 'Create a schedule to run a prompt.', compact: true },
+    });
+
+    expect(wrapper.classes()).toContain('empty-state--compact');
+    expect(wrapper.find('h3').text()).toBe('No schedules yet');
+    expect(wrapper.find('p').text()).toBe('Create a schedule to run a prompt.');
   });
 });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * Binding editor modal — complex form for editing gamepad button bindings.
  *
@@ -207,8 +208,8 @@ defineExpose({ handleButton });
         </div>
 
         <div class="modal-footer">
-          <button class="btn" @click="onCancel">Cancel</button>
-          <button class="btn btn--primary" @click="onSave">Save</button>
+          <AppButton variant="secondary" @click="onCancel">Cancel</AppButton>
+          <AppButton variant="primary" @click="onSave">Save</AppButton>
         </div>
       </div>
     </div>

@@ -4,10 +4,13 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  * ScheduledTasksTab.vue -- UI for creating and managing scheduled tasks.
  */
 import { ref, computed, onMounted, onUnmounted, watch, ref as templateRef } from 'vue';
+import AppButton from '../../common/AppButton.vue';
 import type { ScheduledTask, ScheduledTaskFrozenPolicy, ScheduledTaskHistoryEntry, ScheduledTaskMode, ScheduledTaskScheduleSelection } from '../../../../src/types/scheduled-task.js';
 import { CronEngine } from '../../../../src/utils/cron-engine.js';
 import QuickSpawnModal from '../../modals/QuickSpawnModal.vue';
 import DirPickerModal from '../../modals/DirPickerModal.vue';
+import Badge from '../../common/Badge.vue';
+import EmptyState from '../../common/EmptyState.vue';
 import PromptTextarea from '../../common/PromptTextarea.vue';
 import { useFocusTrap } from '../../../composables/useFocusTrap.js';
 import { FORM_KEYS, useModalStack } from '../../../composables/useModalStack.js';
@@ -124,17 +127,17 @@ function formatCountdown(scheduledTime: Date | string): string {
   return `${secs}s`;
 }
 
-function getStatusBadge(task: ScheduledTask): { label: string; cssClass: string } {
+function getStatusBadge(task: ScheduledTask): { label: string; tone: 'accent' | 'ok' | 'warn' | 'error' | 'neutral' } {
   if (task.status === 'pending' && task.scheduleKind === 'none') {
-    return { label: 'Unscheduled', cssClass: 'badge--pending' };
+    return { label: 'Unscheduled', tone: 'accent' };
   }
   switch (task.status) {
-    case 'pending': return { label: 'Pending', cssClass: 'badge--pending' };
-    case 'executing': return { label: 'Running', cssClass: 'badge--executing' };
-    case 'completed': return { label: 'Done', cssClass: 'badge--completed' };
-    case 'cancelled': return { label: 'Cancelled', cssClass: 'badge--cancelled' };
-    case 'failed': return { label: 'Failed', cssClass: 'badge--failed' };
-    default: return { label: status, cssClass: '' };
+    case 'pending': return { label: 'Pending', tone: 'accent' };
+    case 'executing': return { label: 'Running', tone: 'warn' };
+    case 'completed': return { label: 'Done', tone: 'ok' };
+    case 'cancelled': return { label: 'Cancelled', tone: 'neutral' };
+    case 'failed': return { label: 'Failed', tone: 'error' };
+    default: return { label: status, tone: 'neutral' };
   }
 }
 
@@ -366,7 +369,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
     <div v-if="!popup" class="st-header">
       <h2 class="st-title">Scheduled Tasks</h2>
       <span class="st-count">{{ tasks.length }} task{{ tasks.length !== 1 ? 's' : '' }}</span>
-      <button class="st-create-btn focusable" :disabled="creating" @click="toggleCreateForm">{{ showCreateForm ? 'Cancel' : '+ Create Task' }}</button>
+      <AppButton variant="primary" size="md" class="focusable st-create-action" :disabled="creating" @click="toggleCreateForm">{{ showCreateForm ? 'Cancel' : '+ Create Task' }}</AppButton>
     </div>
 
     <div v-if="formVisible" class="st-form">
@@ -389,24 +392,46 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
         <label class="st-label">Cron Expression *</label>
         <input v-model="cronExpression" type="text" class="st-input focusable" placeholder="0 9 * * 1-5" />
         <div class="st-cron-presets">
-          <button v-for="preset in cronPresets" :key="preset.expression" type="button" class="st-preset-btn focusable" @click="cronExpression = preset.expression">{{ preset.label }}</button>
+          <Badge
+            v-for="preset in cronPresets"
+            :key="preset.expression"
+            as="button"
+            tone="neutral"
+            class="focusable st-cron-preset"
+            @click="cronExpression = preset.expression"
+          >{{ preset.label }}</Badge>
         </div>
         <p class="st-cron-status" :class="{ 'st-cron-status--invalid': !cronValidation.valid }">
           {{ cronValidation.valid ? (cronValidation.nextRunAt ? `Next: ${formatTime(cronValidation.nextRunAt)}` : 'Valid expression') : cronValidation.error }}
         </p>
         <div class="st-form-row"><label class="st-label">End Date (optional)</label><input v-model="endDate" type="date" class="st-input focusable" /></div>
       </div>
-      <div class="st-form-footer"><button v-if="!popup" class="st-btn st-btn--secondary focusable" @click="toggleCreateForm">Cancel</button><button v-if="popup" class="st-btn st-btn--secondary focusable" @click="emit('close')">Cancel</button><button v-if="editingTaskId" class="st-btn st-btn--secondary focusable" :disabled="creating" @click="cloneTask">Clone</button><button class="st-btn st-btn--primary focusable" :disabled="!canCreate || creating" @click="createTask">{{ creating ? (editingTaskId ? 'Saving...' : 'Creating...') : (editingTaskId ? 'Save' : 'Create') }}</button></div>
+      <div class="st-form-footer">
+        <AppButton v-if="!popup" variant="secondary" size="md" class="focusable st-form-secondary" @click="toggleCreateForm">Cancel</AppButton>
+        <AppButton v-if="popup" variant="secondary" size="md" class="focusable st-form-secondary" @click="emit('close')">Cancel</AppButton>
+        <AppButton v-if="editingTaskId" variant="secondary" size="md" class="focusable st-form-secondary" :disabled="creating" @click="cloneTask">Clone</AppButton>
+        <AppButton variant="primary" size="md" class="focusable st-form-submit" :disabled="!canCreate || creating" @click="createTask">
+          {{ creating ? (editingTaskId ? 'Saving...' : 'Creating...') : (editingTaskId ? 'Save' : 'Create') }}
+        </AppButton>
+      </div>
     </div>
 
     <div v-if="!popup" class="st-task-list">
-      <div v-if="sortedTasks.length === 0 && !showCreateForm" class="st-empty">No scheduled tasks yet. Click "+ Create Task" to add one.</div>
+      <EmptyState
+        v-if="sortedTasks.length === 0 && !showCreateForm"
+        title="No scheduled tasks yet"
+        hint='Click "+ Create Task" to add one.'
+        compact
+      />
       <div v-for="task in sortedTasks" :key="task.id" class="st-task-card" :class="'st-task-card--' + task.status">
-        <div class="st-task-header"><h4 class="st-task-title">{{ task.title }}</h4><span class="st-task-badge" :class="getStatusBadge(task).cssClass">{{ getStatusBadge(task).label }}</span></div>
+        <div class="st-task-header"><h4 class="st-task-title">{{ task.title }}</h4><Badge :class="`scheduled-task-status--${task.status}`" :tone="getStatusBadge(task).tone">{{ getStatusBadge(task).label }}</Badge></div>
         <p v-if="task.description" class="st-task-description">{{ task.description }}</p>
         <div class="st-task-meta"><span class="st-task-chip">{{ getCliDisplayName(task.cliType) }}</span><span class="st-task-chip">{{ shortenPath(task.dirPath) }}</span><span class="st-task-chip">{{ formatSchedule(task) }}</span><span v-if="task.status === 'pending' && task.scheduleKind === 'none'" class="st-task-time">not scheduled</span><span v-else-if="task.status === 'pending'" class="st-task-countdown">{{ formatNextRun(task) }}</span><span v-else-if="task.status === 'executing'" class="st-task-countdown st-task-countdown--running">running...</span><span v-else class="st-task-time">{{ formatTime(task.scheduledTime) }}</span></div>
         <div v-if="task.error" class="st-task-error">{{ task.error }}</div>
-        <div v-if="task.status === 'pending' && !task.systemKind" class="st-task-actions"><button class="st-btn st-btn--secondary focusable" :disabled="creating" @click="editTask(task)">Edit</button><button class="st-btn st-btn--danger focusable" :disabled="creating" @click="cancelTask(task.id)">Cancel Task</button></div>
+        <div v-if="task.status === 'pending' && !task.systemKind" class="st-task-actions">
+          <AppButton variant="secondary" size="md" class="focusable st-task-edit" :disabled="creating" @click="editTask(task)">Edit</AppButton>
+          <AppButton variant="danger" size="sm" class="focusable st-task-cancel" :disabled="creating" @click="cancelTask(task.id)">Cancel Task</AppButton>
+        </div>
       </div>
     </div>
 
@@ -421,9 +446,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
 .st-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .st-title { margin: 0; font-size: 1.5rem; color: var(--text-primary); }
 .st-count { color: var(--text-secondary); font-size: 0.85rem; }
-.st-create-btn { margin-left: auto; padding: 8px 16px; background: var(--accent); color: var(--accent-contrast); border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.9rem; }
-.st-create-btn:hover { opacity: 0.9; }
-.st-create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.st-create-action { margin-left: auto; }
 .st-form { background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; }
 .st-form-row { display: flex; flex-direction: column; gap: 4px; }
 .st-form-row--inline { flex-direction: row; gap: 12px; }
@@ -437,34 +460,21 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
 .st-picker-btn:hover:not(.st-picker-btn--disabled) { border-color: var(--accent); }
 .st-cron-box { padding: 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; }
 .st-cron-presets { display: flex; gap: 6px; flex-wrap: wrap; }
-.st-preset-btn { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); font-size: 0.8rem; cursor: pointer; }
-.st-preset-btn:hover { border-color: var(--accent); }
 .st-cron-status { margin: 0; font-size: 0.82rem; color: #44cc44; }
 .st-cron-status--invalid { color: #ff6666; }
 .st-unscheduled-hint { margin: 0; color: var(--text-secondary); font-size: 0.85rem; }
 .st-form-error { margin: 0; color: #ff6666; font-size: 0.85rem; }
 .st-form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
-.st-btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.95rem; }
-.st-btn--primary { background: var(--accent); color: var(--accent-contrast); }
-.st-btn--primary:hover:not(:disabled) { opacity: 0.9; }
-.st-btn--primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.st-btn--secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); padding: 10px 20px; }
-.st-btn--secondary:hover:not(:disabled) { border-color: var(--accent); }
-.st-btn--danger { background: #ff4444; color: white; padding: 6px 12px; font-size: 0.85rem; }
-.st-btn--danger:hover:not(:disabled) { background: #cc0000; }
-.st-empty { text-align: center; padding: 40px; color: var(--text-secondary); }
 .st-task-list { display: flex; flex-direction: column; gap: 12px; }
 .st-task-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
 .st-task-card--completed { opacity: 0.6; }
 .st-task-card--cancelled { opacity: 0.5; }
 .st-task-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
 .st-task-title { margin: 0; font-size: 1.1rem; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-task-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 3px; font-weight: 500; flex-shrink: 0; }
-.badge--pending { background: rgba(68,136,255,0.15); color: #4488ff; }
-.badge--executing { background: rgba(255,159,26,0.15); color: #ff9f1a; }
-.badge--completed { background: rgba(68,204,68,0.15); color: #44cc44; }
-.badge--cancelled { background: rgba(85,85,85,0.15); color: #555; }
-.badge--failed { background: rgba(255,68,68,0.15); color: #ff4444; }
+.scheduled-task-status--pending.badge--accent { border: 0; background: rgba(68, 136, 255, 0.15); color: #4488ff; }
+.scheduled-task-status--executing.badge--warn { background: color-mix(in srgb, var(--warning) 15%, transparent); }
+.scheduled-task-status--cancelled.badge--neutral { background: rgba(85, 85, 85, 0.15); color: #555; }
+.scheduled-task-status--failed.badge--error { color: var(--danger); }
 .st-task-description { margin: 0 0 4px; font-size: 0.9rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-task-meta { display: flex; gap: 8px; font-size: 0.8rem; color: var(--text-secondary); flex-wrap: wrap; align-items: center; }
 .st-task-chip { background: var(--bg-tertiary); padding: 1px 6px; border-radius: 3px; }

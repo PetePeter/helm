@@ -8,14 +8,20 @@ language predictable as the renderer moves from imperative DOM to Vue.
 `renderer/styles/main.css` owns the things that are truly global:
 
 - `:root` design tokens, the reset, and bare form-control defaults;
-- the application shell and recursive dock layout;
-- shared `.btn*` and `.modal*` primitives; and
+- the application shell; recursive dock layout is scoped by its Vue components;
+- shared `.modal*` primitives; and
 - documented global compatibility families whose DOM cannot safely be scoped.
 
 A component owns its visual DOM in a `<style scoped>` block. Move a rule with
 the DOM owner, not with the section heading where the rule happened to be
 written. Before moving a class, search the class across `renderer/` and
 `src/`, including templates, TypeScript, and DOM-building helpers.
+
+The recursive dock layout lives with `DockWorkspace.vue`, `DockNode.vue`,
+`DockTabGroup.vue`, `DockPane.vue`, `DockSplitter.vue`, `DockPreview.vue`,
+`DockViewMenu.vue`, `NewItemPulse.vue`, and `DockPaneBody.vue`.
+The app-shell relationship and body drag cursor stay narrow global selectors
+in their owning component styles.
 
 The shared token vocabulary is:
 
@@ -27,6 +33,7 @@ The shared token vocabulary is:
 | Semantic state | `--danger`, `--danger-border`, `--info`, `--status-*` |
 | Shape and spacing | `--radius-*`, `--spacing-*` |
 | Type and effects | `--font-size-*`, `--font-mono`, `--shadow*` |
+| Shared context menu | `--context-menu-*` (fixed compatibility palette) |
 
 Raw hex colours are not acceptable in component CSS. Add or reuse a token in
 `:root`, then consume the token from the component. Semantic status colours
@@ -50,33 +57,35 @@ Four cases make a global rule safer than a superficially tidy scoped rule:
 
 2. **Imperatively created DOM.** Nodes created with `document.createElement`
    in TypeScript do not receive a Vue `data-v` attribute. The terminal manager
-   creates `.terminal-pane` at its creation sites, and `renderer/utils.ts`
-   creates the sequence-help controls. Their terminal/xterm and sequence-help
-   rules must remain reachable globally. The event-log output is another
-   imperative DOM bridge.
+   creates `.terminal-pane` at its creation sites. Its terminal/xterm rules
+   must remain reachable globally.
 
 3. **Genuinely shared classes.** A class rendered by multiple components has no
-   single scoped owner. The context-menu family is rendered by
-   `ContextMenu.vue`, `RuntimeGroupMoveSubmenu.vue`, `BindingEditorModal.vue`,
-   and `AppModalHost.vue`.
-   The `.tg-*` family is shared by the MCP and fleet settings components.
-   The session/group navigation and common settings-list families are also
-   shared by sibling components and their navigation helpers. Keep these
-   global until they become a real common primitive.
+   single scoped owner. `ContextMenu.vue` keeps the shared context-menu styles beside its
+   template with `:global()` selectors because `RuntimeGroupMoveSubmenu.vue` renders
+   the same surface in a sibling teleported tree. The `.tg-*` family is shared by
+   the MCP and fleet settings components. The session screen shell remains
+   global because it spans siblings. `SessionCard`, `SessionGroup`, `SessionList`,
+   and `SortBar` own their visual rules in scoped styles; `OperatorSection` owns its
+   activity dot. `.jump-key` stays global because picker modals and dock tabs share it.
 
 4. **Slot content.** Slot content is stamped with the parent's scope id, not
    the child's. A child rule targeting DOM supplied through a slot can silently
    stop matching. The caller owns slot content and its styles. This is also why
    `plan-header__chip` remains global across `PlanScreen.vue` and `SkillsTab.vue`.
 
-The remaining explicit compatibility families in `main.css` are the plan-chip
-family (`.plan-chip` is also a plain span in `ItemEditor.vue`), terminal and
-xterm classes, the teleported editor/modal families, and legacy session,
-settings and picker classes that are shared across component
-boundaries or queried by the navigation bridge. The structural CSS test keeps
-this list explicit so a new global selector requires a deliberate rationale.
-The structural test also ratchets the current non-core selector count; that
-baseline may only decrease as legacy rules move to their component owners.
+The remaining explicit compatibility families in `main.css` are the session
+screen shell, terminal and xterm classes, shared settings surfaces, the field
+layout shared by the teleported `BindingEditorModal` and `FormModal`, and the
+shared picker selectors `.dir-picker-list`, `.dir-picker-item`,
+`.dir-picker-item__body`, and `.dir-picker-item__name`, which are rendered by
+both `DirPickerModal` and `QuickSpawnModal`. The
+`.plan-chip` family is scoped in `PlanChip.vue`; `ItemEditor.vue` reuses its
+compact variant. `.jump-key` remains global because picker modals and dock tabs
+share it. The structural CSS test keeps this list explicit so a new global
+selector requires a deliberate rationale. It also ratchets the current non-core
+selector count; that baseline may only decrease as legacy rules move to their
+component owners.
 
 ## Shared primitives
 
@@ -91,6 +100,9 @@ visual contract:
 - `Chip` is display-only. It is not a button.
 - `FilterChip` is the interactive tri-state control and carries `aria-pressed`.
 - `PromptTextarea` owns prompt input behavior and focus handling.
+- `AppButton` owns the shared button variants and focus treatment; use it for
+  template buttons. Native selects with the shared control variants use the
+  `.app-select` classes to preserve native selection behavior.
 
 Do not merge `Chip` and `FilterChip`: their accessibility and interaction
 contracts are intentionally different.
@@ -121,17 +133,19 @@ rule can override and disable the shared grid.
 
 ## Buttons
 
-The `.btn` base supplies layout, typography, focus-visible treatment, and the
-shared disabled affordance. Variants are declared once: `.btn--sm`,
-`.btn--primary`, `.btn--secondary`, `.btn--danger`, and `.btn--success`.
-`.btn--small` is obsolete. Primary buttons use `--accent-contrast` against
-`--accent`; danger buttons use `--danger` and `--danger-border` while retaining
-the established outlined/translucent appearance.
+`AppButton.vue` owns button layout, typography, focus-visible treatment,
+disabled state, and the primary, secondary, danger, ghost, and success variants.
+Primary buttons use `--accent-contrast` against `--accent`; danger buttons use
+`--danger` and `--danger-border` while retaining the established
+outlined/translucent appearance.
 
 The formerly local button systems (`PeersTab` and `PeerPairingDialog`) now use
-the shared variants.
-Their scoped blocks no longer redeclare `.btn` or `.btn--*`, so scoped
-specificity cannot override the global contract.
+the shared AppButton variants. Button styles live with AppButton instead of in
+the global stylesheet.
+
+Settings selects remain native elements so `v-model`, change handlers, and
+browser selection behavior stay native. Their shared `.app-select` variants
+live in `main.css` alongside the base form-control styles.
 
 ## Layering
 
@@ -139,11 +153,11 @@ specificity cannot override the global contract.
 flowchart TD
   T[`:root` tokens] --> G[Global foundation]
   R[Reset and bare controls] --> G
-  G --> S[App shell and dock layout]
-  G --> P[Shared btn and modal primitives]
-  X[Documented global exceptions] --> G
-  P --> C[Vue component scoped styles]
-  X --> D[Teleport, imperative DOM, shared classes, slot callers]
+  G --> S[App shell]
+  G --> M[Global modal primitives]
+  X[Documented shared exceptions] --> G
+  G --> C[Component scoped styles, including AppButton and PlanChip]
+  X --> D[Shared settings and session shell, terminal DOM, modal fields, picker rows, slot callers]
   C --> V[Rendered component DOM]
   D --> V
 ```

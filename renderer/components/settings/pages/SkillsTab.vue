@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import SettingsPane from '../primitives/SettingsPane.vue';
 import { useSettingsSubTabs } from '../settings-panes.js';
@@ -273,12 +274,12 @@ function formatReviewDate(timestamp: string): string {
       </div>
 
       <div class="settings-tool-actions">
-        <button class="btn btn--secondary btn--sm focusable" @click="emit('new')">
+        <AppButton variant="secondary" size="sm" class="focusable" @click="emit('new')">
           + New Skill
-        </button>
-        <button class="btn btn--secondary btn--sm focusable" @click="emit('resetAllCounts')">
+        </AppButton>
+        <AppButton variant="secondary" size="sm" class="focusable" @click="emit('resetAllCounts')">
           Reset All Counts
-        </button>
+        </AppButton>
       </div>
     </SettingsPane>
 
@@ -386,22 +387,22 @@ function formatReviewDate(timestamp: string): string {
         </p>
 
         <div class="settings-tool-actions">
-          <button v-if="canClone" class="btn btn--secondary focusable" @click="emit('clone', localDraft.id)">
+          <AppButton variant="secondary" v-if="canClone" class="focusable" @click="emit('clone', localDraft.id)">
             Clone as Override
-          </button>
+          </AppButton>
           <template v-if="!isSystemSkill">
-            <button
+            <AppButton variant="danger"
               v-if="!confirmDelete"
-              class="btn btn--danger focusable"
+              class="focusable"
               :disabled="!canDelete"
               @click="confirmDelete = true"
             >
               Delete
-            </button>
+            </AppButton>
             <template v-else>
               <span class="skill-confirm-delete">Delete?</span>
-              <button class="btn btn--danger focusable" @click="emit('delete', localDraft.id)">Yes</button>
-              <button class="btn btn--secondary focusable" @click="confirmDelete = false">No</button>
+              <AppButton variant="danger" class="focusable" @click="emit('delete', localDraft.id)">Yes</AppButton>
+              <AppButton variant="secondary" class="focusable" @click="confirmDelete = false">No</AppButton>
             </template>
           </template>
         </div>
@@ -414,12 +415,12 @@ function formatReviewDate(timestamp: string): string {
             <div class="skill-review-meta">{{ localDraft.reviewCount }} reviews - {{ localDraft.useCount }} uses</div>
           </div>
           <div class="settings-tool-actions">
-            <button class="btn btn--secondary btn--sm focusable" @click="emit('resetUseCount', localDraft.id)">
+            <AppButton variant="secondary" size="sm" class="focusable" @click="emit('resetUseCount', localDraft.id)">
               Reset Count
-            </button>
-            <button class="btn btn--danger btn--sm focusable" @click="emit('clearReviews', localDraft.id)">
+            </AppButton>
+            <AppButton variant="danger" size="sm" class="focusable" @click="emit('clearReviews', localDraft.id)">
               Clear
-            </button>
+            </AppButton>
           </div>
         </div>
 
@@ -450,3 +451,16 @@ function formatReviewDate(timestamp: string): string {
     </SettingsPane>
   </div>
 </template>
+
+<style scoped>
+.settings-tool-actions {
+  margin-top: var(--spacing-sm);
+}
+
+.tools-empty {
+  color: var(--text-dim);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md);
+  text-align: center;
+}
+</style>

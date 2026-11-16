@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 /**
  * AutoMemoryTab.vue: which model records memories for every session, and the
  * auto-save / auto-recall switches. Helm uses the picked model silently — no
@@ -8,6 +9,7 @@ import { computed, onMounted } from 'vue';
 import { useAutoMemoryStore } from '../../../stores/auto-memory.js';
 import { DEFAULT_JUDGE_PROMPT, type RecordingModelOption } from '../../../../src/types/auto-memory.js';
 import SuggestionLearningSection from './SuggestionLearningSection.vue';
+import ToggleRow from '../primitives/ToggleRow.vue';
 
 const store = useAutoMemoryStore();
 
@@ -39,8 +41,8 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
 
     <label class="auto-memory-setting">
       <span>Recording model</span>
-      <select
-        class="btn btn--secondary btn--sm focusable"
+      <select class="app-select app-select--secondary app-select--sm focusable"
+
         :value="store.settings.recordingModel"
         @change="store.save({ recordingModel: ($event.target as HTMLSelectElement).value })"
       >
@@ -53,12 +55,12 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
           :disabled="!model.available"
         >{{ optionLabel(model) }}</option>
       </select>
-      <button
+      <AppButton variant="secondary" size="sm"
         type="button"
-        class="btn btn--secondary btn--sm focusable"
+        class="focusable"
         :disabled="store.inert || store.stale || store.testing"
         @click="store.testModel()"
-      >{{ store.testing ? 'Testing…' : 'Test' }}</button>
+      >{{ store.testing ? 'Testing…' : 'Test' }}</AppButton>
     </label>
 
     <span v-if="offersRealCli" class="auto-memory-note settings-span">
@@ -70,35 +72,26 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
     <span v-if="store.stale" class="auto-memory-note settings-span">The picked model can no longer record, so auto-save does nothing: pick another.</span>
     <span v-if="store.testOutcome" class="auto-memory-note settings-span">{{ store.testOutcome }}</span>
 
-    <label class="auto-memory-setting">
-      <input
-        type="checkbox"
-        class="focusable"
-        :checked="store.settings.autoSave"
-        @change="store.save({ autoSave: checked($event) })"
-      />
-      <span>Auto-save: record key memories after each turn</span>
-    </label>
+    <ToggleRow
+      class="auto-memory-setting"
+      label="Auto-save: record key memories after each turn"
+      :model-value="store.settings.autoSave"
+      @update:model-value="store.save({ autoSave: $event })"
+    />
 
-    <label class="auto-memory-setting">
-      <input
-        type="checkbox"
-        class="focusable"
-        :checked="store.settings.autoRecall"
-        @change="store.save({ autoRecall: checked($event) })"
-      />
-      <span>Auto-recall: hint at related memories when you send a prompt</span>
-    </label>
+    <ToggleRow
+      class="auto-memory-setting"
+      label="Auto-recall: hint at related memories when you send a prompt"
+      :model-value="store.settings.autoRecall"
+      @update:model-value="store.save({ autoRecall: $event })"
+    />
 
-    <label class="auto-memory-setting">
-      <input
-        type="checkbox"
-        class="focusable"
-        :checked="store.settings.ideaPrompt"
-        @change="store.save({ ideaPrompt: checked($event) })"
-      />
-      <span>Idea prompts: remind sessions to save curiosities and inspiration as ideas</span>
-    </label>
+    <ToggleRow
+      class="auto-memory-setting"
+      label="Idea prompts: remind sessions to save curiosities and inspiration as ideas"
+      :model-value="store.settings.ideaPrompt"
+      @update:model-value="store.save({ ideaPrompt: $event })"
+    />
 
     <label class="auto-memory-prompt settings-span">
       <span>Judge prompt: what the recording model is told before each turn it judges</span>
@@ -111,12 +104,12 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
       />
     </label>
     <div class="auto-memory-setting">
-      <button
+      <AppButton variant="secondary" size="sm"
         type="button"
-        class="btn btn--secondary btn--sm focusable"
+        class="focusable"
         :disabled="!promptEdited"
         @click="store.save({ judgePrompt: '' })"
-      >Reset to default</button>
+      >Reset to default</AppButton>
       <span class="auto-memory-note">{{ promptEdited ? 'Using your edited prompt.' : 'Using the default prompt.' }}</span>
     </div>
 
@@ -128,12 +121,7 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
 
 <style scoped>
 .auto-memory-setting {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
   padding: var(--spacing-sm) 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
 }
 
 .auto-memory-prompt {

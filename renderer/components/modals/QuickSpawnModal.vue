@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * Quick spawn CLI type picker modal.
  *
@@ -210,7 +211,7 @@ defineExpose({ handleButton });
           </div>
         </template>
         <div class="modal-footer">
-          <button class="btn" tabindex="-1" @keydown="suppressActivationKey" @click="emit('cancel'); emit('update:visible', false)">Cancel</button>
+          <AppButton variant="secondary" tabindex="-1" @keydown="suppressActivationKey" @click="emit('cancel'); emit('update:visible', false)">Cancel</AppButton>
         </div>
       </div>
     </div>

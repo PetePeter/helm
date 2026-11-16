@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, terminalClient, toolsClient } from '../../ipc/clients.js';
 /**
  * Dynamic form modal — renders form fields from a descriptor array.
@@ -196,7 +197,7 @@ defineExpose({ handleButton });
                 :aria-describedby="validationErrors[field.key] ? getFieldErrorId(field.key) : undefined"
                 @input="setFieldValue(field.key, ($event.target as HTMLInputElement).value)"
               />
-              <button v-if="field.browse" class="btn btn--sm" @click="onBrowse(field.key)">📁</button>
+              <AppButton variant="secondary" size="sm" v-if="field.browse" @click="onBrowse(field.key)">📁</AppButton>
             </div>
 
             <!-- Select -->
@@ -262,8 +263,8 @@ defineExpose({ handleButton });
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" @click="onCancel">Cancel</button>
-          <button class="btn btn--primary" @click="onSave">Save</button>
+          <AppButton variant="secondary" @click="onCancel">Cancel</AppButton>
+          <AppButton variant="primary" @click="onSave">Save</AppButton>
         </div>
       </div>
     </div>

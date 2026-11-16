@@ -7,6 +7,7 @@ import { configClient, plansClient, sessionsClient } from '../ipc/clients.js';
  */
 
 import { state } from '../state.js';
+import { VALID_SESSION_STATES } from '../../src/types/session.js';
 import { buildPlannerDirectories, buildPlannerDirectorySource } from './planner-directories.js';
 import { sessionsState } from './sessions-state.js';
 import { logEvent, getCliDisplayName, toDirection } from '../utils.js';
@@ -38,12 +39,12 @@ import {
 } from './sessions-spawn.js';
 
 import {
-  handlePlansZone, handlePlansZoneButton, updatePlansFocus, refreshPlanBadges,
+  handlePlansZone, handlePlansZoneButton, refreshPlanBadges,
 } from './sessions-plans.js';
 
 // Re-export public API from sub-modules so all consumers import from sessions.ts only.
 export {
-  doSpawn, showTerminalArea, hideTerminalArea,
+  doSpawn,
   setDirPickerBridge, setTerminalManagerGetter, setPendingContextText,
   spawnNewSession, switchToSession,
   getSessionCwd, getTerminalManager,
@@ -267,23 +268,6 @@ export function confirmCloseSessionById(sessionId: string, closeSession?: CloseS
   setCloseConfirmCallback(closeSession ? (targetSessionId) => { void closeSession(targetSessionId); } : null);
 }
 
-function getFocusedRenderedSessionCard(): HTMLElement | null {
-  const navItem = sessionsState.navList[sessionsState.sessionsFocusIndex];
-  if (!navItem || navItem.type !== 'session-card') return null;
-  return document.querySelector(`.session-card[data-session-id="${navItem.id}"]`) as HTMLElement | null;
-}
-
-function getEditingRenameInput(): HTMLInputElement | null {
-  if (sessionsState.editingSessionId) {
-    const editingCard = document.querySelector(
-      `.session-card[data-session-id="${sessionsState.editingSessionId}"]`
-    ) as HTMLElement | null;
-    const editingInput = editingCard?.querySelector('.session-rename-input') as HTMLInputElement | null;
-    if (editingInput) return editingInput;
-  }
-  return document.querySelector('.session-rename-input') as HTMLInputElement | null;
-}
-
 function getDirPathForSession(sessionId: string): string | null {
   const session = state.sessions.find(item => item.id === sessionId);
   if (session?.projectPath) return session.projectPath;
@@ -339,27 +323,28 @@ export async function loadSessions(): Promise<void> {
 
 export function handleSessionsScreenButton(button: string, closeSession?: CloseSession): boolean {
   // State dropdown intercepts all input when open
-  const dropdown = document.querySelector('.session-state-dropdown');
-  if (dropdown) {
-    handleStateDropdownButton(button, dropdown as HTMLElement);
+  if (sessionsState.stateDropdownSessionId !== null) {
+    handleStateDropdownButton(button);
     return true; // consumed
   }
 
   // Rename mode intercepts all input
   if (sessionsState.editingSessionId) {
-    const input = getEditingRenameInput();
     if (button === 'A') {
-      if (input) commitRename(sessionsState.editingSessionId, input.value);
+      void commitRename(sessionsState.editingSessionId, sessionsState.renameDraft);
       return true;
     }
     if (button === 'B') {
       cancelRename();
       return true;
     }
-    if (input && (button === 'DPadLeft' || button === 'DPadRight')) {
-      const pos = input.selectionStart ?? 0;
-      const newPos = button === 'DPadLeft' ? Math.max(0, pos - 1) : Math.min(input.value.length, pos + 1);
-      input.setSelectionRange(newPos, newPos);
+    if (button === 'DPadLeft' || button === 'DPadRight') {
+      const pos = sessionsState.renameSelectionStart;
+      const next = button === 'DPadLeft'
+        ? Math.max(0, pos - 1)
+        : Math.min(sessionsState.renameDraft.length, pos + 1);
+      sessionsState.renameSelectionStart = next;
+      sessionsState.renameSelectionEnd = next;
       return true;
     }
     return true; // consume all other buttons
@@ -488,56 +473,43 @@ export async function loadSessionsData(): Promise<void> {
 // State dropdown handlers
 // ============================================================================
 
-/** Open the state dropdown for the currently focused session card via Vue bridge. */
+/** Open the state dropdown for the focused session through shared reactive state. */
 function openStateDropdownForFocused(): void {
   const session = getSessionAtFocus();
   if (!session) return;
-  const card = getFocusedRenderedSessionCard()
-    ?? document.querySelector(`.session-card[data-session-id="${session.id}"]`);
-  if (!card) return;
-  card.dispatchEvent(new CustomEvent('open-state-dropdown'));
+  const activeIndex = VALID_SESSION_STATES.findIndex(value => value === getSessionState(session.id));
+  sessionsState.stateDropdownFocusIndex = activeIndex >= 0 ? activeIndex : 0;
+  sessionsState.stateDropdownSessionId = session.id;
 }
 
 /** Handle gamepad buttons while the state dropdown is open. */
-function handleStateDropdownButton(button: string, dropdown: HTMLElement): void {
-  const options = dropdown.querySelectorAll('.session-state-option') as NodeListOf<HTMLElement>;
-  if (options.length === 0) return;
-
-  // Find currently focused option via .dropdown-focused class
-  let focusIndex = Array.from(options).findIndex(o => o.classList.contains('dropdown-focused'));
-  if (focusIndex < 0) focusIndex = Array.from(options).findIndex(o => o.classList.contains('active'));
-  if (focusIndex < 0) focusIndex = 0;
-
+function handleStateDropdownButton(button: string): void {
+  const sessionId = sessionsState.stateDropdownSessionId;
+  if (!sessionId) return;
   const dir = toDirection(button);
 
   if (dir === 'up') {
-    focusIndex = Math.max(0, focusIndex - 1);
-    setDropdownFocus(options, focusIndex);
+    sessionsState.stateDropdownFocusIndex = Math.max(0, sessionsState.stateDropdownFocusIndex - 1);
     return;
   }
   if (dir === 'down') {
-    focusIndex = Math.min(options.length - 1, focusIndex + 1);
-    setDropdownFocus(options, focusIndex);
+    sessionsState.stateDropdownFocusIndex = Math.min(
+      VALID_SESSION_STATES.length - 1,
+      sessionsState.stateDropdownFocusIndex + 1,
+    );
     return;
   }
   if (button === 'A') {
-    options[focusIndex]?.click();
+    const selectedState = VALID_SESSION_STATES[sessionsState.stateDropdownFocusIndex];
+    sessionsState.stateDropdownSessionId = null;
+    if (selectedState) void setSessionState(sessionId, selectedState);
     return;
   }
   if (button === 'B') {
-    const card = dropdown.closest('.session-card');
-    card?.dispatchEvent(new CustomEvent('close-state-dropdown'));
+    sessionsState.stateDropdownSessionId = null;
     return;
   }
   // Other buttons: ignore while dropdown is open
-}
-
-function setDropdownFocus(options: NodeListOf<HTMLElement>, index: number): void {
-  options.forEach(o => o.classList.remove('dropdown-focused'));
-  if (options[index]) {
-    options[index].classList.add('dropdown-focused');
-    options[index].scrollIntoView({ block: 'nearest' });
-  }
 }
 
 // ============================================================================
@@ -597,26 +569,11 @@ export function updateSessionsFocus(): void {
   if (sessionsState.activeFocus === 'sessions') {
     try { useNavigationStore().captureCurrentFocus(); } catch { /* store not ready */ }
   }
-  // Vue owns the visual focused/card-column classes; this helper only keeps the
-  // currently focused rendered row visible as navigation state changes.
-  if (sessionsState.activeFocus !== 'sessions') return;
-  const focused = Array.from(document.querySelectorAll<HTMLElement>('[data-sessions-nav-index]'))
-    .find(element => element.dataset.navIndex === String(sessionsState.sessionsFocusIndex));
-  focused?.scrollIntoView({ block: 'nearest' });
-}
-
-export function updateSpawnFocus(): void {
-  const grid = document.getElementById('spawnGrid');
-  if (!grid) return;
-  grid.querySelectorAll('.spawn-btn').forEach((el, i) => {
-    el.classList.toggle('focused', i === sessionsState.spawnFocusIndex && sessionsState.activeFocus === 'spawn');
-  });
+  // SessionList watches this reactive cursor and scrolls its own rendered row.
 }
 
 export function updateAllFocus(): void {
   updateSessionsFocus();
-  updateSpawnFocus();
-  updatePlansFocus();
 }
 
 export function refreshSessions(): void {

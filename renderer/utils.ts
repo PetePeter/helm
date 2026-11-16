@@ -1,4 +1,4 @@
-import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, terminalClient, toolsClient } from './ipc/clients.js';
+import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, terminalClient, toolsClient } from './ipc/clients.js';
 /**
  * Shared UI helpers used across multiple modules.
  */
@@ -25,17 +25,6 @@ export function logEvent(event: string): void {
   const time = now.toLocaleTimeString('en-US', { hour12: false });
   state.eventLog.unshift({ time, event });
   if (state.eventLog.length > 50) state.eventLog.pop();
-  renderEventLog();
-}
-
-export function renderEventLog(): void {
-  const logEl = document.getElementById('eventLog');
-  if (!logEl) return;
-  logEl.innerHTML = state.eventLog.slice(0, 20).map(e => `
-    <div class="event-log-item">
-      <span class="event-log-item--time">[${e.time}]</span> ${e.event}
-    </div>
-  `).join('');
 }
 
 export function showScreen(screenName: string): void {
@@ -165,28 +154,6 @@ export function getRequiredFormFieldError(field: Pick<FormField, 'label' | 'requ
   return value?.trim() ? null : `${field.label} is required.`;
 }
 
-function folderBasename(folderPath: string): string {
-  const parts = folderPath.replace(/\\/g, '/').split('/');
-  return parts[parts.length - 1] || parts[parts.length - 2] || '';
-}
-
-export function createBrowseButton(pathInput: HTMLInputElement, nameInput?: HTMLInputElement | null): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.textContent = '📁';
-  btn.title = 'Browse…';
-  btn.type = 'button';
-  btn.addEventListener('click', async () => {
-    const selected = await dialogClient.dialogOpenFolder();
-    if (selected) {
-      pathInput.value = selected;
-      pathInput.dispatchEvent(new Event('input', { bubbles: true }));
-      const nameEl = nameInput ?? document.getElementById('formField_name') as HTMLInputElement | null;
-      if (nameEl && !nameEl.value.trim()) nameEl.value = folderBasename(selected);
-    }
-  });
-  return btn;
-}
-
 export function showFormModal(title: string, fields: FormField[]): Promise<Record<string, string> | null> {
   return new Promise((resolve) => {
     formModalBridge.visible = true;
@@ -209,58 +176,6 @@ export function showFormModal(title: string, fields: FormField[]): Promise<Recor
       resolve(values);
     });
   });
-}
-
-export function getSequenceSyntaxHelpText(): string {
-  return `SYNTAX REFERENCE
-
-Plain text     → Typed literally. Newlines stay in text.
-{Enter}        → Submit using this CLI's submit suffix
-{Send}         → Submit using this CLI's submit suffix
-{NoSend}       → Suppress the final implied submit
-{NoEnter}      → Alias for {NoSend}
-{Ctrl+S}       → Key combo
-{Ctrl+Shift+P} → Multi-modifier combo
-{Ctrl Down}    → Press & hold modifier
-{Ctrl Up}      → Release modifier
-{Wait 500}     → Pause 500ms
-{{ or }}       → Literal { or }
-
-All {tokens} are case-insensitive.
-
-MODIFIERS: Ctrl, Alt, Shift, Win
-
-SPECIAL KEYS: Enter, Send, NoSend, NoEnter, Tab, Esc, Space,
-  Backspace, Delete, Insert, Home, End, PageUp, PageDown,
-  Up, Down, Left, Right, F1–F12, CapsLock, PrintScreen
-
-EXAMPLE:
-  /allow-all{Send}{Wait 3000}prompt text here
-
-NOTE:
-  If no {Send}, {Enter}, {NoSend}, or {NoEnter} appears, Helm sends once at the end.`;
-}
-
-export function createSequenceSyntaxHelp(): HTMLElement {
-  const helpToggle = document.createElement('button');
-  helpToggle.type = 'button';
-  helpToggle.className = 'sequence-help-toggle focusable';
-  helpToggle.textContent = '? Syntax Help';
-  helpToggle.tabIndex = 0;
-
-  const helpPanel = document.createElement('div');
-  helpPanel.className = 'sequence-help';
-  helpPanel.textContent = getSequenceSyntaxHelpText();
-
-  helpToggle.addEventListener('click', () => {
-    helpPanel.classList.toggle('sequence-help--visible');
-  });
-
-  const container = document.createElement('div');
-  container.className = 'sequence-syntax-help-container';
-  container.appendChild(helpToggle);
-  container.appendChild(helpPanel);
-  return container;
 }
 
 export function escapeHtml(text: string): string {

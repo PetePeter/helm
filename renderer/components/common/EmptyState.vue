@@ -4,15 +4,20 @@ withDefaults(defineProps<{
   hint?: string;
   icon?: string;
   loading?: boolean;
+  compact?: boolean;
 }>(), {
   loading: false,
+  compact: false,
 });
 </script>
 
 <template>
   <div
     class="empty-state"
-    :class="{ 'empty-state--loading': loading }"
+    :class="{
+      'empty-state--loading': loading,
+      'empty-state--compact': compact,
+    }"
     :role="loading ? 'status' : undefined"
     :aria-busy="loading ? 'true' : undefined"
   >
@@ -48,6 +53,12 @@ withDefaults(defineProps<{
   text-align: center;
 }
 
+.empty-state--compact {
+  min-height: 0;
+  padding: var(--spacing-sm);
+  gap: var(--spacing-sm);
+}
+
 .empty-state__icon {
   flex: 0 0 auto;
   font-size: var(--font-size-2xl);
@@ -71,17 +82,27 @@ withDefaults(defineProps<{
 }
 
 .empty-state h3 {
+  margin: 0;
   color: var(--text-primary);
   font-size: var(--font-size-lg);
 }
 
 .empty-state p {
+  margin: 0;
   color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.empty-state--compact h3 {
   font-size: var(--font-size-sm);
 }
 
 .empty-state__action {
   margin-top: var(--spacing-sm);
+}
+
+.empty-state--compact .empty-state__action {
+  margin-top: var(--spacing-xs);
 }
 
 @keyframes empty-state-spin {

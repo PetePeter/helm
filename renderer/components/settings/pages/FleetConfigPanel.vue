@@ -12,6 +12,8 @@
  */
 import { ref, watch, computed } from 'vue';
 import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
+import SectionHeader from '../primitives/SectionHeader.vue';
+import ToggleRow from '../primitives/ToggleRow.vue';
 
 export interface FleetConfig {
   enabled: boolean;
@@ -40,9 +42,10 @@ watch(() => props.config, (c) => {
   localPort.value = c.port;
 });
 
-function onToggleEnabled(): void {
+function onToggleEnabled(enabled: boolean): void {
+  localEnabled.value = enabled;
   if (!props.isAdmin) return;
-  emit('update', { enabled: localEnabled.value });
+  emit('update', { enabled });
 }
 
 function commitPort(): void {
@@ -94,17 +97,13 @@ async function copyAddress(address: string): Promise<void> {
 <template>
   <div class="fleet-config-panel">
     <div class="tg-section">
-      <h3 class="tg-section-title">Fleet</h3>
-      <div class="tg-form-row">
-        <label class="tg-label">Enable cross-machine fleet</label>
-        <input
-          v-model="localEnabled"
-          type="checkbox"
-          class="focusable"
-          :disabled="!props.isAdmin"
-          @change="onToggleEnabled"
-        />
-      </div>
+      <SectionHeader title="Fleet" />
+      <ToggleRow
+        label="Enable cross-machine fleet"
+        :model-value="localEnabled"
+        :disabled="!props.isAdmin"
+        @update:model-value="onToggleEnabled"
+      />
       <div class="tg-form-row">
         <label class="tg-label">Port</label>
         <input
@@ -168,11 +167,6 @@ async function copyAddress(address: string): Promise<void> {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-primary);
-}
-.tg-section-title {
-  margin: 0;
-  font-size: 0.88rem;
-  color: var(--text-primary);
 }
 .tg-form-row {
   display: flex;

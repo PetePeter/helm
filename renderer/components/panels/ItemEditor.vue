@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * ItemEditor.vue — Slide-down editor panel for plan items and contexts.
  */
@@ -8,6 +9,8 @@ import type { PlanAttachment } from '../../src/types/plan-attachment.js';
 import { formatDateTime } from '../../utils/date-format.js';
 import { getDisplayTitle } from '../../types.js';
 import PromptTextarea from '../common/PromptTextarea.vue';
+import Badge from '../common/Badge.vue';
+import PlanChip from '../chips/PlanChip.vue';
 import { attachmentsClient, configClient, dialogClient } from '../../ipc/clients.js';
 import { copyPlanRef } from '../../composables/useCopyPlanRef.js';
 
@@ -487,14 +490,14 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
       <span class="item-editor-title">{{ titleText }}</span>
       <div class="item-editor-actions">
         <span v-if="saveStatus !== 'clean'" class="plan-save-status" :class="`plan-save-status--${saveStatus}`">{{ saveStatusText }}</span>
-        <button v-if="isPlan && planHumanId" class="btn btn--secondary btn--sm" :title="`Copy reference ${planHumanId}`" @click="copyPlanRef(planHumanId, label)">⧉ Copy ref</button>
-        <button class="btn btn--primary btn--sm" @click="onSave">Save</button>
-        <button v-if="showApplyButton" class="btn btn--primary btn--sm" @click="onApply">{{ applyButtonText }}</button>
-        <button v-if="showDoneButton" class="btn btn--success btn--sm" @click="onDone">✓ Done</button>
-        <button v-if="showSuggestionActions" class="btn btn--success btn--sm" @click="onAcceptSuggestion">✓ Accept</button>
-        <button v-if="showSuggestionActions" class="btn btn--danger btn--sm" @click="onRejectSuggestion">✕ Reject</button>
-        <button v-if="!showSuggestionActions" class="btn btn--danger btn--sm" @click="onDelete">Delete</button>
-        <button class="btn btn--secondary btn--sm" @click="onCancel">Cancel</button>
+        <AppButton variant="secondary" size="sm" v-if="isPlan && planHumanId" :title="`Copy reference ${planHumanId}`" @click="copyPlanRef(planHumanId, label)">⧉ Copy ref</AppButton>
+        <AppButton variant="primary" size="sm" @click="onSave">Save</AppButton>
+        <AppButton variant="primary" size="sm" v-if="showApplyButton" @click="onApply">{{ applyButtonText }}</AppButton>
+        <AppButton variant="success" size="sm" v-if="showDoneButton" @click="onDone">✓ Done</AppButton>
+        <AppButton variant="success" size="sm" v-if="showSuggestionActions" @click="onAcceptSuggestion">✓ Accept</AppButton>
+        <AppButton variant="danger" size="sm" v-if="showSuggestionActions" @click="onRejectSuggestion">✕ Reject</AppButton>
+        <AppButton variant="danger" size="sm" v-if="!showSuggestionActions" @click="onDelete">Delete</AppButton>
+        <AppButton variant="secondary" size="sm" @click="onCancel">Cancel</AppButton>
       </div>
     </div>
     <div v-if="planMetaText" class="item-editor-plan-meta">{{ planMetaText }}</div>
@@ -551,34 +554,36 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
     <div v-if="isContext && hasContextBindings" class="context-bound">
       <div class="context-bound__header"><span class="context-bound__title">Bound To</span></div>
       <div class="context-bound-list">
-        <div
+        <PlanChip
           v-for="plan in (contextBoundPlans ?? [])"
           :key="`bp-${plan.id}`"
-          class="context-bound-chip context-bound-chip--plan plan-chip"
-          :class="`plan-chip--${getBoundPlanStatus(plan)}`"
           :title="getBoundPlanLabel(plan)"
+          :status="getBoundPlanStatus(plan)"
+          compact
+          :interactive="false"
+          class="context-bound-badge"
         >
           <span>{{ STATUS_ICONS[getBoundPlanStatus(plan)] }}</span>
-          <span class="context-bound-chip-label">{{ getBoundPlanLabel(plan) }}</span>
-          <button type="button" class="context-bound-chip-remove" @click="onContextUnbind('plan', plan.id)">&times;</button>
-        </div>
-        <div v-for="seq in (contextBoundSequences ?? [])" :key="`bs-${seq.id}`" class="context-bound-chip">
-          <span class="context-bound-chip-label">{{ seq.title }}</span>
-          <button type="button" class="context-bound-chip-remove" @click="onContextUnbind('sequence', seq.id)">&times;</button>
-        </div>
+          <span class="context-bound-badge-label">{{ getBoundPlanLabel(plan) }}</span>
+          <button type="button" class="context-bound-badge-remove" @click="onContextUnbind('plan', plan.id)">&times;</button>
+        </PlanChip>
+        <Badge v-for="seq in (contextBoundSequences ?? [])" :key="`bs-${seq.id}`" class="context-bound-badge" tone="warn">
+          <span class="context-bound-badge-label">{{ seq.title }}</span>
+          <button type="button" class="context-bound-badge-remove" @click="onContextUnbind('sequence', seq.id)">&times;</button>
+        </Badge>
       </div>
     </div>
 
     <div v-if="isPlan && planId" class="item-editor-attachments">
-      <div class="item-editor-attachments__header"><span class="item-editor-attachments__title">Attachments</span><button class="btn btn--secondary btn--sm" @click="addAttachment">Attach File</button></div>
+      <div class="item-editor-attachments__header"><span class="item-editor-attachments__title">Attachments</span><AppButton variant="secondary" size="sm" @click="addAttachment">Attach File</AppButton></div>
       <div v-if="attachmentError" class="item-editor-attachments__error">{{ attachmentError }}</div>
       <div v-if="attachmentsLoading" class="item-editor-attachments__empty">Loading…</div>
       <div v-else-if="attachments.length === 0" class="item-editor-attachments__empty">No attachments</div>
       <div v-else class="item-editor-attachments__list">
         <div v-for="att in attachments" :key="att.id" class="item-editor-attachments__row">
           <span class="item-editor-attachments__name">{{ att.filename }}</span><span class="item-editor-attachments__size">{{ formatAttachmentSize(att.sizeBytes) }}</span>
-          <button class="btn btn--secondary btn--sm" :disabled="attachmentBusyId === att.id" @click="openAttachment(att)">Open</button>
-          <button class="btn btn--danger btn--sm" :disabled="attachmentBusyId === att.id" @click="deleteAttachment(att)">Delete</button>
+          <AppButton variant="secondary" size="sm" :disabled="attachmentBusyId === att.id" @click="openAttachment(att)">Open</AppButton>
+          <AppButton variant="danger" size="sm" :disabled="attachmentBusyId === att.id" @click="deleteAttachment(att)">Delete</AppButton>
         </div>
       </div>
     </div>
@@ -724,16 +729,9 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
 .context-bound__header { display: flex; align-items: center; justify-content: space-between; }
 .context-bound__title { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
 .context-bound-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.context-bound-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(255, 158, 84, 0.12); border: 1px solid rgba(255, 158, 84, 0.35); color: #ffd1ab; }
-.context-bound-chip--plan { padding: 2px 8px; background: var(--bg-tertiary); color: var(--text-primary); max-width: 220px; }
-.context-bound-chip--plan.plan-chip--coding { border-color: var(--status-coding); }
-.context-bound-chip--plan.plan-chip--ready { border-color: var(--status-ready); }
-.context-bound-chip--plan.plan-chip--review { border-color: var(--status-review); }
-.context-bound-chip--plan.plan-chip--blocked { border-color: var(--status-blocked); }
-.context-bound-chip--plan.plan-chip--planning { border-color: var(--status-planning); }
-.context-bound-chip--plan.plan-chip--done { border-color: var(--status-done); }
-.context-bound-chip--plan.plan-chip--suggested { border-color: var(--status-suggested); }
-.context-bound-chip-label { border: 0; background: transparent; color: inherit; font: inherit; cursor: default; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.context-bound-chip-remove { border: 0; background: transparent; color: inherit; font-size: 16px; cursor: pointer; line-height: 1; padding: 0 0 0 4px; opacity: 0.6; }
-.context-bound-chip-remove:hover { opacity: 1; }
+.context-bound-badge { gap: 6px; }
+.context-bound-badge.badge--warn { padding: 6px 10px; border: 1px solid rgba(255, 158, 84, 0.35); border-radius: 999px; background: rgba(255, 158, 84, 0.12); color: #ffd1ab; }
+.context-bound-badge-label { border: 0; background: transparent; color: inherit; font: inherit; cursor: default; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.context-bound-badge-remove { border: 0; background: transparent; color: inherit; font-size: 16px; cursor: pointer; line-height: 1; padding: 0 0 0 4px; opacity: 0.6; }
+.context-bound-badge-remove:hover { opacity: 1; }
 </style>

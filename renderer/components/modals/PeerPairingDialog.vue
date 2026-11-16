@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * PeerPairingDialog.vue — the ONE human decision in the SAS pairing flow.
  *
@@ -129,16 +130,16 @@ defineExpose({ handleButton });
         </div>
 
         <div v-if="failed" class="pp-footer">
-          <button class="btn pp-close" type="button" @click="onCancel">Close</button>
+          <AppButton variant="secondary" class="pp-close" type="button" @click="onCancel">Close</AppButton>
         </div>
         <div v-else-if="status !== 'paired'" class="pp-footer">
-          <button
-            class="btn btn--primary pp-confirm"
+          <AppButton variant="primary"
+            class="pp-confirm"
             type="button"
             :disabled="!canConfirm"
             @click="onConfirm"
-          >Confirm</button>
-          <button class="btn btn--danger pp-reject" type="button" @click="onReject">Reject</button>
+          >Confirm</AppButton>
+          <AppButton variant="danger" class="pp-reject" type="button" @click="onReject">Reject</AppButton>
         </div>
       </div>
     </div>

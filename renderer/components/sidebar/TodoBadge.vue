@@ -6,7 +6,7 @@
  * scrolls and clips, and a list of todos is taller than any row.
  */
 import { computed, ref } from 'vue';
-import CountChip from './CountChip.vue';
+import Badge from '../common/Badge.vue';
 import type { SessionTodo } from '../../../src/types/todo.js';
 
 const MAX_SHOWN = 8;
@@ -28,9 +28,11 @@ function hide(): void {
 </script>
 
 <template>
-  <CountChip
+  <Badge
     v-if="todos.length"
+    size="count"
     class="session-todo-count"
+    tone="accent"
     :flashing="flashing"
     tabindex="0"
     :aria-label="`${todos.length} todos left`"
@@ -38,7 +40,7 @@ function hide(): void {
     @focus="show"
     @mouseleave="hide"
     @blur="hide"
-  >{{ todos.length }}</CountChip>
+  >{{ todos.length }}</Badge>
   <Teleport v-if="position" to="body">
     <div
       class="todo-badge__popover"

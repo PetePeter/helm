@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getCliDisplayName, getSequenceSyntaxHelpText, navigateFocus } from '../renderer/utils.js';
+import { getCliDisplayName, navigateFocus } from '../renderer/utils.js';
 import { state } from '../renderer/state.js';
 
 describe('navigateFocus', () => {

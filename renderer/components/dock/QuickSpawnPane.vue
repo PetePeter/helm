@@ -7,6 +7,7 @@
  * the pane descriptor and surfaces as the tab's tooltip.
  */
 import { computed, onBeforeUnmount, watch } from 'vue';
+import DockPaneBody from './DockPaneBody.vue';
 import SpawnGrid from '../sidebar/SpawnGrid.vue';
 import QuickSpawnMachineTabs from '../common/QuickSpawnMachineTabs.vue';
 import { sessionsState } from '../../screens/sessions-state.js';
@@ -37,7 +38,7 @@ onBeforeUnmount(onMachineTabsBlur);
 </script>
 
 <template>
-  <div class="dock-pane-body">
+  <DockPaneBody>
     <QuickSpawnMachineTabs
       :machines="quickSpawn.machines"
       :active-machine-id="quickSpawn.machineId"
@@ -55,5 +56,5 @@ onBeforeUnmount(onMachineTabsBlur);
       :is-active="sessionsState.activeFocus === 'spawn'"
       @spawn="sidebar.onSpawn"
     />
-  </div>
+  </DockPaneBody>
 </template>

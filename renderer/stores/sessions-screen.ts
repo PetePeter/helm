@@ -25,6 +25,13 @@ export interface SessionsScreenState {
   cliTypes: string[];
   directories: ProjectDirectoryItem[];
   editingSessionId: string | null;
+  /** Session whose state menu currently owns gamepad input. */
+  stateDropdownSessionId: string | null;
+  stateDropdownFocusIndex: number;
+  /** Draft and selection mirror for the one active SessionCard rename input. */
+  renameDraft: string;
+  renameSelectionStart: number;
+  renameSelectionEnd: number;
   /** In-memory Session List filter toggle. */
   showHiddenSessions: boolean;
   /** Hidden local sessions not already visible as the active row. */
@@ -104,6 +111,11 @@ export const sessionsState: SessionsScreenState = reactive({
   cliTypes: [],
   directories: [],
   editingSessionId: null,
+  stateDropdownSessionId: null,
+  stateDropdownFocusIndex: 0,
+  renameDraft: '',
+  renameSelectionStart: 0,
+  renameSelectionEnd: 0,
   showHiddenSessions: false,
   get hiddenSessionCount() { return hiddenSessionCount.value; },
   get visibleSessions() { return visibleSessions.value; },

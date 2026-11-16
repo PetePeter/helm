@@ -9,6 +9,7 @@
  * The pane renders content only. Titling and collapse belong to the dock — the
  * tab names it and the rail collapses it — so there is no section header here.
  */
+import DockPaneBody from './DockPaneBody.vue';
 import SchedulerSection from '../sidebar/SchedulerSection.vue';
 import ScheduledTaskHistoryModal from '../sidebar/ScheduledTaskHistoryModal.vue';
 import { useHelmMainPaneContext } from '../../dock-pane-context.js';
@@ -17,7 +18,7 @@ const sidebar = useHelmMainPaneContext().sidebar;
 </script>
 
 <template>
-  <div class="dock-pane-body">
+  <DockPaneBody>
     <SchedulerSection
       @open="sidebar.openSchedulerPopup"
       @delete="sidebar.deleteScheduledTask"
@@ -27,5 +28,5 @@ const sidebar = useHelmMainPaneContext().sidebar;
       v-model:visible="sidebar.historyModalVisible.value"
       @recreate="sidebar.recreateFromHistory"
     />
-  </div>
+  </DockPaneBody>
 </template>

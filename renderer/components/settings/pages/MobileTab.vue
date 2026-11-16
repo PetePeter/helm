@@ -14,6 +14,7 @@
  * sits waiting for a button that does not exist on this side.
  */
 import { onMounted, onUnmounted, ref } from 'vue';
+import AppButton from '../../common/AppButton.vue';
 import { useMobileDevices, type MobileDeviceItem } from '../../../composables/useMobileDevices.js';
 import { profileClient } from '../../../ipc/clients.js';
 import { useCopiedFlash } from '../../../composables/useCopiedFlash.js';
@@ -21,6 +22,9 @@ import { ALLOW_PRESETS } from '../../../lib/mobile-allow-presets.js';
 import { getPeerStatusColor } from '../../../state-colors.js';
 import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
 import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
+import SectionHeader from '../primitives/SectionHeader.vue';
+import ToggleRow from '../primitives/ToggleRow.vue';
+import Badge from '../../common/Badge.vue';
 import QrCode from './QrCode.vue';
 
 const {
@@ -189,7 +193,7 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
 <template>
   <div class="mobile-tab settings-sections">
     <section class="mobile-section">
-      <h3 class="mobile-section-title">Install on your phone</h3>
+      <SectionHeader title="Install on your phone" />
 
       <p v-if="apkError" class="mobile-empty">
         No download to offer: {{ apkError }}
@@ -202,9 +206,9 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
           <code class="mobile-apk-url">{{ apkRelease.url }}</code>
           <p v-if="apkRelease.note" class="mobile-apk-note">{{ apkRelease.note }}</p>
           <div class="mobile-apk-actions">
-            <button class="btn btn-secondary" @click="copyUrl()">
+            <AppButton variant="secondary" size="md" @click="copyUrl()">
               {{ copiedUrl ? 'Copied' : 'Copy link' }}
-            </button>
+            </AppButton>
           </div>
           <p class="mobile-empty">
             Scan it, install, then pair — a fresh install is an unpaired stranger and
@@ -217,18 +221,17 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
     </section>
 
     <section class="mobile-section">
-      <div class="mobile-section-head">
-        <h3 class="mobile-section-title">Over your network</h3>
-        <label class="mobile-lan-toggle">
-          <input
-            type="checkbox"
-            :checked="lan.enabled"
+      <SectionHeader title="Over your network">
+        <template #actions>
+          <ToggleRow
+            class="mobile-lan-toggle"
+            label="Enabled"
+            :model-value="lan.enabled"
             :disabled="!isAdmin"
-            @change="toggleLan(($event.target as HTMLInputElement).checked)"
+            @update:model-value="toggleLan"
           />
-          <span>Enabled</span>
-        </label>
-      </div>
+        </template>
+      </SectionHeader>
 
       <p class="mobile-empty">
         Bluetooth works anywhere but is slow. On your own network the phone can
@@ -257,16 +260,17 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
           <p class="mobile-empty">
             To pair a new phone over Wi-Fi, press “Pair a phone”, then enter this on the phone:
           </p>
-          <div class="mobile-lan-chips">
-            <button
+          <div class="mobile-lan-addresses">
+            <Badge
               v-for="address in lan.pairingAddresses"
               :key="address"
-              class="mobile-lan-chip"
+              as="button"
+              class="mobile-lan-copy-button"
               :disabled="!isAdmin"
               @click="copyAddress(address)"
             >
               {{ copiedAddress === address ? 'Copied' : address }}
-            </button>
+            </Badge>
           </div>
         </template>
         <p v-if="!lan.listening" class="mobile-empty">
@@ -274,16 +278,17 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
         </p>
         <template v-else>
           <p class="mobile-empty">Connection address — paired phones are sent it automatically:</p>
-          <div class="mobile-lan-chips">
-            <button
+          <div class="mobile-lan-addresses">
+            <Badge
               v-for="address in lan.addresses"
               :key="address"
-              class="mobile-lan-chip"
+              as="button"
+              class="mobile-lan-copy-button"
               :disabled="!isAdmin"
               @click="copyAddress(address)"
             >
               {{ copiedAddress === address ? 'Copied' : address }}
-            </button>
+            </Badge>
           </div>
           <p v-if="lan.addresses.length === 0" class="mobile-empty">
             Listening, but this machine has no reachable IPv4 address.
@@ -293,12 +298,13 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
     </section>
 
     <section class="mobile-section settings-span">
-      <div class="mobile-section-head">
-        <h3 class="mobile-section-title">Paired phones and tablets</h3>
-        <button class="btn btn-primary mobile-pair-btn" :disabled="!isAdmin" @click="startPairing()">
-          Pair a phone
-        </button>
-      </div>
+      <SectionHeader title="Paired phones and tablets">
+        <template #actions>
+          <AppButton variant="primary" size="md" class="mobile-pair-btn" :disabled="!isAdmin" @click="startPairing()">
+            Pair a phone
+          </AppButton>
+        </template>
+      </SectionHeader>
       <AdminOnlyHint :show="!isAdmin" />
 
       <p v-if="devices.length === 0" class="mobile-empty">
@@ -322,7 +328,7 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
             >
               <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}{{ profile.isAdmin ? ' · Admin' : '' }}</option>
             </select>
-            <span v-if="profileForDevice(device)?.isAdmin" class="mobile-admin-badge">Admin</span>
+            <Badge v-if="profileForDevice(device)?.isAdmin" class="mobile-admin-status" tone="accent">Admin</Badge>
           </label>
 
           <span class="mobile-spacer"></span>
@@ -338,33 +344,35 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
             <span class="mobile-toggle-label">{{ device.enabled ? 'On' : 'Off' }}</span>
           </label>
 
-          <button class="btn btn-secondary" :disabled="!isAdmin" @click="toggleExpanded(device.id)">
+          <AppButton variant="secondary" size="md" :disabled="!isAdmin" @click="toggleExpanded(device.id)">
             {{ expandedId === device.id ? 'Done' : 'Permissions' }}
-          </button>
+          </AppButton>
 
-          <button
-            class="btn btn-danger"
+          <AppButton
+            variant="danger"
+            size="md"
             :class="{ 'mobile-revoke-armed': confirmRevokeId === device.id }"
             :disabled="!isAdmin"
             @click="onRevoke(device)"
           >
             {{ confirmRevokeId === device.id ? 'Confirm revoke' : 'Revoke' }}
-          </button>
+          </AppButton>
         </div>
         <AdminOnlyHint :show="!isAdmin" />
 
         <div v-if="expandedId === device.id" class="mobile-allow-editor">
           <div class="mobile-presets">
             <span class="mobile-presets-label">Presets:</span>
-            <button
+            <AppButton
+              variant="secondary"
+              size="md"
               v-for="preset in ALLOW_PRESETS"
               :key="preset.label"
-              class="btn btn-secondary"
               :disabled="!isAdmin"
               @click="applyPreset(device, preset.globs)"
             >
               {{ preset.label }}
-            </button>
+            </AppButton>
           </div>
 
           <div class="mobile-globs">
@@ -391,7 +399,7 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
               :disabled="!isAdmin"
               @keyup.enter="addPattern(device)"
             />
-            <button class="btn btn-secondary" :disabled="!isAdmin" @click="addPattern(device)">Add</button>
+            <AppButton variant="secondary" size="md" :disabled="!isAdmin" @click="addPattern(device)">Add</AppButton>
           </div>
           <AdminOnlyHint :show="!isAdmin" />
         </div>
@@ -406,9 +414,6 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
   padding: 8px;
 }
 .mobile-section { display: flex; flex-direction: column; gap: 6px; }
-.mobile-section-head { display: flex; align-items: center; gap: 8px; }
-.mobile-section-title { margin: 0; font-size: 0.88rem; color: var(--text-primary); }
-.mobile-pair-btn { margin-left: auto; }
 .mobile-empty { margin: 0; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.35; }
 
 .mobile-apk {
@@ -432,9 +437,6 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
 .mobile-apk-actions { display: flex; gap: 6px; }
 
 .mobile-lan-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   font-size: 0.78rem;
   color: var(--text-secondary);
   cursor: pointer;
@@ -450,8 +452,8 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
   font-family: ui-monospace, "Cascadia Code", monospace;
   font-size: 0.72rem;
 }
-.mobile-lan-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.mobile-lan-chip {
+.mobile-lan-addresses { display: flex; flex-wrap: wrap; gap: 6px; }
+.mobile-lan-copy-button.badge {
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -459,9 +461,10 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
   color: var(--text-secondary);
   font-family: ui-monospace, "Cascadia Code", monospace;
   font-size: 0.72rem;
+  font-weight: 400;
   cursor: pointer;
 }
-.mobile-lan-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+.mobile-lan-copy-button.badge:hover { border-color: var(--accent); color: var(--text-primary); }
 
 .mobile-row {
   border: 1px solid var(--border);
@@ -475,7 +478,7 @@ function profileForDevice(device: MobileDeviceItem): UserProfile | undefined {
 .mobile-row-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mobile-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .mobile-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
-.mobile-admin-badge { padding: 2px 6px; border-radius: 10px; background: var(--accent-tint); color: var(--accent); font-size: var(--font-size-sm); }
+.mobile-admin-status.badge--accent { padding: 2px 6px; border: 0; border-radius: 10px; background: var(--accent-tint); font-size: var(--font-size-sm); font-weight: 400; }
 .mobile-seen { font-size: 0.76rem; color: var(--text-secondary); }
 .mobile-profile-label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 0.76rem; }
 .mobile-profile-label select { max-width: 150px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.76rem; }

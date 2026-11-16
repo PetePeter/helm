@@ -3,7 +3,10 @@
  * McpTab.vue — MCP server configuration (connection, security, usage).
  */
 import { ref, watch, computed } from 'vue';
+import AppButton from '../../common/AppButton.vue';
 import McpCliSetup from './McpCliSetup.vue';
+import SectionHeader from '../primitives/SectionHeader.vue';
+import ToggleRow from '../primitives/ToggleRow.vue';
 
 export interface McpConfig {
   enabled: boolean;
@@ -32,8 +35,9 @@ watch(() => props.config, (c) => {
   localToken.value = c.authToken;
 });
 
-function onToggleEnabled(): void {
-  emit('update', { enabled: localEnabled.value });
+function onToggleEnabled(enabled: boolean): void {
+  localEnabled.value = enabled;
+  emit('update', { enabled });
 }
 
 function onPortBlur(): void {
@@ -95,16 +99,12 @@ const statusText = computed(() => {
   <div class="settings-mcp-panel settings-sections">
     <!-- Connection -->
     <div class="tg-section">
-      <h3 class="tg-section-title">Connection</h3>
-      <div class="tg-form-row">
-        <label class="tg-label">Enable localhost MCP</label>
-        <input
-          v-model="localEnabled"
-          type="checkbox"
-          class="focusable"
-          @change="onToggleEnabled"
-        />
-      </div>
+      <SectionHeader title="Connection" />
+      <ToggleRow
+        label="Enable localhost MCP"
+        :model-value="localEnabled"
+        @update:model-value="onToggleEnabled"
+      />
       <div class="tg-form-row">
         <label class="tg-label">Port</label>
         <input
@@ -125,7 +125,7 @@ const statusText = computed(() => {
 
     <!-- Auth Token -->
     <div class="tg-section">
-      <h3 class="tg-section-title">Auth Token</h3>
+      <SectionHeader title="Auth Token" />
       <div class="tg-form-row">
         <label class="tg-label">Bearer token</label>
         <div class="tg-input-row">
@@ -137,21 +137,23 @@ const statusText = computed(() => {
             @input="onTokenInput"
             @blur="onTokenBlur"
           />
-          <button
-            class="btn btn--secondary btn--sm focusable"
+          <AppButton
+            variant="secondary"
+            size="sm"
+            class="focusable"
             @click="showToken = !showToken"
           >
             {{ showToken ? 'Hide' : 'Show' }}
-          </button>
+          </AppButton>
         </div>
       </div>
       <div class="tg-btn-row">
-        <button class="btn btn--primary focusable" @click="onGenerateToken">
+        <AppButton variant="primary" size="md" class="focusable" @click="onGenerateToken">
           Generate Token
-        </button>
-        <button class="btn btn--secondary focusable" @click="onClearToken">
+        </AppButton>
+        <AppButton variant="secondary" size="md" class="focusable" @click="onClearToken">
           Clear Token
-        </button>
+        </AppButton>
       </div>
       <p class="settings-form__hint">
         Clients should send Authorization: Bearer &lt;token&gt;.
@@ -160,7 +162,7 @@ const statusText = computed(() => {
 
     <!-- Usage -->
     <div class="tg-section">
-      <h3 class="tg-section-title">Usage</h3>
+      <SectionHeader title="Usage" />
       <div class="settings-list-item">
         <div class="settings-list-item__info">
           <span class="settings-list-item__name">Endpoint</span>

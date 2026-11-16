@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 /** Project-scoped feedback used to reorder relevant memory and skill hints. */
 import { computed, onMounted, ref, watch } from 'vue';
 import { configClient } from '../../../ipc/clients.js';
@@ -106,19 +107,19 @@ onMounted(() => { void loadUsage(); });
 
     <div class="suggestion-learning__filters">
       <div class="suggestion-learning__chips" role="group" aria-label="Filter by item type">
-        <button
+        <AppButton variant="secondary" size="sm"
           v-for="filter in typeFilters"
           :key="filter.id"
           type="button"
-          class="btn btn--secondary btn--sm focusable"
+          class="focusable"
           :class="{ 'suggestion-learning__chip--active': typeFilter === filter.id }"
           :aria-pressed="typeFilter === filter.id"
           @click="typeFilter = filter.id"
-        >{{ filter.label }}</button>
+        >{{ filter.label }}</AppButton>
       </div>
       <label class="suggestion-learning__project">
         <span>Project</span>
-        <select v-model="projectFilter" class="btn btn--secondary btn--sm focusable" aria-label="Project scope">
+        <select class="app-select app-select--secondary app-select--sm focusable" v-model="projectFilter" aria-label="Project scope">
           <option v-for="project in projectOptions" :key="project.id" :value="project.id">{{ project.name }}</option>
         </select>
       </label>
@@ -139,12 +140,12 @@ onMounted(() => { void loadUsage(); });
       empty-text="No items match these filters."
     >
       <template #list-actions>
-        <button
+        <AppButton variant="secondary" size="sm"
           type="button"
-          class="btn btn--secondary btn--sm focusable"
+          class="focusable"
           :disabled="resetting || !usage || usage.items.length === 0"
           @click="resetUsage"
-        >Reset all</button>
+        >Reset all</AppButton>
       </template>
       <template #detail>
         <article v-if="selectedItem" class="suggestion-learning__detail">

@@ -10,12 +10,15 @@
  * clear "fleet is off" hint rather than a blank tab.
  */
 import { computed, onMounted, ref } from 'vue';
+import AppButton from '../../common/AppButton.vue';
 import { usePeers, type ConfiguredPeer, type DiscoveredPeer, type FleetConfig, type PeerSession } from '../../../composables/usePeers.js';
 import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
 import { getPeerStatusColor } from '../../../state-colors.js';
 import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
 import PeerAuditModal from '../../modals/PeerAuditModal.vue';
 import FleetConfigPanel from './FleetConfigPanel.vue';
+import EmptyState from '../../common/EmptyState.vue';
+import SectionHeader from '../primitives/SectionHeader.vue';
 
 const {
   fleetEnabled,
@@ -150,13 +153,16 @@ function onPair(peer: DiscoveredPeer): void {
     </div>
 
     <div class="peers-section settings-span">
-      <div class="peers-section-head">
-        <h4 class="peers-section-title">Paired peers</h4>
-        <button class="btn btn--secondary btn--sm peers-audit-btn" type="button" :disabled="!isAdmin" @click="auditVisible = true">Audit</button>
-      </div>
+      <SectionHeader title="Paired peers" :level="4">
+        <template #actions>
+          <AppButton variant="secondary" size="sm" class="peers-audit-btn" type="button" :disabled="!isAdmin" @click="auditVisible = true">
+            Audit
+          </AppButton>
+        </template>
+      </SectionHeader>
       <AdminOnlyHint :show="!isAdmin" />
 
-      <div v-if="configuredPeers.length === 0" class="peers-empty">No paired peers yet.</div>
+      <EmptyState v-if="configuredPeers.length === 0" title="No paired peers yet." compact />
 
       <div v-for="peer in configuredPeers" :key="peer.id" class="peer-row" :data-peer-id="peer.id">
         <div class="peer-row-main">
@@ -192,24 +198,26 @@ function onPair(peer: DiscoveredPeer): void {
             <span class="peer-toggle-label">{{ peer.enabled ? 'On' : 'Off' }}</span>
           </label>
 
-          <button
-            class="btn btn--secondary btn--sm peer-attach-toggle focusable"
+          <AppButton
+            variant="secondary"
+            size="sm"
+            class="peer-attach-toggle focusable"
             type="button"
             :disabled="!isAdmin || !peer.online"
             title="Drive one of this peer's sessions from here (Remote)"
             @click="toggleAttach(peer)"
-          >Attach…</button>
-          <button class="btn btn--danger btn--sm peer-unpair" type="button" :disabled="!isAdmin" @click="onUnpair(peer)">Unpair</button>
+          >Attach…</AppButton>
+          <AppButton variant="danger" size="sm" class="peer-unpair" type="button" :disabled="!isAdmin" @click="onUnpair(peer)">Unpair</AppButton>
         </div>
 
         <div v-if="attachPeerId === peer.id" class="peer-attach-picker">
           <div v-if="attachError" class="peer-attach-error">{{ attachError }}</div>
-          <div v-else-if="attachSessions.length === 0" class="peers-empty">No sessions on this peer.</div>
+          <EmptyState v-else-if="attachSessions.length === 0" title="No sessions on this peer." compact />
           <div v-for="session in attachSessions" :key="session.id" class="peer-session-row">
             <span class="peer-alias">{{ session.name }}</span>
             <span class="peer-direction">{{ session.cliType }}</span>
             <span class="peer-spacer"></span>
-            <button class="btn btn--primary btn--sm peer-session-attach focusable" type="button" :disabled="!isAdmin" @click="onAttach(peer, session)">Attach</button>
+            <AppButton variant="primary" size="sm" class="peer-session-attach focusable" type="button" :disabled="!isAdmin" @click="onAttach(peer, session)">Attach</AppButton>
           </div>
         </div>
 
@@ -217,27 +225,31 @@ function onPair(peer: DiscoveredPeer): void {
     </div>
 
     <div class="peers-section settings-span">
-      <div class="peers-section-head">
-        <h4 class="peers-section-title">Discover nearby</h4>
-        <span class="peers-discovery-state" :class="`peers-discovery-state--${discoveryState}`">
-          <template v-if="discoveryState === 'off'">not running</template>
-          <template v-else-if="discoveryState === 'error'">discovery not running</template>
-          <template v-else-if="discoveryState === 'scanning'">scanning…</template>
-          <template v-else>{{ pairableDiscovered.length }} found</template>
-        </span>
-      </div>
+      <SectionHeader title="Discover nearby" :level="4">
+        <template #actions>
+          <span class="peers-discovery-state" :class="`peers-discovery-state--${discoveryState}`">
+            <template v-if="discoveryState === 'off'">not running</template>
+            <template v-else-if="discoveryState === 'error'">discovery not running</template>
+            <template v-else-if="discoveryState === 'scanning'">scanning…</template>
+            <template v-else>{{ pairableDiscovered.length }} found</template>
+          </span>
+        </template>
+      </SectionHeader>
 
       <div v-for="peer in pairableDiscovered" :key="peer.machineId" class="peer-discovered-row">
         <span class="peer-alias">{{ peer.alias }}</span>
         <span class="peer-address">{{ peer.address }}</span>
         <span class="peer-spacer"></span>
-        <button class="btn btn--primary btn--sm peer-pair-btn" type="button" :disabled="!isAdmin" @click="onPair(peer)">Pair</button>
+        <AppButton variant="primary" size="sm" class="peer-pair-btn" type="button" :disabled="!isAdmin" @click="onPair(peer)">Pair</AppButton>
       </div>
 
-      <p v-if="discoveryState === 'scanning'" class="peers-empty">
-        Nothing found yet. Discovery does not cross subnets or Wi-Fi client isolation —
-        add the address directly below.
-      </p>
+      <EmptyState
+        v-if="discoveryState === 'scanning'"
+        title="Searching for nearby peers"
+        hint="Discovery does not cross subnets or Wi-Fi client isolation — add the address directly below."
+        loading
+        compact
+      />
 
       <div class="peer-manual">
         <input
@@ -248,12 +260,13 @@ function onPair(peer: DiscoveredPeer): void {
           :disabled="!isAdmin || !fleetEnabled"
           @keydown.enter.prevent="onPairManual"
         />
-        <button
-          class="btn btn--secondary btn--sm"
+        <AppButton
+          variant="secondary"
+          size="sm"
           type="button"
           :disabled="!isAdmin || !fleetEnabled || !manualAddress.trim()"
           @click="onPairManual"
-        >Pair by address</button>
+        >Pair by address</AppButton>
       </div>
       <AdminOnlyHint :show="!isAdmin" />
     </div>
@@ -275,10 +288,6 @@ function onPair(peer: DiscoveredPeer): void {
   font-size: 0.85rem;
 }
 .peers-section { display: flex; flex-direction: column; gap: 6px; }
-.peers-section-head { display: flex; align-items: center; gap: 8px; }
-.peers-section-title { margin: 0; font-size: 0.88rem; color: var(--text-primary); }
-.peers-audit-btn { margin-left: auto; }
-.peers-empty { margin: 0; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.35; }
 
 .peer-row {
   border: 1px solid var(--border);
@@ -325,7 +334,6 @@ function onPair(peer: DiscoveredPeer): void {
   font-size: 0.8rem;
 }
 .peers-discovery-state {
-  margin-left: auto;
   font-size: 0.76rem;
   color: var(--text-secondary);
 }

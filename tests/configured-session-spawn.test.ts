@@ -89,7 +89,7 @@ describe('spawnConfiguredSession', () => {
       // Explicit command: with no configLoader there is no spawnCommand, and the
       // `command: cliType` fallback is gone.
       command: 'claude',
-      cwd: 'X:\\coding\\gamepad-cli-hub',
+      cwd: process.cwd(),
       resumeSessionName: 'resume-123',
     });
 
@@ -100,7 +100,7 @@ describe('spawnConfiguredSession', () => {
       cliType: 'claude-code',
       cliSessionName: 'resume-123',
       processId: 1234,
-      workingDir: norm('X:\\coding\\gamepad-cli-hub'),
+      workingDir: norm(process.cwd()),
     }));
     expect(addSession).not.toHaveBeenCalled();
   });
@@ -129,14 +129,14 @@ describe('spawnConfiguredSession', () => {
       // Explicit command: with no configLoader there is no spawnCommand, and the
       // `command: cliType` fallback is gone.
       command: 'claude',
-      cwd: 'X:\\coding\\gamepad-cli-hub',
+      cwd: process.cwd(),
     });
 
     expect(addSession).toHaveBeenCalledWith(expect.objectContaining({
       id: 'sess-new',
       cliType: 'claude-code',
       processId: 4321,
-      workingDir: norm('X:\\coding\\gamepad-cli-hub'),
+      workingDir: norm(process.cwd()),
     }));
     expect(updateSession).not.toHaveBeenCalled();
   });

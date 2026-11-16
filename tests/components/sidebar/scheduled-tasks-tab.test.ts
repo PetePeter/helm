@@ -100,7 +100,7 @@ describe('ScheduledTasksTab', () => {
 
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
     await wrapper.findAll('.st-picker-btn')[1].trigger('click');
     await flushPromises();
     wrapper.findComponent(QuickSpawnModal).vm.$emit('select', CODEX_UUID);
@@ -118,7 +118,7 @@ describe('ScheduledTasksTab', () => {
 
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
     await wrapper.findAll('.st-picker-btn')[0].trigger('click');
     await flushPromises();
     wrapper.findComponent(DirPickerModal).vm.$emit('select', 'X:\\coding\\gamepad-cli-hub\\');
@@ -136,7 +136,7 @@ describe('ScheduledTasksTab', () => {
   it('drops a target session that closes while the form is open', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
     await wrapper.findAll('.st-picker-btn')[0].trigger('click');
     await flushPromises();
     wrapper.findComponent(DirPickerModal).vm.$emit('select', 'X:\\coding\\gamepad-cli-hub');
@@ -158,7 +158,7 @@ describe('ScheduledTasksTab', () => {
     const wrapper = mountTab();
     await flushPromises();
 
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
     // CLI Type picker button is the second picker (Working Dir is first in new order)
     await wrapper.findAll('.st-picker-btn')[1].trigger('click');
     await flushPromises();
@@ -171,7 +171,7 @@ describe('ScheduledTasksTab', () => {
   it('requires a selected CLI and submits the selected configured values', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     const inputs = wrapper.findAll('.st-input');
     await inputs[0].setValue('Task');
@@ -183,14 +183,14 @@ describe('ScheduledTasksTab', () => {
     wrapper.findComponent(DirPickerModal).vm.$emit('select', 'X:\\coding\\gamepad-cli-hub');
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.find('.st-btn--primary').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('.st-form-submit').attributes('disabled')).toBeDefined();
 
     // CLI Type picker is second
     await wrapper.findAll('.st-picker-btn')[1].trigger('click');
     await flushPromises();
     wrapper.findComponent(QuickSpawnModal).vm.$emit('select', 'codex');
     await wrapper.vm.$nextTick();
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     expect(mockScheduledTaskCreate).toHaveBeenCalledWith(expect.objectContaining({
@@ -204,7 +204,7 @@ describe('ScheduledTasksTab', () => {
   it('preserves literal spaces in the scheduler prompt when creating a task', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     const inputs = wrapper.findAll('.st-input');
     await inputs[0].setValue('Task');
@@ -218,7 +218,7 @@ describe('ScheduledTasksTab', () => {
     wrapper.findComponent(QuickSpawnModal).vm.$emit('select', 'codex');
     await wrapper.vm.$nextTick();
 
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     expect(mockScheduledTaskCreate).toHaveBeenCalledWith(expect.objectContaining({
@@ -243,9 +243,9 @@ describe('ScheduledTasksTab', () => {
     const wrapper = mountTab();
     await flushPromises();
 
-    await wrapper.find('.st-btn--secondary').trigger('click');
+    await wrapper.find('.st-task-edit').trigger('click');
     await wrapper.findAll('.st-input')[0].setValue('Updated');
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     expect(mockScheduledTaskUpdate).toHaveBeenCalledWith('task-1', expect.objectContaining({
@@ -282,7 +282,7 @@ describe('ScheduledTasksTab', () => {
     )!;
     await scheduleSelect.setValue('none');
     expect(wrapper.find('input[type="datetime-local"]').exists()).toBe(false);
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     const updates = mockScheduledTaskUpdate.mock.calls[0][1];
@@ -309,9 +309,9 @@ describe('ScheduledTasksTab', () => {
     const wrapper = mountTab();
     await flushPromises();
 
-    expect(wrapper.find('.st-task-badge').text()).toBe('Unscheduled');
+    expect(wrapper.find('.badge').text()).toBe('Unscheduled');
     expect(wrapper.find('.st-task-countdown').exists()).toBe(false);
-    await wrapper.find('.st-btn--secondary').trigger('click');
+    await wrapper.find('.st-task-edit').trigger('click');
 
     const scheduleSelect = wrapper.findAll('select').find((select) =>
       select.findAll('option').some((option) => option.attributes('value') === 'none'),
@@ -321,9 +321,9 @@ describe('ScheduledTasksTab', () => {
 
     const timeInput = wrapper.find('input[type="datetime-local"]');
     expect((timeInput.element as HTMLInputElement).value).toBe('');
-    expect(wrapper.find('.st-btn--primary').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('.st-form-submit').attributes('disabled')).toBeDefined();
     await timeInput.setValue('2026-04-29T11:00');
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     expect(mockScheduledTaskUpdate).toHaveBeenCalledWith('task-1', expect.objectContaining({
@@ -365,7 +365,7 @@ describe('ScheduledTasksTab', () => {
       select.findAll('option').some((option) => option.text() === 'Once'),
     )!.setValue('once');
     await wrapper.find('input[type="datetime-local"]').setValue('2026-04-29T09:00');
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
 
     expect(wrapper.find('[role="alert"]').text()).toMatch(/future/i);
     expect(mockScheduledTaskUpdate).not.toHaveBeenCalled();
@@ -393,7 +393,7 @@ describe('ScheduledTasksTab', () => {
 
     await wrapper.findAll('button').find((button) => button.text() === 'Clone')!.trigger('click');
     await wrapper.findAll('.st-input')[0].setValue('Clone title');
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     expect(mockScheduledTaskCreate).toHaveBeenCalledWith(expect.objectContaining({
@@ -409,7 +409,7 @@ describe('ScheduledTasksTab', () => {
   it('submits interval scheduling options', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     const inputs = wrapper.findAll('.st-input');
     await inputs[0].setValue('Recurring');
@@ -428,7 +428,7 @@ describe('ScheduledTasksTab', () => {
     await flushPromises();
     wrapper.findComponent(DirPickerModal).vm.$emit('select', 'X:\\coding\\gamepad-cli-hub');
     await wrapper.vm.$nextTick();
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     expect(mockScheduledTaskCreate).toHaveBeenCalledWith(expect.objectContaining({
@@ -440,7 +440,7 @@ describe('ScheduledTasksTab', () => {
   it('submits cron scheduling options from presets with optional end date', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     const inputs = wrapper.findAll('.st-input');
     await inputs[0].setValue('Weekday Report');
@@ -450,7 +450,7 @@ describe('ScheduledTasksTab', () => {
       s.findAll('option').some(o => o.text() === 'Cron calendar'),
     );
     await scheduleSelect!.setValue('cron');
-    await wrapper.findAll('.st-preset-btn').find(b => b.text() === 'Weekdays 9am')!.trigger('click');
+    await wrapper.findAll('.st-cron-preset').find(b => b.text() === 'Weekdays 9am')!.trigger('click');
     await wrapper.find('input[type="date"]').setValue('2026-12-31');
     await wrapper.findAll('.st-picker-btn')[1].trigger('click');
     await flushPromises();
@@ -459,7 +459,7 @@ describe('ScheduledTasksTab', () => {
     await flushPromises();
     wrapper.findComponent(DirPickerModal).vm.$emit('select', 'X:\\coding\\gamepad-cli-hub');
     await wrapper.vm.$nextTick();
-    await wrapper.find('.st-btn--primary').trigger('click');
+    await wrapper.find('.st-form-submit').trigger('click');
     await flushPromises();
 
     expect(mockScheduledTaskCreate).toHaveBeenCalledWith(expect.objectContaining({
@@ -472,7 +472,7 @@ describe('ScheduledTasksTab', () => {
   it('disables creation for invalid cron expressions', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     const scheduleSelect = wrapper.findAll('select').find(s =>
       s.findAll('option').some(o => o.text() === 'Cron calendar'),
@@ -482,7 +482,7 @@ describe('ScheduledTasksTab', () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find('.st-cron-status--invalid').exists()).toBe(true);
-    expect(wrapper.find('.st-btn--primary').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('.st-form-submit').attributes('disabled')).toBeDefined();
   });
 
   it('opens the requested task for editing when mounted as a popup', async () => {
@@ -505,7 +505,7 @@ describe('ScheduledTasksTab', () => {
     await flushPromises();
 
     expect((wrapper.findAll('.st-input')[0].element as HTMLInputElement).value).toBe('Original');
-    await wrapper.find('.st-btn--secondary').trigger('click');
+    await wrapper.find('.st-form-secondary').trigger('click');
     expect(wrapper.emitted('close')).toBeTruthy();
   });
 
@@ -542,7 +542,7 @@ describe('ScheduledTasksTab', () => {
     const wrapper = mountTab();
     await flushPromises();
 
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     // Switch to direct mode — mode selector is now near the top
     const modeSelect = wrapper.findAll('select').find(s => {
@@ -571,7 +571,7 @@ describe('ScheduledTasksTab', () => {
   it('hides CLI Type row in direct mode', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     // In spawn mode, CLI Type label is visible
     const labels = () => wrapper.findAll('.st-label').map(l => l.text());
@@ -590,7 +590,7 @@ describe('ScheduledTasksTab', () => {
   it('hides CLI Params row in direct mode', async () => {
     const wrapper = mountTab();
     await flushPromises();
-    await wrapper.find('.st-create-btn').trigger('click');
+    await wrapper.find('.st-create-action').trigger('click');
 
     const modeSelect = wrapper.findAll('select').find(s => {
       const opts = s.findAll('option');

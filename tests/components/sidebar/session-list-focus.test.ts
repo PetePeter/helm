@@ -12,8 +12,8 @@
  *
  * @vitest-environment jsdom
  */
-import { afterEach, describe, it, expect } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import SessionList from '../../../renderer/components/sidebar/SessionList.vue';
 import { isNavItemFocused } from '../../../renderer/session-groups.js';
@@ -48,9 +48,11 @@ describe('isNavItemFocused (pure highlight decision)', () => {
 // ---------------------------------------------------------------------------
 
 const CardStub = {
-  props: ['isFocused', 'isActive', 'session'],
-  template: '<div class="card" :data-id="session.id" :class="{ focused: isFocused, active: isActive }"></div>',
+  props: ['isFocused', 'isActive', 'session', 'navIndex'],
+  template: '<div class="card" :data-id="session.id" :data-nav-index="navIndex" :class="{ focused: isFocused, active: isActive }"></div>',
 };
+
+const mountedWrappers: VueWrapper[] = [];
 
 function mountList(overrides: Record<string, unknown> = {}) {
   const props = {
@@ -86,17 +88,30 @@ function mountList(overrides: Record<string, unknown> = {}) {
     sessionShortcutMap: new Map<string, number>(),
     ...overrides,
   };
-  return mount(SessionList, {
+  const wrapper = mount(SessionList, {
     props,
-    global: { stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
+    global: {
+      stubs: {
+        SessionGroup: {
+          props: ['navIndex'],
+          template: '<div class="group-header" :data-nav-index="navIndex"><slot /></div>',
+        },
+        SessionCard: CardStub,
+      },
+    },
   });
+  mountedWrappers.push(wrapper);
+  return wrapper;
 }
 
 describe('SessionList highlight rendering', () => {
   afterEach(() => {
+    for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount();
     state.sessions = [];
     state.activeSessionId = null;
     sessionsState.showHiddenSessions = false;
+    sessionsState.activeFocus = 'sessions';
+    sessionsState.sessionsFocusIndex = 0;
   });
 
   it('shows the hidden toggle while any session is hidden, even the active one', async () => {
@@ -146,5 +161,44 @@ describe('SessionList highlight rendering', () => {
 
     expect(w.get('[data-id="sB"]').classes()).toContain('focused');
     expect(w.get('[data-id="sA"]').classes()).not.toContain('focused');
+  });
+
+  it('scrolls the rendered navigation item when reactive focus moves', async () => {
+    sessionsState.activeFocus = 'sessions';
+    sessionsState.sessionsFocusIndex = 0;
+    const w = mountList();
+    const focused = w.get('[data-nav-index="3"]').element as HTMLElement;
+    focused.scrollIntoView = vi.fn();
+
+    sessionsState.sessionsFocusIndex = 3;
+    await nextTick();
+
+    expect(focused.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+  });
+
+  it('scrolls group headers using their shared navigation index', async () => {
+    sessionsState.activeFocus = 'sessions';
+    sessionsState.sessionsFocusIndex = 0;
+    const w = mountList();
+    const header = w.get('.group-header').element as HTMLElement;
+    header.scrollIntoView = vi.fn();
+
+    sessionsState.sessionsFocusIndex = 1;
+    await nextTick();
+
+    expect(header.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+  });
+
+  it('does not scroll the sessions list when another zone owns focus', async () => {
+    sessionsState.activeFocus = 'spawn';
+    sessionsState.sessionsFocusIndex = 0;
+    const w = mountList();
+    const focused = w.get('[data-nav-index="3"]').element as HTMLElement;
+    focused.scrollIntoView = vi.fn();
+
+    sessionsState.sessionsFocusIndex = 3;
+    await nextTick();
+
+    expect(focused.scrollIntoView).not.toHaveBeenCalled();
   });
 });

@@ -7,12 +7,15 @@
  * recreate an entry as a fresh task or clear the whole history.
  */
 import { computed, onUnmounted, ref, watch } from 'vue';
+import AppButton from '../common/AppButton.vue';
 import { eventsClient, schedulerClient } from '../../ipc/clients.js';
 import type { ScheduledTaskHistoryEntry } from '../../../src/types/scheduled-task.js';
 import { useFocusTrap } from '../../composables/useFocusTrap.js';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { getCliDisplayName } from '../../utils.js';
 import { formatLocalDayLabel, startOfLocalDay } from '../../utils/local-day.js';
+import EmptyState from '../common/EmptyState.vue';
+import Badge from '../common/Badge.vue';
 
 const MODAL_ID = 'scheduler-history';
 
@@ -54,14 +57,14 @@ const dayGroups = computed<DayGroup[]>(() => {
   return [...groups.values()];
 });
 
-function outcomeBadge(outcome: ScheduledTaskHistoryEntry['outcome']): { label: string; cssClass: string } {
+function outcomeBadge(outcome: ScheduledTaskHistoryEntry['outcome']): { label: string; tone: 'ok' | 'error' | 'neutral' } {
   switch (outcome) {
-    case 'done': return { label: 'Done', cssClass: 'sth-badge--done' };
-    case 'failed': return { label: 'Failed', cssClass: 'sth-badge--failed' };
-    case 'cancelled': return { label: 'Cancelled', cssClass: 'sth-badge--cancelled' };
+    case 'done': return { label: 'Done', tone: 'ok' };
+    case 'failed': return { label: 'Failed', tone: 'error' };
+    case 'cancelled': return { label: 'Cancelled', tone: 'neutral' };
     // Neutral like a cancel: the run deliberately did nothing.
-    case 'skipped': return { label: 'Skipped', cssClass: 'sth-badge--cancelled' };
-    default: return { label: outcome, cssClass: '' };
+    case 'skipped': return { label: 'Skipped', tone: 'neutral' };
+    default: return { label: outcome, tone: 'neutral' };
   }
 }
 
@@ -181,7 +184,7 @@ defineExpose({ handleButton });
         </div>
 
         <div class="sth-body">
-          <div v-if="entries.length === 0" class="sth-empty">No past schedules in the last 7 days</div>
+          <EmptyState v-if="entries.length === 0" title="No past schedules in the last 7 days" compact />
 
           <template v-for="group in dayGroups" :key="group.key">
             <div class="sth-day-label">{{ group.label }}</div>
@@ -191,16 +194,16 @@ defineExpose({ handleButton });
               class="sth-run"
             >
               <div class="sth-run-top">
-                <span class="st-task-badge sth-badge" :class="outcomeBadge(entry.outcome).cssClass">{{ outcomeBadge(entry.outcome).label }}</span>
+                <Badge class="scheduled-task-history-status" :tone="outcomeBadge(entry.outcome).tone">{{ outcomeBadge(entry.outcome).label }}</Badge>
                 <span class="sth-run-title">{{ entry.title }}</span>
                 <span class="sth-ran-at">{{ ranAtTime(entry.ranAt) }}</span>
               </div>
 
-              <div class="sth-chips">
-                <span class="st-task-chip">{{ getCliDisplayName(entry.cliType) }}</span>
-                <span class="st-task-chip">{{ shortenPath(entry.dirPath) }}</span>
-                <span class="st-task-chip">{{ scheduleLabel(entry) }}</span>
-                <span class="st-task-chip">{{ modeLabel(entry) }}</span>
+              <div class="sth-badges">
+                <Badge>{{ getCliDisplayName(entry.cliType) }}</Badge>
+                <Badge>{{ shortenPath(entry.dirPath) }}</Badge>
+                <Badge>{{ scheduleLabel(entry) }}</Badge>
+                <Badge>{{ modeLabel(entry) }}</Badge>
               </div>
 
               <div class="sth-prompt" :title="entry.initialPrompt">{{ promptPreview(entry.initialPrompt) }}</div>
@@ -215,8 +218,8 @@ defineExpose({ handleButton });
               </div>
 
               <div class="sth-actions">
-                <button class="sth-btn sth-btn--primary focusable" type="button" @click="onRecreate(entry)">↻ Recreate as new</button>
-                <button class="sth-btn focusable" type="button" @click="toggleDetails(entry.id)">{{ isExpanded(entry.id) ? 'Hide details' : 'View details' }}</button>
+                <AppButton variant="primary" size="sm" class="focusable" type="button" @click="onRecreate(entry)">↻ Recreate as new</AppButton>
+                <AppButton variant="secondary" size="sm" class="focusable" type="button" @click="toggleDetails(entry.id)">{{ isExpanded(entry.id) ? 'Hide details' : 'View details' }}</AppButton>
               </div>
             </div>
           </template>
@@ -254,7 +257,6 @@ defineExpose({ handleButton });
 .sth-x { background: none; border: none; color: var(--text-secondary); font-size: 1.2rem; cursor: pointer; }
 .sth-x:hover { color: var(--text-primary); }
 .sth-body { padding: 12px 18px 18px; max-height: 60vh; overflow: auto; }
-.sth-empty { text-align: center; padding: 40px; color: var(--text-secondary); }
 
 .sth-day-label {
   font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.5px;
@@ -271,13 +273,10 @@ defineExpose({ handleButton });
 .sth-run-title { font-weight: 600; font-size: 1rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sth-ran-at { margin-left: auto; color: var(--text-secondary); font-size: 0.8rem; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
-.st-task-badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 3px; font-weight: 500; flex-shrink: 0; }
-.sth-badge--done { background: rgba(68,204,68,0.15); color: #44cc44; }
-.sth-badge--failed { background: rgba(255,68,68,0.15); color: #ff6666; }
-.sth-badge--cancelled { background: rgba(120,120,120,0.18); color: #aaa; }
+.scheduled-task-history-status { font-size: 0.72rem; }
+.scheduled-task-history-status.badge--neutral { background: rgba(120, 120, 120, 0.18); color: #aaa; }
 
-.sth-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
-.st-task-chip { background: var(--bg-tertiary); padding: 2px 8px; border-radius: 3px; font-size: 0.76rem; color: var(--text-secondary); }
+.sth-badges { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 
 .sth-prompt {
   background: var(--bg-tertiary); border-radius: 4px; padding: 8px 10px;
@@ -297,11 +296,4 @@ defineExpose({ handleButton });
 }
 
 .sth-actions { margin-top: 10px; display: flex; gap: 8px; }
-.sth-btn {
-  padding: 6px 14px; border-radius: 4px; border: 1px solid var(--border);
-  background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-size: 0.82rem;
-}
-.sth-btn:hover { border-color: var(--accent); }
-.sth-btn--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
-.sth-btn--primary:hover { opacity: 0.9; }
 </style>

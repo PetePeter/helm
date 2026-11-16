@@ -120,12 +120,12 @@ describe('close confirmation keyboard path', () => {
     expect(useModalStack().topId.value).toBe('close-confirm');
     expect(document.activeElement).not.toBe(opener);
     const keyboardTarget = document.activeElement as HTMLElement;
-    expect(dialogButtons().map(button => button.classList.contains('btn--focused'))).toEqual([true, false]);
+    expect(dialogButtons().map(button => button.classList.contains('app-button--focused'))).toEqual([true, false]);
 
     const tab = press(keyboardTarget, 'keydown', 'Tab');
     expect(tab.defaultPrevented).toBe(true);
     await nextTick();
-    expect(dialogButtons().map(button => button.classList.contains('btn--focused'))).toEqual([false, true]);
+    expect(dialogButtons().map(button => button.classList.contains('app-button--focused'))).toEqual([false, true]);
 
     const space = press(keyboardTarget, 'keydown', ' ');
     expect(space.defaultPrevented).toBe(true);
@@ -152,7 +152,7 @@ describe('close confirmation keyboard path', () => {
     await nextTick();
     expect(press(keyboardTarget, 'keydown', 'Tab').defaultPrevented).toBe(true);
     await nextTick();
-    expect(dialogButtons().map(button => button.classList.contains('btn--focused'))).toEqual([true, false]);
+    expect(dialogButtons().map(button => button.classList.contains('app-button--focused'))).toEqual([true, false]);
 
     expect(press(keyboardTarget, 'keydown', ' ').defaultPrevented).toBe(true);
     await nextTick();

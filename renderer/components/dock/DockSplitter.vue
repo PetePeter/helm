@@ -41,3 +41,17 @@ const { splitterRef, isDragging, onKeyDown } = useSplitResize({
     @keydown="onKeyDown"
   />
 </template>
+
+<style scoped>
+.dock-splitter {
+  z-index: 2;
+  width: 4px;
+  height: 100%;
+  padding: 0;
+  cursor: col-resize;
+  background: var(--border);
+}
+.dock-splitter:hover,
+.dock-splitter:focus-visible,
+.dock-splitter--dragging { background: var(--accent); outline: none; }
+</style>

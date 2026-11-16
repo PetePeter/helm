@@ -58,3 +58,12 @@ const emit = defineEmits<{
     </button>
   </div>
 </template>
+
+<style scoped>
+.plan-dot { font-size: 0.7em; }
+.plan-dot--ready { color: var(--status-ready); }
+.plan-dot--coding { color: var(--status-coding); }
+.plan-dot--review { color: var(--status-review); }
+.plan-dot--blocked { color: var(--status-blocked); }
+.plan-dot--planning { color: var(--status-planning); }
+</style>

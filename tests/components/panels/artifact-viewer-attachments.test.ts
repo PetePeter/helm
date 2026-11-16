@@ -105,7 +105,7 @@ describe('ArtifactViewer — attachments section', () => {
     artifactAttachmentAdd.mockResolvedValue(makeAttachment('att-new', 'shot.png', 3));
     const { w } = await mountWith([]);
 
-    await w.find('.ap-att__add').trigger('click');
+    await w.find('.ap-att__head .app-button').trigger('click');
     await flushPromises();
 
     expect(artifactAttachmentAdd).toHaveBeenCalledWith('a1', {
@@ -121,7 +121,7 @@ describe('ArtifactViewer — attachments section', () => {
     artifactPickAndReadFile.mockResolvedValue(null);
     const { w } = await mountWith([]);
 
-    await w.find('.ap-att__add').trigger('click');
+    await w.find('.ap-att__head .app-button').trigger('click');
     await flushPromises();
 
     expect(artifactAttachmentAdd).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe('ArtifactViewer — attachments section', () => {
   it('Delete removes the attachment and reloads the list', async () => {
     const { w } = await mountWith([makeAttachment('att-1', 'evidence.png', 2048)]);
 
-    const del = w.findAll('.ap-att__row .ap-btn').find(b => b.text() === 'Delete')!;
+    const del = w.findAll('.ap-att__row .app-button').find(b => b.text() === 'Delete')!;
     await del.trigger('click');
     await flushPromises();
 

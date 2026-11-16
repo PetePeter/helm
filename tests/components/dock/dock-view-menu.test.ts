@@ -36,14 +36,21 @@ describe('DockViewMenu', () => {
     expect(allOpen.find('.dock-view-menu__badge').exists()).toBe(false);
   });
 
-  it('hosts app actions after the layout items when used as the app menu', () => {
+  it('renders app actions as styled menu rows after the layout items, closing before running', async () => {
+    const calls: string[] = [];
     const wrapper = mount(DockViewMenu, {
-      props: { open: true, items, label: '☰' },
-      slots: { default: '<button class="app-action" role="menuitem">Settings</button>' },
+      props: {
+        open: true, items, label: '☰',
+        actions: [{ icon: '⚙', label: 'Settings', run: () => calls.push('settings') }],
+        'onClose': () => calls.push('close'),
+      },
     });
     expect(wrapper.get('.dock-view-menu__trigger').text()).toContain('☰');
-    const order = wrapper.findAll('[role="menuitem"]').map(item => item.text());
-    expect(order).toEqual(['Reset Layout', 'Settings']);
+    const rows = wrapper.findAll('[role="menuitem"]');
+    expect(rows.map(item => item.text())).toEqual(['Reset Layout', '⚙Settings']);
+    expect(rows[1].classes()).toContain('dock-view-menu__item');
+    await rows[1].trigger('click');
+    expect(calls).toEqual(['close', 'settings']);
   });
 
   it('opens and closes from the accessible trigger', async () => {

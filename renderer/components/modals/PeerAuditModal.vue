@@ -11,6 +11,7 @@ import { computed, onUnmounted, watch } from 'vue';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { usePeers, type PeerAuditEntry } from '../../composables/usePeers.js';
 import { formatLocalDayLabel, startOfLocalDay } from '../../utils/local-day.js';
+import Badge from '../common/Badge.vue';
 
 const MODAL_ID = 'peer-audit';
 
@@ -40,13 +41,13 @@ const dayGroups = computed<DayGroup[]>(() => {
   return [...groups.values()];
 });
 
-function outcomeBadge(outcome: PeerAuditEntry['outcome']): { label: string; cssClass: string } {
+function outcomeBadge(outcome: PeerAuditEntry['outcome']): { label: string; tone: 'ok' | 'warn' | 'error' | 'neutral' } {
   switch (outcome) {
-    case 'ok': return { label: 'OK', cssClass: 'pa-badge--ok' };
-    case 'denied': return { label: 'Denied', cssClass: 'pa-badge--warn' };
-    case 'rate-limited': return { label: 'Rate limited', cssClass: 'pa-badge--warn' };
-    case 'error': return { label: 'Error', cssClass: 'pa-badge--error' };
-    default: return { label: outcome, cssClass: '' };
+    case 'ok': return { label: 'OK', tone: 'ok' };
+    case 'denied': return { label: 'Denied', tone: 'warn' };
+    case 'rate-limited': return { label: 'Rate limited', tone: 'warn' };
+    case 'error': return { label: 'Error', tone: 'error' };
+    default: return { label: outcome, tone: 'neutral' };
   }
 }
 
@@ -111,13 +112,13 @@ defineExpose({ handleButton });
             <div class="pa-day-label">{{ group.label }}</div>
             <div v-for="entry in group.entries" :key="entry.id" class="pa-run">
               <div class="pa-run-top">
-                <span class="pa-badge" :class="outcomeBadge(entry.outcome).cssClass">{{ outcomeBadge(entry.outcome).label }}</span>
+                <Badge class="peer-audit-status" :tone="outcomeBadge(entry.outcome).tone">{{ outcomeBadge(entry.outcome).label }}</Badge>
                 <span class="pa-method">{{ entry.method }}</span>
                 <span class="pa-ran-at">{{ ranAtTime(entry.ranAt) }}</span>
               </div>
-              <div class="pa-chips">
-                <span class="pa-chip">peer {{ entry.peerId }}</span>
-                <span v-if="entry.argSummary" class="pa-chip">{{ entry.argSummary }}</span>
+              <div class="pa-badges">
+                <Badge>peer {{ entry.peerId }}</Badge>
+                <Badge v-if="entry.argSummary">{{ entry.argSummary }}</Badge>
               </div>
               <div v-if="entry.outcome === 'error' && entry.error" class="pa-err">{{ entry.error }}</div>
             </div>
@@ -168,12 +169,8 @@ defineExpose({ handleButton });
 }
 .pa-ran-at { margin-left: auto; color: var(--text-secondary); font-size: 0.8rem; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 
-.pa-badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 3px; font-weight: 500; flex-shrink: 0; }
-.pa-badge--ok { background: rgba(68,204,68,0.15); color: #44cc44; }
-.pa-badge--warn { background: rgba(255,159,26,0.18); color: #ff9f1a; }
-.pa-badge--error { background: rgba(255,68,68,0.15); color: #ff6666; }
+.peer-audit-status { font-size: 0.72rem; }
 
-.pa-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.pa-chip { background: var(--bg-tertiary); padding: 2px 8px; border-radius: 3px; font-size: 0.74rem; color: var(--text-secondary); }
+.pa-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .pa-err { margin-top: 6px; padding: 6px 9px; background: rgba(255,68,68,0.1); color: #ff6666; border-radius: 4px; font-size: 0.8rem; }
 </style>

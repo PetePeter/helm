@@ -61,6 +61,6 @@ describe('MobileTab profile binding', () => {
     expect(wrapper.get('[aria-label="Profile for Kids tablet"]').element).toHaveProperty('disabled', true);
     expect(wrapper.get('.mobile-pair-btn').element).toHaveProperty('disabled', true);
     expect(wrapper.get('.mobile-enable-input').element).toHaveProperty('disabled', true);
-    expect(wrapper.get('.mobile-admin-badge').text()).toBe('Admin');
+    expect(wrapper.get('.mobile-admin-status').text()).toBe('Admin');
   });
 });

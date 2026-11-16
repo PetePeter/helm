@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * OperatorSection — the "Helm" section pinned above the session list; the
  * desktop twin of the phone's first tab. Shows the operator's activity dot and
@@ -62,13 +63,13 @@ function onCallClick(): void {
         <span class="operator-section__title">Helm</span>
       </button>
       <span v-if="inCall" class="operator-section__phase" :class="`operator-section__phase--${phase}`" role="status" aria-live="polite">{{ phaseLabel }}</span>
-      <button
+      <AppButton size="sm"
         v-if="summary.kind === 'on' || inCall"
-        class="btn btn--sm focusable"
-        :class="inCall ? 'btn--danger' : 'btn--secondary'"
+        class="focusable"
+        :variant="inCall ? 'danger' : 'secondary'"
         type="button"
         @click="onCallClick"
-      >{{ inCall ? 'Hang up' : 'Call' }}</button>
+      >{{ inCall ? 'Hang up' : 'Call' }}</AppButton>
     </div>
 
     <div v-if="summary.kind === 'off'" class="operator-section__hint">Enable in Settings &gt; Operator</div>
@@ -84,6 +85,14 @@ function onCallClick(): void {
 </template>
 
 <style scoped>
+/* Activity dot (green = active, blue = inactive >10s, grey = idle >5min) */
+.session-activity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .operator-section {
   display: flex;
   flex-direction: column;

@@ -64,3 +64,19 @@ watch(() => [props.focused, props.focusRequestId] as const, async ([focused]) =>
     <div v-else class="dock-pane__missing">Pane unavailable: {{ paneId }}</div>
   </section>
 </template>
+
+<style scoped>
+.dock-pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+.dock-pane[aria-hidden="true"] { pointer-events: none; }
+.dock-pane--focused { box-shadow: inset 0 0 0 1px var(--focus); }
+.dock-pane__missing { padding: var(--spacing-md); color: var(--text-secondary); }
+</style>

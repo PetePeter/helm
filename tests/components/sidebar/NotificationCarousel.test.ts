@@ -91,8 +91,8 @@ describe('NotificationCarousel', () => {
       props: { notifications: NOTIFICATIONS, sessionId: 's1' },
     });
 
-    await w.find('.dismiss-btn').trigger('click');
-    expect(w.find('.dismiss-btn').attributes('aria-label')).toBe('Dismiss current notification');
+    await w.find('.notification-dismiss').trigger('click');
+    expect(w.find('.notification-dismiss').attributes('aria-label')).toBe('Dismiss current notification');
     expect(w.emitted('dismiss')).toEqual([['n1']]);
   });
 
@@ -108,7 +108,7 @@ describe('NotificationCarousel', () => {
     expect(w.find('.carousel-title').text()).toBe('Third');
 
     // Dismiss the last item — emit fires but parent must remove the item
-    await w.find('.dismiss-btn').trigger('click');
+    await w.find('.notification-dismiss').trigger('click');
     expect(w.emitted('dismiss')).toEqual([['n3']]);
 
     // Simulate parent removing the notification (array shrinks from 3 to 2)

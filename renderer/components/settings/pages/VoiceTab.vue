@@ -5,6 +5,7 @@
  * so it lives in its own settings section.
  */
 import { ref, watch } from 'vue';
+import AppButton from '../../common/AppButton.vue';
 import { dialogClient } from '../../../ipc/clients.js';
 import type { VoiceConfig } from '../../../../src/config/loader.js';
 
@@ -73,7 +74,7 @@ async function browse(field: (typeof FIELDS)[number]): Promise<void> {
             @input="debouncedEmit(f.key)"
             @blur="immediateEmit(f.key)"
           />
-          <button class="voice-browse-btn" type="button" @click="browse(f)">📂</button>
+          <AppButton variant="secondary" size="sm" class="voice-browse-action" type="button" @click="browse(f)">📂</AppButton>
         </div>
       </label>
     </section>
@@ -124,19 +125,5 @@ async function browse(field: (typeof FIELDS)[number]): Promise<void> {
   border-color: var(--accent);
 }
 
-.voice-browse-btn {
-  flex-shrink: 0;
-  padding: 0 var(--spacing-xs);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  line-height: 1;
-  height: 100%;
-}
-
-.voice-browse-btn:hover {
-  background: var(--bg-hover);
-}
+.voice-browse-action { flex-shrink: 0; height: 100%; }
 </style>

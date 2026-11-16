@@ -137,3 +137,19 @@ const ghostLabel = computed(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.dock-workspace {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+/* The app shell owns this layout relationship; the workspace root is scoped. */
+:global(.app-main-area) > .dock-workspace { flex: 1; }
+/* Drag state is attached to body by useDockDrag, outside this component root. */
+:global(body.dock-dragging) { cursor: grabbing; user-select: none; }
+</style>

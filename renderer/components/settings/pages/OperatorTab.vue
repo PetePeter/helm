@@ -12,6 +12,7 @@ import { OPERATOR_RULES } from '../../../../src/mcp/guides/operator-guide.js';
 import { trackSave, useAutosave } from '../../../composables/useAutosave.js';
 import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
 import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
+import ToggleRow from '../primitives/ToggleRow.vue';
 
 interface OperatorConfig { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string }
 
@@ -85,21 +86,18 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
         It only routes your instructions to work sessions and relays their answers; it never does the work itself.</p>
     </div>
 
-    <label class="operator-setting">
-      <input
-        type="checkbox"
-        class="focusable"
-        :checked="config.enabled"
-        :disabled="!isAdmin"
-        @change="save({ enabled: ($event.target as HTMLInputElement).checked })"
-      />
-      <span>Keep the Helm operator session running</span>
-    </label>
+    <ToggleRow
+      class="operator-setting"
+      label="Keep the Helm operator session running"
+      :model-value="config.enabled"
+      :disabled="!isAdmin"
+      @update:model-value="save({ enabled: $event })"
+    />
     <AdminOnlyHint :show="!isAdmin" />
 
     <label class="operator-setting">
       <span>CLI type</span>
-      <select class="btn btn--secondary btn--sm focusable" :value="config.cliType" :disabled="!isAdmin" @change="save({ cliType: selectValue($event) })">
+      <select class="app-select app-select--secondary app-select--sm focusable" :value="config.cliType" :disabled="!isAdmin" @change="save({ cliType: selectValue($event) })">
         <option value="" disabled>Choose a CLI type…</option>
         <option v-for="type in cliTypes" :key="type" :value="type">{{ getCliDisplayName(type) }}</option>
       </select>
@@ -109,8 +107,8 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
 
     <label class="operator-setting">
       <span>Auto-clear when idle</span>
-      <select
-        class="btn btn--secondary btn--sm focusable"
+      <select class="app-select app-select--secondary app-select--sm focusable"
+
         :value="config.compactEveryMinutes"
         :disabled="!isAdmin"
         @change="save({ compactEveryMinutes: Number(selectValue($event)) })"

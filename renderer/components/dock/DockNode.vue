@@ -258,3 +258,66 @@ function onDockFocusOut(event: FocusEvent): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+.dock-node {
+  min-width: 0;
+  min-height: 0;
+}
+.dock-node--split {
+  display: grid;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+.dock-node--horizontal { grid-auto-flow: column; }
+.dock-node--vertical { grid-auto-flow: row; }
+.dock-node--group,
+.dock-node--dock { display: flex; flex: 1; overflow: hidden; }
+.dock-node--dock { position: relative; flex-direction: column; background: var(--bg-primary); }
+.dock-node--side-left,
+.dock-node--side-right { flex-direction: column; }
+/* A collapsed dock is only its rail: the parent split already gives it an auto track. */
+.dock-node--collapsed { flex: 0 0 auto; }
+.dock-node--side-top.dock-node--collapsed,
+.dock-node--side-bottom.dock-node--collapsed { flex-direction: row; }
+.dock-node__content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+}
+.dock-node--empty { display: grid; place-items: center; flex: 1; color: var(--text-dim); }
+/* A vertical split uses a horizontal resize handle. The splitter root inherits
+ * this component's scope attribute, so the parent-child selector stays scoped. */
+.dock-node--vertical > .dock-splitter { width: 100%; height: 4px; cursor: row-resize; }
+/* Rail: one icon button per pane. Icons fit the narrow strip without rotated text. */
+.dock-rail {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+}
+.dock-node--side-top > .dock-rail,
+.dock-node--side-bottom > .dock-rail { flex-direction: row; }
+.dock-rail__btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm, 3px);
+  cursor: pointer;
+  position: relative;
+}
+.dock-rail__btn:hover,
+.dock-rail__btn:focus-visible { color: var(--text-primary); background: var(--bg-tertiary); outline: 2px solid var(--accent); outline-offset: -2px; }
+.dock-rail__icon { font-size: 14px; line-height: 1; }
+</style>

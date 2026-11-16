@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 import { nextTick, onUnmounted, ref, watch } from 'vue';
 import { FORM_KEYS, SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { useModalAutofocus } from '../../composables/useModalAutofocus.js';
@@ -98,8 +99,8 @@ onUnmounted(() => modalStack.pop('first-run-onboarding'));
       <main class="onboarding-card">
         <header class="onboarding-header">
           <div class="onboarding-brand"><span>H</span><b>Helm</b><small>steer your fleet of agents</small></div>
-          <button v-if="stage === 'configure' || stage === 'success'" class="btn btn--secondary btn--sm focusable" @click="flow.finish">Close</button>
-          <button v-else class="btn btn--secondary btn--sm focusable" @click="flow.showConfiguration">Skip to optional setup</button>
+          <AppButton variant="secondary" size="sm" v-if="stage === 'configure' || stage === 'success'" class="focusable" @click="flow.finish">Close</AppButton>
+          <AppButton variant="secondary" size="sm" v-else class="focusable" @click="flow.showConfiguration">Skip to optional setup</AppButton>
         </header>
 
         <div v-if="stage !== 'configure'" class="onboarding-layout">
@@ -121,7 +122,7 @@ onUnmounted(() => modalStack.pop('first-run-onboarding'));
                 <button v-for="tool in tools" :key="tool.id" class="onboarding-choice focusable" :class="{ selected: selectedCli === tool.id }" @click="flow.chooseCli(tool.id)"><b>{{ tool.name }}</b><small>Configured in Helm</small></button>
               </div>
               <p v-else class="onboarding-empty">No CLI tools are configured yet. Add one in Settings, then return here.</p>
-              <div class="onboarding-actions"><button v-if="!hasTools" class="btn btn--secondary focusable" @click="flow.openSettings('tools')">Open Tools settings</button><span v-else /><button class="btn btn--primary onboarding-primary focusable" :disabled="!hasTools" @click="flow.continueFromCli">Continue →</button></div>
+              <div class="onboarding-actions"><AppButton variant="secondary" v-if="!hasTools" class="focusable" @click="flow.openSettings('tools')">Open Tools settings</AppButton><span v-else /><AppButton variant="primary" class="onboarding-primary focusable" :disabled="!hasTools" @click="flow.continueFromCli">Continue →</AppButton></div>
             </template>
 
             <template v-else-if="stage === 'directory'">
@@ -130,27 +131,27 @@ onUnmounted(() => modalStack.pop('first-run-onboarding'));
                 <button v-for="directory in directories" :key="directory.path" class="onboarding-choice focusable" :class="{ selected: selectedDirectory === directory.path }" @click="flow.chooseExistingDirectory(directory.path)"><b>{{ directory.name }}</b><small>{{ directory.path }}</small></button>
               </div>
               <p v-else class="onboarding-empty">Add a project folder to start your first session.</p>
-              <div class="onboarding-actions"><button class="btn btn--secondary focusable" :disabled="busy" @click="flow.browseForDirectory">{{ busy ? 'Adding folder…' : 'Choose folder…' }}</button><span class="onboarding-action-right"><button class="btn btn--secondary focusable" @click="flow.back">← Back</button><button class="btn btn--primary onboarding-primary focusable" :disabled="!selectedDirectory || busy" @click="flow.continueFromDirectory">Continue →</button></span></div>
+              <div class="onboarding-actions"><AppButton variant="secondary" class="focusable" :disabled="busy" @click="flow.browseForDirectory">{{ busy ? 'Adding folder…' : 'Choose folder…' }}</AppButton><span class="onboarding-action-right"><AppButton variant="secondary" class="focusable" @click="flow.back">← Back</AppButton><AppButton variant="primary" class="onboarding-primary focusable" :disabled="!selectedDirectory || busy" @click="flow.continueFromDirectory">Continue →</AppButton></span></div>
             </template>
 
             <template v-else-if="stage === 'prompt'">
               <h2>Your first prompt</h2><p class="onboarding-muted">A small task is a good way to see Helm in action.</p>
               <div class="onboarding-terminal"><b>● New {{ tools.find(tool => tool.id === selectedCli)?.name || 'CLI' }} session</b><small>{{ selectedDirectory }}</small><small>Ready for your instructions</small></div>
               <label for="first-prompt">Try asking</label><textarea id="first-prompt" v-model="prompt" class="onboarding-prompt" rows="3" :disabled="busy" />
-              <div class="onboarding-presets"><button class="btn btn--secondary btn--sm focusable" @click="prompt = 'Find the main entry point and explain it.'">Explain this project</button><button class="btn btn--secondary btn--sm focusable" @click="prompt = 'Find one small improvement I could make.'">Suggest an improvement</button></div>
-              <div class="onboarding-actions"><button class="btn btn--secondary focusable" :disabled="busy" @click="flow.back">← Back</button><button class="btn btn--primary onboarding-primary focusable" :disabled="busy || !prompt.trim()" @click="flow.startSession">{{ busy ? 'Starting session…' : 'Start session and send ↗' }}</button></div>
+              <div class="onboarding-presets"><AppButton variant="secondary" size="sm" class="focusable" @click="prompt = 'Find the main entry point and explain it.'">Explain this project</AppButton><AppButton variant="secondary" size="sm" class="focusable" @click="prompt = 'Find one small improvement I could make.'">Suggest an improvement</AppButton></div>
+              <div class="onboarding-actions"><AppButton variant="secondary" class="focusable" :disabled="busy" @click="flow.back">← Back</AppButton><AppButton variant="primary" class="onboarding-primary focusable" :disabled="busy || !prompt.trim()" @click="flow.startSession">{{ busy ? 'Starting session…' : 'Start session and send ↗' }}</AppButton></div>
             </template>
 
             <template v-else>
               <div class="onboarding-success">✓</div><h2>Your first session is ready.</h2><p class="onboarding-muted">Keep working, or explore the rest of Helm below.</p>
-              <div class="onboarding-actions"><button class="btn btn--secondary focusable" @click="flow.showConfiguration">Configure Helm</button><button class="btn btn--primary onboarding-primary focusable" @click="flow.finish">Go to my sessions →</button></div>
+              <div class="onboarding-actions"><AppButton variant="secondary" class="focusable" @click="flow.showConfiguration">Configure Helm</AppButton><AppButton variant="primary" class="onboarding-primary focusable" @click="flow.finish">Go to my sessions →</AppButton></div>
             </template>
             <p v-if="error" class="onboarding-error" role="alert">{{ error }}</p>
           </section>
         </div>
 
         <section v-else class="onboarding-settings">
-          <header><div><div class="onboarding-eyebrow">Optional · do this anytime</div><h1>Make Helm yours.</h1><p class="onboarding-muted">Choose any topic. Each one opens the existing setting.</p></div><button class="btn btn--secondary focusable" @click="flow.finish">Go to sessions</button></header>
+          <header><div><div class="onboarding-eyebrow">Optional · do this anytime</div><h1>Make Helm yours.</h1><p class="onboarding-muted">Choose any topic. Each one opens the existing setting.</p></div><AppButton variant="secondary" class="focusable" @click="flow.finish">Go to sessions</AppButton></header>
           <section class="onboarding-workspace" aria-label="Your workspace">
             <h2>Your workspace</h2>
             <p class="onboarding-muted">Open a dock pane to pick up where you need it.</p>

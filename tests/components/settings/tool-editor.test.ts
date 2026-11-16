@@ -52,7 +52,7 @@ function factory(props: Record<string, unknown> = {}) {
 /** Let the autosave debounce elapse and the save settle. */
 const settle = () => vi.advanceTimersByTimeAsync(600);
 const lastSaved = () => saves[saves.length - 1]?.values;
-const checkboxRow = (w: VueWrapper, text: string) => w.findAll('.te-checkbox-row').find((r) => r.text().includes(text))!.find('input');
+const checkboxRow = (w: VueWrapper, text: string) => w.findAll('.toggle-row').find((r) => r.text().includes(text))!.find('input');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -285,7 +285,7 @@ describe('ToolEditor', () => {
 
   it('removing a prompt item saves the shorter list', async () => {
     const w = factory({ initialData: { ...DEFAULT_DATA, initialPrompt: [{ label: 'a', sequence: 's1' }, { label: 'b', sequence: 's2' }] } });
-    await w.find('.te-prompt-item .btn--danger').trigger('click');
+    await w.find('.te-prompt-item button[title="Remove"]').trigger('click');
     await settle();
     expect(lastSaved()?._promptItems).toEqual([{ label: 'b', sequence: 's2' }]);
   });

@@ -2,6 +2,7 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount, type VueWrapper } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import SessionList from '../../../renderer/components/sidebar/SessionList.vue';
 import { state } from '../../../renderer/state.js';
 import { useNavigationStore } from '../../../renderer/stores/navigation.js';
@@ -14,11 +15,11 @@ import { createWheelStepAccumulator } from '../../../renderer/components/sidebar
 
 const groupStub = {
   props: ['navIndex'],
-  template: '<div :data-nav-index="navIndex" :data-sessions-nav-index="navIndex"><slot /></div>',
+  template: '<div :data-nav-index="navIndex"><slot /></div>',
 };
 const cardStub = {
   props: ['navIndex', 'session'],
-  template: '<div class="card" :data-id="session.id" :data-nav-index="navIndex" :data-sessions-nav-index="navIndex" />',
+  template: '<div class="card" :data-id="session.id" :data-nav-index="navIndex" />',
 };
 
 const wrappers: VueWrapper[] = [];
@@ -152,7 +153,7 @@ describe('wheel step accumulator', () => {
 });
 
 describe('SessionList wheel navigation', () => {
-  it('uses D-pad navigation to focus, auto-select, and keep the row visible', () => {
+  it('uses D-pad navigation to focus, auto-select, and keep the row visible', async () => {
     setSessions(['a', 'b', 'c']);
     const navigation = useNavigationStore(pinia);
     navigation.init();
@@ -167,9 +168,11 @@ describe('SessionList wheel navigation', () => {
     expect(navigation.focusedNavItem).toEqual({ id: 'b', type: 'session-card' });
     expect(state.activeSessionId).toBe('b');
     expect(sessionSwitches).toEqual(['b']);
+    await nextTick();
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
 
     list.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+    await nextTick();
     expect(sessionsState.sessionsFocusIndex).toBe(sessionsState.navList.findIndex(item => item.id === 'a'));
     expect(state.activeSessionId).toBe('a');
     expect(sessionSwitches).toEqual(['b', 'a']);

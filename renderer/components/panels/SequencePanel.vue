@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import type { PlanItem, PlanSequence } from '../../../src/types/plan.js';
 import { configClient } from '../../ipc/clients.js';
@@ -184,22 +185,22 @@ defineExpose({ openCreate, openEdit });
         </div>
 
         <div class="plan-sequence-modal__actions">
-          <button class="btn btn--primary btn--sm" @click="onSave">
+          <AppButton variant="primary" size="sm" @click="onSave">
             {{ modalMode === 'create' ? 'Create' : 'Save' }}
-          </button>
-          <button
+          </AppButton>
+          <AppButton
             v-if="modalMode === 'edit'"
-            class="btn btn--sm"
-            :class="deleteConfirm ? 'btn--danger' : 'btn--secondary'"
+            size="sm"
+            :variant="deleteConfirm ? 'danger' : 'secondary'"
             @click="onDelete"
-          >{{ deleteConfirm ? 'Confirm Delete' : 'Delete' }}</button>
-          <button
+          >{{ deleteConfirm ? 'Confirm Delete' : 'Delete' }}</AppButton>
+          <AppButton
             v-if="modalMode === 'edit'"
-            class="btn btn--sm"
-            :class="deleteConfirm ? 'btn--danger' : 'btn--secondary'"
+            size="sm"
+            :variant="deleteConfirm ? 'danger' : 'secondary'"
             @click="onDeleteWithPlans"
-          >{{ deleteConfirm ? 'Confirm Delete All' : 'Delete + Plans' }}</button>
-          <button class="btn btn--secondary btn--sm" @click="modalVisible = false">Cancel</button>
+          >{{ deleteConfirm ? 'Confirm Delete All' : 'Delete + Plans' }}</AppButton>
+          <AppButton variant="secondary" size="sm" @click="modalVisible = false">Cancel</AppButton>
         </div>
       </div>
     </div>

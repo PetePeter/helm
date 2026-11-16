@@ -4,9 +4,11 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import SessionCard from '../../../renderer/components/sidebar/SessionCard.vue';
 import { contextMenu, getFormModalResolve } from '../../../renderer/stores/modal-bridge.js';
 import { useLlmNotificationsStore } from '../../../renderer/stores/llmNotifications.js';
+import { sessionsState } from '../../../renderer/stores/sessions-screen.js';
 
 function mountCard(session: Record<string, unknown> = {}, isFocused = false, focusColumn = 0) {
   return mount(SessionCard, {
@@ -20,6 +22,7 @@ function mountCard(session: Record<string, unknown> = {}, isFocused = false, foc
       isEditing: false,
       sessionState: 'idle',
       activityLevel: 'idle',
+      unreadChatCount: 0,
       loopContinues: 0,
       pendingSubagents: 0,
       artifactCount: 0,
@@ -36,7 +39,15 @@ function mountCard(session: Record<string, unknown> = {}, isFocused = false, foc
 const icons = (w: ReturnType<typeof mountCard>) =>
   w.findAll('.session-status-icons > span').map(s => s.text());
 
-beforeEach(() => { contextMenu.visible = false; });
+beforeEach(() => {
+  contextMenu.visible = false;
+  sessionsState.stateDropdownSessionId = null;
+  sessionsState.stateDropdownFocusIndex = 0;
+  sessionsState.editingSessionId = null;
+  sessionsState.renameDraft = '';
+  sessionsState.renameSelectionStart = 0;
+  sessionsState.renameSelectionEnd = 0;
+});
 
 describe('SessionCard menu and status icons', () => {
   it('the kebab opens the session menu for this row, without selecting it', async () => {
@@ -109,6 +120,54 @@ describe('SessionCard menu and status icons', () => {
   it('gamepad columns: 2 is the kebab, 3 is close', () => {
     expect(mountCard({}, true, 2).find('.session-kebab').classes()).toContain('card-col-focused');
     expect(mountCard({}, true, 3).find('.session-close').classes()).toContain('card-col-focused');
+  });
+
+  it('renders and moves state dropdown focus from the shared screen state', async () => {
+    const w = mountCard();
+    sessionsState.stateDropdownSessionId = 's1';
+    sessionsState.stateDropdownFocusIndex = 2;
+    await nextTick();
+
+    const options = w.findAll('.session-state-option');
+    expect(options).toHaveLength(5);
+    expect(options[2].classes()).toContain('dropdown-focused');
+    expect(options[4].classes()).toContain('active');
+
+    sessionsState.stateDropdownFocusIndex = 1;
+    await nextTick();
+    expect(options[2].classes()).not.toContain('dropdown-focused');
+    expect(options[1].classes()).toContain('dropdown-focused');
+  });
+
+  it('closes the shared dropdown state when an option is selected', async () => {
+    const w = mountCard();
+    sessionsState.stateDropdownSessionId = 's1';
+    await nextTick();
+
+    await w.findAll('.session-state-option')[2].trigger('click');
+
+    expect(sessionsState.stateDropdownSessionId).toBeNull();
+    expect(w.emitted('stateChange')?.[0]).toEqual(['s1', 'planning']);
+  });
+
+  it('binds rename draft and caret selection to the screen state', async () => {
+    const w = mountCard({ name: 'worker' });
+    await w.setProps({ isEditing: true });
+    await nextTick();
+
+    const input = w.get('.session-rename-input');
+    expect((input.element as HTMLInputElement).value).toBe('worker');
+    expect((input.element as HTMLInputElement).selectionStart).toBe(0);
+    expect((input.element as HTMLInputElement).selectionEnd).toBe('worker'.length);
+
+    await input.setValue('renamed');
+    expect(sessionsState.renameDraft).toBe('renamed');
+
+    sessionsState.renameSelectionStart = 3;
+    sessionsState.renameSelectionEnd = 3;
+    await nextTick();
+    expect((input.element as HTMLInputElement).selectionStart).toBe(3);
+    expect((input.element as HTMLInputElement).selectionEnd).toBe(3);
   });
 });
 

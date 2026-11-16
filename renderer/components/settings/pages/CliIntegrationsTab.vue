@@ -20,9 +20,11 @@
  * hook capability resolves against.
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import AppButton from '../../common/AppButton.vue';
 import { configClient, toolsClient } from '../../../ipc/clients.js';
 import { useActiveProfileRole } from '../../../composables/useActiveProfileRole.js';
 import AdminOnlyHint from '../primitives/AdminOnlyHint.vue';
+import SectionHeader from '../primitives/SectionHeader.vue';
 import {
   DEFAULT_REMINDER_MODES,
   REMINDER_IDS,
@@ -319,7 +321,7 @@ onUnmounted(() => {
 <template>
   <div class="settings-cli-integrations-panel settings-sections">
     <div class="tg-section settings-span">
-      <h3 class="tg-section-title">CLI Integrations</h3>
+      <SectionHeader title="CLI Integrations" />
       <p class="settings-form__hint">
         Installs Helm's lifecycle hooks into each CLI's own user-level config, once per CLI —
         not per session. Hook events arrive while Helm is running and are logged; nothing else
@@ -345,13 +347,15 @@ onUnmounted(() => {
             <span class="settings-list-item__detail">{{ item.configPath }}</span>
             <pre class="hook-command-block">{{ item.snippet }}</pre>
             <div class="hook-snippet-actions">
-              <button
-                class="btn btn--secondary btn--sm focusable"
+              <AppButton
+                variant="secondary"
+                size="sm"
+                class="focusable"
                 :aria-label="`Copy hook registration code for ${item.label}`"
                 @click="copySnippet(item.snippet!)"
               >
                 Copy
-              </button>
+              </AppButton>
             </div>
             <span v-if="item.provider === 'claude'" class="settings-list-item__detail">
               If a custom Claude status line is configured, Install/Update adds live context usage and Remove restores it.
@@ -361,22 +365,26 @@ onUnmounted(() => {
           </template>
         </div>
         <div class="tg-btn-row">
-          <button
+          <AppButton
+            variant="primary"
+            size="sm"
             v-if="item.status === 'not-installed' || item.status === 'outdated'"
-            class="btn btn--primary btn--sm focusable"
+            class="focusable"
             :disabled="!isAdmin || busyId === item.provider || item.status === 'interpreter-missing'"
             @click="install(item)"
           >
             {{ item.status === 'outdated' ? 'Update' : 'Install' }}
-          </button>
-          <button
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            size="sm"
             v-if="item.status !== 'not-installed' && item.status !== 'interpreter-missing'"
-            class="btn btn--secondary btn--sm focusable"
+            class="focusable"
             :disabled="!isAdmin || busyId === item.provider"
             @click="remove(item)"
           >
             Remove
-          </button>
+          </AppButton>
           <AdminOnlyHint :show="!isAdmin" />
         </div>
       </div>
@@ -390,7 +398,7 @@ onUnmounted(() => {
     </div>
 
     <div class="tg-section">
-      <h3 class="tg-section-title">Tool mapping</h3>
+      <SectionHeader title="Tool mapping" />
       <p class="settings-form__hint">
         Which CLI family each of your tools actually speaks. Auto-filled from
         names and commands where the answer is obvious — correct it here when
@@ -424,7 +432,7 @@ onUnmounted(() => {
     </div>
 
     <div class="tg-section">
-      <h3 class="tg-section-title">Reminder delivery</h3>
+      <SectionHeader title="Reminder delivery" />
       <p class="settings-form__hint">
         How standing reminders reach a session. Hook delivers them out-of-band via the
         CLI's own hooks — the transcript stays clean and nothing is spent per message;
@@ -467,7 +475,7 @@ onUnmounted(() => {
     <div class="tg-section settings-span">
       <div class="hook-injection-heading">
         <div>
-          <h3 class="tg-section-title">Hook injections</h3>
+          <SectionHeader title="Hook injections" />
           <p class="settings-form__hint">
             Edit the text Helm adds through CLI hooks. Changes save automatically. Use the listed placeholders to keep dynamic details.
           </p>
@@ -475,7 +483,7 @@ onUnmounted(() => {
         <div class="hook-injection-heading__actions">
           <span class="settings-form__hint" role="status" aria-live="polite">{{ injectionStatus }}</span>
           <AdminOnlyHint :show="!isAdmin" />
-          <button class="btn btn--secondary btn--sm focusable" :disabled="!isAdmin || injectionLoading" @click="resetHookInjections">Reset defaults</button>
+          <AppButton variant="secondary" size="sm" class="focusable" :disabled="!isAdmin || injectionLoading" @click="resetHookInjections">Reset defaults</AppButton>
         </div>
       </div>
       <div class="hook-injection-editor">

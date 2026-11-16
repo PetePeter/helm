@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * MobilePairingDialog.vue — the ONE human decision in the phone pairing flow.
  *
@@ -135,14 +136,14 @@ defineExpose({ handleButton });
         </div>
 
         <div v-if="status !== 'paired'" class="mp-footer">
-          <button
-            class="btn btn--primary mp-confirm"
+          <AppButton variant="primary"
+            class="mp-confirm"
             type="button"
             :disabled="!canConfirm"
             @click="onConfirm"
-          >Confirm</button>
-          <button class="btn btn--danger mp-reject" type="button" @click="onReject">Reject</button>
-          <button class="btn mp-cancel" type="button" @click="onCancel">Cancel</button>
+          >Confirm</AppButton>
+          <AppButton variant="danger" class="mp-reject" type="button" @click="onReject">Reject</AppButton>
+          <AppButton variant="secondary" class="mp-cancel" type="button" @click="onCancel">Cancel</AppButton>
         </div>
       </div>
     </div>

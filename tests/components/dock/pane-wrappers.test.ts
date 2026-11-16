@@ -97,7 +97,11 @@ function makeContext(): Fake {
 function mountPane(component: unknown, context: HelmPaneContext) {
   return mount(component as any, {
     shallow: true,
-    global: { plugins: [createPinia()], provide: { [HELM_PANE_CONTEXT as symbol]: context } },
+    global: {
+      plugins: [createPinia()],
+      provide: { [HELM_PANE_CONTEXT as symbol]: context },
+      stubs: { DockPaneBody: false },
+    },
   });
 }
 

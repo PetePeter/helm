@@ -57,7 +57,7 @@ describe('SchedulerSection', () => {
     const wrapper = mount(SchedulerSection, { props: { collapsed: false } });
     await flushPromises();
 
-    expect(wrapper.find('.scheduler-count-badge').text()).toBe('5');
+    expect(wrapper.find('.scheduler-total-count').text()).toBe('5');
     expect(wrapper.findAll('.scheduler-row')).toHaveLength(4);
     wrapper.unmount();
     vi.useRealTimers();
@@ -71,7 +71,7 @@ describe('SchedulerSection', () => {
     const wrapper = mount(SchedulerSection, { props: { collapsed: false } });
     await flushPromises();
 
-    expect(wrapper.find('.scheduler-count-badge').text()).toBe('0');
+    expect(wrapper.find('.scheduler-total-count').text()).toBe('0');
     expect(wrapper.findAll('.scheduler-row')).toHaveLength(0);
     wrapper.unmount();
   });
@@ -167,7 +167,7 @@ describe('SchedulerSection', () => {
 
     expect(wrapper.text()).not.toContain('Dreaming');
     expect(wrapper.text()).not.toContain('Run dream now');
-    expect(wrapper.find('.scheduler-count-badge').text()).toBe('1');
+    expect(wrapper.find('.scheduler-total-count').text()).toBe('1');
     wrapper.unmount();
     vi.useRealTimers();
   });

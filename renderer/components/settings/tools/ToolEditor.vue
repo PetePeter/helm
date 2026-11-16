@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../../../../src/session/prompt-staleness.js';
 import { HEARTBEAT_CLOSE, HEARTBEAT_OPEN, KEEP_WARM_DEFAULT_TEXT } from '../../../../src/session/keep-warm-prompt.js';
 /**
@@ -10,6 +11,7 @@ import { HEARTBEAT_CLOSE, HEARTBEAT_OPEN, KEEP_WARM_DEFAULT_TEXT } from '../../.
 import { ref, watch, computed, onMounted } from 'vue';
 import PromptTextarea from '../../common/PromptTextarea.vue';
 import PillTabs from '../primitives/PillTabs.vue';
+import ToggleRow from '../primitives/ToggleRow.vue';
 import TemplateFieldInput from './TemplateFieldInput.vue';
 import { useAutosave } from '../../../composables/useAutosave.js';
 import { toolsClient } from '../../../ipc/clients.js';
@@ -547,8 +549,8 @@ onMounted(async () => {
           </div>
           <div class="te-field te-comfy-actions">
             <span>API workflow</span>
-            <button type="button" class="btn btn--sm btn--secondary focusable" @click="importComfyWorkflow">Import pasted JSON</button>
-            <button type="button" class="btn btn--sm btn--secondary focusable" @click="addComfyProfile">Add profile</button>
+            <AppButton variant="secondary" size="sm" type="button" class="focusable" @click="importComfyWorkflow">Import pasted JSON</AppButton>
+            <AppButton variant="secondary" size="sm" type="button" class="focusable" @click="addComfyProfile">Add profile</AppButton>
           </div>
         </div>
         <p class="te-section__hint">Paste a ComfyUI “Save (API Format)” graph, then map the prompt and output nodes below. Graph editing stays in ComfyUI.</p>
@@ -586,8 +588,8 @@ onMounted(async () => {
         <div v-for="group in apiCatalogGroups" :key="group.source" class="te-api-group">
           <div class="te-api-group__header">
             <span class="te-api-group__title">{{ group.label }} tools</span>
-            <button type="button" class="btn btn--sm btn--secondary focusable" @click="setApiGroup(group.source, true)">All</button>
-            <button type="button" class="btn btn--sm btn--secondary focusable" @click="setApiGroup(group.source, false)">None</button>
+            <AppButton variant="secondary" size="sm" type="button" class="focusable" @click="setApiGroup(group.source, true)">All</AppButton>
+            <AppButton variant="secondary" size="sm" type="button" class="focusable" @click="setApiGroup(group.source, false)">None</AppButton>
           </div>
           <label v-for="tool in group.tools" :key="tool.name" class="te-api-tool">
             <input
@@ -623,7 +625,7 @@ onMounted(async () => {
             <input :id="`te-env-name-${idx}`" type="text" class="focusable te-input te-input--mono" placeholder="Variable name, e.g. PATH" :value="item.name" @input="item.name = ($event.target as HTMLInputElement).value" />
             <div class="te-env-value-row">
               <input :id="`te-env-value-${idx}`" type="text" class="focusable te-input te-input--mono" placeholder="Value or env ref like %AZURE_API_KEY% or ${AZURE_API_KEY}" :value="item.value" @input="item.value = ($event.target as HTMLInputElement).value" />
-              <button type="button" class="focusable btn btn--sm btn--danger" title="Remove" @click="removeEnvItem(idx)">✕</button>
+              <AppButton variant="danger" size="sm" type="button" class="focusable" title="Remove" @click="removeEnvItem(idx)">✕</AppButton>
             </div>
             <select :id="`te-env-mode-${idx}`" class="focusable te-input te-input--mode" :value="item.mode" @change="item.mode = ($event.target as HTMLSelectElement).value as 'replace' | 'append' | 'prepend'">
               <option value="replace">Replace</option>
@@ -632,7 +634,7 @@ onMounted(async () => {
             </select>
           </div>
         </div>
-        <button type="button" class="focusable btn btn--secondary" @click="addEnvItem">+ Add Variable</button>
+        <AppButton variant="secondary" type="button" class="focusable" @click="addEnvItem">+ Add Variable</AppButton>
       </fieldset>
 
       <fieldset class="te-section" v-show="section === 'launch'">
@@ -667,22 +669,31 @@ onMounted(async () => {
           </select>
           <p class="te-section__hint">Character sequence sent when submitting text for this CLI type.</p>
         </div>
-        <label class="te-checkbox-row"><input class="focusable" v-model="helmPreambleForInterSession" type="checkbox" /><span>Use Helm preamble for inter-session messages</span></label>
-        <p class="te-section__hint">When enabled (default), inter-session messages are wrapped in a [HELM_MSG] envelope. When disabled, plain text only.</p>
-        <label class="te-checkbox-row"><input class="focusable" v-model="largeTextAsTempFile" type="checkbox" /><span>Send large Helm MCP messages as temp file paths</span></label>
-        <p class="te-section__hint">When enabled, large session_send_text payloads are written to a temp file and the recipient gets the file path plus reading instructions.</p>
-        <label class="te-checkbox-row"><input class="focusable" v-model="messReminders" type="checkbox" /><span>Allow Mess reminders</span></label>
-        <p class="te-section__hint">When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</p>
-        <label class="te-checkbox-row"><input class="focusable" v-model="overrunWatchdog" type="checkbox" /><span>Stop on ETA overrun</span></label>
+        <ToggleRow v-model="helmPreambleForInterSession" label="Use Helm preamble for inter-session messages">
+          <template #hint>When enabled (default), inter-session messages are wrapped in a [HELM_MSG] envelope. When disabled, plain text only.</template>
+        </ToggleRow>
+        <ToggleRow v-model="largeTextAsTempFile" label="Send large Helm MCP messages as temp file paths">
+          <template #hint>When enabled, large session_send_text payloads are written to a temp file and the recipient gets the file path plus reading instructions.</template>
+        </ToggleRow>
+        <ToggleRow v-model="messReminders" label="Allow Mess reminders">
+          <template #hint>When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</template>
+        </ToggleRow>
+        <ToggleRow v-model="overrunWatchdog" label="Stop on ETA overrun">
+          <template #hint>Breaks death spirals. Once a session runs this much past its own finish estimate, Helm sends the stop action (Helm actions) and asks whether it is stuck: if so, it asks its orchestrator, else the session that created it, else you. Once per estimate.</template>
+        </ToggleRow>
         <div class="te-field"><label for="te-overrun-percent">Overrun threshold (%)</label><input id="te-overrun-percent" v-model.number="overrunPercent" :disabled="!overrunWatchdog" type="number" min="1" step="5" class="te-input focusable" /></div>
-        <p class="te-section__hint">Breaks death spirals. Once a session runs this much past its own finish estimate, Helm sends the stop action (Helm actions) and asks whether it is stuck: if so, it asks its orchestrator, else the session that created it, else you. Once per estimate.</p>
-        <label class="te-checkbox-row"><input class="focusable" v-model="mouseTracking" type="checkbox" /><span>Mouse tracking (app captures mouse; Shift+drag to select)</span></label>
-        <label class="te-checkbox-row"><input class="focusable" :checked="noPromptCache" type="checkbox" @change="noPromptCache = ($event.target as HTMLInputElement).checked" /><span>No prompt cache (local model)</span></label>
+        <ToggleRow v-model="mouseTracking" label="Mouse tracking (app captures mouse; Shift+drag to select)" />
+        <ToggleRow
+          :model-value="noPromptCache"
+          label="No prompt cache (local model)"
+          @update:model-value="noPromptCache = $event"
+        >
+          <template #hint>Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red. With no prompt cache, none of this applies: no fade, no warning, no auto-freeze.</template>
+        </ToggleRow>
         <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
         <div class="te-field"><label for="te-cache-expire">Long cache (minutes)</label><input id="te-cache-expire" v-model.number="cacheExpireMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
-        <p class="te-section__hint">Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red. With no prompt cache, none of this applies: no fade, no warning, no auto-freeze.</p>
         <div class="te-field"><label for="te-context-window">Context window (tokens)</label><input id="te-context-window" v-model.number="contextWindow" type="number" min="0" step="1000" placeholder="auto" class="te-input focusable" /></div>
-        <label class="te-checkbox-row"><input class="focusable" v-model="manualContextLimits" type="checkbox" /><span>Manual context warnings</span></label>
+        <ToggleRow v-model="manualContextLimits" label="Manual context warnings" />
         <template v-if="manualContextLimits">
           <div class="te-field"><label for="te-context-amber">Amber above (tokens)</label><input id="te-context-amber" v-model.number="contextAmber" type="number" min="1" step="1000" class="te-input focusable" /></div>
           <div class="te-field"><label for="te-context-red">Red above (tokens)</label><input id="te-context-red" v-model.number="contextRed" type="number" min="1" step="1000" class="te-input focusable" /></div>
@@ -716,7 +727,7 @@ onMounted(async () => {
           <div v-for="(item, idx) in promptItems" :key="idx" class="te-prompt-item">
             <div class="te-prompt-item__header">
               <input type="text" class="focusable te-input te-input--sm" placeholder="Label, e.g. commit" :value="item.label" @input="item.label = ($event.target as HTMLInputElement).value" />
-              <button type="button" class="focusable btn btn--sm btn--danger" title="Remove" @click="removePromptItem(idx)">✕</button>
+              <AppButton variant="danger" size="sm" type="button" class="focusable" title="Remove" @click="removePromptItem(idx)">✕</AppButton>
             </div>
             <PromptTextarea
               v-model="item.sequence"
@@ -728,8 +739,8 @@ onMounted(async () => {
           </div>
         </div>
         <div class="te-prompts-actions">
-          <button type="button" class="focusable btn btn--secondary sequence-list-add" @click="addPromptItem">+ Add Item</button>
-          <button type="button" class="focusable btn btn--secondary" @click="addHelmInitPromptItem">+ Helm session init</button>
+          <AppButton variant="secondary" type="button" class="focusable sequence-list-add" @click="addPromptItem">+ Add Item</AppButton>
+          <AppButton variant="secondary" type="button" class="focusable" @click="addHelmInitPromptItem">+ Helm session init</AppButton>
         </div>
       </fieldset>
     </div>
@@ -748,8 +759,6 @@ onMounted(async () => {
 .te-env-list--managed { margin-bottom: var(--spacing-xs); }
 .te-env-value-row { display: flex; align-items: center; gap: var(--spacing-sm); }
 .te-env-value-row .te-input { flex: 1; }
-.te-checkbox-row { display: flex; align-items: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-sm); color: var(--text-primary); font-size: 13px; }
-.te-checkbox-row input { width: 16px; height: 16px; }
 .te-section { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-primary); padding: var(--spacing-md); margin: 0; display: flex; flex-direction: column; gap: var(--spacing-sm); }
 .te-section__hint { margin: 0; font-size: var(--font-size-sm); color: var(--text-dim); line-height: 1.4; }
 .te-section__legend { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); padding: 0 var(--spacing-xs); user-select: none; }

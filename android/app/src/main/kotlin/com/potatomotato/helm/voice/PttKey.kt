@@ -30,6 +30,7 @@ import com.potatomotato.helm.ui.operator.OperatorKey
  */
 sealed interface PttKey {
     data class Start(val targetId: String) : PttKey
+    data class Retarget(val targetId: String) : PttKey
     data class Hold(val held: Boolean) : PttKey
     /** Nothing to call yet (a cold process, or not linked): bring Helm forward so it can link. */
     data object Open : PttKey
@@ -64,10 +65,11 @@ sealed interface PttKey {
             return target
         }
 
-        fun decide(down: Boolean, liveCall: Boolean, target: String?): PttKey = when {
+        fun decide(down: Boolean, liveCallTarget: String?, target: String?): PttKey = when {
             // A release always goes through: it may land while the call is still being placed.
             !down -> Hold(false)
-            liveCall -> Hold(true)
+            liveCallTarget != null && target != null && liveCallTarget != target -> Retarget(target)
+            liveCallTarget != null -> Hold(true)
             target == null -> Open
             else -> Start(target)
         }
@@ -76,7 +78,7 @@ sealed interface PttKey {
         fun press(context: Context, down: Boolean) {
             val action = decide(
                 down = down,
-                liveCall = VoiceCallService.call.value != null,
+                liveCallTarget = VoiceCallService.call.value?.targetId,
                 target = target,
             )
             HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: ${action::class.simpleName}")
@@ -86,6 +88,10 @@ sealed interface PttKey {
                     if (!unlocked(context)) return
                     pendingStart = action.targetId
                     bringForward(context)
+                }
+                is Retarget -> {
+                    VoiceCallService.retarget(context, action.targetId)
+                    VoiceCallService.setPttKeyHeld(context, true)
                 }
                 Open -> if (unlocked(context)) bringForward(context)
                 is Hold -> VoiceCallService.setPttKeyHeld(context, action.held)
@@ -166,6 +172,8 @@ class MyKeyPairDecoder {
             heldSince = now
             return null
         }
+        // A lone late up is a release too (the key's usual release): the pair hold is over.
+        heldByPairs = false
         return false
     }
 

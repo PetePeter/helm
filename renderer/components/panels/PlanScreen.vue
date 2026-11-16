@@ -7,7 +7,9 @@ import type { ContextBindingTargetType, ContextNode } from '../../../src/types/c
 import type { LayoutResult } from '../../plans/plan-layout.js';
 import type { TriState } from '../../plans/plan-screen.js';
 import PanelHeader from '../common/PanelHeader.vue';
+import Badge from '../common/Badge.vue';
 import FilterChip from '../common/FilterChip.vue';
+import EmptyState from '../common/EmptyState.vue';
 import SplitActionButton from '../buttons/SplitActionButton.vue';
 import SequencePanel from './SequencePanel.vue';
 import { isEditableElement } from '../../input/input-ownership.js';
@@ -941,7 +943,7 @@ function taskCardOf(item: PlanItem) {
                 <span v-if="attachmentHasAny?.[item.id]" class="plan-node__attachment-badge">📎</span>
                 <span v-if="item.autoImplement" class="plan-node__auto-badge">Auto</span>
                 <span v-if="item.completionRecap" class="plan-node__auto-badge">Recap</span>
-                <span v-if="contextCountByPlanId.get(item.id)" class="plan-context-badge">{{ contextCountByPlanId.get(item.id) }}</span>
+                <Badge v-if="contextCountByPlanId.get(item.id)" class="plan-context-count" tone="warn">{{ contextCountByPlanId.get(item.id) }}</Badge>
               </div>
             </div>
           </foreignObject>
@@ -1016,13 +1018,10 @@ function taskCardOf(item: PlanItem) {
           />
         </g>
 
-        <text v-if="items.length === 0" class="plan-canvas-empty" x="50%" y="45%" text-anchor="middle">
-          No plan items yet
-        </text>
-        <text v-if="items.length === 0" class="plan-canvas-empty-hint" x="50%" y="55%" text-anchor="middle">
-          Click + Add or press Y to create your first item
-        </text>
       </svg>
+      <div v-if="items.length === 0" class="plan-canvas-empty-overlay">
+        <EmptyState title="No plan items yet" hint="Click + Add or press Y to create your first item" />
+      </div>
     </div>
 
     <div class="plan-controls-hint">
@@ -1159,6 +1158,7 @@ function taskCardOf(item: PlanItem) {
 }
 
 .plan-canvas {
+  position: relative;
   flex: 1;
   overflow: hidden;
   cursor: grab;
@@ -1277,14 +1277,11 @@ function taskCardOf(item: PlanItem) {
   stroke-dasharray: 6 5;
 }
 
-.plan-canvas-empty {
-  font-size: 16px;
-  fill: var(--text-dim);
-  pointer-events: none;
-}
-.plan-canvas-empty-hint {
-  font-size: 12px;
-  fill: var(--text-dim);
+.plan-canvas-empty-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
   pointer-events: none;
 }
 
@@ -1435,7 +1432,7 @@ function taskCardOf(item: PlanItem) {
   flex-shrink: 0;
   margin-left: auto;
 }
-.plan-context-badge {
+.plan-context-count.badge--warn {
   display: inline-flex;
   align-items: center;
   justify-content: center;

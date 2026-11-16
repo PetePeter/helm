@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 import { ref } from 'vue';
+import Badge from '../../common/Badge.vue';
+import SettingsEmptyState from '../../common/SettingsEmptyState.vue';
 
 export interface BindingEntry {
   button: string;
@@ -100,8 +103,8 @@ function clearTimer(button: string): void {
     <div class="settings-panel__header">
       <span class="settings-panel__title">Binding Profiles</span>
       <div class="bindings-toolbar">
-        <select
-          class="bindings-profile-select btn btn--secondary btn--sm focusable"
+        <select class="app-select app-select--secondary app-select--sm bindings-profile-select focusable"
+
           :value="profileId"
           :disabled="profiles.length === 0"
           @change="onProfileChange"
@@ -109,47 +112,47 @@ function clearTimer(button: string): void {
           <option v-if="profiles.length === 0" value="">No profiles</option>
           <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
         </select>
-        <button class="bindings-profile-new btn btn--primary btn--sm focusable" @click="emit('createProfile', false)">+ New</button>
+        <AppButton variant="primary" size="sm" class="bindings-profile-new focusable" @click="emit('createProfile', false)">+ New</AppButton>
         <template v-if="profileId">
-          <button class="bindings-profile-duplicate btn btn--secondary btn--sm focusable" @click="emit('createProfile', true)">Duplicate</button>
-          <button class="bindings-profile-rename btn btn--secondary btn--sm focusable" @click="emit('renameProfile')">Rename</button>
-          <button
-            class="bindings-profile-delete btn btn--danger btn--sm focusable"
+          <AppButton variant="secondary" size="sm" class="bindings-profile-duplicate focusable" @click="emit('createProfile', true)">Duplicate</AppButton>
+          <AppButton variant="secondary" size="sm" class="bindings-profile-rename focusable" @click="emit('renameProfile')">Rename</AppButton>
+          <AppButton variant="danger" size="sm"
+            class="bindings-profile-delete focusable"
             :title="pendingDelete === PROFILE_DELETE_KEY ? 'Click again to confirm — tools using it get no bindings' : 'Delete profile'"
             @click="onDeleteProfileClick"
-          >{{ pendingDelete === PROFILE_DELETE_KEY ? 'Confirm?' : 'Delete' }}</button>
+          >{{ pendingDelete === PROFILE_DELETE_KEY ? 'Confirm?' : 'Delete' }}</AppButton>
         </template>
       </div>
     </div>
 
     <div v-if="profileId" class="bindings-toolbar">
-        <select
-          class="bindings-add-select btn btn--primary btn--sm focusable"
+        <select class="app-select app-select--primary app-select--sm bindings-add-select focusable"
+
           :disabled="addableButtons.length === 0"
           @change="onAddBinding"
         >
           <option value="">{{ addableButtons.length > 0 ? '+ Add Binding' : 'All buttons mapped' }}</option>
           <option v-for="button in addableButtons" :key="button" :value="button">{{ button }}</option>
         </select>
-        <select
-          class="bindings-sort-select btn btn--secondary btn--sm focusable"
+        <select class="app-select app-select--secondary app-select--sm bindings-sort-select focusable"
+
           :value="sortField"
           @change="onSortFieldChange"
         >
           <option value="button">Sort: Button</option>
           <option value="action">Sort: Action</option>
         </select>
-        <button class="bindings-sort-direction btn btn--secondary btn--sm focusable" @click="onToggleDirection">
+        <AppButton variant="secondary" size="sm" class="bindings-sort-direction focusable" @click="onToggleDirection">
           {{ sortDirection === 'asc' ? '↑' : '↓' }}
-        </button>
+        </AppButton>
     </div>
 
-    <div v-if="!profileId" class="settings-empty">
+    <SettingsEmptyState v-if="!profileId">
       No binding profiles yet. Create one, then pick it per tool in the tool editor.
-    </div>
-    <div v-else-if="bindings.length === 0" class="settings-empty">
+    </SettingsEmptyState>
+    <SettingsEmptyState v-else-if="bindings.length === 0">
       No bindings in this profile.
-    </div>
+    </SettingsEmptyState>
 
     <div class="bindings-display">
       <div
@@ -163,12 +166,12 @@ function clearTimer(button: string): void {
       >
         <div class="binding-card__header">
           <span class="binding-card__button">{{ binding.button }}</span>
-          <span class="binding-card__action-badge">{{ binding.action }}</span>
-          <button
-            class="binding-card__delete btn btn--danger btn--sm focusable"
+          <Badge class="binding-action" tone="neutral">{{ binding.action }}</Badge>
+          <AppButton variant="danger" size="sm"
+            class="binding-card__delete focusable"
             :title="pendingDelete === binding.button ? 'Click again to confirm' : `Remove ${binding.button}`"
             @click.stop="onDeleteClick(binding.button)"
-          >{{ pendingDelete === binding.button ? '?' : '✕' }}</button>
+          >{{ pendingDelete === binding.button ? '?' : '✕' }}</AppButton>
         </div>
         <div v-if="binding.detail" class="binding-card__details">{{ binding.detail }}</div>
       </div>
@@ -188,6 +191,61 @@ function clearTimer(button: string): void {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+}
+
+.bindings-display {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.binding-card {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  transition: border-color 0.15s;
+}
+
+.binding-card:hover {
+  border-color: var(--accent);
+}
+
+.binding-card__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.binding-card__button {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--accent);
+  font-family: monospace;
+}
+
+.binding-action {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.binding-action.badge--neutral.badge {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.binding-card__details {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-family: monospace;
 }
 
 .binding-card__delete {

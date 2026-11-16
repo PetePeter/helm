@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 /**
  * ToolsPage.vue — Settings → Tools: CLI types on the left, the selected one
  * edited in place on the right. Add and Clone write the new type at once and
@@ -85,15 +86,15 @@ async function onDelete(): Promise<void> {
 <template>
   <MasterDetail v-model="selectedKey" :items="items" list-title="CLI types" empty-text="No CLI types configured.">
     <template #list-actions>
-      <button class="btn btn--sm btn--primary focusable" @click="onAdd">+ Add</button>
+      <AppButton variant="primary" size="sm" class="focusable" @click="onAdd">+ Add</AppButton>
     </template>
     <template #detail>
       <div class="tools-page__head">
         <h3 class="tools-page__title">{{ selectedName }}</h3>
-        <button class="btn btn--sm focusable" :disabled="selectedIndex <= 0" title="Move up" @click="move(selectedKey!, 'up')">Up</button>
-        <button class="btn btn--sm focusable" :disabled="selectedIndex >= tools.length - 1" title="Move down" @click="move(selectedKey!, 'down')">Down</button>
-        <button class="btn btn--sm focusable" @click="onClone">Clone</button>
-        <button class="btn btn--sm btn--danger focusable" @click="onDelete">{{ confirmingDelete ? 'Confirm delete' : 'Delete' }}</button>
+        <AppButton variant="secondary" size="sm" class="focusable" :disabled="selectedIndex <= 0" title="Move up" @click="move(selectedKey!, 'up')">Up</AppButton>
+        <AppButton variant="secondary" size="sm" class="focusable" :disabled="selectedIndex >= tools.length - 1" title="Move down" @click="move(selectedKey!, 'down')">Down</AppButton>
+        <AppButton variant="secondary" size="sm" class="focusable" @click="onClone">Clone</AppButton>
+        <AppButton variant="danger" size="sm" class="focusable" @click="onDelete">{{ confirmingDelete ? 'Confirm delete' : 'Delete' }}</AppButton>
       </div>
       <ToolEditor
         v-if="editing"

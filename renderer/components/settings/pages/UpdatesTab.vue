@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../../common/AppButton.vue';
 /**
  * UpdatesTab.vue: self-update settings — launch-time check on/off + Check now.
  */
@@ -56,7 +57,7 @@ async function onCheckNow(): Promise<void> {
 
     <label class="updates-setting">
       <span>Check for updates</span>
-      <select class="btn btn--secondary btn--sm focusable" :value="mode" :disabled="!isAdmin" @change="onModeChange">
+      <select class="app-select app-select--secondary app-select--sm focusable" :value="mode" :disabled="!isAdmin" @change="onModeChange">
         <option value="auto">Automatically at launch</option>
         <option value="manual">Manually only</option>
       </select>
@@ -64,13 +65,13 @@ async function onCheckNow(): Promise<void> {
     <AdminOnlyHint :show="!isAdmin" />
 
     <div class="updates-setting">
-      <button class="btn btn--secondary btn--sm focusable" :disabled="checking" @click="onCheckNow">Check now</button>
-      <button
+      <AppButton variant="secondary" size="sm" class="focusable" :disabled="checking" @click="onCheckNow">Check now</AppButton>
+      <AppButton variant="primary" size="sm"
         v-if="updateOffer"
-        class="btn btn--primary btn--sm focusable updates-install"
+        class="focusable updates-install"
         :disabled="!isAdmin || (installStatus !== '' && !installStatus.startsWith('Update failed'))"
         @click="onInstallUpdate"
-      >Update to v{{ updateOffer.version }}</button>
+      >Update to v{{ updateOffer.version }}</AppButton>
       <span v-if="installStatus || status" class="updates-status">{{ installStatus || status }}</span>
     </div>
   </div>

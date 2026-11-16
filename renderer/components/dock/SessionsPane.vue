@@ -16,6 +16,7 @@ import { useChatStore } from '../../stores/chat.js';
 import { useNavigationStore } from '../../stores/navigation.js';
 import { useSessionsScreenStore } from '../../stores/sessions-screen.js';
 import { useLlmNotificationsStore } from '../../stores/llmNotifications.js';
+import Badge from '../common/Badge.vue';
 import { useFlashAttention } from '../../composables/useFlashAttention.js';
 import { useRecycleBin } from '../../composables/useRecycleBin.js';
 import { resolveGroupDisplayName } from '../../session-groups.js';
@@ -133,7 +134,45 @@ function userPromptElapsedText(sessionId: string): string {
     >
       <span class="recycle-bin-icon">🗑️</span>
       <span class="recycle-bin-label">Recycle Bin</span>
-      <span v-if="recycleBin.count.value > 0" class="recycle-bin-badge">{{ recycleBin.count.value }}</span>
+      <Badge v-if="recycleBin.count.value > 0" class="recycle-bin-count" tone="accent">{{ recycleBin.count.value }}</Badge>
     </button>
   </section>
 </template>
+
+<style scoped>
+.recycle-bin-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  /* No bottom margin: the bin is the pane's last row and anchors to its edge. */
+  margin: var(--spacing-sm) var(--spacing-sm) 0;
+  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.recycle-bin-btn:hover { background: var(--bg-tertiary); border-color: var(--accent); }
+.recycle-bin-icon { font-size: 14px; flex-shrink: 0; }
+.recycle-bin-label { color: var(--text-secondary); flex: 1; text-align: left; }
+.recycle-bin-count.badge--accent.badge {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  border: 0;
+  color: var(--accent-contrast);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 18px;
+}
+</style>

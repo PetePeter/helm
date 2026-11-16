@@ -14,7 +14,8 @@ const ACTIONS = [
 ];
 
 function deleteButton(w: ReturnType<typeof mount>, index: number) {
-  return w.findAll('.settings-list-item')[index].find('.btn--danger');
+  return w.findAll('.settings-list-item')[index].findAll('button')
+    .find((button) => button.text() === 'Delete' || button.text() === 'Confirm?')!;
 }
 
 describe('ChipbarActionsTab.vue delete confirm', () => {

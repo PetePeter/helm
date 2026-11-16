@@ -508,12 +508,15 @@ describe('ItemEditor', () => {
         contextBoundSequences: [{ id: 's1', title: 'Auth epic' }],
       },
     });
-    const chips = w.findAll('.context-bound-chip');
+    const chips = w.findAll('.context-bound-badge');
     expect(chips).toHaveLength(2);
     expect(chips[0].text()).toContain('🔵');
     expect(chips[0].text()).toContain('P-0001');
     expect(chips[0].text()).toContain('Fix auth');
     expect(chips[0].classes()).toContain('plan-chip--ready');
+    expect(chips[0].classes()).toContain('plan-chip--compact');
+    expect(chips[0].attributes('role')).toBeUndefined();
+    expect(chips[0].attributes('tabindex')).toBeUndefined();
     expect(chips[1].text()).toContain('Auth epic');
   });
 
@@ -550,7 +553,7 @@ describe('ItemEditor', () => {
         contextBoundPlans: [{ id: 'p1', title: 'Fix auth', status: 'ready' }],
       },
     });
-    const removeBtn = w.findAll('.context-bound-chip-remove')[0];
+    const removeBtn = w.findAll('.context-bound-badge-remove')[0];
     await removeBtn.trigger('click');
     expect(onUnbind).toHaveBeenCalledWith('plan', 'p1');
   });
@@ -577,7 +580,7 @@ describe('ItemEditor', () => {
     await w.setProps({ contextPendingUnbindCount: 1 });
 
     expect(vm.hasUnsavedChanges()).toBe(true);
-    await w.find('.item-editor-actions .btn--primary').trigger('click');
+    await w.findAll('.item-editor-actions button').find((button) => button.text() === 'Save')!.trigger('click');
     expect(w.emitted('context-save')).toEqual([[{ title: 'Title', content: 'Content', type: 'Knowledge', permission: 'readonly' }]]);
   });
 
@@ -1151,10 +1154,10 @@ describe('PlanScreen', () => {
       layout: { nodes: [{ id: 'n1', x: 60, y: 60, layer: 0, order: 0 }], width: 320, height: 220 },
     };
     const w = mount(PlanScreen, { props: propsWithContexts });
-    expect(w.find('.plan-node').find('.plan-context-badge').exists()).toBe(true);
+    expect(w.find('.plan-node').find('.plan-context-count').exists()).toBe(true);
     expect(w.find('.plan-node').find('.plan-node__bottom-row').exists()).toBe(true);
-    expect(w.find('.plan-context-badge').text()).toBe('1');
-    expect(w.find('.plan-context-badge').classes()).toContain('plan-context-badge');
+    expect(w.find('.plan-context-count').text()).toBe('1');
+    expect(w.find('.plan-context-count').classes()).toContain('plan-context-count');
   });
 
   it('shows auto and context badges together in the plan node bottom row', () => {
@@ -1169,7 +1172,7 @@ describe('PlanScreen', () => {
     const w = mount(PlanScreen, { props: propsWithBadges });
     const bottomRow = w.find('.plan-node__bottom-row');
     expect(bottomRow.find('.plan-node__auto-badge').text()).toBe('Auto');
-    expect(bottomRow.find('.plan-context-badge').text()).toBe('1');
+    expect(bottomRow.find('.plan-context-count').text()).toBe('1');
   });
 
   it('hides context count badge on plan node when no contexts are bound', () => {
@@ -1179,7 +1182,7 @@ describe('PlanScreen', () => {
       layout: { nodes: [{ id: 'n1', x: 60, y: 60, layer: 0, order: 0 }], width: 320, height: 220 },
     };
     const w = mount(PlanScreen, { props: propsNoBindings });
-    expect(w.find('.plan-node').find('.plan-context-badge').exists()).toBe(false);
+    expect(w.find('.plan-node').find('.plan-context-count').exists()).toBe(false);
   });
 });
 
@@ -1347,7 +1350,9 @@ describe('SequencePanel', () => {
     input.value = 'My Seq';
     input.dispatchEvent(new Event('input'));
     await flushPromises();
-    (document.querySelector('.btn--primary') as HTMLElement).click();
+    Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Create')!
+      .click();
     await flushPromises();
     expect(wrapper.emitted('createSequence')).toBeTruthy();
   });

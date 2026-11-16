@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * RuntimeGroupNameModal — single text-input dialog for creating or renaming a
  * runtime session group.
@@ -133,8 +134,8 @@ defineExpose({ handleButton });
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" @click="onCancel">Cancel</button>
-          <button class="btn btn--primary" :disabled="!name.trim()" @click="onSubmit">{{ okLabel }}</button>
+          <AppButton variant="secondary" @click="onCancel">Cancel</AppButton>
+          <AppButton variant="primary" :disabled="!name.trim()" @click="onSubmit">{{ okLabel }}</AppButton>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { contextLevel, resolveContextLimits } from '../../../src/session/context-limits.js';
 import { useAppStore } from '../../stores/app.js';
@@ -293,8 +294,8 @@ watch(() => appStore.state.activeSessionId, async () => {
           @contextmenu="onComposerContextMenu"
         />
         <div class="chat-pane__composer-actions">
-          <button class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
-          <button class="btn btn--sm btn--primary focusable" type="submit" :disabled="!canSend">Send</button>
+          <AppButton variant="secondary" size="sm" class="focusable" type="button" title="Attach a file" @click="pickAttachment">📎</AppButton>
+          <AppButton variant="primary" size="sm" class="focusable" type="submit" :disabled="!canSend">Send</AppButton>
         </div>
       </form>
       <div class="chat-pane__hint">Ctrl+Enter to send · Enter for a new line · Draft is kept per session</div>

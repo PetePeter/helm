@@ -29,6 +29,7 @@ import {
 } from '../../recycle-bin-tree.js';
 import { useTreeExpansion, type TreeNodeKind } from '../../tree-collapse-state.js';
 import EmptyRecycleBinModal from '../modals/EmptyRecycleBinModal.vue';
+import EmptyState from '../common/EmptyState.vue';
 
 const MODAL_ID = 'recycle-bin';
 
@@ -195,8 +196,8 @@ defineExpose({ handleButton });
             </label>
           </div>
 
-          <div v-if="entries.length === 0" class="rb-empty">No closed sessions to restore</div>
-          <div v-else-if="tree.length === 0" class="rb-empty">No matches</div>
+          <EmptyState v-if="entries.length === 0" title="No closed sessions to restore" compact />
+          <EmptyState v-else-if="tree.length === 0" title="No matches" compact />
 
           <details
             v-for="project in tree"
@@ -344,7 +345,6 @@ defineExpose({ handleButton });
 .rb-x { background: none; border: none; color: var(--text-secondary); font-size: 1.2rem; cursor: pointer; }
 .rb-x:hover { color: var(--text-primary); }
 .rb-body { padding: 12px 18px 18px; max-height: 62vh; overflow: auto; }
-.rb-empty { text-align: center; padding: 40px; color: var(--text-secondary); }
 
 /* ---------- toolbar / search ---------- */
 .rb-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }

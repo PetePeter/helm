@@ -67,7 +67,7 @@ describe('PeerAuditModal', () => {
     expect(labelText).toContain('Yesterday');
 
     // Outcome badges present with their labels.
-    const badges = Array.from(document.querySelectorAll('.pa-badge')).map(b => b.textContent);
+    const badges = Array.from(document.querySelectorAll('.peer-audit-status')).map(b => b.textContent);
     expect(badges).toContain('OK');
     expect(badges).toContain('Denied');
     expect(badges).toContain('Error');
@@ -89,9 +89,9 @@ describe('PeerAuditModal', () => {
     const w = mount(PeerAuditModal, { props: { visible: true } });
     await flushPromises();
 
-    expect(document.querySelector('.pa-badge--ok')).not.toBeNull();
-    expect(document.querySelector('.pa-badge--warn')).not.toBeNull(); // rate-limited
-    expect(document.querySelector('.pa-badge--error')).not.toBeNull();
+    expect(document.querySelector('.badge--ok')).not.toBeNull();
+    expect(document.querySelector('.badge--warn')).not.toBeNull(); // rate-limited
+    expect(document.querySelector('.badge--error')).not.toBeNull();
 
     w.unmount();
   });

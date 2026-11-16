@@ -45,3 +45,32 @@ const ghostStyle = computed<CSSProperties>(() => ({
     </div>
   </div>
 </template>
+
+<style scoped>
+/* The overlay and ghost never intercept a pointer during a drag. */
+.dock-preview-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+.dock-preview {
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 1px solid var(--accent);
+  transition: left 60ms ease, top 60ms ease, width 60ms ease, height 60ms ease;
+}
+.dock-preview--reorder { background: var(--accent); border: none; }
+.dock-drag-ghost {
+  position: absolute;
+  padding: 3px 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm, 3px);
+  transform: translate(10px, 10px);
+  opacity: 0.92;
+}
+</style>

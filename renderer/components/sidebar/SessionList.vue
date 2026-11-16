@@ -10,6 +10,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import SessionGroup from './SessionGroup.vue';
 import SessionCard from './SessionCard.vue';
+import EmptyState from '../common/EmptyState.vue';
 import { isNavItemFocused, isSessionNavItem, type SessionPreviewMode } from '../../session-groups.js';
 import { pickGroupFlashEntry } from '../../composables/useFlashAttention.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
@@ -197,6 +198,18 @@ function previewSourceFor(sessionId: string): ((id: string) => string[]) | null 
 
 const listEl = ref<HTMLElement | null>(null);
 const wheelAccumulator = createWheelStepAccumulator();
+
+watch(() => [sessionsState.activeFocus, sessionsState.sessionsFocusIndex] as const,
+  ([activeFocus, focusIndex]) => {
+    if (activeFocus !== 'sessions') return;
+    const root = listEl.value;
+    if (!root) return;
+    const focused = Array.from(root.querySelectorAll<HTMLElement>('[data-nav-index]'))
+      .find(element => element.dataset.navIndex === String(focusIndex));
+    focused?.scrollIntoView?.({ block: 'nearest' });
+  },
+  { flush: 'post' },
+);
 
 function onWheel(event: WheelEvent): void {
   if (props.source === 'peer') return;
@@ -391,9 +404,11 @@ function onNewGroupDrop(e: DragEvent): void {
         </template>
       </template>
 
-      <div v-if="!hasSessions" class="sessions-empty">
-        {{ source === 'peer' ? 'No sessions on this computer' : 'No active sessions' }}
-      </div>
+      <EmptyState
+        v-if="!hasSessions"
+        class="session-list-empty"
+        :title="source === 'peer' ? 'No sessions on this computer' : 'No active sessions'"
+      />
 
       <span
         v-for="flight in flights"
@@ -413,8 +428,83 @@ function onNewGroupDrop(e: DragEvent): void {
 </template>
 
 <style scoped>
+/* Session Cards (sidebar vertical list) */
+.sessions-list-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: var(--spacing-xs);
+  gap: 6px;
+}
+
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* Runtime group creation and actions. */
+.runtime-list-actions {
+  display: flex;
+  width: 100%;
+  flex: 0 0 auto;
+  border: 1px dashed #3a4150;
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.runtime-list-actions .runtime-action {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px;
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+.runtime-list-actions .runtime-action:hover { background: var(--bg-tertiary); }
+.runtime-list-actions .runtime-action.drop-ok {
+  background: #1d2a1d;
+  color: var(--activity-active, #44cc44);
+}
+
+/* Empty runtime group placeholder */
+.runtime-group-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 11.5px;
+  padding: 6px 10px 6px 14px;
+}
+.runtime-group-placeholder .placeholder-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 5px;
+  border-radius: 6px;
+}
+.runtime-group-placeholder .placeholder-close:hover {
+  background: rgba(120, 130, 150, 0.2);
+  color: var(--text-primary);
+}
+
 /* Flights are drawn in list coordinates, so they scroll with the rows. */
-.sessions-list { position: relative; }
+.session-list-empty { flex: 1; }
 
 /* Centred on its anchor point; flies by the offset to the recipient. */
 .message-flight {

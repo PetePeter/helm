@@ -18,11 +18,18 @@ export let sessionsSortField: SessionSortField = 'state';
 export let sessionsSortDirection: SortDirection = 'asc';
 
 export function startRename(sessionId: string): void {
+  const session = state.sessions.find(item => item.id === sessionId);
+  sessionsState.renameDraft = session?.name ?? '';
+  sessionsState.renameSelectionStart = 0;
+  sessionsState.renameSelectionEnd = sessionsState.renameDraft.length;
   sessionsState.editingSessionId = sessionId;
 }
 
 export function cancelRename(): void {
   sessionsState.editingSessionId = null;
+  sessionsState.renameDraft = '';
+  sessionsState.renameSelectionStart = 0;
+  sessionsState.renameSelectionEnd = 0;
 }
 
 export async function commitRename(sessionId: string, newName: string): Promise<void> {
@@ -40,18 +47,18 @@ export async function commitRename(sessionId: string, newName: string): Promise<
     const result = await sessionsClient.sessionRename(sessionId, trimmed);
     if (result.success) {
       logEvent(`Renamed to: ${trimmed}`);
-      sessionsState.editingSessionId = null;
+      cancelRename();
       const tm = getTerminalManager();
       if (tm) tm.renameSession(sessionId, trimmed);
       await loadSessionsData();
     } else {
       logEvent(`Rename failed: ${result.error}`);
-      sessionsState.editingSessionId = null;
+      cancelRename();
     }
   } catch (error) {
     console.error('[Sessions] Rename failed:', error);
     logEvent('Rename failed');
-    sessionsState.editingSessionId = null;
+    cancelRename();
   }
 }
 

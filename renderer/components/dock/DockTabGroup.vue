@@ -197,3 +197,61 @@ function onPaneFocus(paneId: PaneId, focusedItemId?: string): void {
     />
   </section>
 </template>
+
+<style scoped>
+.dock-tab-group {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+}
+/* Collapsed groups keep their tabs while their pane components hide. */
+.dock-tab-group--collapsed .dock-pane { display: none; }
+.dock-tab-group--collapsed-horizontal .dock-tabs { flex-direction: column; }
+.dock-tab-group--collapsed-horizontal .dock-tab__label,
+.dock-tab-group--collapsed-horizontal .dock-tab__shortcut,
+.dock-tab-group--collapsed-horizontal .dock-tab-close { display: none; }
+.dock-tabs {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 32px;
+  overflow-x: auto;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.dock-tab-entry { display: flex; flex-shrink: 0; align-items: stretch; border-right: 1px solid var(--border); }
+.dock-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  position: relative;
+}
+.dock-tab__icon { font-size: 13px; line-height: 1; }
+.dock-tab .dock-tab__shortcut { margin-right: 0; }
+.dock-tab:hover,
+.dock-tab:focus-visible,
+.dock-tab--focused { color: var(--text-primary); background: var(--bg-tertiary); }
+.dock-tab--active { color: var(--accent); border-bottom-color: var(--accent); }
+/* Reveal close only for the hovered, focused, or active tab. */
+.dock-tab-close {
+  padding: 0 6px;
+  color: var(--text-dim);
+  font-size: 15px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.dock-tab-entry:hover .dock-tab-close,
+.dock-tab-entry:focus-within .dock-tab-close,
+.dock-tab-entry:has(.dock-tab--active) .dock-tab-close { opacity: 1; }
+.dock-tab-close:hover,
+.dock-tab-close:focus-visible { color: var(--text-primary); background: var(--bg-tertiary); opacity: 1; }
+.dock-tab--dragging { opacity: 0.5; }
+</style>

@@ -49,28 +49,24 @@ export function handlePlansZone(button: string, dir: string | null): void {
       return;
     }
     sessionsState.plansFocusIndex = newIndex;
-    updatePlansFocus();
     return;
   }
   if (dir === 'down') {
     const newIndex = sessionsState.plansFocusIndex + cols;
     if (newIndex < total) {
       sessionsState.plansFocusIndex = newIndex;
-      updatePlansFocus();
     }
     return;
   }
   if (dir === 'left') {
     if (sessionsState.plansFocusIndex % cols > 0) {
       sessionsState.plansFocusIndex--;
-      updatePlansFocus();
     }
     return;
   }
   if (dir === 'right') {
     if (sessionsState.plansFocusIndex % cols < cols - 1 && sessionsState.plansFocusIndex + 1 < total) {
       sessionsState.plansFocusIndex++;
-      updatePlansFocus();
     }
     return;
   }
@@ -93,18 +89,6 @@ export function handlePlansZoneButton(button: string): boolean {
     default:
       return false;
   }
-}
-
-// ============================================================================
-// Focus update
-// ============================================================================
-
-export function updatePlansFocus(): void {
-  const grid = document.getElementById('plansGrid');
-  if (!grid) return;
-  grid.querySelectorAll('.plans-grid-btn').forEach((el, i) => {
-    el.classList.toggle('focused', i === sessionsState.plansFocusIndex && sessionsState.activeFocus === 'plans');
-  });
 }
 
 // ============================================================================

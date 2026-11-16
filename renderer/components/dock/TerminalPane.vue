@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * TerminalPane — the `terminal` view.
  *
@@ -62,13 +63,13 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
     />
     <div v-if="appStore.activeSession?.frozen" class="terminal-view__frozen-bar">
       <span>Scroll and select text to read. Input and paste are disabled.</span>
-      <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
+      <AppButton variant="primary" size="sm" class="focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</AppButton>
     </div>
     <!-- Typing would reset the silence the handover paste waits on; the rest of the app stays usable. -->
     <div v-else-if="handover.isPending(appStore.activeSession?.id)" class="terminal-view__frozen-bar">
       <span>Compacting. The handover note pastes back once it falls quiet; messages wait until then.</span>
-      <button class="btn btn--sm focusable" type="button" @click="handover.sendNow(appStore.activeSession!.id)">Send now</button>
-      <button class="btn btn--sm focusable" type="button" @click="handover.cancel(appStore.activeSession!.id)">Cancel handover</button>
+      <AppButton variant="secondary" size="sm" class="focusable" type="button" @click="handover.sendNow(appStore.activeSession!.id)">Send now</AppButton>
+      <AppButton variant="secondary" size="sm" class="focusable" type="button" @click="handover.cancel(appStore.activeSession!.id)">Cancel handover</AppButton>
     </div>
     <div class="terminal-view__stage">
       <div class="terminal-container" id="terminalContainer" :ref="setContainer">

@@ -80,7 +80,7 @@ function buildDom(): void {
   document.body.innerHTML = `
     <section id="screen-sessions" class="screen screen--active">
       <div class="sessions-list" id="sessionsList"></div>
-      <div class="sessions-empty" id="sessionsEmpty" style="display:none">
+      <div id="sessionsEmpty" style="display:none">
         No active sessions
       </div>
       <div class="spawn-section">
@@ -326,46 +326,6 @@ describe('Sessions Plans Grid', () => {
   // ==========================================================================
   // Focus update
   // ==========================================================================
-
-  describe('updatePlansFocus', () => {
-    beforeEach(() => {
-      sessionsState.directories = testDirs;
-      // Vue owns the DOM, so tests create the buttons that PlansGrid.vue would
-      // render to allow updatePlansFocus() to toggle .focused classes.
-      const grid = document.getElementById('plansGrid')!;
-      grid.innerHTML = '';
-      testDirs.forEach((dir, i) => {
-        const btn = document.createElement('button');
-        btn.className = 'spawn-btn plans-grid-btn';
-        btn.dataset.dir = dir.path;
-        grid.appendChild(btn);
-      });
-    });
-
-    it('highlights correct button when plans zone is active', () => {
-      sessionsState.activeFocus = 'plans';
-      sessionsState.plansFocusIndex = 1;
-      plans.updatePlansFocus();
-
-      const grid = document.getElementById('plansGrid')!;
-      const btns = grid.querySelectorAll('.plans-grid-btn');
-      expect(btns[0].classList.contains('focused')).toBe(false);
-      expect(btns[1].classList.contains('focused')).toBe(true);
-      expect(btns[2].classList.contains('focused')).toBe(false);
-    });
-
-    it('removes highlight when plans zone is not active', () => {
-      sessionsState.activeFocus = 'sessions';
-      sessionsState.plansFocusIndex = 0;
-      plans.updatePlansFocus();
-
-      const grid = document.getElementById('plansGrid')!;
-      const btns = grid.querySelectorAll('.plans-grid-btn');
-      for (const btn of btns) {
-        expect(btn.classList.contains('focused')).toBe(false);
-      }
-    });
-  });
 
   // ==========================================================================
   // Integration: spawn zone D-pad Down → plans zone

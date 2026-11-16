@@ -5,7 +5,7 @@
  * Reactive sidebar row for one terminal session. Props drive all rendering
  * and events route session commands through sidebar services.
  */
-import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue';
 import NotificationCarousel from './NotificationCarousel.vue';
 import { useRuntimeGroups } from '../../composables/useRuntimeGroups.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
@@ -17,11 +17,13 @@ import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, Sessi
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import ContextRing from './ContextRing.vue';
 import TodoBadge from './TodoBadge.vue';
-import CountChip from './CountChip.vue';
 import type { SessionTodo } from '../../../src/types/todo.js';
 import TickerText from '../common/TickerText.vue';
+import Badge from '../common/Badge.vue';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import { formatSessionEta } from '../../session-eta.js';
+import { sessionsState } from '../../stores/sessions-screen.js';
+import { VALID_SESSION_STATES } from '../../../src/types/session.js';
 
 function openSessionMenu(event: MouseEvent): void {
   showSessionMenu(props.session.id, { x: event.clientX, y: event.clientY });
@@ -115,8 +117,6 @@ const STATE_LABELS: Record<string, string> = {
   idle: '💤 Idle',
 };
 
-const STATES = ['implementing', 'waiting', 'planning', 'completed', 'idle'];
-
 // --- Props & Emits ---
 
 const props = defineProps<SessionCardProps>();
@@ -185,33 +185,62 @@ const fadeStyle = computed(() => {
 
 // --- Local state ---
 
-const cardEl = ref<HTMLDivElement | null>(null);
-const renameValue = ref('');
 const renameInput = ref<HTMLInputElement | null>(null);
-const showStateDropdown = ref(false);
+const dropdownOptionRefs = ref<HTMLElement[]>([]);
+// Rename editing is exclusive, so the draft and caret belong to the one active card.
+const stateDropdownOpen = computed(() => sessionsState.stateDropdownSessionId === props.session.id);
 
-const openDropdown = () => { showStateDropdown.value = true; };
-const closeDropdown = () => { showStateDropdown.value = false; };
-
-onMounted(() => {
-  cardEl.value?.addEventListener('open-state-dropdown', openDropdown);
-  cardEl.value?.addEventListener('close-state-dropdown', closeDropdown);
+onBeforeUnmount(() => {
+  if (sessionsState.stateDropdownSessionId === props.session.id) {
+    sessionsState.stateDropdownSessionId = null;
+  }
 });
 
-onUnmounted(() => {
-  cardEl.value?.removeEventListener('open-state-dropdown', openDropdown);
-  cardEl.value?.removeEventListener('close-state-dropdown', closeDropdown);
-});
+function toggleStateDropdown(): void {
+  if (stateDropdownOpen.value) {
+    sessionsState.stateDropdownSessionId = null;
+    return;
+  }
+
+  const activeIndex = VALID_SESSION_STATES.findIndex(value => value === props.sessionState);
+  sessionsState.stateDropdownFocusIndex = activeIndex >= 0 ? activeIndex : 0;
+  sessionsState.stateDropdownSessionId = props.session.id;
+}
+
+function syncRenameSelection(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  sessionsState.renameSelectionStart = input.selectionStart ?? 0;
+  sessionsState.renameSelectionEnd = input.selectionEnd ?? sessionsState.renameSelectionStart;
+}
 
 // Auto-focus rename input when editing begins
 watch(() => props.isEditing, async (editing) => {
   if (editing) {
-    renameValue.value = props.session.name;
+    sessionsState.renameDraft = props.session.name;
+    sessionsState.renameSelectionStart = 0;
+    sessionsState.renameSelectionEnd = props.session.name.length;
     await nextTick();
     renameInput.value?.focus();
     renameInput.value?.select();
   }
 }, { immediate: true });
+
+watch(() => [sessionsState.renameSelectionStart, sessionsState.renameSelectionEnd] as const,
+  ([start, end]) => {
+    if (!props.isEditing) return;
+    renameInput.value?.setSelectionRange(start, end);
+  },
+  { flush: 'post' },
+);
+
+watch(() => stateDropdownOpen.value ? sessionsState.stateDropdownFocusIndex : null,
+  async index => {
+    if (index === null) return;
+    await nextTick();
+    dropdownOptionRefs.value[index]?.scrollIntoView?.({ block: 'nearest' });
+  },
+  { flush: 'post' },
+);
 
 // --- Computed ---
 
@@ -312,7 +341,7 @@ function onRenameKeydown(e: KeyboardEvent): void {
   if (e.key === 'Enter') {
     e.preventDefault();
     e.stopPropagation();
-    emit('commitRename', props.session.id, renameValue.value);
+    emit('commitRename', props.session.id, sessionsState.renameDraft);
   } else if (e.key === 'Escape') {
     e.preventDefault();
     e.stopPropagation();
@@ -321,7 +350,9 @@ function onRenameKeydown(e: KeyboardEvent): void {
 }
 
 function selectState(s: string): void {
-  showStateDropdown.value = false;
+  if (sessionsState.stateDropdownSessionId === props.session.id) {
+    sessionsState.stateDropdownSessionId = null;
+  }
   emit('stateChange', props.session.id, s);
 }
 
@@ -337,13 +368,11 @@ function onCardClick(e: MouseEvent): void {
 
 <template>
   <div
-    ref="cardEl"
     class="session-card"
     :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, 'user-noted': hasUserNote, frozen: session.frozen, 'peer-stale': stale, 'interaction-disabled': interactionDisabled }, flashClass]"
     :title="peerTitle"
     :data-session-id="session.id"
     :data-nav-index="navIndex"
-    :data-sessions-nav-index="navIndex"
     :draggable="!isEditing && !readOnly && !interactionDisabled"
     @click="onCardClick"
     @contextmenu="onCardContextMenu"
@@ -370,19 +399,20 @@ function onCardClick(e: MouseEvent): void {
         v-if="!readOnly && !stateReadOnly"
         class="session-state-btn"
         :class="colClass(1)"
-        @click.stop="showStateDropdown = !showStateDropdown"
+        @click.stop="toggleStateDropdown"
       >
         {{ stateLabel }}
       </button>
       <span v-else class="session-state-btn session-state-btn--readonly">{{ stateLabel }}</span>
 
       <!-- State dropdown -->
-      <div v-if="!readOnly && showStateDropdown" class="session-state-dropdown">
+      <div v-if="!readOnly && stateDropdownOpen" class="session-state-dropdown">
         <button
-          v-for="s in STATES"
+          v-for="(s, i) in VALID_SESSION_STATES"
           :key="s"
+          ref="dropdownOptionRefs"
           class="session-state-option"
-          :class="{ active: s === sessionState }"
+          :class="{ active: s === sessionState, 'dropdown-focused': i === sessionsState.stateDropdownFocusIndex }"
           @click.stop="selectState(s)"
         >
           {{ STATE_LABELS[s] || s }}
@@ -390,27 +420,33 @@ function onCardClick(e: MouseEvent): void {
       </div>
 
       <!-- G8 loop badge — an in-progress auto-continue loop must never be invisible -->
-      <span
+      <Badge
         v-if="loopContinues > 0"
-        class="loop-badge"
+        size="count"
+        class="session-loop-indicator"
+        tone="accent"
         title="Loop driving: consecutive Stop-hook auto-continues in flight. A user prompt or the kill switch ends it."
-      >🔁{{ loopContinues }}</span>
+      >🔁{{ loopContinues }}</Badge>
 
       <!-- Subagent badge — the subagents themselves are hidden from the list -->
-      <span
+      <Badge
         v-if="pendingSubagents > 0"
-        class="loop-badge"
+        size="count"
+        class="session-loop-indicator"
+        tone="accent"
         :title="`${pendingSubagents} subagent${pendingSubagents === 1 ? '' : 's'} working for this session`"
-      >🔥{{ pendingSubagents }}</span>
+      >🔥{{ pendingSubagents }}</Badge>
 
       <!-- Artifact badge — click to show this session's artifact panel -->
       <button
         v-if="artifactCount > 0"
-        class="artifact-badge"
+        class="session-artifact-entry"
         type="button"
         :title="`Show ${artifactCount} artifact${artifactCount === 1 ? '' : 's'}`"
         @click.stop="emit('showArtifacts', session.id)"
-      >📄{{ artifactCount }}</button>
+      >
+        <Badge size="count" class="session-artifact-count" tone="neutral">📄{{ artifactCount }}</Badge>
+      </button>
 
       <span style="flex: 1" />
 
@@ -490,27 +526,31 @@ function onCardClick(e: MouseEvent): void {
       <template v-if="isEditing">
         <input
           ref="renameInput"
-          v-model="renameValue"
+          v-model="sessionsState.renameDraft"
           class="session-rename-input"
           type="text"
           maxlength="50"
           placeholder="Enter name..."
+          @input="syncRenameSelection"
+          @select="syncRenameSelection"
           @keydown="onRenameKeydown"
         />
-        <button class="session-rename-save" title="Save (Enter)" @click.stop="emit('commitRename', session.id, renameValue)">✓</button>
+        <button class="session-rename-save" title="Save (Enter)" @click.stop="emit('commitRename', session.id, sessionsState.renameDraft)">✓</button>
         <button class="session-rename-cancel" title="Cancel (Escape)" @click.stop="emit('cancelRename')">×</button>
       </template>
       <template v-else>
         <span v-if="shortcutKey != null" class="session-jump-key">^{{ shortcutKey }}</span>
         <span v-else class="session-jump-key session-jump-key--empty" aria-hidden="true" />
         <span class="session-name">{{ displayName }}</span>
-        <CountChip
+        <Badge
           v-if="unreadChatCount > 0"
+          size="count"
           class="session-chat-unread"
+          tone="accent"
           :flashing="!!flashEntry"
           :title="`${unreadChatCount} new Chat messages`"
           :aria-label="`${unreadChatCount} new Chat messages`"
-        >{{ unreadChatCount }} new</CountChip>
+        >{{ unreadChatCount }} new</Badge>
         <TodoBadge :todos="todos ?? []" :flashing="!!flashEntry" />
         <span
           v-if="etaTimer"
@@ -530,14 +570,15 @@ function onCardClick(e: MouseEvent): void {
     </span>
 
     <!-- Line 5: pending schedule chip -->
-    <div v-if="scheduledAt" class="session-schedule-chip">
+    <Badge v-if="scheduledAt" class="session-schedule-badge" tone="warn">
       <span>⏰ {{ scheduledAt }}</span>
       <button
+        type="button"
         class="session-schedule-cancel"
         title="Cancel scheduled resume"
         @click.stop="emit('cancelSchedule', session.id)"
       >×</button>
-    </div>
+    </Badge>
 
     <!-- Passive PTY tail: read-only, never focused, clicks select the row. -->
     <div v-if="previewLines" class="session-preview" aria-hidden="true">
@@ -555,6 +596,331 @@ function onCardClick(e: MouseEvent): void {
 </template>
 
 <style scoped>
+/* ── Session cards ────────────────────────────────────────── */
+
+.session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  min-height: 94px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.session-card:hover,
+.session-card.focused { background: var(--bg-tertiary); }
+.session-card.active {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+  /* 3px ring (1px border + 2px inset) plus an outer glow: selection must read at a glance. */
+  box-shadow: inset 0 0 0 2px var(--accent), 0 0 12px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.session-card.snapped-out {
+  border-style: dashed;
+  border-color: #555;
+}
+.session-card.snapped-out:hover,
+.session-card.snapped-out.focused {
+  background: var(--bg-tertiary);
+}
+.session-card.snapped-out.active,
+.session-card.snapped-out.active:hover,
+.session-card.snapped-out.active.focused {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* Sessions opened on this machine by a remote Fleet peer. The tint holds through
+   hover/focus/active so the remote origin is never ambiguous — active keeps its
+   accent BORDER as the selection cue. Declared before the flash-attention block
+   so a flash (a deliberate grab-the-user signal) still wins while it runs. */
+.session-card.peer-created,
+.session-card.peer-created:hover,
+.session-card.peer-created.focused,
+.session-card.peer-created.active {
+  background: var(--peer-session-bg, #1b2b3f) !important;
+}
+.session-card.peer-created:hover,
+.session-card.peer-created.focused {
+  background: var(--peer-session-bg-hover, #22374f) !important;
+}
+.session-card.peer-created.active,
+.session-card.peer-created.active:hover,
+.session-card.peer-created.active.focused {
+  background: var(--bg-hover) !important;
+}
+
+.snap-indicator {
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+/* Flash attention — beats between the resting bg and the app theme accent for
+   15s (flash-pulse), then holds the accent (flash-solid) until the session is
+   focused. Colour comes straight from the app's --accent / --accent-contrast
+   tokens, so the flash matches the app theme regardless of the OS accent.
+
+   The beat is DISCRETE, not a smooth interpolation: background + text switch
+   together at flat plateaus so every rendered frame lands on one of two
+   guaranteed-contrast surfaces (dark bg + light text, or accent + paired text).
+   Smoothly cross-fading fg and bg would collapse contrast mid-transition. */
+@keyframes flash-beat {
+  0%,   49% { background-color: var(--bg-secondary); color: var(--text-primary); }
+  50%, 100% { background-color: var(--accent);  color: var(--accent-contrast); }
+}
+.session-card.flash-pulse {
+  animation: flash-beat 1s infinite;
+}
+.session-card.flash-solid {
+  background-color: var(--accent) !important;
+  color: var(--accent-contrast);
+}
+/* Force textual and icon descendants onto the flash colour. Badge, TodoBadge, ContextRing,
+   TickerText, and NotificationCarousel render their own scoped DOM, so deep is required. */
+.session-card.flash-pulse :deep(:where(span, button, input, .session-name)),
+.session-card.flash-solid :deep(:where(span, button, input, .session-name)) {
+  color: inherit !important;
+}
+/* Keep ContextRing’s inline-coloured activity dot readable during a flash. Its inner DOM
+   has a child scope id, so deep reaches only that dot. */
+.session-card.flash-pulse :deep(.context-ring__dot),
+.session-card.flash-solid :deep(.context-ring__dot) {
+  box-shadow: 0 0 0 1px var(--accent-contrast);
+}
+
+.session-timer {
+  font-size: 11px;
+  color: #bbb;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.session-timer-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.session-timer-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.session-user-prompt-timer { color: #bbb; }
+.session-user-prompt-timer.source-phone .session-timer-icon { color: #d0b8f5; }
+.session-user-prompt-timer.source-terminal .session-timer-icon { color: #9de0d4; }
+.session-user-prompt-timer.source-chat .session-timer-icon { color: #d0b8f5; }
+.session-eta-timer--late { color: var(--warning, #b58900); }
+
+/* Top row: dot, state, badges, timer, actions */
+.session-top-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+/* State icon — removed, state shown via dropdown button only */
+
+.session-card .session-name { flex: 1 1 auto; min-width: 0; font-size: var(--font-size-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: inherit; }
+/* Clipping, ellipsis and ticker scrolling live in TickerText. */
+.session-card .session-meta { font-size: var(--font-size-sm); color: var(--text-secondary); }
+
+/* Session action buttons (state, kebab, close, copy-id) - always visible */
+.session-kebab,
+.session-state-btn,
+.session-close,
+.session-copy-id,
+.session-note {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.2s, background 0.2s;
+  opacity: 1;
+}
+.session-kebab { font-weight: 700; }
+.session-kebab:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
+.session-copy-id:hover,
+.session-note:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
+.session-kebab.card-col-focused {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+.session-state-btn:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
+
+/* Session close button specific styles */
+.session-close:hover {
+  color: #ff4444;
+  background: rgba(255, 68, 68, 0.1);
+}
+.session-close.card-col-focused {
+  background: rgba(255, 80, 80, 0.2);
+  border-color: #ff5050;
+  color: #ff5050;
+}
+
+/* Session name line — dedicated row for editable name */
+.session-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.session-jump-key {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: monospace;
+  color: rgba(var(--accent-rgb), 0.6);
+  line-height: 1.5;
+  flex-shrink: 0;
+  min-width: 20px;
+  justify-content: center;
+}
+.session-jump-key--empty {
+  background: none;
+  border-color: transparent;
+}
+.session-working-plan {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-top-row .session-state-btn,
+.session-top-row .session-kebab,
+.session-top-row .session-close,
+.session-top-row .session-copy-id,
+.session-top-row .session-note {
+  font-size: var(--font-size-sm);
+  padding: 1px 4px;
+}
+
+/* Rename edit mode input and buttons */
+.session-rename-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  color: var(--text-primary);
+  outline: none;
+}
+.session-rename-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
+}
+
+.session-rename-save,
+.session-rename-cancel {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+.session-rename-save {
+  color: #4cc94c;
+}
+.session-rename-save:hover {
+  background: rgba(76, 201, 76, 0.15);
+  color: #5dd95d;
+}
+.session-rename-cancel {
+  color: #888;
+}
+.session-rename-cancel:hover {
+  background: rgba(255, 68, 68, 0.1);
+  color: #ff4444;
+}
+
+/* Session state dropdown button */
+.session-state-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: #999;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.session-state-btn:hover {
+  border-color: #555;
+  background: rgba(255, 255, 255, 0.05);
+}
+.session-state-btn.card-col-focused {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+.session-state-dropdown {
+  position: fixed;
+  background: #2a2a2a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 4px 0;
+  z-index: 200;
+  min-width: 150px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.session-state-option {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.session-state-option:hover,
+.session-state-option:focus,
+.session-state-option.dropdown-focused {
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+}
+.session-state-option.active {
+  color: #4fc3f7;
+}
+
+.session-schedule-badge.badge--warn { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11px; color: #ffa040; }
+.session-schedule-cancel { background: none; border: none; color: #888; cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; }
+.session-schedule-cancel:hover { color: #ff6060; }
+
 /* Prompt-cache fade — a tint that drains to nothing over the CLI's short cache
    window (cacheWarnMinutes). Behind the content, never catching clicks. */
 .session-card { position: relative; isolation: isolate; }
@@ -595,41 +961,32 @@ function onCardClick(e: MouseEvent): void {
   background-image: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.18) 0 6px, transparent 6px 12px);
 }
 
-/* Same badge anatomy as the artifact badge, but accent-tinted: an active loop
-   is machinery running on the user's behalf and deserves the eye. */
-.loop-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 5px;
+.session-loop-indicator.badge--accent {
   background: #2a2a3a;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  font-size: 10px;
-  color: var(--accent);
-  flex-shrink: 0;
-  white-space: nowrap;
 }
 
-/* Clickable entry point that opens the session's artifact panel. */
-.artifact-badge {
+.session-artifact-entry {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 1px 5px;
-  background: #2a2a3a;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 10px;
-  color: var(--text-secondary);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   margin-left: auto;
   flex-shrink: 0;
-  white-space: nowrap;
   cursor: pointer;
   font-family: inherit;
 }
 
-.artifact-badge:hover { border-color: var(--accent); color: var(--accent); }
+.session-artifact-count.badge--neutral {
+  gap: 2px;
+  background: #2a2a3a;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.session-artifact-entry:hover .session-artifact-count { border-color: var(--accent); color: var(--accent); }
 
 /* Five clipped lines, constant mid grey — no fade, no brighter last line. */
 .session-preview {

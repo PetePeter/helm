@@ -19,6 +19,7 @@
  * window can render its own instance without cross-talk.
  */
 import { computed, onMounted, onUnmounted, watch } from 'vue';
+import AppButton from '../common/AppButton.vue';
 import { useArtifactViewer } from '../../composables/useArtifactViewer.js';
 import { useToast } from '../../composables/useToast.js';
 import {
@@ -38,7 +39,7 @@ import { isEditableElement } from '../../input/input-ownership.js';
 import { buildTextArtifact, isTextLikeFile, TEXT_INLINE_MAX_BYTES } from '../../artifacts/text-file-drop.js';
 import type { Artifact, ArtifactIntent } from '../../../src/types/artifact.js';
 import { parseAttachmentHref } from '../../../src/types/artifact-attachment.js';
-import Chip from '../common/Chip.vue';
+import Badge from '../common/Badge.vue';
 import EmptyState from '../common/EmptyState.vue';
 import FilterChip from '../common/FilterChip.vue';
 import {
@@ -259,11 +260,11 @@ function relativeTime(ms: number): string {
   return `${days}d`;
 }
 
-function kindTone(a: Artifact): 'accent' | 'info' | 'warning' {
+function kindTone(a: Artifact): 'accent' | 'warn' | 'neutral' {
   const kind = artifactKindLabel(a);
   if (kind === 'MD') return 'accent';
-  if (kind === 'BIN') return 'warning';
-  return 'info';
+  if (kind === 'BIN') return 'warn';
+  return 'neutral';
 }
 
 const newArtifactIntent = ref<ArtifactIntent>('normal');
@@ -717,7 +718,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
       </div>
       <div class="ap-bar-actions">
         <div class="ap-create-dropdown">
-          <button class="ap-btn-new" @click="showCreateMenu = !showCreateMenu">+ New ▾</button>
+          <AppButton variant="ghost" size="sm" class="ap-create-button" @click="showCreateMenu = !showCreateMenu">+ New ▾</AppButton>
           <div v-if="showCreateMenu" class="dropdown-menu">
             <button class="dropdown-item" @click="onCreateTextNote">📝 Text note</button>
             <button class="dropdown-item" @click="onCreateFromClipboard">📋 Paste from clipboard</button>
@@ -727,14 +728,14 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
           <option value="normal">Normal</option>
           <option value="manifesto">Manifesto</option>
         </select>
-        <button class="ap-btn-attach" title="Pick a file to attach" @click="onAttachFile">📎</button>
+        <AppButton variant="secondary" size="sm" title="Pick a file to attach" @click="onAttachFile">📎</AppButton>
         <button class="ap-ico" title="Pop out with terminal" @click="emit('pop-out')">⧉</button>
       </div>
     </div>
 
     <div class="ap-strip">
-      <EmptyState v-if="artifacts.length === 0" class="ap-empty" title="No artifacts yet." />
-      <EmptyState v-else-if="visible.length === 0" class="ap-empty" title="No artifacts match filters." />
+      <EmptyState v-if="artifacts.length === 0" title="No artifacts yet." compact />
+      <EmptyState v-else-if="visible.length === 0" title="No artifacts match filters." compact />
       <button
         v-for="a in visible" :key="a.id"
         class="ap-card"
@@ -744,12 +745,16 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
       >
         <span class="ap-card-title">
           <span class="ap-dot" aria-hidden="true"></span>
-          <Chip class="ap-kind" :label="artifactKindLabel(a)" :tone="kindTone(a)" />
+          <Badge
+            class="ap-kind"
+            :class="{ 'ap-kind--info': kindTone(a) === 'neutral' }"
+            :tone="kindTone(a)"
+          >{{ artifactKindLabel(a) }}</Badge>
           <span class="ap-it-title">{{ a.title }}</span>
         </span>
         <span class="ap-it-meta">
-          <span v-if="a.intent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
-          <span v-if="a.draft" class="ap-intent-badge ap-draft-badge" title="Unsaved draft">Draft</span>
+          <Badge v-if="a.intent === 'manifesto'" class="artifact-intent-label" tone="accent">Manifesto</Badge>
+          <Badge v-if="a.draft" class="artifact-intent-label artifact-intent-label--draft" tone="accent" title="Unsaved draft">Draft</Badge>
           <span v-if="a.source === 'manual'" class="ap-src">manual</span>
           <span class="ap-vcount">v{{ a.versions.length }}</span>
           <span>{{ relativeTime(listPrefs.sort === 'created' ? a.createdAt : a.updatedAt) }}</span>
@@ -772,8 +777,8 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
               @keydown.escape="onCancelTextNote"
             />
             <span class="ap-v-spacer"></span>
-            <button class="ap-btn" @click="onCancelTextNote">Cancel</button>
-            <button class="ap-btn ap-btn--primary" :disabled="!newTextContent.trim()" @click="onSaveTextNote">💾 Save</button>
+            <AppButton variant="secondary" size="sm" @click="onCancelTextNote">Cancel</AppButton>
+            <AppButton variant="ghost" size="sm" class="ap-primary-action" :disabled="!newTextContent.trim()" @click="onSaveTextNote">💾 Save</AppButton>
           </div>
           <textarea
             v-model="newTextContent"
@@ -797,9 +802,9 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
             />
             <template v-else>
               <span class="ap-d-name ap-d-name--renameable" title="Double-click to rename" @dblclick="onStartRename">{{ selected.title }}</span>
-              <button class="ap-v-step ap-rename-btn" title="Rename" @click="onStartRename">✎</button>
-              <span v-if="selectedIntent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
-              <span v-if="selected.draft" class="ap-intent-badge ap-draft-badge" title="Unsaved draft — Resume draft to continue">Draft</span>
+              <AppButton variant="secondary" size="sm" class="ap-v-step ap-rename-action" title="Rename" @click="onStartRename">✎</AppButton>
+              <Badge v-if="selectedIntent === 'manifesto'" class="artifact-intent-label" tone="accent">Manifesto</Badge>
+              <Badge v-if="selected.draft" class="artifact-intent-label artifact-intent-label--draft" tone="accent" title="Unsaved draft — Resume draft to continue">Draft</Badge>
               <label class="ap-selected-intent-label" title="Manifesto artifacts are added to context after session resets">
                 <span>Intent</span>
                 <select class="ap-selected-intent" :value="selectedIntent" :disabled="settingIntent" aria-label="Artifact intent" @change="onSetArtifactIntent">
@@ -856,7 +861,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
                   <span class="ap-ff-icon" aria-hidden="true">⧉</span>
                   <p class="ap-ff-title">This document can't be displayed here</p>
                   <p class="ap-ff-sub">Open it in your default app to see the full version.</p>
-                  <button class="ap-btn ap-btn--primary ap-ff-btn" @click="onOpenExternal">⧉ Open externally</button>
+                  <AppButton variant="ghost" size="sm" class="ap-ff-btn ap-primary-action" @click="onOpenExternal">⧉ Open externally</AppButton>
                 </div>
               </div>
             </template>
@@ -866,15 +871,15 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
           <div v-if="!isEditing" class="ap-att">
             <div class="ap-att__head">
               <span class="ap-att__title">Attachments ({{ attachments.length }})</span>
-              <button class="ap-btn ap-att__add" title="Attach a file to this artifact" @click="onAddAttachment">📎 Add</button>
+              <AppButton variant="secondary" size="sm" title="Attach a file to this artifact" @click="onAddAttachment">📎 Add</AppButton>
             </div>
             <div v-if="attachments.length === 0" class="ap-att__empty">No attachments</div>
             <div v-else class="ap-att__list">
               <div v-for="att in attachments" :key="att.id" class="ap-att__row">
                 <span class="ap-att__name" :title="att.filename">{{ att.filename }}</span>
                 <span class="ap-att__size">{{ formatAttachmentSize(att.sizeBytes) }}</span>
-                <button class="ap-btn" :disabled="attachmentBusyId === att.id" @click="onOpenAttachment(att.id)">Open</button>
-                <button class="ap-btn ap-btn--danger" :disabled="attachmentBusyId === att.id" @click="onDeleteAttachment(att.id)">Delete</button>
+                <AppButton variant="secondary" size="sm" :disabled="attachmentBusyId === att.id" @click="onOpenAttachment(att.id)">Open</AppButton>
+                <AppButton variant="danger" size="sm" :disabled="attachmentBusyId === att.id" @click="onDeleteAttachment(att.id)">Delete</AppButton>
               </div>
             </div>
           </div>
@@ -887,7 +892,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
             Create notes, paste content, or drag files here.<br>
             AI-authored artifacts also appear here.
           </p>
-          <button class="ap-btn ap-btn--primary" @click="showCreateMenu = true">+ New artifact</button>
+          <AppButton variant="ghost" size="sm" class="ap-primary-action" @click="showCreateMenu = true">+ New artifact</AppButton>
         </div>
 
         <!-- Footer -->
@@ -895,27 +900,28 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
           <span class="ap-foot-note">Autosaved as a draft — Save adds a new version.</span>
           <span class="ap-foot-note ap-draft-status" aria-live="polite">{{ draftStatusText }}</span>
           <span class="ap-grow"></span>
-          <button class="ap-btn" title="Discard this draft" @click="onCancelEdit">Cancel</button>
-          <button class="ap-btn ap-btn--primary" :disabled="!editContent.trim()" @click="onSaveEdit">💾 Save</button>
+          <AppButton variant="secondary" size="sm" title="Discard this draft" @click="onCancelEdit">Cancel</AppButton>
+          <AppButton variant="ghost" size="sm" class="ap-primary-action" :disabled="!editContent.trim()" @click="onSaveEdit">💾 Save</AppButton>
         </div>
         <div v-else-if="!isCreatingText" class="ap-foot">
-          <button
-            class="ap-btn"
+          <AppButton
+            variant="secondary"
+            size="sm"
             :title="canEdit ? 'Edit content — saves as a new version' : 'Jump to the latest version to edit'"
             :disabled="!canEdit"
             @click="onStartEdit"
-          >✎ {{ selected?.draft ? 'Resume draft' : 'Edit' }}</button>
-          <button class="ap-btn" title="Open this version in your default app" :disabled="!selected" @click="onOpenExternal">⧉ Open externally</button>
-          <button class="ap-btn" title="Save to a location you pick" :disabled="!selected" @click="onExport">⭳ Export…</button>
-          <button class="ap-btn" title="Copy a reference an AI can resolve" :disabled="!selected" @click="onCopyRef">📋 Copy reference</button>
+          >✎ {{ selected?.draft ? 'Resume draft' : 'Edit' }}</AppButton>
+          <AppButton variant="secondary" size="sm" title="Open this version in your default app" :disabled="!selected" @click="onOpenExternal">⧉ Open externally</AppButton>
+          <AppButton variant="secondary" size="sm" title="Save to a location you pick" :disabled="!selected" @click="onExport">⭳ Export…</AppButton>
+          <AppButton variant="secondary" size="sm" title="Copy a reference an AI can resolve" :disabled="!selected" @click="onCopyRef">📋 Copy reference</AppButton>
           <span v-if="openError" class="ap-foot-error">{{ openError }}</span>
           <span class="ap-grow"></span>
           <template v-if="confirmDelete">
             <span class="ap-foot-confirm">Delete?</span>
-            <button class="ap-btn ap-btn--danger" title="Confirm delete" @click="onConfirmDelete">✓ Yes</button>
-            <button class="ap-btn" title="Cancel" @click="confirmDelete = false">✕</button>
+            <AppButton variant="danger" size="sm" title="Confirm delete" @click="onConfirmDelete">✓ Yes</AppButton>
+            <AppButton variant="secondary" size="sm" title="Cancel" @click="confirmDelete = false">✕</AppButton>
           </template>
-          <button v-else class="ap-btn ap-btn--danger" title="Delete this artifact" :disabled="!selected" @click="confirmDelete = true">🗑 Delete</button>
+          <AppButton variant="danger" size="sm" v-else title="Delete this artifact" :disabled="!selected" @click="confirmDelete = true">🗑 Delete</AppButton>
         </div>
       </div>
     </div>
@@ -939,12 +945,9 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-ico { width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--radius-sm); border: 1px solid transparent; color: var(--text-secondary); font-size: var(--font-size-lg); }
 .ap-ico:hover { border-color: var(--border); color: var(--text-primary); background: var(--bg-tertiary); }
 .ap-ico:focus-visible,
-.ap-btn-new:focus-visible,
-.ap-btn-attach:focus-visible,
 .dropdown-item:focus-visible,
 .ap-v-step:focus-visible,
 .ap-restore:focus-visible,
-.ap-btn:focus-visible,
 .ap-v-sel select:focus-visible,
 .ap-selected-intent-label select:focus-visible,
 .ap-create-title-input:focus-visible,
@@ -972,17 +975,13 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-card--unread .ap-dot { background: var(--accent); }
 .ap-card-title { display: flex; align-items: center; gap: var(--spacing-xs); min-width: 0; }
 .ap-card-title .ap-it-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ap-empty { padding: var(--spacing-sm); }
 
 /* index rail */
 
 
 /* New + Attach row */
 .ap-selected-intent-label select { min-width: 0; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); color: var(--text-primary); font-size: var(--font-size-xs); font-family: inherit; }
-.ap-btn-new { flex: 1; font-size: var(--font-size-sm); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); border: 1px solid var(--accent); background: rgba(var(--accent-rgb), 0.12); color: var(--accent); cursor: pointer; font-weight: 600; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: var(--spacing-xs); }
-.ap-btn-new:hover { background: rgba(var(--accent-rgb), 0.22); }
-.ap-btn-attach { font-size: var(--font-size-sm); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-family: inherit; }
-.ap-btn-attach:hover { border-color: var(--accent); color: var(--accent); }
+.ap-create-button { flex: 1; }
 
 /* Create dropdown */
 .ap-create-dropdown { position: relative; }
@@ -993,9 +992,13 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 
 .ap-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 var(--spacing-sm) 0 0; background: transparent; }
 .ap-it-title { color: var(--text-primary); }
-.ap-intent-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 999px; padding: 1px var(--spacing-xs); color: var(--accent); font-size: var(--font-size-xs); line-height: 1.3; white-space: nowrap; }
+.ap-kind { min-height: 24px; padding: 2px var(--spacing-sm); border: 1px solid var(--border); border-radius: 999px; background: var(--bg-secondary); color: var(--text-secondary); font-size: var(--font-size-sm); font-weight: 400; line-height: 1.2; }
+.ap-kind.badge--accent { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--bg-secondary); color: var(--accent); }
+.ap-kind.badge--warn { border-color: color-mix(in srgb, var(--status-blocked) 55%, var(--border)); background: var(--bg-secondary); color: var(--status-blocked); }
+.ap-kind.ap-kind--info { border-color: color-mix(in srgb, var(--info) 55%, var(--border)); background: var(--bg-secondary); color: var(--info); }
+.artifact-intent-label { border-radius: 999px; padding: 1px var(--spacing-xs); font-size: var(--font-size-xs); font-weight: 400; line-height: 1.3; }
 /* An unsaved draft is the user's own pending work, not an AI-set intent. */
-.ap-draft-badge { border-color: color-mix(in srgb, var(--info) 55%, var(--border)); color: var(--info); }
+.artifact-intent-label--draft { border-color: color-mix(in srgb, var(--info) 55%, var(--border)); color: var(--info); }
 .ap-it-meta { display: inline-flex; gap: var(--spacing-sm); align-items: center; margin-top: 0; }
 .ap-vcount { color: var(--text-dim); }
 .ap-src { color: var(--text-dim); font-style: italic; }
@@ -1058,27 +1061,17 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-att { border-top: 1px solid var(--border); background: var(--bg-secondary); padding: var(--spacing-sm) var(--spacing-md); display: flex; flex-direction: column; gap: var(--spacing-xs); }
 .ap-att__head { display: flex; align-items: center; gap: var(--spacing-sm); }
 .ap-att__title { font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
-.ap-att__add { padding: var(--spacing-xs) var(--spacing-sm); }
 .ap-att__empty { font-size: var(--font-size-sm); color: var(--text-dim); }
 .ap-att__list { display: flex; flex-direction: column; gap: var(--spacing-xs); }
 .ap-att__row { display: flex; align-items: center; gap: var(--spacing-sm); }
 .ap-att__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-sm); color: var(--text-primary); }
 .ap-att__size { font-size: var(--font-size-xs); color: var(--text-dim); flex-shrink: 0; }
-.ap-att__row .ap-btn { padding: var(--spacing-xs) var(--spacing-sm); }
 
 /* footer */
 .ap-foot { display: flex; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-top: 1px solid var(--border); }
-.ap-btn { font-size: var(--font-size-sm); padding: var(--spacing-xs) var(--spacing-md); border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); display: inline-flex; gap: var(--spacing-xs); align-items: center; }
-.ap-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.ap-btn:disabled { opacity: 0.4; cursor: default; }
-.ap-btn--primary { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.12); color: var(--accent); font-weight: 600; }
-.ap-btn--primary:hover:not(:disabled) { background: rgba(var(--accent-rgb), 0.22); }
-.ap-btn--danger:hover:not(:disabled) { border-color: var(--danger-border); color: var(--danger); }
-.ap-btn { cursor: pointer; font-family: inherit; }
 .ap-foot-confirm { font-size: var(--font-size-sm); color: var(--text-primary); }
 .ap-foot-error { font-size: var(--font-size-sm); color: var(--danger); }
 .ap-foot-note { font-size: var(--font-size-sm); color: var(--text-dim); }
 .ap-draft-status { color: var(--text-secondary); }
-.ap-rename-btn { font-size: var(--font-size-sm); }
 .ap-grow { flex: 1; }
 </style>

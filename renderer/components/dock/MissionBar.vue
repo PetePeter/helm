@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * MissionBar — the session's TL;DR, pinned above its terminal.
  *
@@ -130,14 +131,14 @@ onBeforeUnmount(() => {
       <span class="mission-bar__label">◎ Mission</span>
       <span v-if="mission && !editing" class="mission-bar__meta">{{ meta }}</span>
       <span v-if="editing" class="mission-bar__counter">{{ draft.length }}/{{ MAX_CHARS }}</span>
-      <button
+      <AppButton variant="ghost" size="sm"
         v-if="!editing"
         type="button"
-        class="btn btn--ghost btn--sm mission-bar__edit"
+        class="mission-bar__edit"
         title="Edit mission"
         aria-label="Edit mission"
         @click="startEdit"
-      >✎</button>
+      >✎</AppButton>
     </header>
     <div class="mission-bar__body">
       <template v-if="editing">

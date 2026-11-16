@@ -16,6 +16,15 @@ import { getActivityColor } from '../../../renderer/state-colors.js';
 // ============================================================================
 
 import SessionCard from '../../../renderer/components/sidebar/SessionCard.vue';
+import { sessionsState } from '../../../renderer/stores/sessions-screen.js';
+
+beforeEach(() => {
+  sessionsState.stateDropdownSessionId = null;
+  sessionsState.stateDropdownFocusIndex = 0;
+  sessionsState.renameDraft = '';
+  sessionsState.renameSelectionStart = 0;
+  sessionsState.renameSelectionEnd = 0;
+});
 
 function makeCardProps(overrides: Record<string, any> = {}) {
   return {
@@ -271,19 +280,19 @@ describe('SessionCard', () => {
     expect(w.find('.session-working-plan').text()).toBe('🗺️ Auth refactor');
   });
 
-  it('closes state dropdown when close-state-dropdown event is dispatched', async () => {
+  it('closes state dropdown when shared screen state is cleared', async () => {
     const w = mount(SessionCard, { props: makeCardProps() });
     await w.find('.session-state-btn').trigger('click');
     expect(w.find('.session-state-dropdown').exists()).toBe(true);
-    w.element.dispatchEvent(new CustomEvent('close-state-dropdown'));
+    sessionsState.stateDropdownSessionId = null;
     await nextTick();
     expect(w.find('.session-state-dropdown').exists()).toBe(false);
   });
 
-  it('opens state dropdown when open-state-dropdown event is dispatched', async () => {
+  it('opens state dropdown when shared screen state selects the session', async () => {
     const w = mount(SessionCard, { props: makeCardProps() });
     expect(w.find('.session-state-dropdown').exists()).toBe(false);
-    w.element.dispatchEvent(new CustomEvent('open-state-dropdown'));
+    sessionsState.stateDropdownSessionId = 's1';
     await nextTick();
     expect(w.find('.session-state-dropdown').exists()).toBe(true);
   });
@@ -326,7 +335,7 @@ describe('SessionCard', () => {
       }),
     });
 
-    await w.find('.dismiss-btn').trigger('click');
+    await w.find('.notification-dismiss').trigger('click');
 
     expect(w.emitted('dismissNotification')).toEqual([['n1']]);
     expect(w.emitted('click')).toBeUndefined();
@@ -631,7 +640,7 @@ describe('SessionList', () => {
       }),
     });
 
-    await w.find('.dismiss-btn').trigger('click');
+    await w.find('.notification-dismiss').trigger('click');
 
     expect(w.emitted('dismissNotification')).toEqual([['n1']]);
     expect(w.emitted('sessionClick')).toBeUndefined();
@@ -651,7 +660,7 @@ describe('SessionList', () => {
         navList: [],
       }),
     });
-    expect(w.find('.sessions-empty').text()).toContain('No active sessions');
+    expect(w.text()).toContain('No active sessions');
   });
 
   it('does not render cards for collapsed groups', () => {
@@ -953,7 +962,7 @@ describe('BindingsTab', () => {
     const w = mountTab();
     expect(w.findAll('.binding-card').length).toBe(2);
     expect(w.find('.binding-card__button').text()).toBe('A');
-    expect(w.find('.binding-card__action-badge').text()).toBe('keyboard');
+    expect(w.find('.binding-action').text()).toBe('keyboard');
   });
 
   it('shows an empty-profile message when the profile has no bindings', () => {

@@ -9,6 +9,7 @@
  * Content only — the dock tab titles it and the rail collapses it.
  */
 import { computed } from 'vue';
+import DockPaneBody from './DockPaneBody.vue';
 import PlansGrid from '../sidebar/PlansGrid.vue';
 import { sessionsState } from '../../screens/sessions-state.js';
 import { useAppStore } from '../../stores/app.js';
@@ -44,7 +45,7 @@ const directories = computed(() => {
 </script>
 
 <template>
-  <div class="dock-pane-body">
+  <DockPaneBody>
     <button
       v-if="operatorDir"
       class="spawn-btn plans-tasks-btn focusable"
@@ -60,7 +61,7 @@ const directories = computed(() => {
       :is-active="sessionsState.activeFocus === 'plans'"
       @show-plans="sidebar.onShowPlans"
     />
-  </div>
+  </DockPaneBody>
 </template>
 
 <style scoped>

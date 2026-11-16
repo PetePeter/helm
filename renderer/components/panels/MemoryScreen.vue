@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import ConfirmDialog from '../modals/ConfirmDialog.vue';
 import MemoryDetailPopOutWindow from '../MemoryDetailPopOutWindow.vue';
@@ -161,9 +162,9 @@ onUnmounted(disposeMemoryChangedSubscription);
             <option value="all">all memories</option>
           </select>
         </label>
-        <button type="button" class="btn btn--secondary btn--sm" @click="void exportMemories('markdown', exportScope === 'selected' ? memoryScreenState.selectedId : null)">Markdown</button>
-        <button type="button" class="btn btn--secondary btn--sm" @click="void exportMemories('json', exportScope === 'selected' ? memoryScreenState.selectedId : null)">JSON</button>
-        <button type="button" class="btn btn--secondary btn--sm" @click="void refreshMemories()">Refresh</button>
+        <AppButton variant="secondary" size="sm" type="button" @click="void exportMemories('markdown', exportScope === 'selected' ? memoryScreenState.selectedId : null)">Markdown</AppButton>
+        <AppButton variant="secondary" size="sm" type="button" @click="void exportMemories('json', exportScope === 'selected' ? memoryScreenState.selectedId : null)">JSON</AppButton>
+        <AppButton variant="secondary" size="sm" type="button" @click="void refreshMemories()">Refresh</AppButton>
       </template>
       <template #toolbar>
         <div class="memory-controls">
@@ -188,7 +189,7 @@ onUnmounted(disposeMemoryChangedSubscription);
               @change="setGraphDepth(Number(($event.target as HTMLInputElement).value))"
             >
           </label>
-          <button type="button" class="btn btn--secondary btn--sm" @click="void searchMemories()">Search</button>
+          <AppButton variant="secondary" size="sm" type="button" @click="void searchMemories()">Search</AppButton>
         </div>
       </template>
     </PanelHeader>
@@ -319,13 +320,13 @@ onUnmounted(disposeMemoryChangedSubscription);
           <p class="memory-detail-body">{{ memoryScreenState.detail.content }}</p>
           <ul v-if="memoryScreenState.detail.attachments.length" class="memory-detail-attachments">
             <li v-for="attachment in memoryScreenState.detail.attachments" :key="attachment.id">
-              <button type="button" class="btn btn--secondary btn--sm" @click="void openAttachment(attachment.id)">{{ attachment.filename }}</button>
-              <button type="button" class="btn btn--secondary btn--sm" @click="void deleteAttachment(attachment.id)">Remove</button>
+              <AppButton variant="secondary" size="sm" type="button" @click="void openAttachment(attachment.id)">{{ attachment.filename }}</AppButton>
+              <AppButton variant="secondary" size="sm" type="button" @click="void deleteAttachment(attachment.id)">Remove</AppButton>
             </li>
           </ul>
           <div class="memory-detail-actions">
-            <button type="button" class="btn btn--secondary btn--sm" @click="openDetail">Pop out</button>
-            <button type="button" class="btn btn--secondary btn--sm" @click="requestDelete()">Delete</button>
+            <AppButton variant="secondary" size="sm" type="button" @click="openDetail">Pop out</AppButton>
+            <AppButton variant="secondary" size="sm" type="button" @click="requestDelete()">Delete</AppButton>
           </div>
         </template>
         <EmptyState v-else title="Select a memory." hint="Choose an item from the list." />

@@ -85,7 +85,7 @@ async function mountWith(list: Artifact[], attach = false) {
 
 /** The footer button whose label starts with the given text. */
 function footButton(w: ReturnType<typeof mount>, label: string) {
-  const btn = w.findAll('.ap-foot .ap-btn').find(b => b.text().includes(label));
+  const btn = w.findAll('.ap-foot .app-button').find(b => b.text().includes(label));
   if (!btn) throw new Error(`footer button "${label}" not found`);
   return btn;
 }
@@ -192,7 +192,7 @@ describe('ArtifactViewer — in-situ edit', () => {
     it('resumes an unsaved draft instead of the committed version', async () => {
       const { w } = await mountWith([makeArtifact({ draft: { content: '# left unfinished', updatedAt: Date.now() } })]);
 
-      expect(w.find('.ap-draft-badge').exists()).toBe(true);
+      expect(w.find('.artifact-intent-label--draft').exists()).toBe(true);
       await footButton(w, 'Resume draft').trigger('click');
 
       expect((editor(w).element as HTMLTextAreaElement).value).toBe('# left unfinished');
@@ -227,7 +227,7 @@ describe('ArtifactViewer — in-situ edit', () => {
   it('offers a rename button beside the title', async () => {
     const { w } = await mountWith([makeArtifact()]);
 
-    await w.find('.ap-rename-btn').trigger('click');
+    await w.find('.ap-rename-action').trigger('click');
 
     expect(w.find('input.ap-rename-input').exists()).toBe(true);
   });

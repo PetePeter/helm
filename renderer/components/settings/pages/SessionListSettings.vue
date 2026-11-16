@@ -33,7 +33,7 @@ function onChange(event: Event): void {
 
     <label class="session-list-setting">
       <span>Output preview</span>
-      <select class="btn btn--secondary btn--sm focusable" :value="mode" @change="onChange">
+      <select class="app-select app-select--secondary app-select--sm focusable" :value="mode" @change="onChange">
         <option v-for="m in SESSION_PREVIEW_MODES" :key="m" :value="m">{{ MODE_LABELS[m] }}</option>
       </select>
     </label>

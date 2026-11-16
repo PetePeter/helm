@@ -1,6 +1,6 @@
 import { configClient } from '../ipc/clients.js';
 /**
- * Sessions screen — spawn flow, PTY creation, and terminal area management.
+ * Sessions screen — spawn flow and PTY creation.
  *
  * Extracted from sessions.ts. Depends on sessions.ts for orchestrator state and focus helpers.
  */
@@ -13,26 +13,14 @@ import { findNavIndexBySessionId, isSessionNavItem } from '../session-groups.js'
 
 // Circular import — safe: all usages are inside function bodies, not at module-evaluation time.
 import {
-  loadSessions, refreshSessions, getSessionState, updateSessionsFocus, updateSpawnFocus, updateAllFocus,
+  loadSessions, refreshSessions, getSessionState, updateSessionsFocus, updateAllFocus,
 } from './sessions.js';
 import { getPlannerDirectories, refreshPlanBadges } from './sessions-plans.js';
 
-import { registerView } from '../main-view/main-view-manager.js';
 import { useNavigationStore } from '../stores/navigation.js';
 import { isPaneVisible } from '../dock-visibility-bridge.js';
 import { PANE_PLAN_DIRECTORIES, PANE_QUICK_SPAWN } from '../dock-types.js';
 import { useQuickSpawnStore } from '../stores/quick-spawn.js';
-
-// Register the terminal view with the main-view manager. mount/unmount are
-// no-ops because sessions-spawn owns the terminal container's display via
-// showTerminalArea/hideTerminalArea; the Plan screen handles its own display.
-registerView('terminal', {
-  mount: () => {
-    const termContainer = document.getElementById('terminalContainer');
-    if (termContainer) termContainer.style.display = '';
-  },
-  unmount: () => { /* Plan screen mount handlers hide what they need */ },
-});
 
 // ============================================================================
 // Bridge state (set by main.ts to avoid circular imports)
@@ -154,27 +142,6 @@ export async function doSpawn(cliType: string, workingDir?: string, contextText?
     logEvent('Spawn failed');
   }
   return spawnedId;
-}
-
-// ============================================================================
-// Terminal area visibility
-// ============================================================================
-
-export function showTerminalArea(): void {
-  const termContainer = document.getElementById('terminalContainer');
-  if (termContainer) termContainer.style.display = '';
-  const tm = getTerminalManager();
-  if (tm) {
-    requestAnimationFrame(() => {
-      tm.focusActive();
-      tm.fitActive();
-    });
-  }
-}
-
-export function hideTerminalArea(): void {
-  const termContainer = document.getElementById('terminalContainer');
-  if (termContainer) termContainer.style.display = 'none';
 }
 
 export async function spawnNewSession(cliType?: string, preselectedPath?: string, machineId = ''): Promise<void> {
@@ -322,14 +289,12 @@ export function handleSpawnZone(button: string, dir: string | null): void {
       return;
     }
     sessionsState.spawnFocusIndex = newIndex;
-    updateSpawnFocus();
     return;
   }
   if (dir === 'down') {
     const newIndex = sessionsState.spawnFocusIndex + cols;
     if (newIndex < count) {
       sessionsState.spawnFocusIndex = newIndex;
-      updateSpawnFocus();
     } else if (isPaneVisible(PANE_PLAN_DIRECTORIES) && getPlannerDirectories().length > 0) {
       sessionsState.activeFocus = 'plans';
       sessionsState.plansFocusIndex = 0;
@@ -344,7 +309,6 @@ export function handleSpawnZone(button: string, dir: string | null): void {
     }
     if (sessionsState.spawnFocusIndex % cols > 0) {
       sessionsState.spawnFocusIndex--;
-      updateSpawnFocus();
     }
     return;
   }
@@ -355,7 +319,6 @@ export function handleSpawnZone(button: string, dir: string | null): void {
     }
     if (sessionsState.spawnFocusIndex % cols < cols - 1 && sessionsState.spawnFocusIndex + 1 < count) {
       sessionsState.spawnFocusIndex++;
-      updateSpawnFocus();
     }
     return;
   }

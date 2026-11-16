@@ -6,6 +6,7 @@
  * Replaces the stacked NotificationBubble list for a compact per-session view.
  */
 import { ref, computed, nextTick, watch } from 'vue';
+import AppButton from '../common/AppButton.vue';
 
 const props = defineProps<{
   notifications: Array<{ id: string; title: string; content: string; createdAt?: number; kind?: 'note' }>;
@@ -103,12 +104,14 @@ function formatTime(ts?: number): string {
     </div>
     <div class="carousel-footer">
       <span class="carousel-timestamp">{{ formatTime(current.createdAt) }}</span>
-      <button
-        class="dismiss-btn"
+      <AppButton
+        variant="ghost"
+        size="sm"
+        class="notification-dismiss"
         type="button"
         aria-label="Dismiss current notification"
         @click.stop="dismissCurrent"
-      >Dismiss</button>
+      >Dismiss</AppButton>
     </div>
   </div>
 </template>
@@ -256,20 +259,15 @@ function formatTime(ts?: number): string {
   color: var(--text-secondary);
 }
 
-.dismiss-btn {
+.notification-carousel :deep(.notification-dismiss) {
   min-height: 28px;
-  padding: 4px 12px;
   border: 1px solid rgba(68, 204, 68, 0.7);
   border-radius: 4px;
   background: rgba(68, 204, 68, 0.12);
   color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  line-height: 1.2;
 }
 
-.dismiss-btn:hover {
+.notification-carousel :deep(.notification-dismiss:hover:not(:disabled)) {
   background: rgba(68, 204, 68, 0.25);
 }
 </style>

@@ -75,6 +75,7 @@ internal data class HelmHomeEffectState(
 @Composable
 internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: HelmHomeEffectState) {
     val home = state.home
+    val talkTarget = home.selectedSessionId ?: (state.operator as? OperatorSummary.On)?.id
     val callScreenTarget = home.selectedSessionId
         ?: (state.operator as? OperatorSummary.On)?.id?.takeIf {
             home.destination == Destination.Thread && home.homeTab == HomeTab.Helm
@@ -101,11 +102,12 @@ internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: Hel
     // Keep chat unread state aligned with the session content on screen. The
     // artifact screens count as reading the session too. The Helm home tab also
     // shows the operator's thread without opening it.
-    // The lastCallTarget effect follows call-driven transfers. Don't sync on call-target
-    // updates or a stale chat would transfer the call back.
-    LaunchedEffect(state.liveCall != null, callScreenTarget) {
+    // PTT and selection changes share one target, even while a session list or another
+    // destination is visible. callScreenTarget is only for call-driven navigation below.
+    LaunchedEffect(talkTarget) { PttKey.target = talkTarget }
+    LaunchedEffect(state.liveCall != null, talkTarget) {
         val call = state.liveCall ?: return@LaunchedEffect
-        val target = callScreenTarget ?: return@LaunchedEffect
+        val target = talkTarget ?: return@LaunchedEffect
         if (call.targetId != target) VoiceCallService.retarget(appContext, target)
     }
 
@@ -145,8 +147,6 @@ internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: Hel
     val onScreenThread = home.selectedSessionId
         ?: (state.operator as? OperatorSummary.On)?.id?.takeIf { home.homeTab == HomeTab.Helm }
     val viewedChat = onScreenThread?.takeIf { home.destination == Destination.Thread }
-    val talkTarget = home.selectedSessionId ?: (state.operator as? OperatorSummary.On)?.id
-    LaunchedEffect(talkTarget) { PttKey.target = talkTarget }
     ReportViewedChat(client, viewedChat)
     LaunchedEffect(onScreenThread, home.destination) {
         val reading = home.destination == Destination.Thread ||

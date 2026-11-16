@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from '../common/AppButton.vue';
 /**
  * Generic confirmation dialog with shared modal-stack and gamepad handling.
  */
@@ -114,13 +115,14 @@ function onButtonClick(actionId: string): void {
   selectAction(actionId);
 }
 
-function buttonClass(button: ConfirmDialogButton, index: number): Record<string, boolean> {
+function buttonVariant(button: ConfirmDialogButton): 'primary' | 'secondary' | 'danger' | 'ghost' {
+  if (!button.variant || button.variant === 'default') return 'secondary';
+  return button.variant;
+}
+
+function buttonClass(index: number): Record<string, boolean> {
   return {
-    'btn--focused': internalSelectedIndex.value === index,
-    'btn--primary': button.variant === 'primary',
-    'btn--secondary': button.variant === 'secondary',
-    'btn--danger': button.variant === 'danger',
-    'btn--ghost': button.variant === 'ghost',
+    'app-button--focused': internalSelectedIndex.value === index,
   };
 }
 
@@ -147,15 +149,15 @@ defineExpose({ handleButton, syncSelectedIndex, selectedIndex: internalSelectedI
         </div>
         <slot />
         <div class="modal-footer">
-          <button
+          <AppButton
             v-for="(button, index) in buttons"
             :key="button.id"
-            class="btn"
-            :class="buttonClass(button, index)"
+            :variant="buttonVariant(button)"
+            :class="buttonClass(index)"
             tabindex="-1"
             @keydown="suppressActivationKey"
             @click="onButtonClick(button.id)"
-          >{{ button.label }}</button>
+          >{{ button.label }}</AppButton>
         </div>
       </div>
     </div>

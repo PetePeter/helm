@@ -50,7 +50,6 @@ vi.mock('../renderer/utils', () => ({
   getCliDisplayName: vi.fn((ct: string) => ct),
   resolveCliTypeRecord: vi.fn(() => null),
   toDirection: vi.fn(),
-  getSequenceSyntaxHelpText: vi.fn().mockReturnValue(''),
 }));
 
 vi.mock('../renderer/screens/sessions', () => ({

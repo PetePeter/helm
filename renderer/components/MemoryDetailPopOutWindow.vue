@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from './common/AppButton.vue';
 import type { MemoryRecord } from '../../src/types/memory.js';
 
 defineProps<{
@@ -53,8 +54,8 @@ const emit = defineEmits<{
           </ul>
         </section>
         <footer class="memory-detail-footer">
-          <button type="button" class="btn btn--danger" @click="emit('delete')">Delete memory</button>
-          <button type="button" class="btn" @click="emit('close')">Close</button>
+          <AppButton variant="danger" type="button" @click="emit('delete')">Delete memory</AppButton>
+          <AppButton variant="secondary" type="button" @click="emit('close')">Close</AppButton>
         </footer>
       </article>
     </div>

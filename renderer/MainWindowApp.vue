@@ -755,11 +755,6 @@ const appMenuActions = [
   { icon: '🐛', label: 'Open Logs Folder', run: () => onOpenLogsFolder() },
 ];
 
-function runAppMenuAction(run: () => void): void {
-  dockViewMenuOpen.value = false;
-  run();
-}
-
 function onOpenHelp(): void {
   void systemClient.systemOpenHelp();
 }
@@ -1130,20 +1125,9 @@ onUnmounted(() => {
           @open="dockViewMenuOpen = true"
           @close="dockViewMenuOpen = false"
           @toggle="onDockViewToggle"
+          :actions="appMenuActions"
           @reset="onDockLayoutReset"
-        >
-          <button
-            v-for="action in appMenuActions"
-            :key="action.label"
-            class="dock-view-menu__item"
-            type="button"
-            role="menuitem"
-            @click="runAppMenuAction(action.run)"
-          >
-            <span class="dock-view-menu__icon" aria-hidden="true">{{ action.icon }}</span>
-            <span class="dock-view-menu__label">{{ action.label }}</span>
-          </button>
-        </DockViewMenu>
+        />
       </div>
     </header>
     <StatusStrip

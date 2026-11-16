@@ -2,6 +2,8 @@
 import { appClient, attachmentsClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, schedulerClient, sessionsClient, systemClient, terminalClient } from '../../ipc/clients.js';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { ScheduledTask } from '../../../src/types/scheduled-task.js';
+import EmptyState from '../common/EmptyState.vue';
+import Badge from '../common/Badge.vue';
 
 const emit = defineEmits<{
   open: [taskId: string | null];
@@ -67,7 +69,7 @@ onUnmounted(() => {
     <div class="scheduler-create-split">
       <button class="scheduler-create scheduler-create--main focusable" data-focus-id="scheduler:new" @click.stop="emit('open', null)">
         <span>New Schedule</span>
-        <span class="scheduler-count-badge" aria-label="Total schedules">{{ userTasks.length }}</span>
+        <Badge class="scheduler-total-count" tone="accent" aria-label="Total schedules">{{ userTasks.length }}</Badge>
       </button>
       <button class="scheduler-create scheduler-create--hist focusable" data-focus-id="scheduler:history" type="button" title="Past Schedules" aria-label="Past Schedules" @click.stop="emit('history')">🕘</button>
     </div>
@@ -78,7 +80,12 @@ onUnmounted(() => {
         <span class="scheduler-group-count">{{ scheduleTasks.length }}</span>
       </button>
       <div v-if="!schedulesCollapsed" class="scheduler-group-body">
-        <div v-if="scheduleTasks.length === 0" class="scheduler-empty"><strong>No schedules yet</strong><span>Create a schedule to run a prompt at a time or recurrence.</span></div>
+        <EmptyState
+          v-if="scheduleTasks.length === 0"
+          title="No schedules yet"
+          hint="Create a schedule to run a prompt at a time or recurrence."
+          compact
+        />
         <div
           v-for="task in scheduleTasks"
           :key="task.id"
@@ -180,11 +187,16 @@ onUnmounted(() => {
   text-align: left;
   padding: 0 8px;
 }
-.scheduler-count-badge {
+.scheduler-total-count.badge--accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 1.35em;
+  height: 18px;
   padding: 1px 5px;
   border-radius: 999px;
   background: var(--accent);
+  border: 0;
   color: var(--accent-contrast);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
@@ -251,19 +263,5 @@ onUnmounted(() => {
 .scheduler-action--danger:hover:not(:disabled) {
   border-color: #ff4444;
   color: #ff6666;
-}
-.scheduler-empty {
-  padding: 8px;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  text-align: center;
-}
-.scheduler-empty strong,
-.scheduler-empty span {
-  display: block;
-}
-.scheduler-empty strong {
-  margin-bottom: 2px;
-  color: var(--text-primary);
 }
 </style>

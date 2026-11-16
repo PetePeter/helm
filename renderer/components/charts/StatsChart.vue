@@ -14,6 +14,7 @@ import {
 } from 'chart.js';
 import type { ChartModel } from '../../../src/session/chart-model.js';
 import { buildStatsChartConfig, readStatsChartTheme, type StatsChartKind } from './stats-chart-config.js';
+import EmptyState from '../common/EmptyState.vue';
 
 Chart.register(BarController, BarElement, CategoryScale, Legend, LinearScale, LineController, LineElement, PointElement, Tooltip);
 
@@ -46,12 +47,11 @@ onBeforeUnmount(() => chart?.destroy());
 <template>
   <div ref="host" class="stats-chart">
     <canvas v-if="model.labels.length && model.series.length" ref="canvas" :aria-label="kind === 'tokens' ? 'Tokens per CLI' : 'Time and tokens'" />
-    <p v-else class="stats-chart-empty">No chart data</p>
+    <EmptyState v-else title="No chart data" compact />
   </div>
 </template>
 
 <style scoped>
 .stats-chart { position: relative; width: 100%; height: 250px; min-width: 0; }
 .stats-chart canvas { display: block; max-width: 100%; }
-.stats-chart-empty { margin: 0; color: var(--text-secondary); }
 </style>

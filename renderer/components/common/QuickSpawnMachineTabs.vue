@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppButton from './AppButton.vue';
 import type { QuickSpawnMachine } from '../../stores/quick-spawn.js';
 
 defineProps<{
@@ -33,16 +34,16 @@ function onFocusout(event: FocusEvent): void {
     @focusin="emit('tabsFocus')"
     @focusout="onFocusout"
   >
-    <button
+    <AppButton variant="secondary" size="sm"
       v-for="machine in machines"
       :key="machine.id || 'local'"
-      class="btn btn--sm dir-picker-machine"
+      class="dir-picker-machine"
       :class="{ 'dir-picker-machine--active': machine.id === activeMachineId }"
       type="button"
       role="tab"
       :aria-selected="machine.id === activeMachineId"
       @click="emit('select', machine.id)"
-    >{{ machine.label }}</button>
+    >{{ machine.label }}</AppButton>
   </div>
   <div v-if="loading" class="quick-spawn-status">Loading tools…</div>
   <div v-else-if="error" class="quick-spawn-status quick-spawn-status--error">{{ error }}</div>
