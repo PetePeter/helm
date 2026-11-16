@@ -1,18 +1,67 @@
-# Helm
+<div align="center">
 
-**Helm - steer your fleet of agents**
+# ⎈ Helm
 
-You're running Claude Code in one terminal, Copilot CLI in another, Codex CLI in a third, maybe a fourth session for a side project. Alt-tabbing between them is slow. Finding the right window is annoying. Typing repetitive commands is tedious.
+### Steer your fleet of AI agents.
 
-Pick up your controller. One button spawns a new Claude Code session — it opens as an embedded terminal right inside the app. Another fires up Copilot CLI or Codex CLI in its own tab. The D-pad flips between sessions instantly, auto-selecting the terminal so you can start typing right away. Step away from your desk? Use the Android companion over Bluetooth LE or your local network.
+**Claude Code · Codex · Copilot CLI · Gemini · local models: all in one cockpit, all on call.**
 
-This is a session manager for people who run multiple AI-assisted terminals at once and got tired of the friction.
+[![Release](https://img.shields.io/github/v/release/PetePeter/helm?style=for-the-badge)](https://github.com/PetePeter/helm/releases/latest)
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-universal-000000?style=for-the-badge&logo=apple&logoColor=white)
+![Android](https://img.shields.io/badge/Android-companion-3DDC84?style=for-the-badge&logo=android&logoColor=white)
+
+</div>
+
+---
+
+## 📞 Your agents can call you now.
+
+You kick off five agents and go make coffee. One gets stuck on a decision, and **your phone rings**. You answer, talk it through out loud, and it gets back to work. You hang up and **transfer the call** to the next agent that needs you.
+
+No cloud relay and no subscription lock-in. Your phone talks to your desk over **Bluetooth LE or your own LAN**, end-to-end encrypted.
+
+That's Helm: **a mission-control desktop app for people who run more AI coding agents than they have hands.**
+
+---
+
+## ⚡ What you get
+
+| | |
+|---|---|
+| 🖥️ **Every CLI, one cockpit** | Claude Code, Codex, Copilot CLI, Gemini and any shell run as embedded terminals, with live activity dots and 5-line previews of every session at a glance. |
+| 📱 **Pocket command center** | The Android companion has chat, plans, artifacts, push alerts and **live voice calls** with any session. You can also call **"Helm"**, an operator that routes your request to the right agent. |
+| 🧠 **Agents with a memory** | A project **knowledge graph** that agents write to and recall from automatically, plus nightly **"dreams"** that tidy it and research ideas while you sleep. |
+| 🤝 **Agents that work as a team** | Over Helm's MCP server, agents message each other, claim **plan DAG** items, post to a shared project log ("Mess"), and hand work to fresh workers. |
+| 🌐 **Fleet** | Pair your desktop, laptop and server, then drive sessions on any machine from any other. Pairing uses SAS codes over TLS, and peers can never pose as a local session. |
+| 🛰️ **Event-driven agents** | Cron schedules, terminal-pattern rules and **MQTT triggers** (Home Assistant, sensors, phone systems) start or nudge agents when the world changes. |
+| ⏱️ **Agents that keep promises** | Every session pins a **mission**, a live **todo** list and an **ETA**. Helm scores each estimate, learns your agents' real pace, and tracks your timesheet and token spend. |
+| 💸 **Cache-smart** | It warns when a prompt cache goes stale, auto-freezes idle sessions, keeps warm the ones you care about, and **Quick Compact** reloads a transcript into a fresh session or **a different CLI**. |
+| 🔒 **Paranoid by design** | AI-written HTML renders in an isolated, CSP-locked sandbox. Untrusted payloads never become keystrokes. Phones and peers act under proxy identities with allow-lists and hard-denies. |
+| 🎮 **…and a gamepad** | Yes, really. A D-pad flips sessions and a button spawns one. Drive the whole fleet from the couch. |
+
+---
+
+## 🥊 How it stacks up
+
+| | Helm | Agent tmux wrappers | Kanban/worktree apps | Vendor remote apps |
+|---|:---:|:---:|:---:|:---:|
+| Any CLI, including local models | ✅ | ✅ | ✅ | ❌ one vendor |
+| Live voice calls with agents | ✅ | ❌ | ❌ | ❌ |
+| Phone link with no cloud (BLE/LAN) | ✅ | ❌ | ❌ | ❌ |
+| Drive other machines (Fleet) | ✅ | ❌ | ❌ | ⚠️ |
+| Shared memory graph + dreaming | ✅ | ❌ | ❌ | ❌ |
+| Agent-to-agent messaging + plans | ✅ | ❌ | ⚠️ | ⚠️ |
+| Event triggers (MQTT, cron, patterns) | ✅ | ❌ | ❌ | ❌ |
+| ETA learning, timesheet, token stats | ✅ | ❌ | ❌ | ❌ |
+
+---
 
 ---
 
 ## What Is This?
 
-Helm is an Electron desktop app that lets you control multiple AI coding CLI sessions from a game controller. Each CLI runs as an embedded terminal (via node-pty + xterm.js) — no external windows to manage.
+Helm is an Electron desktop app for running and steering multiple AI coding CLI sessions, from the keyboard, your phone, or a game controller. Each CLI runs as an embedded terminal (via node-pty + xterm.js) — no external windows to manage.
 
 The desktop app ships for **Windows** (installer `.exe`) and **macOS** (universal `.dmg` — native arm64 and x64, no Rosetta). A separate **Android companion** is distributed as a versioned APK in GitHub Releases.
 
@@ -24,6 +73,7 @@ The desktop app ships for **Windows** (installer `.exe`) and **macOS** (universa
 - **Android companion** — View and control sessions, chat, plans, and artifacts over a paired Bluetooth LE or local-network connection; includes voice calls and notifications
 - **Keep session caches warm** — Opt in per session to send a short heartbeat before a supported CLI's prompt cache expires; it turns itself off after eight hours
 - **Physical controls** — D-pad, buttons, and analog sticks replace keyboard shortcuts. Works with Xbox controllers and generic/DirectInput gamepads
+- **MQTT triggers** — Map a broker topic (Home Assistant, Timbre, sensors) to a prompt in an existing, spawned, or reused session; payloads arrive as quoted untrusted data
 - **Session groups** — Sessions grouped by working directory with collapsible headers, bookmarks, and a live preview grid
 - **Directory planning** — Per-folder plan graph with `planning`/`ready`/`coding`/`review`/`blocked`/`done` states, plan sequences, contexts, attachments, and plan chips
 - **Pattern matcher** — Auto-fire sequences when PTY output matches regex rules, with per-session cooldown and scheduled sends
@@ -384,6 +434,10 @@ Settings → MCP Server provides ready-to-use setup instructions for configuring
 
 Helm can run an agent loop directly against an OpenAI-compatible chat-completions endpoint, without launching a CLI process. Replies stream as they are generated, selected native and Helm MCP tools are available to the model, and completed API replies show context size, reasoning counts, and tool-call counts. See [docs/api-tools.md](docs/api-tools.md) for setup and behavior.
 
+## MQTT Triggers
+
+Point Helm at an MQTT broker (for example Home Assistant's Mosquitto) under **Settings → Connections → MQTT triggers**. A rule maps a topic filter (`+`/`#` wildcards) to a prompt template (`{topic}`, `{payload}`, `{payload.a.b}`) and a target: an existing session, or a new session of a chosen CLI in a project folder, optionally reused. A per-rule minimum interval drops floods. Payload values are inserted as quoted untrusted data and are never parsed as key sequences. Agents can manage rules with `mqtt_rule_create` / `mqtt_rule_list` / `mqtt_rule_delete`. The broker is off by default. See [docs/mqtt-triggers.md](docs/mqtt-triggers.md).
+
 ## Fleet (Cross-Machine)
 
 Drive another machine's Helm from this one. Once two machines are paired, a local AI can call the remote Helm's MCP tools by their **native names** — create sessions, read terminals, manage plans — over the LAN. **Off by default**: nothing listens on the network until you enable it.
@@ -514,6 +568,7 @@ User-facing docs are in `docs/`:
 | [group-overview.md](docs/group-overview.md) | Session preview grid — entry/exit, navigation, live previews |
 | [directory-plans.md](docs/directory-plans.md) | Planner canvas, plan lifecycle, persistence, and chips |
 | [config-system.md](docs/config-system.md) | Profile setup, bindings, tool configuration, and sequences |
+| [mqtt-triggers.md](docs/mqtt-triggers.md) | MQTT triggers — topic → prompt rules, targets, untrusted-payload containment |
 | [fleet.md](docs/fleet.md) | Cross-machine Fleet — pairing, peer allow-lists, transport and security model |
 | [artifact-viewer.md](docs/artifact-viewer.md) | Artifact panel — versions, sanitized render, images via `helm-img://` |
 | [recycle-bin.md](docs/recycle-bin.md) | Closed recoverable sessions — 30-day bin, restore-with-resume |
