@@ -393,3 +393,53 @@ describe('ArtifactManager', () => {
   });
 });
 
+
+describe('ArtifactManager — pruneKind', () => {
+  let manager: ArtifactManager;
+  let deleted: string[];
+
+  beforeEach(() => {
+    deleted = [];
+    manager = new ArtifactManager(undefined, makeClock(), (id) => deleted.push(id));
+  });
+
+  it('keeps the newest N of a kind and deletes the older ones', () => {
+    const ids = [0, 1, 2, 3].map(i => manager.create('s1', `snap ${i}`, 'compact', `c${i}`).id);
+
+    manager.pruneKind('s1', 'compact', 3);
+
+    const left = manager.getForSession('s1').map(a => a.id);
+    expect(left).toHaveLength(3);
+    expect(left).not.toContain(ids[0]);
+  });
+
+  it('leaves other kinds in the session untouched', () => {
+    const md = manager.create('s1', 'Report', 'markdown', 'r');
+    const manifesto = manager.create('s1', 'M', 'markdown', 'm', undefined, undefined, 'manifesto');
+    for (let i = 0; i < 4; i++) manager.create('s1', 'snap', 'compact', `c${i}`);
+
+    manager.pruneKind('s1', 'compact', 3);
+
+    const left = manager.getForSession('s1').map(a => a.id);
+    expect(left).toContain(md.id);
+    expect(left).toContain(manifesto.id);
+    expect(left).toHaveLength(5);
+  });
+
+  it('does not touch another session', () => {
+    for (let i = 0; i < 4; i++) manager.create('s2', 'snap', 'compact', `c${i}`);
+    for (let i = 0; i < 4; i++) manager.create('s1', 'snap', 'compact', `c${i}`);
+
+    manager.pruneKind('s1', 'compact', 3);
+
+    expect(manager.count('s2')).toBe(4);
+  });
+
+  it('fires onDelete for each pruned artifact so attachments are cleaned', () => {
+    const ids = [0, 1, 2, 3, 4].map(i => manager.create('s1', 'snap', 'compact', `c${i}`).id);
+
+    manager.pruneKind('s1', 'compact', 3);
+
+    expect(deleted.sort()).toEqual([ids[0], ids[1]].sort());
+  });
+});

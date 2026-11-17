@@ -206,6 +206,18 @@ export class ArtifactManager extends EventEmitter {
   }
 
   /**
+   * Keep only a session's newest `keep` artifacts of one kind, deleting older
+   * ones through `delete()` so attachments and persistence follow suit.
+   */
+  pruneKind(sessionId: string, kind: ArtifactKind, keep: number): void {
+    const stale = (this.artifacts.get(sessionId) ?? [])
+      .filter(a => a.kind === kind)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(keep);
+    for (const artifact of stale) this.delete(artifact.id);
+  }
+
+  /**
    * Rename an artifact. Returns true if found and renamed.
    */
   rename(artifactId: string, newTitle: string): boolean {

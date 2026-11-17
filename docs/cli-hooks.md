@@ -277,6 +277,11 @@ session age, any pending handover note, and the PreCompact
   accepted trade: surviving a compaction happens within the same session, so
   the artifact is alive exactly when it is needed. A durable copy was
   explicitly declined.
+- **Only the newest three are kept** per session (`MAX_COMPACT_SNAPSHOTS`).
+  Each new snapshot prunes the older ones through `ArtifactManager.pruneKind`,
+  so their raw transcript attachments go too. A long-lived session would
+  otherwise pile up one snapshot, plus a transcript of up to 100MB, per
+  compaction.
 - **Handover delivery**: if a handover note was armed (via `session_compact`),
   PreCompact delivers it immediately, ignoring the 15s lull floor. The
   pending entry is removed before delivery, so the fallback lull heuristic's

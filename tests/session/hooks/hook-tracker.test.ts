@@ -670,6 +670,23 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
     }
   });
 
+  it('keeps only the newest three compaction snapshots per session', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      for (let i = 0; i < 4; i++) {
+        s.tracker.snapshot('s1', `compact ${i}`);
+        vi.advanceTimersByTime(1000);
+      }
+
+      const snapshots = s.artifactManager.getForSession('s1').filter(a => a.kind === 'compact');
+      expect(snapshots).toHaveLength(3);
+      expect(snapshots.some(a => a.versions[0].content.includes('compact 0'))).toBe(false);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('SessionStart resets the accumulated facts — the next snapshot starts at zero', () => {
     const s = setup();
     try {

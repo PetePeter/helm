@@ -64,6 +64,8 @@ const FILE_INPUT_KEYS = ['file_path', 'notebook_path', 'filePath', 'notebookPath
 const STALL_REASON_KEYS = ['error', 'error_type', 'errorType', 'reason', 'message'];
 
 export const SNAPSHOT_TITLE = 'Compaction snapshot';
+/** Older snapshots (and their transcript attachments) are pruned past this. */
+export const MAX_COMPACT_SNAPSHOTS = 3;
 
 /** Ephemeral per-session facts accumulated from hook events. Never persisted —
  *  they only exist to compose the PreCompact snapshot. */
@@ -365,6 +367,7 @@ export class HookTracker {
     });
 
     this.deps.artifactManager.create(sessionId, SNAPSHOT_TITLE, 'compact', content, undefined, artifactId);
+    this.deps.artifactManager.pruneKind(sessionId, 'compact', MAX_COMPACT_SNAPSHOTS);
     logger.info(
       `[HookTracker] PreCompact snapshot composed for ${session.name}` +
         ` (trigger: ${trigger ?? 'unknown'}, transcript ${transcriptAttached ? 'attached' : 'absent'})`,
