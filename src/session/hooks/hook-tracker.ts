@@ -88,7 +88,7 @@ export interface HookTrackerDeps {
   /** Normally `notificationManager.flashAttention.bind(notificationManager)`. */
   flashAttention: FlashSink;
   handoverDelivery: Pick<HandoverDelivery, 'deliverFromPreCompact' | 'peek'>;
-  artifactManager: Pick<ArtifactManager, 'create'>;
+  artifactManager: Pick<ArtifactManager, 'create' | 'pruneKind'>;
   artifactAttachments: Pick<ArtifactAttachmentManager, 'add'>;
   /** A turn of the session's own agent finished (Stop); auto memory judges it. */
   onTurnEnded?: (sessionId: string) => void;
