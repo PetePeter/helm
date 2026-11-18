@@ -13,6 +13,9 @@ export interface EtaOverrunDeps {
   /** Overrun threshold in percent for a CLI type; 0 = off. */
   percentFor: (cliType: string) => number;
   stop: (sessionId: string) => Promise<void>;
+  /** Wait out the stop's redraw so the nudge's submit is not eaten mid-cancel
+   *  (Codex left it unsent). Resolves false on timeout; the nudge goes anyway. */
+  settle: (sessionId: string) => Promise<boolean>;
   /** One-line system reminder to the session. */
   nudge: (sessionId: string, text: string) => Promise<void>;
   now?: () => number;
@@ -30,6 +33,7 @@ export async function sweepEtaOverruns(deps: EtaOverrunDeps): Promise<void> {
     deps.sessions.updateSession(session.id, { eta: { ...eta, overrunAt: now } });
     try {
       await deps.stop(session.id);
+      await deps.settle(session.id);
       await deps.nudge(session.id, overrunNudge(session, eta, now, percent, deps.sessions));
     } catch (err) {
       logger.warn(`[EtaOverrun] Could not stop ${session.id}: ${err instanceof Error ? err.message : String(err)}`);

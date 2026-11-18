@@ -23,21 +23,23 @@ function worker(extra: Partial<SessionInfo> = {}): SessionInfo {
   return session('worker', { eta: { at: T0 + 20 * MIN, setAt: T0, startedAt: T0, firstAt: T0 + 20 * MIN }, ...extra });
 }
 
-function setup(sessions: SessionInfo[], percent = 50) {
+function setup(sessions: SessionInfo[], percent = 50, settled = true) {
   const manager = new SessionManager();
   for (const s of sessions) manager.addSession(s, true);
   let now = T0;
   const stopped: string[] = [];
   const nudges: Array<{ id: string; text: string }> = [];
+  const order: string[] = [];
   const deps: EtaOverrunDeps = {
     sessions: manager,
     percentFor: () => percent,
-    stop: async (id) => { stopped.push(id); },
-    nudge: async (id, text) => { nudges.push({ id, text }); },
+    stop: async (id) => { stopped.push(id); order.push('stop'); },
+    settle: async () => { order.push('settle'); return settled; },
+    nudge: async (id, text) => { nudges.push({ id, text }); order.push('nudge'); },
     now: () => now,
   };
   return {
-    manager, stopped, nudges,
+    manager, stopped, nudges, order,
     sweepAt: async (minutes: number) => { now = T0 + minutes * MIN; await sweepEtaOverruns(deps); },
   };
 }
@@ -58,6 +60,18 @@ describe('sweepEtaOverruns', () => {
     expect(t.stopped).toEqual(['worker']);
     expect(t.nudges).toHaveLength(1);
     expect(t.nudges[0].text).not.toMatch(/\n/);
+  });
+
+  it('waits for the stop to settle before nudging, so the submit is not eaten mid-cancel', async () => {
+    const t = setup([worker()]);
+    await t.sweepAt(30);
+    expect(t.order).toEqual(['stop', 'settle', 'nudge']);
+  });
+
+  it('still nudges when the session never goes quiet', async () => {
+    const t = setup([worker()], 50, false);
+    await t.sweepAt(30);
+    expect(t.nudges).toHaveLength(1);
   });
 
   it('does not fire twice for the same estimate', async () => {
@@ -113,6 +127,7 @@ describe('sweepEtaOverruns', () => {
       sessions: manager,
       percentFor: () => 50,
       stop: async () => { throw new Error('pty gone'); },
+      settle: async () => true,
       nudge: async () => {},
       now: () => T0 + 30 * MIN,
     };
