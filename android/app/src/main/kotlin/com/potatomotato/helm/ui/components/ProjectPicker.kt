@@ -17,6 +17,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmProject
+import com.potatomotato.helm.data.visibleProjectsForPicker
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
@@ -37,6 +38,8 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  * id: the caller decides which key its surface wants, and neither has to be
  * re-derived from the other.
  *
+ * Projects marked hiddenFromPicker are omitted from the choices. A currently
+ * selected project can remain the displayed scope until the user changes it.
  * Stateless but for the menu's own open/closed flag, which is not state anyone
  * above needs and would be wrong to survive a rotation.
  */
@@ -48,6 +51,10 @@ fun ProjectPicker(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val visibleProjects = when (projects) {
+        is LoadView.Ready -> visibleProjectsForPicker(projects.data)
+        else -> emptyList()
+    }
     Column(modifier = modifier.fillMaxWidth().background(HelmColors.Surface)) {
         when (projects) {
             LoadView.Loading -> PickerLine(stringResource(R.string.projects_loading), HelmColors.Faint)
@@ -60,20 +67,20 @@ fun ProjectPicker(
                 onClick = onRetry,
             )
 
-            is LoadView.Ready -> if (projects.data.isEmpty()) {
+            is LoadView.Ready -> if (visibleProjects.isEmpty()) {
                 PickerLine(stringResource(R.string.projects_none), HelmColors.Faint)
             } else {
                 // The row IS the anchor here — a full-width line rather than a
                 // pill — but the menu itself comes from [HelmDropdown], so this
                 // picker cannot drift from the rest of the app's dropdowns.
                 HelmDropdown(
-                    items = projects.data.map { project ->
+                    items = visibleProjects.map { project ->
                         HelmDropdownItem(
                             label = project.name,
                             selected = project.id == selected?.id,
                         )
                     },
-                    onSelect = { index -> onSelect(projects.data[index]) },
+                    onSelect = { index -> onSelect(visibleProjects[index]) },
                 ) { expanded, open ->
                     PickerLine(
                         text = selected?.name ?: stringResource(R.string.projects_choose),

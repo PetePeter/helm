@@ -652,6 +652,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   projectUpdate: (id: string, patch: { name: string }) =>
     ipcRenderer.invoke('project:update', id, patch),
 
+  /** Hide or restore a project in the phone's project picker without changing its data. */
+  projectSetHiddenFromPicker: (id: string, hidden: boolean) =>
+    ipcRenderer.invoke('project:setHiddenFromPicker', id, hidden),
+
   /** Delete a project record */
   projectDelete: (id: string) => ipcRenderer.invoke('project:delete', id),
 

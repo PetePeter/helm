@@ -58,6 +58,17 @@ export function setupProjectHandlers(
     }
   });
 
+  ipcMain.handle('project:setHiddenFromPicker', (_event, id: string, hidden: boolean) => {
+    try {
+      projectStore.setHiddenFromPicker(id, hidden);
+      projectStore.save();
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] Failed to update project picker visibility for ${id}: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('project:create', (_event, dirPath: string, name?: string) => {
     try {
       validateProjectDirectory(dirPath);

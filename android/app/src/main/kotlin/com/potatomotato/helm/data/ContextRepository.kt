@@ -20,7 +20,12 @@ data class HelmProject(
     val id: String,
     val name: String,
     val canonicalPath: String,
+    val hiddenFromPicker: Boolean = false,
 )
+
+/** Keep all projects in repository state, but offer only visible ones as picker choices. */
+fun visibleProjectsForPicker(projects: List<HelmProject>): List<HelmProject> =
+    projects.filterNot { it.hiddenFromPicker }
 
 /**
  * A context node's write permission, as the desktop's `ContextPermission` union
@@ -147,8 +152,8 @@ class ContextRepository {
     }
 
     /**
-     * Take a `project_list` result — a JSON array of `{id, name, canonicalPath,
-     * directories, rootKind}`. Only the three fields the phone shows are kept.
+     * Take a `project_list` result. Hidden projects stay in the repository for
+     * project-scoped data access; the picker filters them at the presentation layer.
      */
     fun projectsArrived(result: Any?): Boolean {
         val array = result as? JSONArray ?: run {
@@ -162,6 +167,7 @@ class ContextRepository {
                 id = id,
                 name = entry.opt("name") as? String ?: id,
                 canonicalPath = entry.opt("canonicalPath") as? String ?: "",
+                hiddenFromPicker = entry.optBoolean("hiddenFromPicker", false),
             )
         }
         // The desktop answers in creation order; the pickers read A-Z, so the

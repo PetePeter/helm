@@ -11,6 +11,7 @@ import ProjectsTab from '../../../renderer/components/settings/pages/ProjectsTab
 const mocks = vi.hoisted(() => ({
   projectList: vi.fn(),
   projectUpdate: vi.fn(),
+  projectSetHiddenFromPicker: vi.fn(),
   projectDelete: vi.fn(),
   projectCreate: vi.fn(),
   projectAddDir: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
   projectsClient: {
     projectList: mocks.projectList,
     projectUpdate: mocks.projectUpdate,
+    projectSetHiddenFromPicker: mocks.projectSetHiddenFromPicker,
     projectDelete: mocks.projectDelete,
     projectCreate: mocks.projectCreate,
     projectAddDir: mocks.projectAddDir,
@@ -70,6 +72,7 @@ describe('ProjectsTab', () => {
     vi.clearAllMocks();
     mocks.projectList.mockResolvedValue([baseProject]);
     mocks.projectUpdate.mockResolvedValue({ success: true });
+    mocks.projectSetHiddenFromPicker.mockResolvedValue({ success: true });
     mocks.projectDelete.mockResolvedValue({ success: true });
     mocks.projectCreate.mockResolvedValue({ success: true });
     mocks.projectAddDir.mockResolvedValue({ success: true });
@@ -104,6 +107,24 @@ describe('ProjectsTab', () => {
     expect(mocks.projectUpdate).toHaveBeenCalledWith('project-1', { name: 'Renamed Repo' });
     expect(mocks.projectList).toHaveBeenCalledTimes(2);
 
+    wrapper.unmount();
+  });
+
+  it('hides a project from the phone picker while keeping it in settings', async () => {
+    mocks.projectList
+      .mockResolvedValueOnce([baseProject])
+      .mockResolvedValueOnce([{ ...baseProject, hiddenFromPicker: true }]);
+    const wrapper = mountProjectsTab();
+    await flushPromises();
+
+    const hideButton = wrapper.findAll('button').find(button => button.text() === 'Hide from Picker');
+    expect(hideButton).toBeTruthy();
+    await hideButton!.trigger('click');
+    await flushPromises();
+
+    expect(mocks.projectSetHiddenFromPicker).toHaveBeenCalledWith('project-1', true);
+    expect(wrapper.text()).toContain('Repo');
+    expect(wrapper.findAll('button').some(button => button.text() === 'Show in Picker')).toBe(true);
     wrapper.unmount();
   });
 });

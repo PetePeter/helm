@@ -19,6 +19,7 @@ interface ProjectRecord {
   alternatePaths: string[];
   createdAt: number;
   updatedAt: number;
+  hiddenFromPicker?: boolean;
 }
 
 const projects = ref<ProjectRecord[]>([]);
@@ -146,6 +147,15 @@ async function onAddDir(projectId: string): Promise<void> {
   await refresh();
 }
 
+async function onHiddenFromPickerChange(project: ProjectRecord): Promise<void> {
+  try {
+    errorMessage.value = '';
+    const result = await projectsClient.projectSetHiddenFromPicker(project.id, !project.hiddenFromPicker);
+    if (result?.success === false) errorMessage.value = result.error || 'Project visibility update failed';
+  } catch (error) { errorMessage.value = String(error); }
+  await refresh();
+}
+
 async function onRemoveDir(projectId: string, dirPath: string): Promise<void> {
   try {
     errorMessage.value = '';
@@ -219,6 +229,12 @@ async function onSetMainDir(projectId: string, dirPath: string): Promise<void> {
             title="Rename project"
             @click="startEditing(project)"
           >Rename</AppButton>
+
+          <AppButton variant="secondary" size="sm"
+            class="focusable"
+            :title="project.hiddenFromPicker ? 'Show in phone project picker' : 'Hide from phone project picker'"
+            @click="onHiddenFromPickerChange(project)"
+          >{{ project.hiddenFromPicker ? 'Show in Picker' : 'Hide from Picker' }}</AppButton>
 
           <AppButton variant="danger" size="sm"
             class="focusable"

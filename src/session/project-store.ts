@@ -175,6 +175,16 @@ export class ProjectStore {
     this.notifyChanged();
   }
 
+  setHiddenFromPicker(projectId: string, hidden: boolean): void {
+    const record = this.requireRecord(projectId);
+    if ((record.hiddenFromPicker === true) === hidden) return;
+    if (hidden) record.hiddenFromPicker = true;
+    else delete record.hiddenFromPicker;
+    record.updatedAt = Date.now();
+    this.dirty = true;
+    this.notifyChanged();
+  }
+
   delete(projectId: string): void {
     const idx = this.records.findIndex((r) => r.id === projectId);
     if (idx < 0) return;

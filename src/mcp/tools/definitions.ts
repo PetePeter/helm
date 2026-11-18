@@ -762,7 +762,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'project_list',
     title: 'List Projects',
-    description: 'List all known projects with their IDs, names, canonical paths, and root kinds (folders via project_dir_list). Call this before creating plans or sessions to discover which project directories Helm tracks.',
+    description: 'List all known projects, including projects hidden from the phone picker. Each result includes hiddenFromPicker so clients can filter for display; hidden projects remain fully addressable by MCP. Results include IDs, names, and canonical paths (list folders via project_dir_list). Call this before creating plans or sessions to discover which project directories Helm tracks.',
     inputSchema: {
       type: 'object',
       properties: {},

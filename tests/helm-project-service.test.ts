@@ -104,4 +104,17 @@ describe('HelmProjectService project rename/delete', () => {
     const service = new HelmProjectService(new ProjectStore(projectsFile));
     expect(() => service.deleteProject('nope')).toThrow(/not found/i);
   });
+
+  it('keeps hidden projects in the MCP project list with their visibility flag', () => {
+    const store = new ProjectStore(projectsFile);
+    const visible = store.createProject(realDir, 'Visible');
+    const hidden = store.createProject(path.join(tmpDir, 'hidden-project'), 'Hidden');
+    store.setHiddenFromPicker(hidden.id, true);
+    store.save();
+
+    const projects = new HelmProjectService(new ProjectStore(projectsFile)).listProjects();
+    expect(projects).toHaveLength(2);
+    expect(projects.find(project => project.id === visible.id)).toMatchObject({ hiddenFromPicker: false });
+    expect(projects.find(project => project.id === hidden.id)).toMatchObject({ hiddenFromPicker: true });
+  });
 });

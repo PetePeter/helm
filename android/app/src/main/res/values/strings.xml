@@ -113,7 +113,7 @@
 
     <string name="projects_label">PROJECT</string>
     <string name="projects_loading">Reading projects…</string>
-    <string name="projects_none">Helm is tracking no projects yet.</string>
+    <string name="projects_none">Helm has no visible projects.</string>
     <string name="projects_choose">Choose a project</string>
     <string name="projects_expand_glyph">▾</string>
 

@@ -68,6 +68,7 @@ export class HelmProjectService {
       canonicalPath: r.canonicalPath,
       directories: [r.canonicalPath],
       memoryPrivate: r.memoryPrivate === true,
+      hiddenFromPicker: r.hiddenFromPicker === true,
     }));
   }
 

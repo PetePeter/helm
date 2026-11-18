@@ -405,5 +405,20 @@ describe('ProjectStore', () => {
       const store2 = new ProjectStore(projectsFile);
       expect(store2.getById(record.id)?.alternatePaths).toContain(norm('X:\\coding\\worktree-b'));
     });
+
+    it('persists picker visibility without removing the project', () => {
+      const store = new ProjectStore(projectsFile);
+      const record = store.resolveForPath('X:\\coding\\repo');
+      store.setHiddenFromPicker(record.id, true);
+      store.save();
+
+      const reloaded = new ProjectStore(projectsFile);
+      expect(reloaded.list()).toHaveLength(1);
+      expect(reloaded.getById(record.id)?.hiddenFromPicker).toBe(true);
+
+      reloaded.setHiddenFromPicker(record.id, false);
+      reloaded.save();
+      expect(new ProjectStore(projectsFile).getById(record.id)?.hiddenFromPicker).toBeUndefined();
+    });
   });
 });

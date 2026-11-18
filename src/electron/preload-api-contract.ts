@@ -151,6 +151,7 @@ export const PRELOAD_API_DOMAINS = {
     'projectGet',
     'projectCreate',
     'projectUpdate',
+    'projectSetHiddenFromPicker',
     'projectDelete',
     'projectAddDir',
     'projectRemoveDir',

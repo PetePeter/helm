@@ -10,7 +10,7 @@ import org.junit.Test
  * The repository behind the context browser.
  *
  * `project_list` answers a JSON ARRAY of `{id, name, canonicalPath, directories,
- * rootKind}` — only the three fields the phone shows are kept — and `context_list`
+ * rootKind, hiddenFromPicker}` — the phone keeps its display fields and visibility — and `context_list`
  * / `context_get` answer context nodes with their full `content`, a free-text
  * `type`, a `readonly`/`writable` permission and a nullable canvas position.
  *
@@ -43,6 +43,23 @@ class ContextRepositoryTest {
             ),
             (repo.projects.value as ProjectList.Ready).projects,
         )
+    }
+
+    @Test
+    fun `hidden projects remain loaded but are omitted from picker choices`() {
+        assertTrue(
+            repo.projectsArrived(
+                parse(
+                    """[{"id":"visible","name":"Visible","canonicalPath":"/v"},""" +
+                        """{"id":"hidden","name":"Hidden","canonicalPath":"/h","hiddenFromPicker":true}]""",
+                ),
+            ),
+        )
+
+        val loaded = (repo.projects.value as ProjectList.Ready).projects
+        assertEquals(listOf("hidden", "visible"), loaded.map { it.id })
+        assertEquals(listOf("visible"), visibleProjectsForPicker(loaded).map { it.id })
+        assertTrue(loaded.first { it.id == "hidden" }.hiddenFromPicker)
     }
 
     @Test

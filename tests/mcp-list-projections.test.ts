@@ -62,11 +62,11 @@ describe('MCP list projections', () => {
     expect(item).not.toHaveProperty('sharedMemory');
   });
 
-  it('project_list drops the nested directory list, keeping the fields the phone reads', async () => {
+  it('project_list drops directories but keeps the hidden-picker flag for phone filtering', async () => {
     const item = await first({
-      listProjects: () => [{ id: 'pr', name: 'Helm', canonicalPath: 'x:/repo', directories: [{ path: 'x:/repo' }] }],
+      listProjects: () => [{ id: 'pr', name: 'Helm', canonicalPath: 'x:/repo', directories: [{ path: 'x:/repo' }], hiddenFromPicker: true }],
     }, 'project_list');
-    expect(item).toMatchObject({ id: 'pr', name: 'Helm', canonicalPath: 'x:/repo' });
+    expect(item).toMatchObject({ id: 'pr', name: 'Helm', canonicalPath: 'x:/repo', hiddenFromPicker: true });
     expect(item).not.toHaveProperty('directories');
   });
 

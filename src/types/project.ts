@@ -16,6 +16,8 @@ export interface ProjectRecord {
   messPokeCooldownMinutes?: number;
   /** Keep this project's memories out of other projects' search. Absent = shared. */
   memoryPrivate?: boolean;
+  /** Keep this project out of the phone's project picker. Absent = visible. */
+  hiddenFromPicker?: boolean;
 }
 
 export interface MessProjectSettings {
