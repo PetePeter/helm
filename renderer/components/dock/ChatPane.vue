@@ -12,6 +12,7 @@ import { chatOriginLabel, formatChatFileSize, splitChatLinks } from '../../chat-
 import { artifactsClient, dialogClient, systemClient } from '../../ipc/clients.js';
 import { showChatContextMenu } from '../../stores/modal-bridge.js';
 import { useChatPasteUpload } from '../../composables/useChatPasteUpload.js';
+import { useComposerDiagnostics } from '../../composables/useComposerDiagnostics.js';
 import type { Session } from '../../state.js';
 
 const props = defineProps<{ paneActive?: boolean }>();
@@ -27,6 +28,7 @@ const selectedSession = computed(() => appStore.state.sessions.find(session =>
 const messages = computed(() => selectedSession.value ? chat.messagesFor(selectedSession.value.id) : []);
 const thread = ref<HTMLElement | null>(null);
 const composerInput = ref<HTMLTextAreaElement | null>(null);
+const logComposerDiagnostics = useComposerDiagnostics('chat', composerInput, () => selectedSession.value?.id ?? null);
 
 const draft = computed({
   get: () => selectedSession.value ? chat.draftFor(selectedSession.value.id) : '',
@@ -187,10 +189,26 @@ watch(() => [appStore.state.activeSessionId, messages.value.length], async () =>
 watch(() => [props.paneActive, selectedSession.value?.id] as const, ([active, sessionId]) => {
   chat.setViewedSession(active ? sessionId ?? null : null);
 }, { immediate: true });
-watch(() => appStore.state.activeSessionId, async () => {
+watch(() => appStore.state.activeSessionId, async (sessionId, previousSessionId) => {
+  const shouldLog = props.paneActive;
+  if (shouldLog) {
+    logComposerDiagnostics('session-change-before-refocus', {
+      previousSessionId: previousSessionId ?? null,
+      nextSessionId: sessionId ?? null,
+    });
+  }
   await nextTick();
-  if (!props.paneActive) return;
-  composerInput.value?.focus();
+  if (!props.paneActive) {
+    if (shouldLog) logComposerDiagnostics('session-change-refocus-skipped', { reason: 'pane-inactive' });
+    return;
+  }
+  if (!composerInput.value) {
+    if (shouldLog) logComposerDiagnostics('session-change-refocus-skipped', { reason: 'composer-missing' });
+    return;
+  }
+  if (shouldLog) logComposerDiagnostics('session-change-refocus-requested');
+  composerInput.value.focus();
+  if (shouldLog) logComposerDiagnostics('session-change-refocus-complete');
 });
 </script>
 

@@ -136,8 +136,54 @@ export function installKeyRouter(env: KeyEnvironment, onKeydown?: (event: Keyboa
 
     for (const handler of listKeyHandlers()) {
       if (!isEligible(handler, ctx)) continue;
-      if (handler.claims && !handler.claims(ctx)) continue;
-      if (!handler.handle(ctx)) continue;
+      let phase: 'claims' | 'handle' = 'claims';
+      let handled = false;
+      try {
+        if (handler.claims && !handler.claims(ctx)) continue;
+        phase = 'handle';
+        handled = handler.handle(ctx);
+      } catch (error) {
+        console.error('[KeyboardHandlerFailure]', JSON.stringify({
+          at: Date.now(),
+          handlerId: handler.id,
+          handlerScope: handler.scope,
+          phase,
+          eventCode: event.code,
+          inputScope: ctx.scope,
+          focusedPane: ctx.focusedPane,
+          sessionId: ctx.activeSessionId,
+          activeElement: describeParkedFocus(),
+          defaultPrevented: event.defaultPrevented,
+          errorName: error instanceof Error ? error.name : typeof error,
+        }));
+        throw error;
+      }
+      if (!handled) continue;
+
+      const activeElement = document.activeElement;
+      const composerSurface = activeElement instanceof HTMLElement
+        ? activeElement.matches('.chat-pane__input')
+          ? 'chat'
+          : activeElement.matches('.draft-pane__input')
+            ? 'draft'
+            : null
+        : null;
+      if (event.code === 'Space' && ctx.scope === 'editable' && composerSurface) {
+        console.info('[ComposerInput]', JSON.stringify({
+          at: Date.now(),
+          surface: composerSurface,
+          event: 'space-consumed-by-keyboard-handler',
+          sessionId: ctx.activeSessionId,
+          focused: true,
+          activeElement: describeParkedFocus(),
+          handlerId: handler.id,
+          handlerScope: handler.scope,
+          eventCode: event.code,
+          inputScope: ctx.scope,
+          focusedPane: ctx.focusedPane,
+          defaultPrevented: event.defaultPrevented,
+        }));
+      }
 
       event.preventDefault();
       event.stopPropagation();

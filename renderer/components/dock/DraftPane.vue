@@ -16,6 +16,7 @@ import EmptyState from '../common/EmptyState.vue';
 import { useAppStore } from '../../stores/app.js';
 import { useChatStore } from '../../stores/chat.js';
 import { useDraft } from '../../composables/useDraft.js';
+import { useComposerDiagnostics } from '../../composables/useComposerDiagnostics.js';
 import { useTimeActivity } from '../../composables/useTimeActivity.js';
 import { DRAFT_MAX_BYTES, type DraftSend } from '../../../src/types/draft.js';
 import { deliverBulkText } from '../../paste-handler.js';
@@ -29,6 +30,7 @@ const { text, pad, loading, dirty, conflict, error, bytes, edit, flush, keepMine
 const timeActivity = useTimeActivity(() => (state.activeSessionId ? { sessionId: state.activeSessionId } : null));
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+const logDraftDiagnostics = useComposerDiagnostics('draft', inputRef, () => state.activeSessionId ?? null);
 const view = ref<'draft' | 'history'>('draft');
 const history = ref<DraftSend[]>([]);
 const historyError = ref('');
@@ -80,8 +82,25 @@ watch(text, async (next) => {
   const el = inputRef.value;
   if (!el || el.value === next) return; // the user's own keystroke: the DOM is already there
   const { selectionStart, selectionEnd } = el;
+  const restoredStart = Math.min(selectionStart, next.length);
+  const restoredEnd = Math.min(selectionEnd, next.length);
+  const wasFocused = document.activeElement === el;
+  if (wasFocused) {
+    logDraftDiagnostics('external-update-before-caret-restore', {
+      nextLength: next.length,
+      requestedSelectionStart: restoredStart,
+      requestedSelectionEnd: restoredEnd,
+    });
+  }
   await nextTick();
-  el.setSelectionRange(Math.min(selectionStart, next.length), Math.min(selectionEnd, next.length));
+  el.setSelectionRange(restoredStart, restoredEnd);
+  if (wasFocused) {
+    logDraftDiagnostics('external-update-after-caret-restore', {
+      requestedSelectionStart: restoredStart,
+      requestedSelectionEnd: restoredEnd,
+      focusRetained: document.activeElement === el,
+    });
+  }
 }, { flush: 'pre' });
 
 function onInput(event: Event): void {
