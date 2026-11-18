@@ -269,8 +269,10 @@ export class ProfileRuntimeComposition {
         sessions: runtime.sessionManager,
         percentFor: cli => runtime.configLoader.getCliTypeEntry(cli)?.overrunStopPercent ?? 0,
         stop: id => delivery.stopSession(id),
-        settle: id => this.ptyManager.waitForQuiet(id),
-        nudge: (id, text) => delivery.sendSystemReminder(id, text),
+        isIdle: id => runtime.sessionManager.getSession(id)?.activityLevel !== 'active',
+        nudge: (id, text) => new Promise<boolean>((resolve, reject) => {
+          delivery.sendSystemReminder(id, text, { onVerification: resolve }).catch(reject);
+        }),
       });
     }
   }

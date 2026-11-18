@@ -23,7 +23,8 @@ function worker(extra: Partial<SessionInfo> = {}): SessionInfo {
   return session('worker', { eta: { at: T0 + 20 * MIN, setAt: T0, startedAt: T0, firstAt: T0 + 20 * MIN }, ...extra });
 }
 
-function setup(sessions: SessionInfo[], percent = 50, settled = true) {
+/** idleAfter: stops needed before the session reads idle (Infinity = never). */
+function setup(sessions: SessionInfo[], percent = 50, idleAfter = 1, delivered = true) {
   const manager = new SessionManager();
   for (const s of sessions) manager.addSession(s, true);
   let now = T0;
@@ -34,8 +35,9 @@ function setup(sessions: SessionInfo[], percent = 50, settled = true) {
     sessions: manager,
     percentFor: () => percent,
     stop: async (id) => { stopped.push(id); order.push('stop'); },
-    settle: async () => { order.push('settle'); return settled; },
-    nudge: async (id, text) => { nudges.push({ id, text }); order.push('nudge'); },
+    isIdle: () => stopped.length >= idleAfter,
+    sleep: async (ms) => { order.push(`sleep ${ms}`); },
+    nudge: async (id, text) => { nudges.push({ id, text }); order.push('nudge'); return delivered; },
     now: () => now,
   };
   return {
@@ -62,15 +64,23 @@ describe('sweepEtaOverruns', () => {
     expect(t.nudges[0].text).not.toMatch(/\n/);
   });
 
-  it('waits for the stop to settle before nudging, so the submit is not eaten mid-cancel', async () => {
-    const t = setup([worker()]);
+  it('nudges only once a stop has left the session idle, so the submit is not eaten mid-cancel', async () => {
+    const t = setup([worker()], 50, 3);
     await t.sweepAt(30);
-    expect(t.order).toEqual(['stop', 'settle', 'nudge']);
+    expect(t.order).toEqual(['stop', 'sleep 3000', 'stop', 'sleep 3000', 'stop', 'sleep 3000', 'nudge']);
   });
 
-  it('still nudges when the session never goes quiet', async () => {
-    const t = setup([worker()], 50, false);
+  it('gives up without nudging after 5 stops that never leave it idle', async () => {
+    const t = setup([worker()], 50, Infinity);
     await t.sweepAt(30);
+    expect(t.stopped).toHaveLength(5);
+    expect(t.nudges).toEqual([]);
+  });
+
+  it('an unconfirmed nudge does not throw or retry next sweep', async () => {
+    const t = setup([worker()], 50, 1, false);
+    await t.sweepAt(30);
+    await t.sweepAt(31);
     expect(t.nudges).toHaveLength(1);
   });
 
@@ -127,8 +137,9 @@ describe('sweepEtaOverruns', () => {
       sessions: manager,
       percentFor: () => 50,
       stop: async () => { throw new Error('pty gone'); },
-      settle: async () => true,
-      nudge: async () => {},
+      isIdle: () => true,
+      sleep: async () => {},
+      nudge: async () => true,
       now: () => T0 + 30 * MIN,
     };
     await expect(sweepEtaOverruns(deps)).resolves.toBeUndefined();

@@ -85,9 +85,13 @@ flowchart LR
   T[60 s ETA sweep] --> C{elapsed &gt; estimate × 1 + threshold%<br/>and not yet fired?}
   C -- no --> T
   C -- yes --> M[mark eta.overrunAt] --> S[CLI stop action<br/>Helm actions → stop, else Esc burst]
-  S --> N["[HELM_OVERRUN] reminder:<br/>stuck? ask helper. else rescope"]
+  S --> W[wait 3s] --> I{idle?}
+  I -- "no, < 5 stops" --> S
+  I -- "no, 5 stops" --> G[give up, log]
+  I -- yes --> N["[HELM_OVERRUN] reminder:<br/>stuck? ask helper. else rescope"]
 ```
 
+- **Stop until idle, then nudge.** A reminder typed into a CLI still cancelling its turn sits unsent (Codex swallows the Enter), so Helm repeats stop + 3 s wait up to 5 times until the session reads idle, then delivers the reminder with submit verification and retry. Still busy after 5 → no reminder, logged.
 - **Once per estimate.** `eta.overrunAt` is set before the stop, so a failed stop never retries every minute. Any `session_eta_set` builds a fresh estimate without the marker, which rearms it against the new time.
 - **Who to ask**, first that still exists: `reportsTo` (the orchestrator) → `createdBySessionId` (the local session that called `session_create`, any role; persisted) → the user.
 - The stop is the same `stopSession` path Quick Compact uses, so a CLI type's configured stop sequence applies.

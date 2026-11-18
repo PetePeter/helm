@@ -13,13 +13,20 @@ export interface EtaOverrunDeps {
   /** Overrun threshold in percent for a CLI type; 0 = off. */
   percentFor: (cliType: string) => number;
   stop: (sessionId: string) => Promise<void>;
-  /** Wait out the stop's redraw so the nudge's submit is not eaten mid-cancel
-   *  (Codex left it unsent). Resolves false on timeout; the nudge goes anyway. */
-  settle: (sessionId: string) => Promise<boolean>;
-  /** One-line system reminder to the session. */
-  nudge: (sessionId: string, text: string) => Promise<void>;
+  /** True once the session has stopped working. */
+  isIdle: (sessionId: string) => boolean;
+  /** One-line system reminder; resolves whether delivery was confirmed submitted. */
+  nudge: (sessionId: string, text: string) => Promise<boolean>;
+  sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 }
+
+/** A nudge typed into a CLI still cancelling its turn sits unsent (Codex ate the
+ *  Enter), so stop until the session reads idle before nudging. */
+const STOP_ATTEMPTS = 5;
+const STOP_SETTLE_MS = 3_000;
+
+const defaultSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 export async function sweepEtaOverruns(deps: EtaOverrunDeps): Promise<void> {
   const now = (deps.now ?? Date.now)();
@@ -32,13 +39,27 @@ export async function sweepEtaOverruns(deps: EtaOverrunDeps): Promise<void> {
     // Mark first: a failed stop must not retry every sweep.
     deps.sessions.updateSession(session.id, { eta: { ...eta, overrunAt: now } });
     try {
-      await deps.stop(session.id);
-      await deps.settle(session.id);
-      await deps.nudge(session.id, overrunNudge(session, eta, now, percent, deps.sessions));
+      if (!await stopUntilIdle(session.id, deps)) {
+        logger.warn(`[EtaOverrun] ${session.id} still busy after ${STOP_ATTEMPTS} stops; not nudging`);
+        continue;
+      }
+      if (!await deps.nudge(session.id, overrunNudge(session, eta, now, percent, deps.sessions))) {
+        logger.warn(`[EtaOverrun] Nudge to ${session.id} was not confirmed submitted`);
+      }
     } catch (err) {
       logger.warn(`[EtaOverrun] Could not stop ${session.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+}
+
+async function stopUntilIdle(sessionId: string, deps: EtaOverrunDeps): Promise<boolean> {
+  const sleep = deps.sleep ?? defaultSleep;
+  for (let attempt = 0; attempt < STOP_ATTEMPTS; attempt++) {
+    await deps.stop(sessionId);
+    await sleep(STOP_SETTLE_MS);
+    if (deps.isIdle(sessionId)) return true;
+  }
+  return false;
 }
 
 function overrunDueAt(eta: SessionEta, percent: number): number {
