@@ -213,8 +213,9 @@ internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: Hel
             home.destination == Destination.Sheet ->
                 if (state.clis.isEmpty() || !client.workspace.control.wantsClisOf(null)) client.workspace.refreshClis()
             home.destination == Destination.Spawn -> {
-                if (state.directories.isEmpty() || !client.workspace.control.wantsDirectoriesOf(null)) client.workspace.refreshDirectories()
-                if (state.clis.isEmpty() || !client.workspace.control.wantsClisOf(null)) client.workspace.refreshClis()
+                // Every arrival re-pulls: CLI types and projects change on the desktop.
+                client.workspace.refreshDirectories()
+                client.workspace.refreshClis()
                 client.workspace.refreshMachines()
             }
             // Returning to the artifacts tab is an arrival and must pull its rows again.

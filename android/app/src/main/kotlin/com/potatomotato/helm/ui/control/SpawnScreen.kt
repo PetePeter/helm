@@ -199,6 +199,17 @@ fun SpawnScreen(
         }
     }
 
+    // A listing with a single option has no choice to make: hold it selected.
+    LaunchedEffect(cliChoices) {
+        if (cliType == null) cliChoices.singleOrNull()?.let { cliType = it.first }
+    }
+    LaunchedEffect(projectGroups) {
+        if (selectedProjectKey == null) projectGroups.singleOrNull()?.let { selectedProjectKey = it.key }
+    }
+    LaunchedEffect(selectedProject) {
+        if (dirPath == null) selectedProject?.directories?.singleOrNull()?.let { dirPath = it.path }
+    }
+
     // Raised on the tap itself (see SpawnTapLatch); released by the spawn's
     // answer plus the minimum hold. A success navigates away first.
     var tappedAt by remember { mutableStateOf<Long?>(null) }
