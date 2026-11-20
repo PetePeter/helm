@@ -52,6 +52,9 @@ class CallController(
     /** Cancels the armed turn close; null while none is armed. */
     private var cancelTurnClose: (() -> Unit)? = null
 
+    /** Cancels the push-to-talk release tail; null while the key is not just released. */
+    private var cancelPttTail: (() -> Unit)? = null
+
     /** Held until the user's barge-in final is carried as one call record. */
     private var pendingInterruption: MobileCallInterruption? = null
 
@@ -136,6 +139,7 @@ class CallController(
         val muted = mode != MicMode.Open
         // What was said before muting was meant to be heard.
         if (muted) closeTurn()
+        if (cancelPttTail != null) endPttTail()
         held.clear()
         _state.value = _state.value.copy(micMode = mode, pttHeld = false, muted = muted, heard = "")
         micSwitch.muted = muted
@@ -145,18 +149,33 @@ class CallController(
     fun setPttKeyHeld(held: Boolean) {
         if (placing) heldWhilePlacing = held
         if (!live || _state.value.micMode != MicMode.PushToTalk || _state.value.pttHeld == held) return
-        // The release is the send: what was held, plus what the recogniser has not finalised yet.
         if (!held) {
-            val words = (this.held + unsent).joinToString(" ") { it.trim() }.trim()
-            this.held.clear()
-            unsent = ""
-            if (words.isNotEmpty()) deliver(words)
+            // People let go on their last syllable: keep listening briefly so it
+            // reaches the recogniser, then send.
+            _state.value = _state.value.copy(pttHeld = false)
+            cancelPttTail = turnTimer.arm(PTT_TAIL_MS, ::endPttTail)
+            return
         }
+        // Pressed again inside the tail: still the same message.
+        cancelPttTail?.invoke()
+        cancelPttTail = null
         // Pressing to talk is "stop, my turn": Helm stops reading, as a barge-in does.
-        if (held && phase == CallPhase.Speaking) pendingInterruption = interrupt()
-        val muted = !held
-        _state.value = _state.value.copy(pttHeld = held, muted = muted, heard = "")
-        micSwitch.muted = muted
+        if (phase == CallPhase.Speaking) pendingInterruption = interrupt()
+        _state.value = _state.value.copy(pttHeld = true, muted = false, heard = "")
+        micSwitch.muted = false
+    }
+
+    /** The release is the send: what was held, plus what the recogniser has not finalised yet. */
+    private fun endPttTail() {
+        cancelPttTail?.invoke()
+        cancelPttTail = null
+        if (!live) return
+        val words = (held + unsent).joinToString(" ") { it.trim() }.trim()
+        held.clear()
+        unsent = ""
+        _state.value = _state.value.copy(muted = true, heard = "")
+        micSwitch.muted = true
+        if (words.isNotEmpty()) deliver(words)
     }
 
     /** The switch may have been flipped elsewhere (the car, the system call UI): follow it. */
@@ -165,7 +184,11 @@ class CallController(
         val state = _state.value
         // System call controls may also touch AudioManager's mute bit. PTT's
         // release state remains authoritative so only the Red Key can open it.
-        val muted = if (state.micMode == MicMode.PushToTalk) !state.pttHeld else micSwitch.muted
+        val muted = if (state.micMode == MicMode.PushToTalk) {
+            !state.pttHeld && cancelPttTail == null
+        } else {
+            micSwitch.muted
+        }
         if (micSwitch.muted != muted) micSwitch.muted = muted
         val mode = if (state.micMode == MicMode.PushToTalk) {
             state.micMode
@@ -179,7 +202,11 @@ class CallController(
         }
     }
 
-    fun hangUp() = end()
+    fun hangUp() {
+        // Hanging up mid-tail still sends what was said before the release.
+        if (cancelPttTail != null) endPttTail()
+        end()
+    }
 
     private fun end(error: SpeechError? = null, refused: CallRefusal? = null) {
         if (phase == CallPhase.Ended) return
@@ -189,6 +216,8 @@ class CallController(
         unsent = ""
         cancelTurnClose?.invoke()
         cancelTurnClose = null
+        cancelPttTail?.invoke()
+        cancelPttTail = null
         turn.clear()
         pendingInterruption = null
         utterance++
@@ -319,6 +348,9 @@ class CallController(
          * its own endpoint (~0.5s), so the user's total pause is ~1.5s.
          */
         const val TURN_HOLD_MS = 1_000L
+
+        /** How long the mic stays open after the talk key is released. */
+        const val PTT_TAIL_MS = 700L
         val WHITESPACE = Regex("\\s+")
     }
 }

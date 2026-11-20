@@ -10,6 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -22,6 +23,9 @@ import com.potatomotato.helm.voice.SpeechController
 import com.potatomotato.helm.voice.SpeechError
 import com.potatomotato.helm.voice.VoicePermission
 import com.potatomotato.helm.voice.VoicePhase
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Push-to-talk for the chat composer: hold the mic, watch words appear in the
@@ -57,6 +61,8 @@ fun rememberDictation(
 
     var anchor by remember { mutableStateOf<Dictation?>(null) }
     var pressedAt by remember { mutableStateOf(0L) }
+    val scope = rememberCoroutineScope()
+    var tail by remember { mutableStateOf<Job?>(null) }
     var granted by remember { mutableStateOf(VoicePermission.granted(context)) }
     val request = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -88,6 +94,9 @@ fun rememberDictation(
         onPress = {
             if (!granted) {
                 request.launch(VoicePermission.required.first())
+            } else if (tail?.isActive == true) {
+                // Pressed again inside the release tail: keep the same dictation.
+                tail?.cancel()
             } else {
                 pressedAt = SystemClock.elapsedRealtime()
                 anchor = DictationInsert.begin(
@@ -105,10 +114,18 @@ fun rememberDictation(
             if (SystemClock.elapsedRealtime() - pressedAt < MIN_HOLD_MILLIS) {
                 controller.cancel()
             } else {
-                controller.stop()
+                // People let go on their last syllable: keep listening briefly
+                // so it reaches the recogniser before the transcript is taken.
+                tail = scope.launch {
+                    delay(RELEASE_TAIL_MILLIS)
+                    controller.stop()
+                }
             }
         },
-        onCancel = { controller.cancel() },
+        onCancel = {
+            tail?.cancel()
+            controller.cancel()
+        },
     )
 }
 
@@ -150,3 +167,6 @@ private val com.potatomotato.helm.voice.VoiceState.errorMessage: Int?
 
 /** Shorter than a syllable: a press this brief cannot have been a dictation. */
 private const val MIN_HOLD_MILLIS = 200L
+
+/** How long the mic keeps listening after the button is released. */
+private const val RELEASE_TAIL_MILLIS = 700L

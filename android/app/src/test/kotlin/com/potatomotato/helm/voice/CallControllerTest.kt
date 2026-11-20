@@ -362,6 +362,69 @@ class CallControllerTest {
         assertEquals(listOf("check the build"), sent)
     }
 
+    /** A PTT call with the key held and the release tail under the test's control. */
+    private fun holdToTalk() {
+        turnTimer.immediate = false
+        controller.start(micMode = MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+        line.connect()
+    }
+
+    @Test
+    fun `a word finalised just after the release is still sent`() {
+        holdToTalk()
+        mic.final("check the build")
+        controller.setPttKeyHeld(false)
+
+        mic.final("and deploy")
+        assertTrue(sent.isEmpty())
+        turnTimer.elapse()
+
+        assertEquals(listOf("check the build and deploy"), sent)
+    }
+
+    @Test
+    fun `the mic stays open through the release tail, then mutes`() {
+        holdToTalk()
+        controller.setPttKeyHeld(false)
+
+        assertFalse(micSwitch.muted)
+        assertFalse(controller.state.value.pttHeld)
+        controller.syncMute()
+        assertFalse(micSwitch.muted)
+
+        turnTimer.elapse()
+        assertTrue(micSwitch.muted)
+        assertTrue(controller.state.value.muted)
+    }
+
+    @Test
+    fun `pressing again during the tail keeps talking and sends one message`() {
+        holdToTalk()
+        mic.final("check the build")
+        controller.setPttKeyHeld(false)
+        controller.setPttKeyHeld(true)
+        assertFalse(turnTimer.isArmed)
+
+        mic.final("then deploy")
+        controller.setPttKeyHeld(false)
+        turnTimer.elapse()
+
+        assertEquals(listOf("check the build then deploy"), sent)
+    }
+
+    @Test
+    fun `hanging up during the tail sends what was heard`() {
+        holdToTalk()
+        mic.final("check the build")
+        controller.setPttKeyHeld(false)
+        mic.partial("and deploy")
+
+        controller.hangUp()
+
+        assertEquals(listOf("check the build and deploy"), sent)
+    }
+
     @Test
     fun `pressing the talk key stops Helm reading and the next words carry the interruption`() {
         controller.start(micMode = MicMode.PushToTalk)
