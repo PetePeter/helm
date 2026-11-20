@@ -1,6 +1,6 @@
 import { computed, ref, toRaw } from 'vue';
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../../src/session/prompt-staleness.js';
-import { configClient, skillsClient, toolsClient } from '../ipc/clients.js';
+import { configClient, skillsClient, systemClient, toolsClient } from '../ipc/clients.js';
 import { initConfigCache } from '../bindings.js';
 import { sessionsState } from '../screens/sessions-state.js';
 import { state } from '../state.js';
@@ -11,6 +11,7 @@ import { buildToolEditorOptions, type ToolEditorBridgeData } from '../stores/mod
 import { useChipBarStore } from '../stores/chip-bar.js';
 import { useToast } from './useToast.js';
 import { trackSave } from './useAutosave.js';
+import { isWindows } from '../utils/platform.js';
 import { headlessCommandToEdit } from '../../src/session/headless-command.js';
 import { resolveSettingsPage } from '../components/settings/settings-registry.js';
 
@@ -638,6 +639,12 @@ export function useSettingsController(options: {
 
   async function onMcpRunInShell(command: string): Promise<void> {
     try {
+      if (isWindows()) {
+        // A real cmd window: typing into an embedded shell raced its startup.
+        const result = await systemClient.systemRunInExternalShell(command);
+        if (!result?.success) throw new Error(result?.error ?? 'The cmd window could not be opened.');
+        return;
+      }
       options.closeSettings?.();
       if (!options.doSpawnShell) throw new Error('Shell launch is unavailable.');
       await options.doSpawnShell(command);

@@ -10,6 +10,8 @@ import * as path from 'path';
 import { logger, logDir } from '../../utils/logger.js';
 import { getTempDir } from '../../utils/app-paths.js';
 import { forceDeleteTempFile } from '../../utils/temp-file-delete.js';
+import { spawn } from 'child_process';
+import { buildCmdScript, isAllowedSetupCommand } from '../../utils/external-shell-script.js';
 import { ARTIFACT_TEMP_PREFIX } from '../../session/artifact-temp-file.js';
 import { MEMORY_ATTACHMENT_TEMP_PREFIX } from '../../session/memory-attachment-manager.js';
 
@@ -38,6 +40,27 @@ export function setupSystemHandlers(dirname: string): void {
       return { success: true };
     } catch (error) {
       logger.error(`[IPC] Failed to open user guide: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+  // system:runInExternalShell — run an MCP setup snippet in its own cmd.exe window.
+  ipcMain.handle('system:runInExternalShell', async (_e, command: string) => {
+    if (process.platform !== 'win32') return { success: false, error: 'Only supported on Windows' };
+    if (typeof command !== 'string' || !isAllowedSetupCommand(command)) {
+      logger.warn('[IPC] Refused to run a non-setup command in an external shell');
+      return { success: false, error: 'Not an MCP setup command' };
+    }
+    try {
+      const tmpDir = getTempDir(dirname);
+      fs.mkdirSync(tmpDir, { recursive: true });
+      const file = path.join(tmpDir, `helm-mcp-setup-${Date.now()}.cmd`);
+      fs.writeFileSync(file, buildCmdScript(command), 'utf-8');
+      // detached gives the child its own visible console window on Windows.
+      const child = spawn('cmd.exe', ['/k', file], { detached: true, stdio: 'ignore', windowsHide: false });
+      child.unref();
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] Failed to open external shell: ${error}`);
       return { success: false, error: String(error) };
     }
   });

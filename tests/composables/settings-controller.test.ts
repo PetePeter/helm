@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   toolsUpdateCliType: vi.fn(),
   toolsReorderCliType: vi.fn(),
   initConfigCache: vi.fn(),
+  systemRunInExternalShell: vi.fn(),
 }));
 
 vi.mock('../../renderer/bindings.js', () => ({
@@ -35,6 +36,9 @@ vi.mock('../../renderer/ipc/clients.js', () => ({
     configRemoveBinding: mocks.configRemoveBinding,
     configDeleteBindingProfile: mocks.configDeleteBindingProfile,
     configGetMcpConfig: mocks.configGetMcpConfig,
+  },
+  systemClient: {
+    systemRunInExternalShell: mocks.systemRunInExternalShell,
   },
   toolsClient: {
     toolsGetAll: mocks.toolsGetAll,
@@ -84,9 +88,27 @@ describe('useSettingsController', () => {
     mocks.configGetSortPrefs.mockResolvedValue({ field: 'button', direction: 'asc' });
     mocks.configGetBindingProfiles.mockResolvedValue([]);
     mocks.configGetMcpConfig.mockResolvedValue({ enabled: true, port: 47400, authToken: 'token' });
+    window.helmPlatform = undefined;
+  });
+
+  it('on Windows runs the MCP snippet in an external cmd window and reports a refusal', async () => {
+    window.helmPlatform = 'win32';
+    const toastKey = 'mcp-run-in-shell-error';
+    useToast().removeByKey(toastKey);
+    const doSpawnShell = vi.fn();
+    mocks.systemRunInExternalShell.mockResolvedValue({ success: false, error: 'Not an MCP setup command' });
+    const controller = useSettingsController({ refreshProjects: async () => {}, doSpawnShell });
+
+    await controller.onMcpRunInShell('claude mcp add helm x');
+
+    expect(mocks.systemRunInExternalShell).toHaveBeenCalledWith('claude mcp add helm x');
+    expect(doSpawnShell).not.toHaveBeenCalled();
+    expect(useToast().toasts.find(toast => toast.key === toastKey)?.message).toContain('Not an MCP setup command');
+    useToast().removeByKey(toastKey);
   });
 
   it('shows a persistent error when the MCP shell launch fails', async () => {
+    window.helmPlatform = 'linux';
     const toastKey = 'mcp-run-in-shell-error';
     useToast().removeByKey(toastKey);
     let settingsClosed = false;
@@ -108,6 +130,7 @@ describe('useSettingsController', () => {
   });
 
   it('reports when the shell launcher is not wired', async () => {
+    window.helmPlatform = 'linux';
     const toastKey = 'mcp-run-in-shell-error';
     useToast().removeByKey(toastKey);
     const controller = useSettingsController({ refreshProjects: async () => {} });

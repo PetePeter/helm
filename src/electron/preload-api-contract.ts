@@ -369,6 +369,7 @@ export const PRELOAD_API_DOMAINS = {
     'systemOpenLogsFolder',
     'systemOpenHelp',
     'systemOpenExternalUrl',
+    'systemRunInExternalShell',
   ],
   voice: [
     'voiceGetConfig',

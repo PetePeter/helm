@@ -835,6 +835,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   systemOpenLogsFolder: () => ipcRenderer.invoke('system:openLogsFolder'),
   systemOpenHelp: () => ipcRenderer.invoke('help:open'),
+  systemRunInExternalShell: (command: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('system:runInExternalShell', command),
   systemOpenExternalUrl: (url: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('system:openExternalUrl', url),
 
