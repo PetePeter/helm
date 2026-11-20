@@ -406,6 +406,8 @@ class VoiceCallService : Service() {
     /** The call stays up — mic, audio, route — and only who it talks to changes. */
     private fun retarget(to: String) {
         HelmLog.i(HelmLog.UI, "voice call transferred")
+        // Words released to the old session go there, not to the new one.
+        controller?.flushPttTail()
         targetId = to
         listen(to)
         startForegroundWith(to)

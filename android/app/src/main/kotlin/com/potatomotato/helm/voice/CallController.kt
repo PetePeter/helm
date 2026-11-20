@@ -139,7 +139,7 @@ class CallController(
         val muted = mode != MicMode.Open
         // What was said before muting was meant to be heard.
         if (muted) closeTurn()
-        if (cancelPttTail != null) endPttTail()
+        flushPttTail()
         held.clear()
         _state.value = _state.value.copy(micMode = mode, pttHeld = false, muted = muted, heard = "")
         micSwitch.muted = muted
@@ -163,6 +163,11 @@ class CallController(
         if (phase == CallPhase.Speaking) pendingInterruption = interrupt()
         _state.value = _state.value.copy(pttHeld = true, muted = false, heard = "")
         micSwitch.muted = false
+    }
+
+    /** Send a released-but-still-listening turn now, e.g. before the call changes target. */
+    fun flushPttTail() {
+        if (cancelPttTail != null) endPttTail()
     }
 
     /** The release is the send: what was held, plus what the recogniser has not finalised yet. */
@@ -204,7 +209,7 @@ class CallController(
 
     fun hangUp() {
         // Hanging up mid-tail still sends what was said before the release.
-        if (cancelPttTail != null) endPttTail()
+        flushPttTail()
         end()
     }
 

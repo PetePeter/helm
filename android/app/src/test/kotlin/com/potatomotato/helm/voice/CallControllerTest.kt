@@ -414,6 +414,23 @@ class CallControllerTest {
     }
 
     @Test
+    fun `flushing the tail sends now and a later press starts a fresh message`() {
+        holdToTalk()
+        mic.final("check the build")
+        controller.setPttKeyHeld(false)
+
+        controller.flushPttTail()
+        assertEquals(listOf("check the build"), sent)
+        assertTrue(micSwitch.muted)
+
+        controller.setPttKeyHeld(true)
+        mic.final("then deploy")
+        controller.setPttKeyHeld(false)
+        turnTimer.elapse()
+        assertEquals(listOf("check the build", "then deploy"), sent)
+    }
+
+    @Test
     fun `hanging up during the tail sends what was heard`() {
         holdToTalk()
         mic.final("check the build")
