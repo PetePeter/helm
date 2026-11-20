@@ -135,6 +135,8 @@ data class SessionQuotaUsage(
     val fiveHour: SessionQuotaWindow,
     val weekly: SessionQuotaWindow,
     val measuredAtEpochMs: Long,
+    /** Coarse recent readings for the burn rate and graph; see [QuotaBurns]. */
+    val history: List<QuotaHistoryPoint> = emptyList(),
 )
 
 data class SessionEta(val atEpochMs: Long, val range: SessionEtaRange? = null)
@@ -335,7 +337,18 @@ object SessionWire {
         val measuredAtEpochMs = (value.opt("measuredAtEpochMs") as? Number)?.toLong()
             ?.takeIf { it > 0 } ?: return null
         if (fiveHour.resetsAtEpochMs <= measuredAtEpochMs || weekly.resetsAtEpochMs <= measuredAtEpochMs) return null
-        return SessionQuotaUsage(fiveHour, weekly, measuredAtEpochMs)
+        return SessionQuotaUsage(fiveHour, weekly, measuredAtEpochMs, parseQuotaHistory(value.optJSONArray("history")))
+    }
+
+    private fun parseQuotaHistory(value: JSONArray?): List<QuotaHistoryPoint> {
+        value ?: return emptyList()
+        return (0 until value.length()).mapNotNull { i ->
+            val point = value.optJSONObject(i) ?: return@mapNotNull null
+            val at = (point.opt("at") as? Number)?.toLong() ?: return@mapNotNull null
+            val fiveHour = (point.opt("fiveHour") as? Number)?.toFloat() ?: return@mapNotNull null
+            val weekly = (point.opt("weekly") as? Number)?.toFloat() ?: return@mapNotNull null
+            QuotaHistoryPoint(at, fiveHour, weekly)
+        }
     }
 
     private fun parseQuotaWindow(value: JSONObject?): SessionQuotaWindow? {
@@ -351,13 +364,5 @@ object SessionWire {
 /** "resets in 3h 12m" countdown, matching the desktop card; null once the reset has passed. */
 fun formatQuotaResetIn(resetsAtEpochMs: Long, now: Long = System.currentTimeMillis()): String? {
     if (resetsAtEpochMs <= now) return null
-    val minutes = (resetsAtEpochMs - now) / 60_000L
-    if (minutes < 1) return "resets in <1m"
-    val days = minutes / 1440
-    val hours = (minutes % 1440) / 60
-    return when {
-        days > 0 -> "resets in ${days}d ${hours}h"
-        hours > 0 -> "resets in ${hours}h ${minutes % 60}m"
-        else -> "resets in ${minutes}m"
-    }
+    return "resets in ${formatSpan(resetsAtEpochMs - now)}"
 }

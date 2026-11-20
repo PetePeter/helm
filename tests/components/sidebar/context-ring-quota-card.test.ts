@@ -44,6 +44,17 @@ describe('ContextRing hover card quota rows', () => {
     wrapper.unmount();
   });
 
+  it('shows the burn rate, flags one that runs out before reset, and draws the graph', async () => {
+    const usage = { ...quota(70, 6), history: [{ at: now - 60 * MIN, fiveHour: 60, weekly: 6 }] };
+    const wrapper = await hoverCard(usage);
+    const rows = document.querySelectorAll('.quota-row');
+    expect(rows[0].textContent).toContain('10%/h · out in 3h 0m');
+    expect(rows[0].querySelector('.quota-row__burn--hot')).not.toBeNull();
+    expect(rows[1].textContent).toContain('lasts to reset');
+    expect(document.querySelectorAll('.quota-graph polyline')).toHaveLength(2);
+    wrapper.unmount();
+  });
+
   it('hides quota rows without fresh quota data', async () => {
     const none = await hoverCard(null);
     expect(document.querySelectorAll('.quota-row')).toHaveLength(0);

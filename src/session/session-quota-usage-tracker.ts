@@ -4,6 +4,8 @@ import {
   SESSION_QUOTA_USAGE_MAX_AGE_MS,
   type SessionQuotaUsageSnapshot,
 } from './quota-usage.js';
+import type { QuotaHistoryPoint } from './quota-burn.js';
+import { appendQuotaHistory } from './quota-burn.js';
 
 interface SessionQuotaUsageStore {
   on(event: string | symbol, listener: (...args: any[]) => void): unknown;
@@ -31,6 +33,8 @@ export class SessionQuotaUsageTracker {
   private readonly now: () => number;
   private readonly maxAgeMs: number;
   private readonly snapshots = new Map<string, SessionQuotaUsageSnapshot>();
+  /** Survives a stale gap so the graph does not restart on every quiet spell. */
+  private readonly histories = new Map<string, QuotaHistoryPoint[]>();
   private readonly expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private started = false;
 
@@ -68,7 +72,9 @@ export class SessionQuotaUsageTracker {
       return true;
     }
 
-    const current = { ...snapshot, fiveHour: { ...snapshot.fiveHour }, weekly: { ...snapshot.weekly } };
+    const history = appendQuotaHistory(this.histories.get(scope) ?? [], snapshot, this.now());
+    this.histories.set(scope, history);
+    const current = { ...snapshot, fiveHour: { ...snapshot.fiveHour }, weekly: { ...snapshot.weekly }, history };
     this.snapshots.set(scope, current);
     this.applyToScope(scope, current);
     this.scheduleExpiry(scope, current);
@@ -90,6 +96,7 @@ export class SessionQuotaUsageTracker {
     for (const timer of this.expiryTimers.values()) clearTimeout(timer);
     this.expiryTimers.clear();
     this.snapshots.clear();
+    this.histories.clear();
   }
 
   private scheduleExpiry(scope: string, snapshot: SessionQuotaUsageSnapshot): void {

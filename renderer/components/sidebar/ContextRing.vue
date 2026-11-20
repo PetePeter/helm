@@ -11,7 +11,8 @@ import { contextRing, resolveContextLimits } from '../../../src/session/context-
 import { isFreshQuotaUsageSnapshot, quotaUsageLevel, SESSION_QUOTA_USAGE_MAX_AGE_MS } from '../../../src/session/quota-usage.js';
 import { getActivityColor } from '../../state-colors.js';
 import { resolveCliTypeRecord } from '../../utils.js';
-import { formatQuotaResetIn, sessionContextUsageTitle } from '../../session-context-usage.js';
+import { formatQuotaBurn, formatQuotaResetIn, sessionContextUsageTitle } from '../../session-context-usage.js';
+import { quotaBurn, QUOTA_HISTORY_SPAN_MS } from '../../../src/session/quota-burn.js';
 import ContextSparkline from './ContextSparkline.vue';
 
 const props = withDefaults(defineProps<{
@@ -56,14 +57,38 @@ const style = computed(() => ({
 const cardAt = ref<{ top: number; left: number } | null>(null);
 const hasGraph = computed(() => (props.contextHistory?.length ?? 0) >= 1);
 // Bars show what is LEFT, so they drain right-to-left like the arcs.
-const quotaRows = computed(() => (quota.value
-  ? ([['5h', quota.value.fiveHour], ['Week', quota.value.weekly]] as const).map(([label, window]) => ({
-    label,
-    leftPercent: Math.round(100 - window.usedPercent),
-    level: quotaUsageLevel(window.usedPercent),
-    resetIn: formatQuotaResetIn(window.resetsAtEpochMs),
-  }))
-  : []));
+const quotaRows = computed(() => {
+  const q = quota.value;
+  if (!q) return [];
+  const now = Date.now();
+  return ([['5h', 'fiveHour'], ['Week', 'weekly']] as const).map(([label, key]) => {
+    const burn = quotaBurn(q.history ?? [], q, key, now);
+    return {
+      label,
+      leftPercent: Math.round(100 - q[key].usedPercent),
+      level: quotaUsageLevel(q[key].usedPercent),
+      resetIn: formatQuotaResetIn(q[key].resetsAtEpochMs, now),
+      burn: formatQuotaBurn(burn),
+      burnHot: burn?.beforeReset ?? false,
+    };
+  });
+});
+// % LEFT over the last few hours, one line per window, oldest at the left.
+const QUOTA_GRAPH = { width: 280, height: 48 };
+const quotaGraph = computed(() => {
+  const q = quota.value;
+  const points = q ? [...(q.history ?? []), { at: q.measuredAtEpochMs, fiveHour: q.fiveHour.usedPercent, weekly: q.weekly.usedPercent }] : [];
+  if (points.length < 2) return null;
+  const end = q!.measuredAtEpochMs;
+  const line = (key: 'fiveHour' | 'weekly') => points
+    .map((p) => {
+      const x = QUOTA_GRAPH.width * (1 - Math.min(1, (end - p.at) / QUOTA_HISTORY_SPAN_MS));
+      const y = QUOTA_GRAPH.height * (p[key] / 100);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  return { fiveHour: line('fiveHour'), weekly: line('weekly') };
+});
 function showCard(event: MouseEvent): void {
   if (!hasGraph.value && !quotaRows.value.length) return;
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
@@ -130,8 +155,22 @@ function showCard(event: MouseEvent): void {
           <span class="quota-row__label">{{ row.label }}</span>
           <span class="quota-row__bar"><span class="quota-row__fill" :style="{ width: `${row.leftPercent}%` }" /></span>
           <span class="quota-row__pct">{{ row.leftPercent }}%</span>
-          <span v-if="row.resetIn" class="quota-row__reset">{{ row.resetIn }}</span>
+          <span v-if="row.resetIn || row.burn" class="quota-row__reset">
+            {{ row.resetIn }}<template v-if="row.resetIn && row.burn"> · </template>
+            <span v-if="row.burn" :class="{ 'quota-row__burn--hot': row.burnHot }">{{ row.burn }}</span>
+          </span>
         </div>
+        <svg
+          v-if="quotaGraph"
+          class="quota-graph"
+          :viewBox="`0 0 ${QUOTA_GRAPH.width} ${QUOTA_GRAPH.height}`"
+          :width="QUOTA_GRAPH.width"
+          :height="QUOTA_GRAPH.height"
+          aria-label="Quota left over the last 5 hours"
+        >
+          <polyline class="quota-graph__line quota-graph__line--week" :points="quotaGraph.weekly" />
+          <polyline class="quota-graph__line" :points="quotaGraph.fiveHour" />
+        </svg>
       </div>
     </Teleport>
   </span>
@@ -234,4 +273,8 @@ function showCard(event: MouseEvent): void {
 .quota-row__bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
 .quota-row__fill { display: block; height: 100%; border-radius: 3px; background: var(--quota-color); }
 .quota-row__reset { grid-column: 2 / 4; }
+.quota-row__burn--hot { color: var(--danger); }
+.quota-graph { display: block; margin-top: var(--spacing-xs); background: var(--bg-secondary); border-radius: 4px; }
+.quota-graph__line { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.quota-graph__line--week { stroke: var(--text-secondary); stroke-dasharray: 3 2; }
 </style>

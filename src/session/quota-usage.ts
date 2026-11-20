@@ -9,9 +9,12 @@ export interface SessionQuotaUsageSnapshot {
   fiveHour: SessionQuotaWindowSnapshot;
   weekly: SessionQuotaWindowSnapshot;
   measuredAtEpochMs: number;
+  /** Coarse recent readings for the burn rate and graph; see quota-burn.ts. */
+  history?: QuotaHistoryPoint[];
 }
 
 import { createHash } from 'node:crypto';
+import type { QuotaHistoryPoint } from './quota-burn.js';
 import { tailLines } from './transcript-usage.js';
 
 type JsonRecord = Record<string, unknown>;

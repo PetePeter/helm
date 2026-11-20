@@ -103,6 +103,23 @@ function snapshot(now = Date.now()): SessionQuotaUsageSnapshot {
 describe('SessionQuotaUsageTracker', () => {
   afterEach(() => vi.useRealTimers());
 
+  it('keeps a coarse reading history on the shared snapshot for the burn rate', () => {
+    const store = new SessionStore();
+    store.add(session('a'));
+    let now = Date.now();
+    const tracker = new SessionQuotaUsageTracker({ sessionManager: store, scopeFor: () => 'one', now: () => now });
+    tracker.start();
+
+    tracker.report('a', snapshot(now));
+    now += 60_000;
+    tracker.report('a', snapshot(now));
+    expect(store.getSession('a')?.quotaUsage?.history).toHaveLength(1);
+    now += 10 * 60_000;
+    tracker.report('a', snapshot(now));
+    expect(store.getSession('a')?.quotaUsage?.history).toHaveLength(2);
+    tracker.stop();
+  });
+
   it('fans a complete snapshot across Claude CLI types sharing an account scope', () => {
     const store = new SessionStore();
     store.add(session('a'));

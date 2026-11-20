@@ -43,6 +43,11 @@ import com.potatomotato.helm.data.ContextHistory
 import com.potatomotato.helm.data.ContextRing
 import com.potatomotato.helm.data.SessionQuotaUsage
 import com.potatomotato.helm.data.SessionQuotaWindow
+import com.potatomotato.helm.data.QuotaBurn
+import com.potatomotato.helm.data.QuotaBurns
+import com.potatomotato.helm.data.QuotaWindowKey
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import com.potatomotato.helm.data.formatQuotaResetIn
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
@@ -165,8 +170,10 @@ fun ContextRingButton(
                         )
                     }
                     if (quotaUsage != null) {
-                        QuotaRow("5h", quotaUsage.fiveHour)
-                        QuotaRow("Week", quotaUsage.weekly)
+                        val now = System.currentTimeMillis()
+                        QuotaRow("5h", quotaUsage.fiveHour, QuotaBurns.burn(quotaUsage, QuotaWindowKey.FiveHour, now))
+                        QuotaRow("Week", quotaUsage.weekly, QuotaBurns.burn(quotaUsage, QuotaWindowKey.Weekly, now))
+                        QuotaGraph(quotaUsage)
                     }
                 }
             }
@@ -176,7 +183,7 @@ fun ContextRingButton(
 
 /** What is LEFT of one quota window: the bar drains right-to-left like the arcs. */
 @Composable
-private fun QuotaRow(label: String, window: SessionQuotaWindow) {
+private fun QuotaRow(label: String, window: SessionQuotaWindow, burn: QuotaBurn?) {
     val left = (100f - window.usedPercent).coerceIn(0f, 100f)
     Column(modifier = Modifier.fillMaxWidth().padding(top = HelmSpacing.Sm)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -191,6 +198,34 @@ private fun QuotaRow(label: String, window: SessionQuotaWindow) {
         formatQuotaResetIn(window.resetsAtEpochMs)?.let {
             Text(text = it, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = QUOTA_LABEL_WIDTH))
         }
+        QuotaBurns.label(burn)?.let {
+            val color = if (burn?.beforeReset == true) HelmColors.Danger else HelmColors.Dim
+            Text(text = it, color = color, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = QUOTA_LABEL_WIDTH))
+        }
+    }
+}
+
+/** % LEFT over the last few hours: solid 5h, dashed week, oldest at the left. Same as the desktop card. */
+@Composable
+private fun QuotaGraph(usage: SessionQuotaUsage) {
+    val points = usage.history.map { Triple(it.at, it.fiveHour, it.weekly) } +
+        Triple(usage.measuredAtEpochMs, usage.fiveHour.usedPercent, usage.weekly.usedPercent)
+    if (points.size < 2) return
+    val end = usage.measuredAtEpochMs
+    Canvas(
+        modifier = Modifier.fillMaxWidth().height(QUOTA_GRAPH_HEIGHT).padding(top = HelmSpacing.Sm)
+            .clip(RoundedCornerShape(4.dp)).background(HelmColors.Line.copy(alpha = 0.3f)),
+    ) {
+        fun line(used: (Triple<Long, Float, Float>) -> Float): Path = Path().apply {
+            points.forEachIndexed { i, p ->
+                val x = size.width * (1f - ((end - p.first).toFloat() / QuotaBurns.HISTORY_SPAN_MS).coerceAtMost(1f))
+                val y = size.height * (used(p) / 100f)
+                if (i == 0) moveTo(x, y) else lineTo(x, y)
+            }
+        }
+        val stroke = 1.5.dp.toPx()
+        drawPath(line { it.third }, HelmColors.Dim, style = Stroke(stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx()))))
+        drawPath(line { it.second }, HelmColors.Accent, style = Stroke(stroke))
     }
 }
 
@@ -231,6 +266,7 @@ private val POPOVER_GRAPH_HEIGHT = 80.dp
 private const val QUOTA_RING_GUTTER = 10f / 22f
 private val QUOTA_LABEL_WIDTH = 40.dp
 private val QUOTA_BAR_HEIGHT = 6.dp
+private val QUOTA_GRAPH_HEIGHT = 48.dp
 private const val QUOTA_AMBER_AT_PERCENT = 75f
 private const val QUOTA_RED_AT_PERCENT = 90f
 private const val RING_THICKNESS = 0.18f
