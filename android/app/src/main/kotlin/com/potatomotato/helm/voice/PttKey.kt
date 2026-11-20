@@ -43,6 +43,10 @@ sealed interface PttKey {
         @Volatile
         var target: String? = null
 
+        /** The session actually open on screen; null on the list. Only this retargets a live call. */
+        @Volatile
+        var openSession: String? = null
+
         /**
          * A call the key asked for, parked for [MainActivity]: only an app on
          * screen may start the microphone, so the press brings Helm forward
@@ -65,10 +69,11 @@ sealed interface PttKey {
             return target
         }
 
-        fun decide(down: Boolean, liveCallTarget: String?, target: String?): PttKey = when {
+        fun decide(down: Boolean, liveCallTarget: String?, target: String?, openSession: String? = target): PttKey = when {
             // A release always goes through: it may land while the call is still being placed.
             !down -> Hold(false)
-            liveCallTarget != null && target != null && liveCallTarget != target -> Retarget(target)
+            // Only an opened session takes the call over; the list's operator fallback never does.
+            liveCallTarget != null && openSession != null && liveCallTarget != openSession -> Retarget(openSession)
             liveCallTarget != null -> Hold(true)
             target == null -> Open
             else -> Start(target)
@@ -80,8 +85,9 @@ sealed interface PttKey {
                 down = down,
                 liveCallTarget = VoiceCallService.call.value?.targetId,
                 target = target,
+                openSession = openSession,
             )
-            HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: ${action::class.simpleName}")
+            HelmLog.i(HelmLog.UI, "PTT key ${if (down) "down" else "up"}: $action")
             held = down
             when (action) {
                 is Start -> {

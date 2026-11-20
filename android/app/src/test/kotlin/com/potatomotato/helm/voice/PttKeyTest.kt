@@ -19,6 +19,14 @@ class PttKeyTest {
     }
 
     @Test
+    fun `a press from the session list during a live call keeps the call, never the operator fallback`() {
+        assertEquals(
+            PttKey.Hold(true),
+            PttKey.decide(down = true, liveCallTarget = "s1", target = "operator", openSession = null),
+        )
+    }
+
+    @Test
     fun `a press during a live call on the selected session holds its mic`() {
         assertEquals(PttKey.Hold(true), PttKey.decide(down = true, liveCallTarget = "s2", target = "s2"))
     }

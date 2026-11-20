@@ -105,16 +105,18 @@ internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: Hel
     // PTT and selection changes share one target, even while a session list or another
     // destination is visible. callScreenTarget is only for call-driven navigation below.
     LaunchedEffect(talkTarget) { PttKey.target = talkTarget }
-    // Only the user moving to another session retargets a live call. A call that
-    // has just started must not: on its first frame talkTarget can still be the
-    // screen the key was pressed from, which would drag the call (and, through
-    // the call-follow effect below, the screen) back to the previous session.
-    var lastTalkTarget by androidx.compose.runtime.remember { mutableStateOf(talkTarget) }
-    LaunchedEffect(talkTarget) {
-        val moved = lastTalkTarget != talkTarget
-        lastTalkTarget = talkTarget
+    LaunchedEffect(home.selectedSessionId) { PttKey.openSession = home.selectedSessionId }
+    // Only the user OPENING another session retargets a live call. Not the call
+    // starting (talkTarget can still be the screen the key was pressed from), and
+    // not leaving a session for the list: there talkTarget falls back to the
+    // operator, which would silently hand the call to the operator.
+    val openSession = home.selectedSessionId
+    var lastOpenSession by androidx.compose.runtime.remember { mutableStateOf(openSession) }
+    LaunchedEffect(openSession) {
+        val moved = lastOpenSession != openSession
+        lastOpenSession = openSession
         val call = VoiceCallService.call.value ?: return@LaunchedEffect
-        val target = talkTarget ?: return@LaunchedEffect
+        val target = openSession ?: return@LaunchedEffect
         if (moved && call.targetId != target) VoiceCallService.retarget(appContext, target)
     }
 
