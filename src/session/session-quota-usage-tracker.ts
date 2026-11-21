@@ -5,7 +5,8 @@ import {
   type SessionQuotaUsageSnapshot,
 } from './quota-usage.js';
 import type { QuotaHistoryPoint } from './quota-burn.js';
-import { appendQuotaHistory } from './quota-burn.js';
+import { appendQuotaHistory, QUOTA_HISTORY_SPAN_MS } from './quota-burn.js';
+import type { QuotaHistoryStore } from './quota-history-persistence.js';
 
 interface SessionQuotaUsageStore {
   on(event: string | symbol, listener: (...args: any[]) => void): unknown;
@@ -21,11 +22,14 @@ export interface SessionQuotaUsageTrackerOptions {
   scopeFor: (session: SessionInfo) => string | null;
   now?: () => number;
   maxAgeMs?: number;
+  /** Keeps the coarse history across restarts; snapshots themselves stay in memory. */
+  historyStore?: QuotaHistoryStore;
 }
 
 /**
  * Holds fresh subscription quota snapshots in memory and fans them out only to
- * sessions with the same provider/account scope. It deliberately never persists.
+ * sessions with the same provider/account scope. Snapshots are never persisted;
+ * only the coarse burn history is, so the graph survives a restart.
  */
 export class SessionQuotaUsageTracker {
   private readonly sessionManager: SessionQuotaUsageStore;
@@ -34,7 +38,8 @@ export class SessionQuotaUsageTracker {
   private readonly maxAgeMs: number;
   private readonly snapshots = new Map<string, SessionQuotaUsageSnapshot>();
   /** Survives a stale gap so the graph does not restart on every quiet spell. */
-  private readonly histories = new Map<string, QuotaHistoryPoint[]>();
+  private readonly histories: Map<string, QuotaHistoryPoint[]>;
+  private readonly historyStore?: QuotaHistoryStore;
   private readonly expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private started = false;
 
@@ -53,6 +58,13 @@ export class SessionQuotaUsageTracker {
     this.scopeFor = options.scopeFor;
     this.now = options.now ?? Date.now;
     this.maxAgeMs = Math.max(0, options.maxAgeMs ?? SESSION_QUOTA_USAGE_MAX_AGE_MS);
+    this.historyStore = options.historyStore;
+    const now = this.now();
+    this.histories = new Map();
+    for (const [scope, points] of this.historyStore?.load() ?? []) {
+      const kept = points.filter(point => now - point.at <= QUOTA_HISTORY_SPAN_MS);
+      if (kept.length) this.histories.set(scope, kept);
+    }
   }
 
   start(): void {
@@ -72,8 +84,10 @@ export class SessionQuotaUsageTracker {
       return true;
     }
 
-    const history = appendQuotaHistory(this.histories.get(scope) ?? [], snapshot, this.now());
+    const previous = this.histories.get(scope);
+    const history = appendQuotaHistory(previous ?? [], snapshot, this.now());
     this.histories.set(scope, history);
+    if (history.at(-1) !== previous?.at(-1)) this.historyStore?.save(this.histories);
     const current = { ...snapshot, fiveHour: { ...snapshot.fiveHour }, weekly: { ...snapshot.weekly }, history };
     this.snapshots.set(scope, current);
     this.applyToScope(scope, current);

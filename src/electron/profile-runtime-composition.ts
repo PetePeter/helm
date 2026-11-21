@@ -12,6 +12,7 @@ import { KeepWarmer } from '../session/keep-warmer.js';
 import { MessNotifier } from '../session/mess-notifier.js';
 import { SessionContextUsageTracker } from '../session/session-context-usage-tracker.js';
 import { SessionQuotaUsageTracker } from '../session/session-quota-usage-tracker.js';
+import { createQuotaHistoryStore } from '../session/quota-history-persistence.js';
 import {
   isClaudeSubscriptionQuotaEnvironment,
   quotaScope,
@@ -313,6 +314,7 @@ export class ProfileRuntimeComposition {
             ...(resolveConfiguredSpawnEnv(runtime.configLoader, session.cliType) ?? {}),
           });
         },
+        historyStore: createQuotaHistoryStore(join(runtime.configDir, 'quota-history.json')),
       });
       quotaUsageTracker.start();
       this.quotaUsageTrackers.set(userProfileId, quotaUsageTracker);

@@ -29,6 +29,8 @@ export type QuotaWindowKey = 'fiveHour' | 'weekly';
 
 export const QUOTA_HISTORY_BUCKET_MS = 10 * 60_000;
 export const QUOTA_HISTORY_SPAN_MS = 5 * 60 * 60_000;
+/** The graph needs this much history to be a line rather than a dot at the edge. */
+export const QUOTA_GRAPH_MIN_SPAN_MS = 30 * 60_000;
 const RATE_LOOKBACK_MS = 60 * 60_000;
 const MIN_RATE_SPAN_MS = 10 * 60_000;
 const HOUR_MS = 60 * 60_000;
@@ -44,6 +46,10 @@ export function appendQuotaHistory(
   const last = kept[kept.length - 1];
   if (last && now - last.at < QUOTA_HISTORY_BUCKET_MS) return kept;
   return [...kept, { at: now, fiveHour: snapshot.fiveHour.usedPercent, weekly: snapshot.weekly.usedPercent }];
+}
+
+export function quotaGraphReady(history: readonly QuotaHistoryPoint[], measuredAt: number): boolean {
+  return history.length > 0 && measuredAt - history[0].at >= QUOTA_GRAPH_MIN_SPAN_MS;
 }
 
 export function quotaBurn(

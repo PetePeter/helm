@@ -21,9 +21,16 @@ enum class QuotaWindowKey { FiveHour, Weekly }
 
 object QuotaBurns {
     const val HISTORY_SPAN_MS = 5 * 60 * 60_000L
+    /** The graph needs this much history to be a line rather than a dot at the edge. */
+    const val GRAPH_MIN_SPAN_MS = 30 * 60_000L
     private const val RATE_LOOKBACK_MS = 60 * 60_000L
     private const val MIN_RATE_SPAN_MS = 10 * 60_000L
     private const val HOUR_MS = 60 * 60_000.0
+
+    fun graphReady(usage: SessionQuotaUsage): Boolean {
+        val first = usage.history.firstOrNull() ?: return false
+        return usage.measuredAtEpochMs - first.at >= GRAPH_MIN_SPAN_MS
+    }
 
     fun burn(usage: SessionQuotaUsage, key: QuotaWindowKey, now: Long): QuotaBurn? {
         val window = usage.window(key)

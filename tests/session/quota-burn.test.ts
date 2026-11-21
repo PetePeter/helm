@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   appendQuotaHistory,
   quotaBurn,
+  quotaGraphReady,
   QUOTA_HISTORY_BUCKET_MS,
   QUOTA_HISTORY_SPAN_MS,
   type QuotaHistoryPoint,
@@ -81,5 +82,13 @@ describe('appendQuotaHistory', () => {
   it('drops points older than the graph span', () => {
     const old = [{ at: NOW - QUOTA_HISTORY_SPAN_MS - MIN, fiveHour: 1, weekly: 1 }];
     expect(appendQuotaHistory(old, snap(NOW, 10), NOW).map((p) => p.fiveHour)).toEqual([10]);
+  });
+});
+
+describe('quotaGraphReady', () => {
+  it('waits for 30 minutes of history so a restart does not draw a dot in an empty box', () => {
+    expect(quotaGraphReady([], NOW)).toBe(false);
+    expect(quotaGraphReady([{ at: NOW - 10 * MIN, fiveHour: 1, weekly: 1 }], NOW)).toBe(false);
+    expect(quotaGraphReady([{ at: NOW - 30 * MIN, fiveHour: 1, weekly: 1 }], NOW)).toBe(true);
   });
 });

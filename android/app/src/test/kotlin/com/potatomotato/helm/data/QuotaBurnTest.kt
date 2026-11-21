@@ -69,4 +69,11 @@ class QuotaBurnTest {
             .put("history", JSONArray().put(JSONObject().put("at", now - hour).put("fiveHour", 20).put("weekly", 9)))
         assertEquals(listOf(QuotaHistoryPoint(now - hour, 20f, 9f)), SessionWire.parseQuotaUsage(quota)!!.history)
     }
+
+    @Test
+    fun `the graph waits for 30 minutes of history`() {
+        assertFalse(QuotaBurns.graphReady(usage(10f, emptyList())))
+        assertFalse(QuotaBurns.graphReady(usage(10f, listOf(QuotaHistoryPoint(now - 10 * min, 5f, 5f)))))
+        assertTrue(QuotaBurns.graphReady(usage(10f, listOf(QuotaHistoryPoint(now - 30 * min, 5f, 5f)))))
+    }
 }

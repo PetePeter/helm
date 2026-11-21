@@ -208,6 +208,7 @@ private fun QuotaRow(label: String, window: SessionQuotaWindow, burn: QuotaBurn?
 /** % LEFT over the last few hours: solid 5h, dashed week, oldest at the left. Same as the desktop card. */
 @Composable
 private fun QuotaGraph(usage: SessionQuotaUsage) {
+    if (!QuotaBurns.graphReady(usage)) return
     val points = usage.history.map { Triple(it.at, it.fiveHour, it.weekly) } +
         Triple(usage.measuredAtEpochMs, usage.fiveHour.usedPercent, usage.weekly.usedPercent)
     if (points.size < 2) return

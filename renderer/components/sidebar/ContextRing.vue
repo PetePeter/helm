@@ -12,7 +12,7 @@ import { isFreshQuotaUsageSnapshot, quotaUsageLevel, SESSION_QUOTA_USAGE_MAX_AGE
 import { getActivityColor } from '../../state-colors.js';
 import { resolveCliTypeRecord } from '../../utils.js';
 import { formatQuotaBurn, formatQuotaResetIn, sessionContextUsageTitle } from '../../session-context-usage.js';
-import { quotaBurn, QUOTA_HISTORY_SPAN_MS } from '../../../src/session/quota-burn.js';
+import { quotaBurn, quotaGraphReady, QUOTA_HISTORY_SPAN_MS } from '../../../src/session/quota-burn.js';
 import ContextSparkline from './ContextSparkline.vue';
 
 const props = withDefaults(defineProps<{
@@ -77,9 +77,9 @@ const quotaRows = computed(() => {
 const QUOTA_GRAPH = { width: 280, height: 48 };
 const quotaGraph = computed(() => {
   const q = quota.value;
-  const points = q ? [...(q.history ?? []), { at: q.measuredAtEpochMs, fiveHour: q.fiveHour.usedPercent, weekly: q.weekly.usedPercent }] : [];
-  if (points.length < 2) return null;
-  const end = q!.measuredAtEpochMs;
+  if (!q || !quotaGraphReady(q.history ?? [], q.measuredAtEpochMs)) return null;
+  const points = [...(q.history ?? []), { at: q.measuredAtEpochMs, fiveHour: q.fiveHour.usedPercent, weekly: q.weekly.usedPercent }];
+  const end = q.measuredAtEpochMs;
   const line = (key: 'fiveHour' | 'weekly') => points
     .map((p) => {
       const x = QUOTA_GRAPH.width * (1 - Math.min(1, (end - p.at) / QUOTA_HISTORY_SPAN_MS));
