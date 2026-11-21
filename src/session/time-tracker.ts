@@ -23,6 +23,12 @@ export const SLOT_MS = 5 * 60_000;
  * and a few stray keys never do.
  */
 export const SUBMIT_WEIGHT = 20;
+/**
+ * An open turn with no sign of work for this long stops earning AI time. A missed
+ * turn end (Esc interrupt, StopFailure, crash) sends no Stop; without this cap the
+ * session would count AI time forever. Long enough to cover a quiet tool call.
+ */
+export const AI_SILENCE_MS = 15 * 60_000;
 const SLOT_MINUTES = SLOT_MS / 60_000;
 
 export type SlotKind = 'user' | 'ai' | 'tokens' | 'keys';
@@ -64,6 +70,8 @@ export class TimeTracker {
   private readonly open = new Map<number, OpenSlot>();
   /** Sessions whose current turn is user-originated or has proven agent work. */
   private readonly aiArmed = new Set<string>();
+  /** Last sign of agent work per session: arming, hook work, token growth, or hookless PTY output. */
+  private readonly lastAiActivity = new Map<string, number>();
   /** Last context reading per stream, saved with the ledger so a restart loses no growth. */
   private readonly lastTokens: Map<string, number>;
   /** False on a first run: streams already counted by an earlier version are unknown, so readings only prime. */
@@ -172,6 +180,7 @@ export class TimeTracker {
     if (prev === undefined) return;
     const added = tokens >= prev ? tokens - prev : tokens;
     if (!added) return;
+    this.noteAiActivity(sessionId);
     const start = slotStart(this.now());
     const map = this.slotFor().tokens;
     const key = tokenKey(where.projectKey, where.cliType, where.dir);
@@ -185,24 +194,36 @@ export class TimeTracker {
     for (const stream of this.lastTokens.keys()) {
       if (stream === sessionId || stream.startsWith(`${sessionId}#`)) this.lastTokens.delete(stream);
     }
+    this.aiArmed.delete(sessionId);
+    this.lastAiActivity.delete(sessionId);
   }
 
   /** A user prompt or real agent work started a turn. */
   armAi(sessionId: string): void {
     this.aiArmed.add(sessionId);
+    this.noteAiActivity(sessionId);
+  }
+
+  /** Evidence the agent is still working; credits the slot while a turn is open. */
+  noteAiActivity(sessionId: string): void {
+    if (!this.aiArmed.has(sessionId)) return;
+    this.lastAiActivity.set(sessionId, this.now());
     this.recordAi(sessionId);
   }
 
   /** A Stop hook or fallback idle ended the turn. */
   disarmAi(sessionId: string): void {
     this.aiArmed.delete(sessionId);
+    this.lastAiActivity.delete(sessionId);
   }
 
   /** Credit open turns and persist slots that have ended. Call at least once per slot. */
   tick(): void {
     for (const id of this.aiArmed) {
       // A closed session never reports a turn end; drop it once it cannot be placed.
-      if (!this.deps.resolve(id)) { this.aiArmed.delete(id); this.forgetSession(id); }
+      if (!this.deps.resolve(id)) this.forgetSession(id);
+      // A turn whose end was never reported goes silent: stop crediting it.
+      else if (this.now() - (this.lastAiActivity.get(id) ?? 0) > AI_SILENCE_MS) this.disarmAi(id);
       else this.recordAi(id);
     }
     this.closeBefore(slotStart(this.now()));

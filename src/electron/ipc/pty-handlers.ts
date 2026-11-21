@@ -237,6 +237,8 @@ export function setupPtyHandlers(
     const ownerManager = owner?.sessionManager ?? (runtimeRegistry ? undefined : sessionManager);
     // Feed to state detector for activity tracking.
     stateDetector.processOutput(sessionId, data);
+    // Hookless sessions have no other work signal; hooked ones ignore TUI repaint.
+    if (!stateDetector.isHooked(sessionId)) owner?.timeTracker.noteAiActivity(sessionId);
 
     // Feed to pattern matcher for regex-triggered actions
     const sessionPatternMatcher = owner

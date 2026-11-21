@@ -192,6 +192,7 @@ export class HookTracker {
         this.touchCache(sessionId, event.event);
         this.clearStall(sessionId);
         this.advancePlanOnEdit(sessionId, event.toolName);
+        this.deps.onTurnWorking?.(sessionId);
         break;
 
       case 'Stop':

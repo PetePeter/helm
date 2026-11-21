@@ -142,6 +142,38 @@ describe('AI turn tracking', () => {
     }
   });
 
+  it('stops crediting a turn whose Stop never arrives once it goes silent', async () => {
+    const s = setup();
+    try {
+      await s.deliver('please do this', 'user');
+      s.emitHook('UserPromptSubmit');
+      s.emitHook('PreToolUse');
+      // Esc interrupt: no Stop. Hours pass with ticks every half slot.
+      for (let i = 0; i < 36; i++) await s.advance(2.5 * 60_000);
+
+      const aiStarts = s.tracker.query(BASE, BASE + 24 * HOUR).filter(slot => slot.kind === 'ai').map(slot => slot.start);
+      expect(aiStarts.length).toBeGreaterThan(0);
+      expect(Math.max(...aiStarts)).toBeLessThanOrEqual(BASE + 15 * 60_000);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('keeps crediting a long turn while hook work keeps arriving', async () => {
+    const s = setup();
+    try {
+      await s.deliver('please do this', 'user');
+      for (let i = 0; i < 24; i++) {
+        s.emitHook('PreToolUse');
+        await s.advance(5 * 60_000);
+      }
+      const aiSlots = s.tracker.query(BASE, BASE + 24 * HOUR).filter(slot => slot.kind === 'ai');
+      expect(aiSlots.length).toBeGreaterThanOrEqual(24);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('keeps a system prompt and hours of TUI repaint from creating AI time or re-greening after Stop', async () => {
     const s = setup();
     try {
