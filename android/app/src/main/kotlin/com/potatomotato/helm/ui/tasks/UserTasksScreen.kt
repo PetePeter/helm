@@ -495,7 +495,6 @@ private fun AttachmentHandler(client: UserTaskClient) {
     val files = remember(context) { AndroidArtifactFiles(context) }
     LaunchedEffect(content) {
         val fetched = content ?: return@LaunchedEffect
-        client.state.attachmentHandled()
         val mime = fetched.info.contentType.ifBlank { "application/octet-stream" }
         val name = attachmentFileName(fetched.info.title)
         val message = try {
@@ -522,6 +521,9 @@ private fun AttachmentHandler(client: UserTaskClient) {
             "Could not write ${fetched.info.title}: ${error.message}"
         }
         if (message != null) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        // Cleared only now: clearing first re-keys this effect and cancels the
+        // save before its toast — the file landed but the user never heard.
+        client.state.attachmentHandled()
     }
 }
 
