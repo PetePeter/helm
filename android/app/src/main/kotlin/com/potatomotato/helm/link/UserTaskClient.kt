@@ -1,5 +1,6 @@
 package com.potatomotato.helm.link
 
+import com.potatomotato.helm.data.UserTaskAttachmentAction
 import com.potatomotato.helm.data.UserTaskChecklistItem
 import com.potatomotato.helm.data.UserTaskRepository
 
@@ -31,10 +32,11 @@ class UserTaskClient internal constructor(
         }
     }
 
-    fun openAttachment(taskId: String, attachmentId: String): Boolean =
+    /** Fetches the bytes; the screen opens or saves them once they land. */
+    fun fetchAttachment(taskId: String, attachmentId: String, action: UserTaskAttachmentAction): Boolean =
         core.call(METHOD_GET, linkedMapOf<String, Any>("id" to taskId, "attachmentId" to attachmentId)) { outcome ->
             when (outcome) {
-                is HelmClient.Outcome.Ok -> state.attachmentArrived(outcome.result)
+                is HelmClient.Outcome.Ok -> if (!state.attachmentArrived(outcome.result, action)) state.writeFailed(UNREADABLE_ATTACHMENT)
                 is HelmClient.Outcome.Failed -> state.writeFailed(outcome.message)
             }
         }
@@ -86,6 +88,7 @@ class UserTaskClient internal constructor(
         }
 
     companion object {
+        internal const val UNREADABLE_ATTACHMENT = "Helm answered with an attachment this app could not read"
         internal const val UNREADABLE_TASKS = "Helm answered with a task list this app could not read"
         internal const val METHOD_ADD = "user_task_add"
         internal const val METHOD_LIST = "user_task_list"

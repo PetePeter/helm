@@ -40,8 +40,10 @@ export const useUserTasksStore = defineStore('userTasks', () => {
   const remove = (id: string) => userTasksClient.userTaskDelete(id);
   const openAttachment = (taskId: string, attachmentId: string) =>
     userTasksClient.userTaskOpenAttachment(taskId, attachmentId);
+  const saveAttachment = (taskId: string, attachmentId: string) =>
+    userTasksClient.userTaskSaveAttachment(taskId, attachmentId);
   const readAttachment = (taskId: string, attachmentId: string) =>
     userTasksClient.userTaskReadAttachment(taskId, attachmentId);
 
-  return { tasks, loaded, error, openCount, load, add, update, check, remove, readAttachment, openAttachment };
+  return { tasks, loaded, error, openCount, load, add, update, check, remove, readAttachment, openAttachment, saveAttachment };
 });

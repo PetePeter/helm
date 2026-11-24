@@ -245,11 +245,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKey, true));
       <template v-if="task.attachments.length">
         <h3 class="utd__h3">Attachments</h3>
         <ul class="utd__atts">
-          <li v-for="a in task.attachments" :key="a.id">
+          <li v-for="a in task.attachments" :key="a.id" class="utd__att-row">
             <button type="button" class="utd__att" @click="open(a)">
               <span>{{ a.kind === 'plan' ? '🗺' : a.kind === 'artifact' ? '📄' : '📎' }} {{ a.title }}</span>
               <span class="utd__att-meta">{{ a.kind === 'plan' ? 'snapshot' : a.contentType }} · {{ Math.max(1, Math.round(a.sizeBytes / 1024)) }} KB</span>
             </button>
+            <AppButton variant="ghost" :aria-label="`Save ${a.title}`" @click="run(() => store.saveAttachment(task.id, a.id))">Save</AppButton>
           </li>
         </ul>
       </template>
@@ -319,7 +320,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKey, true));
 .utd__gone { color: var(--text-secondary); font-style: italic; }
 .utd__h3 { font-size: 0.9rem; margin: 0 0 6px; color: var(--text-secondary); }
 .utd__atts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.utd__att { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; background: var(--bg-tertiary, var(--bg-primary)); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.utd__att-row { display: flex; gap: 4px; align-items: stretch; }
+.utd__att { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 8px; text-align: left; background: var(--bg-tertiary, var(--bg-primary)); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
 .utd__att:hover, .utd__att:focus-visible { border-color: var(--accent); }
 .utd__att-meta { color: var(--text-secondary); font-size: 0.8rem; }
 .utd__foot { flex: none; display: flex; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-top: 1px solid var(--border); }

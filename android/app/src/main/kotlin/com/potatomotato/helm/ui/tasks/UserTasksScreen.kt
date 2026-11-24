@@ -1,5 +1,18 @@
 package com.potatomotato.helm.ui.tasks
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import com.potatomotato.helm.data.UserTaskAttachmentAction
+import com.potatomotato.helm.save.AndroidArtifactFiles
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.IOException
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -161,7 +174,7 @@ fun UserTasksScreen(
         client.add(title, body, urgent)
         adding = false
     }
-    AttachmentViewer(client)
+    AttachmentHandler(client)
 }
 
 @Composable
@@ -377,12 +390,13 @@ private fun TaskDetailBody(
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = HelmSpacing.Xs)
                             .background(HelmColors.Surface2, RoundedCornerShape(6.dp))
-                            .clickable { client.openAttachment(detail.id, a.id) }
-                            .padding(HelmSpacing.Sm),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                            .clickable { client.fetchAttachment(detail.id, a.id, UserTaskAttachmentAction.Open) }
+                            .padding(start = HelmSpacing.Sm),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text((when (a.kind) { "plan" -> "🗺 "; "artifact" -> "📄 "; else -> "📎 " }) + a.title, color = HelmColors.Txt, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("Open", color = HelmColors.Accent)
+                        TextButton(onClick = { client.fetchAttachment(detail.id, a.id, UserTaskAttachmentAction.Save) }) { Text("Save", color = HelmColors.Accent) }
+                        TextButton(onClick = { client.fetchAttachment(detail.id, a.id, UserTaskAttachmentAction.Open) }) { Text("Open", color = HelmColors.Accent) }
                     }
                 }
             }
@@ -469,31 +483,53 @@ private fun AddTaskDialog(
     )
 }
 
-/** Markdown renders natively; HTML only inside the contained WebView; binaries stay on the desktop. */
+/**
+ * Fetched bytes leave the app here: Open hands a private cache copy to whatever
+ * the device uses for that type (full screen, the user's own app); Save keeps a
+ * copy in Downloads through the same sink artifacts use. Each fetch is handled once.
+ */
 @Composable
-private fun AttachmentViewer(client: UserTaskClient) {
+private fun AttachmentHandler(client: UserTaskClient) {
     val content by client.state.attachment.collectAsState()
-    val open = content ?: return
-    AlertDialog(
-        onDismissRequest = { client.state.closeAttachment() },
-        containerColor = HelmColors.Surface,
-        title = { Text(open.info.title, color = HelmColors.Txt, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        text = {
-            Box(modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 520.dp)) {
-                when {
-                    open.text == null -> Text("${open.info.contentType} — open it on the desktop.", color = HelmColors.Dim)
-                    open.info.contentType == "text/html" -> ContainedWebView(html = open.text, modifier = Modifier.fillMaxSize())
-                    open.info.contentType == "text/markdown" ->
-                        Column(Modifier.verticalScroll(rememberScrollState())) { MarkdownText(open.text) }
-                    else -> Column(Modifier.verticalScroll(rememberScrollState())) {
-                        Text(open.text, color = HelmColors.Txt, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+    val context = LocalContext.current
+    val files = remember(context) { AndroidArtifactFiles(context) }
+    LaunchedEffect(content) {
+        val fetched = content ?: return@LaunchedEffect
+        client.state.attachmentHandled()
+        val mime = fetched.info.contentType.ifBlank { "application/octet-stream" }
+        val name = attachmentFileName(fetched.info.title)
+        val message = try {
+            when (fetched.action) {
+                UserTaskAttachmentAction.Save -> withContext(Dispatchers.IO) {
+                    "Saved ${files.save(name, mime, ByteArrayInputStream(fetched.bytes)).location}"
+                }
+                UserTaskAttachmentAction.Open -> {
+                    val file = withContext(Dispatchers.IO) {
+                        val dir = File(context.cacheDir, ATTACHMENT_CACHE).apply { deleteRecursively(); mkdirs() }
+                        File(dir, name).apply { writeBytes(fetched.bytes) }
                     }
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    null
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { client.state.closeAttachment() }) { Text("Close") } },
-    )
+        } catch (error: ActivityNotFoundException) {
+            "No app on this device opens $mime"
+        } catch (error: IOException) {
+            "Could not write ${fetched.info.title}: ${error.message}"
+        }
+        if (message != null) Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
 }
+
+/** A device-safe filename; the title is AI-authored and may hold path characters. */
+internal fun attachmentFileName(title: String): String =
+    title.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(80).ifEmpty { "attachment" }
+
+private const val ATTACHMENT_CACHE = "user-task-attachments"
 
 @Composable
 private fun Hint(text: String) {

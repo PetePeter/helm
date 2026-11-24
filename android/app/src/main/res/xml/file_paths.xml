@@ -14,4 +14,5 @@
     <cache-path name="artifact-capture" path="artifact-capture/" />
     <cache-path name="artifact-uploads" path="artifact-uploads/" />
     <cache-path name="comfy-previews" path="comfy-previews/" />
+    <cache-path name="user-task-attachments" path="user-task-attachments/" />
 </paths>

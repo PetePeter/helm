@@ -1,5 +1,6 @@
-import { ipcMain, shell } from 'electron';
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { UserTaskManager } from '../../session/user-task-manager.js';
@@ -47,7 +48,7 @@ export function setupUserTaskHandlers(manager: UserTaskManager, tempDir: string)
   /** Binary copies (PDF, other files) open in the OS viewer from a private temp copy. */
   ipcMain.handle('userTask:openAttachment', async (_event, taskId: string, attachmentId: string) => {
     const { attachment, content } = manager.readAttachment(taskId, attachmentId);
-    const safeName = attachment.title.replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 80) || 'attachment';
+    const safeName = attachmentFileName(attachment.title);
     const folder = join(tempDir, 'user-task-attachments', randomUUID());
     mkdirSync(folder, { recursive: true });
     const file = join(folder, safeName);
@@ -57,5 +58,21 @@ export function setupUserTaskHandlers(manager: UserTaskManager, tempDir: string)
     return true;
   });
 
+  /** Save As: a copy the user keeps. Resolves to the chosen path, or null on cancel. */
+  ipcMain.handle('userTask:saveAttachment', async (_event, taskId: string, attachmentId: string) => {
+    const { attachment, content } = manager.readAttachment(taskId, attachmentId);
+    const options: Electron.SaveDialogOptions = { title: 'Save Attachment', defaultPath: attachmentFileName(attachment.title) };
+    const window = BrowserWindow.getFocusedWindow();
+    const result = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+    await writeFile(result.filePath, content);
+    return result.filePath;
+  });
+
   logger.info('[IPC] User task handlers registered');
+}
+
+/** The title is AI-authored: never let it carry a path. */
+function attachmentFileName(title: string): string {
+  return title.replace(/[^A-Za-z0-9._ -]/g, '_').slice(0, 80) || 'attachment';
 }

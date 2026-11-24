@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Base64
 
 /** One board note, as `user_task_list` rows it (docs/user-tasks.md). */
 data class UserTaskRow(
@@ -54,8 +55,11 @@ data class UserTaskDetail(
     val doneAt: Long?,
 )
 
-/** An attachment's bytes: text as-is, anything else base64 (shown as "open on desktop"). */
-data class UserTaskAttachmentContent(val info: UserTaskAttachmentInfo, val text: String?)
+/** What the user tapped on an attachment row: hand it to a device app, or keep a copy. */
+enum class UserTaskAttachmentAction { Open, Save }
+
+/** An attachment's decoded bytes, waiting for the UI edge to open or save them. */
+class UserTaskAttachmentContent(val info: UserTaskAttachmentInfo, val bytes: ByteArray, val action: UserTaskAttachmentAction)
 
 sealed interface UserTaskBoardState {
     data object Idle : UserTaskBoardState
@@ -108,15 +112,17 @@ class UserTaskRepository {
         return true
     }
 
-    fun attachmentArrived(result: Any?): Boolean {
+    fun attachmentArrived(result: Any?, action: UserTaskAttachmentAction): Boolean {
         val json = result as? JSONObject ?: return false
         val info = parseAttachment(json.optJSONObject("attachment")) ?: return false
-        val text = if (json.optString("encoding") == "utf8") json.optString("content") else null
-        _attachment.value = UserTaskAttachmentContent(info, text)
+        val content = json.optString("content")
+        val bytes = if (json.optString("encoding") == "utf8") content.toByteArray(Charsets.UTF_8)
+            else runCatching { Base64.getDecoder().decode(content) }.getOrNull() ?: return false
+        _attachment.value = UserTaskAttachmentContent(info, bytes, action)
         return true
     }
 
-    fun closeAttachment() { _attachment.value = null }
+    fun attachmentHandled() { _attachment.value = null }
 
     fun writeFailed(message: String) { _writeError.value = message }
     fun clearWriteError() { _writeError.value = null }

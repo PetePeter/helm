@@ -64,9 +64,15 @@ the user, and the desktop IPC path always writes as the user. No AI can post as
   heading, edit (including item reorder), done/reopen, delete, attachments.
   The project colour is a dot beside the title. Attachments
   render in the opaque-origin artifact frame (invariant 9); PNG/JPEG/GIF/WebP
-  inline; other binaries open in the OS viewer from a temp copy.
+  inline; other binaries open in the OS viewer from a temp copy. Each row's
+  **Save** writes a copy through a Save As dialog (`userTask:saveAttachment`).
 - **Android** — the same MCP tools over the phone link. Phone and tablet use the
   same model as the desktop: the board, then a full-screen detail; Back returns.
+  An attachment row's **Open** fetches the bytes and hands a private cache copy
+  (`cache/user-task-attachments/`, FileProvider grant) to the device app for
+  that type, full screen, instead of an in-app popup. **Save** keeps a copy in
+  Downloads through the artifact save sink. A title is sanitised before it
+  becomes a filename on either side, because an AI may have written it.
 
 ## Files
 

@@ -140,6 +140,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   }> => ipcRenderer.invoke('userTask:readAttachment', taskId, attachmentId),
   userTaskOpenAttachment: (taskId: string, attachmentId: string): Promise<boolean> =>
     ipcRenderer.invoke('userTask:openAttachment', taskId, attachmentId),
+  userTaskSaveAttachment: (taskId: string, attachmentId: string): Promise<string | null> =>
+    ipcRenderer.invoke('userTask:saveAttachment', taskId, attachmentId),
 
   /**
    * From a snapped-out window: ask the main window to resolve a Ctrl+<n>

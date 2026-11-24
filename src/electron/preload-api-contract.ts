@@ -165,6 +165,7 @@ export const PRELOAD_API_DOMAINS = {
     'userTaskDelete',
     'userTaskReadAttachment',
     'userTaskOpenAttachment',
+    'userTaskSaveAttachment',
   ],
   mess: [
     'messHistory',
