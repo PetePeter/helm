@@ -17,6 +17,7 @@ import {
   PANE_SESSIONS,
   PANE_TERMINAL,
   PANE_TIMESHEET,
+  PANE_USER_TASKS,
   PANE_TODOS,
   type DockWorkspaceLayout,
 } from '../../renderer/dock-types';
@@ -41,7 +42,7 @@ export function edgeDockLayout(): DockWorkspaceLayout {
             ],
           },
         },
-        { type: 'group', tabs: [PANE_TERMINAL, PANE_CHAT, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_TIMESHEET], activeTab: PANE_TERMINAL },
+        { type: 'group', tabs: [PANE_TERMINAL, PANE_CHAT, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_USER_TASKS, PANE_TIMESHEET], activeTab: PANE_TERMINAL },
         {
           type: 'dock', side: 'right', mode: 'autohide',
           child: { type: 'group', tabs: [PANE_ARTIFACTS, PANE_DRAFT, PANE_TODOS], activeTab: PANE_ARTIFACTS },

@@ -11,6 +11,7 @@ import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { Draft, DraftSend, DraftWriteResult } from '../../types/draft.js';
 import type { SessionTodo, SessionTodosChanged } from '../../types/todo.js';
+import type { UserTask, UserTaskAttachment, UserTaskPatch, UserTasksChanged } from '../../types/user-task.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { DreamingConfigResult, DreamingSettings } from '../../types/dreaming.js';
@@ -121,6 +122,22 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Read the LLM-managed checklist for a session. */
   todoList: (sessionId: string): Promise<SessionTodo[]> => ipcRenderer.invoke('todo:list', sessionId),
+
+  // ========================================================================
+  // User Tasks — the user's own board; the desktop always acts as the user
+  // ========================================================================
+
+  userTaskList: (): Promise<UserTask[]> => ipcRenderer.invoke('userTask:list'),
+  userTaskAdd: (input: { title: string; body?: string; urgent?: boolean; projectId?: string }): Promise<UserTask> =>
+    ipcRenderer.invoke('userTask:add', input),
+  userTaskUpdate: (id: string, patch: UserTaskPatch): Promise<UserTask> =>
+    ipcRenderer.invoke('userTask:update', id, patch),
+  userTaskDelete: (id: string): Promise<boolean> => ipcRenderer.invoke('userTask:delete', id),
+  userTaskReadAttachment: (taskId: string, attachmentId: string): Promise<{
+    attachment: UserTaskAttachment; encoding: 'utf8' | 'base64'; content: string;
+  }> => ipcRenderer.invoke('userTask:readAttachment', taskId, attachmentId),
+  userTaskOpenAttachment: (taskId: string, attachmentId: string): Promise<boolean> =>
+    ipcRenderer.invoke('userTask:openAttachment', taskId, attachmentId),
 
   /**
    * From a snapped-out window: ask the main window to resolve a Ctrl+<n>
@@ -1444,6 +1461,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_event: Electron.IpcRendererEvent, data: Draft) => { callback(data); };
     ipcRenderer.on('draft:changed', listener);
     return () => ipcRenderer.removeListener('draft:changed', listener);
+  },
+
+  /** Subscribe to User Tasks board changes (desktop, phone, or any AI). */
+  onUserTasksChanged: (callback: (change: UserTasksChanged) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, change: UserTasksChanged) => { callback(change); };
+    ipcRenderer.on('userTasks:changed', listener);
+    return () => ipcRenderer.removeListener('userTasks:changed', listener);
   },
 
   /** Subscribe to live todo list changes from session_todo_* MCP calls. */

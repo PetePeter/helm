@@ -168,7 +168,7 @@ internal fun HelmHomeEffects(client: HelmClient, appContext: Context, state: Hel
     // link comes up; keying on failure itself would retry forever after each failure.
     LaunchedEffect(home.homeTab, home.selectedSessionId, state.linkState) {
         val unasked = state.projects is ProjectList.Idle || state.projects is ProjectList.Failed
-        if (home.selectedSessionId == null && (home.homeTab == HomeTab.Plans || home.homeTab == HomeTab.Contexts) && unasked) {
+        if (home.selectedSessionId == null && (home.homeTab == HomeTab.Plans || home.homeTab == HomeTab.Contexts || home.homeTab == HomeTab.Tasks) && unasked) {
             client.workspace.refreshProjects()
         }
     }

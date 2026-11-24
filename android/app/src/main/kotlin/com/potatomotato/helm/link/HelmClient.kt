@@ -79,6 +79,7 @@ class HelmClient(
     planWrites: PlanWrites = PlanWrites(),
     contexts: ContextRepository = ContextRepository(),
     time: TimeRepository = TimeRepository(),
+    userTasks: com.potatomotato.helm.data.UserTaskRepository = com.potatomotato.helm.data.UserTaskRepository(),
     alerts: AlertRouter = AlertRouter(),
     uploads: ArtifactUploads = ArtifactUploads(),
     shares: ShareFlow = ShareFlow(),
@@ -87,6 +88,7 @@ class HelmClient(
     val artifacts = ArtifactClient(this, artifacts, uploads, shares, control, chats)
     val plans = PlanClient(this, plans, sequences, planWrites, contexts)
     val workspace = WorkspaceClient(this, capabilities, control, time, contexts)
+    val userTasks = UserTaskClient(this, userTasks)
 
     /**
      * Where a pushed LAN address list lands (P-0752).

@@ -220,6 +220,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setArtifactManager = vi.fn();
     this.setDraftManager = vi.fn();
     this.setTodoManager = vi.fn();
+    this.setUserTaskManager = vi.fn();
     this.setMqttTriggerManager = vi.fn();
     this.setArtifactUploadService = vi.fn();
     this.setMemoryManager = vi.fn();

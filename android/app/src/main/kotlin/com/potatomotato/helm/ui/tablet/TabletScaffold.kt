@@ -64,6 +64,15 @@ internal fun TabletScaffold(
         if (back.clearSessionSelection) state.homeState.clearSessionSelection()
     }
 
+    // The task board is a root surface of its own: it takes the whole shell,
+    // with the detail docked beside the notes instead of over them.
+    if (state.homeState.homeTab == com.potatomotato.helm.ui.components.HomeTab.Tasks && session == null) {
+        androidx.compose.foundation.layout.Column(modifier = state.modifier.fillMaxSize().background(HelmColors.Bg)) {
+            TabletHomeAppBar(state, actions)
+            com.potatomotato.helm.ui.tasks.UserTasksScreen(client = state.userTasks, projectName = state.projectNameOf)
+        }
+        return
+    }
     Box(
         modifier = state.modifier.fillMaxSize().keyboardFocusTarget(
             keyboardFocus?.sessionListRequester.takeIf { layout == TabletLayout.Collapsed },

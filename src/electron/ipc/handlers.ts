@@ -63,6 +63,8 @@ import { setupRuntimeGroupHandlers } from './runtime-group-handlers.js';
 import { setupArtifactHandlers } from './artifact-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
 import { setupTodoHandlers } from './todo-handlers.js';
+import { setupUserTaskHandlers } from './user-task-handlers.js';
+import type { UserTasksChanged } from '../../types/user-task.js';
 import { setupMemoryHandlers } from './memory-handlers.js';
 import { setupMessHandlers } from './mess-handlers.js';
 import { phoneActivityTarget, setupTimeTrackingHandlers, statisticsQuery } from './time-tracking-handlers.js';
@@ -205,6 +207,7 @@ export function registerIPCHandlers(
     artifactTempRegistry,
     draftManager,
     todoManager,
+    userTaskManager,
     memoryPersistence,
     memoryAttachmentManager,
     memoryManager,
@@ -245,6 +248,7 @@ export function registerIPCHandlers(
   helmControlService.setArtifactManager(adminRuntime.artifactManager, adminRuntime.artifactAttachmentManager);
   helmControlService.setDraftManager(adminRuntime.draftManager);
   helmControlService.setTodoManager(adminRuntime.todoManager);
+  helmControlService.setUserTaskManager(adminRuntime.userTaskManager);
   helmControlService.setMqttTriggerManager(adminRuntime.mqttTriggerManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
@@ -617,6 +621,7 @@ export function registerIPCHandlers(
     todoManager,
     (sessionId) => Boolean(sessionManager.getSession(sessionId)) || recycleBinManager.list().some(entry => entry.sessionId === sessionId),
   );
+  setupUserTaskHandlers(userTaskManager, getTempDir(dirname ?? process.cwd()));
   setupMemoryHandlers(memoryManager, memoryAttachmentManager, sessionManager, windowManager, artifactTempRegistry);
 
   // Memory mutations can originate from MCP or another window. Route the
@@ -668,6 +673,11 @@ export function registerIPCHandlers(
   todoManager.on('todos:changed', (change: SessionTodosChanged) => {
     for (const win of windowManager.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('todos:changed', change);
+    }
+  });
+  userTaskManager.on('userTasks:changed', (change: UserTasksChanged) => {
+    for (const win of windowManager.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('userTasks:changed', change);
     }
   });
   setupPtyHandlers(

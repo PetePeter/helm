@@ -90,6 +90,7 @@
     <string name="home_tab_plans">Plans</string>
     <string name="home_tab_contexts">Contexts</string>
     <string name="home_tab_statistics">Statistics</string>
+    <string name="home_tab_tasks">My Tasks</string>
 
     <!--
       The glyph that leads each surface in the app bar's surface menu. Three
@@ -101,6 +102,7 @@
     <string name="context_glyph_plans">✦</string>
     <string name="context_glyph_contexts">◈</string>
     <string name="context_glyph_statistics">📊</string>
+    <string name="context_glyph_tasks">📌</string>
     <!-- Marks the surface you are already on. -->
     <string name="context_glyph_check">✓</string>
 

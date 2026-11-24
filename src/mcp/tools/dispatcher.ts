@@ -5,6 +5,7 @@ import type { AuthContext } from './types.js';
 import { getMainProcessAdminGuard } from '../../electron/ipc/admin-guard.js';
 import type { Artifact } from '../../types/artifact.js';
 import type { ArtifactFileResult } from '../../session/artifact-file-import.js';
+import type { UserTaskAttachRequest } from '../services/helm-user-task-service.js';
 import type { ScheduledTaskFrozenPolicy } from '../../types/scheduled-task.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
@@ -144,6 +145,19 @@ function draftTarget(service: HelmControlService, authContext: AuthContext, args
   const target = service.getSession(args.sessionId);
   if (!target) throw new Error(`Session not found: ${args.sessionId}`);
   return target.id;
+}
+
+/** Each attach item names exactly one source the task will copy. */
+function parseUserTaskAttach(value: unknown): UserTaskAttachRequest[] {
+  if (!Array.isArray(value)) throw new Error('attach must be an array');
+  return value.map((raw) => {
+    const item = asRecord(raw);
+    const keys = (['artifactId', 'planId', 'filePath'] as const).filter(key => item[key] !== undefined);
+    if (keys.length !== 1) throw new Error('each attach item needs exactly one of artifactId, planId or filePath');
+    const key = keys[0];
+    const ref = asString(item[key], `${key} must be a non-empty string`);
+    return { [key]: ref } as UserTaskAttachRequest;
+  });
 }
 
 /** Every todo tool mutates or reads only the server-authenticated caller's list. */
@@ -879,6 +893,36 @@ export async function callMcpTool(
         });
       case 'session_eta_clear':
         return service.clearSessionEta(requireOwnEta(authContext, args, name));
+      case 'user_task_add':
+        return service.userTasks().add(authContext, {
+          title: asStringValue(args.title, 'title is required'),
+          ...(args.body === undefined ? {} : { body: asStringValue(args.body, 'body must be a string') }),
+          ...(args.urgent === undefined ? {} : { urgent: asBoolean(args.urgent, 'urgent must be a boolean') }),
+          ...(args.projectId === undefined ? {} : { projectId: asStringValue(args.projectId, 'projectId must be a string') }),
+          ...(args.attach === undefined ? {} : { attach: parseUserTaskAttach(args.attach) }),
+        });
+      case 'user_task_list':
+        return service.userTasks().list({
+          includeDone: args.includeDone === true,
+          ...(args.projectId === undefined ? {} : { projectId: asStringValue(args.projectId, 'projectId must be a string') }),
+        });
+      case 'user_task_get':
+        return service.userTasks().get(
+          asString(args.id, 'id is required'),
+          args.attachmentId === undefined ? undefined : asString(args.attachmentId, 'attachmentId must not be empty'),
+        );
+      case 'user_task_update':
+        return service.userTasks().update(asString(args.id, 'id is required'), {
+          ...(args.title === undefined ? {} : { title: asStringValue(args.title, 'title must be a string') }),
+          ...(args.body === undefined ? {} : { body: asStringValue(args.body, 'body must be a string') }),
+          ...(args.urgent === undefined ? {} : { urgent: asBoolean(args.urgent, 'urgent must be a boolean') }),
+          ...(args.projectId === undefined ? {} : { projectId: asStringValue(args.projectId, 'projectId must be a string') || null }),
+          ...(args.done === undefined ? {} : { done: asBoolean(args.done, 'done must be a boolean') }),
+        });
+      case 'user_task_done':
+        return service.userTasks().done(asString(args.id, 'id is required'));
+      case 'user_task_delete':
+        return service.userTasks().delete(asString(args.id, 'id is required'));
       case 'session_draft_get': {
         const target = draftTarget(service, authContext, args, name);
         return forwardIfRemoteRow(service, target, name, args) ?? service.getSessionDraft(target);

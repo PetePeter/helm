@@ -20,6 +20,7 @@ export interface ProfilePersistencePaths {
   artifactsFile: string;
   draftsDir: string;
   todosDir: string;
+  userTasksDir: string;
   cliTypesFile: string;
   skillsFile: string;
   skillAnalyticsFile: string;
@@ -75,6 +76,7 @@ export function getProfilePersistencePaths(configDir: string): ProfilePersistenc
     artifactsFile: join(configDir, 'artifacts.yaml'),
     draftsDir: join(configDir, 'drafts'),
     todosDir: join(configDir, 'todos'),
+    userTasksDir: join(configDir, 'user-tasks'),
     cliTypesFile: join(configDir, 'cli-types.yaml'),
     skillsFile: join(configDir, 'skills.yaml'),
     skillAnalyticsFile: join(configDir, 'skill-analytics.json'),

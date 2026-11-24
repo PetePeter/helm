@@ -39,6 +39,7 @@ import {
   PANE_QUICK_SPAWN,
   PANE_DRAFT,
   PANE_TODOS,
+  PANE_USER_TASKS,
   PANE_SCHEDULER,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -91,7 +92,7 @@ describe('default Classic layout', () => {
           type: 'split',
           direction: 'vertical',
           children: [
-            { type: 'group', tabs: [PANE_TERMINAL, PANE_CHAT, PANE_ARTIFACTS, PANE_TIMESHEET, PANE_MESS, PANE_MEMORIES, PANE_PLAN_SCREEN], activeTab: PANE_TERMINAL },
+            { type: 'group', tabs: [PANE_TERMINAL, PANE_CHAT, PANE_ARTIFACTS, PANE_TIMESHEET, PANE_MESS, PANE_MEMORIES, PANE_PLAN_SCREEN, PANE_USER_TASKS], activeTab: PANE_TERMINAL },
             { type: 'group', tabs: [PANE_DRAFT, PANE_TODOS], activeTab: PANE_DRAFT },
           ],
         },
@@ -164,6 +165,7 @@ describe('edge dock layout', () => {
       PANE_PLAN_SCREEN,
       PANE_MEMORIES,
       PANE_MESS,
+      PANE_USER_TASKS,
       PANE_TIMESHEET,
     ]);
   });

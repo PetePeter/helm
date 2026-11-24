@@ -13,6 +13,8 @@ import { DraftManager } from '../session/draft-manager.js';
 import { createDraftStore } from '../session/draft-persistence.js';
 import { TodoManager } from '../session/todo-manager.js';
 import { createTodoStore } from '../session/todo-persistence.js';
+import { UserTaskManager } from '../session/user-task-manager.js';
+import { createUserTaskStore } from '../session/user-task-persistence.js';
 import { MemoryPersistence } from '../session/memory-persistence.js';
 import { MemoryAttachmentManager } from '../session/memory-attachment-manager.js';
 import { MemoryManager } from '../session/memory-manager.js';
@@ -75,6 +77,7 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
   artifactManager.importAll(loadArtifacts(paths.artifactsFile));
   const draftManager = new DraftManager(createDraftStore(paths.draftsDir));
   const todoManager = new TodoManager(createTodoStore(paths.todosDir));
+  const userTaskManager = new UserTaskManager(createUserTaskStore(paths.userTasksDir));
   const memoryPersistence = new MemoryPersistence(paths.memoriesFile);
   const memoryAttachmentManager = new MemoryAttachmentManager(paths.memoryAttachmentsDir);
   const planManager = new PlanManager(projectStore, paths);
@@ -189,6 +192,7 @@ export function createProfileRuntime(options: CreateProfileRuntimeOptions): Prof
     artifactTempRegistry,
     draftManager,
     todoManager,
+    userTaskManager,
     memoryManager,
     memoryPersistence,
     memoryAttachmentManager,

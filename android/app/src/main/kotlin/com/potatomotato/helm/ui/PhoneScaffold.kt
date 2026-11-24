@@ -107,6 +107,7 @@ internal data class PhoneScaffoldState(
     val contextListState: ContextList,
     val contextDetailState: ContextDetail,
     val timeState: TimeState,
+    val userTasks: com.potatomotato.helm.link.UserTaskClient,
     val timeAsk: TimeAsk,
     val artifactList: ArtifactList,
     val chat: PhoneChatState,
@@ -123,7 +124,17 @@ internal data class PhoneScaffoldState(
     val edgeBounce: Animatable<Float, AnimationVector1D>,
     val chatAttachSession: HelmSession?,
     val shareState: ShareState,
-)
+) {
+    /** A project's display name for the task board, when the projects answer has it. */
+    val projectNameOf: (String) -> String?
+        get() = { id ->
+            when (val p = projectsState) {
+                is com.potatomotato.helm.data.ProjectList.Ready -> p.projects
+                is com.potatomotato.helm.data.ProjectList.Refreshing -> p.cached
+                else -> emptyList()
+            }.firstOrNull { it.id == id }?.name
+        }
+}
 
 /** Callback surface for phone renderers. This keeps request ownership in HelmHome. */
 internal data class PhoneScaffoldActions(

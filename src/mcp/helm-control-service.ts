@@ -77,6 +77,8 @@ import type { CompletedSessionTodo, SessionTodo } from '../types/todo.js';
 import type { TodoManager } from '../session/todo-manager.js';
 import { HelmMemoryService, type MemoryExportResult, type WrittenMemory } from './services/helm-memory-service.js';
 import { HelmMessService } from './services/helm-mess-service.js';
+import { HelmUserTaskService } from './services/helm-user-task-service.js';
+import type { UserTaskManager } from '../session/user-task-manager.js';
 import { MessManager } from '../session/mess-manager.js';
 import { MessPersistence } from '../session/mess-persistence.js';
 import type { MemoryAttachmentManager } from '../session/memory-attachment-manager.js';
@@ -346,6 +348,7 @@ export class HelmControlService extends EventEmitter {
   private memoryManager: MemoryManager | null = null;
   private suggestedPlanService: SuggestedPlanService | null = null;
   private messService?: HelmMessService;
+  private userTaskService?: HelmUserTaskService;
   private messManager: MessManager | null = null;
   private readonly schedulerService: HelmSchedulerService | null;
   private readonly projectService: HelmProjectService | null;
@@ -542,6 +545,32 @@ export class HelmControlService extends EventEmitter {
     this.sessionService.setSessionTodosLookup(sessionId => manager.list(sessionId));
     this.sessionService.setSessionTodoCopier((fromSessionId, toSessionId) => manager.copySession(fromSessionId, toSessionId));
     this.sessionChangeFeed.attachTodos(manager);
+  }
+
+  /** Wire the profile's User Tasks board behind the user_task_* MCP tools. */
+  setUserTaskManager(manager: UserTaskManager): void {
+    this.userTaskService = new HelmUserTaskService({
+      manager,
+      getSession: (id) => {
+        const session = this.sessionManager.getSession(id);
+        return session ? {
+          id: session.id,
+          name: session.name,
+          cliType: session.cliType,
+          workingDir: session.workingDir,
+          projectId: session.projectId,
+        } : undefined;
+      },
+      findProjectIdByPath: (dir) => this.projectStore?.findByPath(dir)?.id,
+      projectExists: (projectId) => Boolean(this.projectStore?.getById(projectId)),
+      getArtifact: (id) => this.artifactManager?.get(id) ?? null,
+      getPlan: (id) => this.planManager.getItem(id),
+    });
+  }
+
+  userTasks(): HelmUserTaskService {
+    if (!this.userTaskService) throw new Error('User tasks are not available: UserTaskManager is not configured.');
+    return this.userTaskService;
   }
 
   /** Wire this profile's recycle-bin search and the shared main-process restorer. */

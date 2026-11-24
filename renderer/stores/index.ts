@@ -7,6 +7,7 @@ export { useSessionsScreenStore } from './sessions-screen.js';
 export { useConfigStore } from './config.js';
 export { useDraftsStore } from './drafts.js';
 export { useTodosStore } from './todos.js';
+export { useUserTasksStore } from './user-tasks.js';
 export { usePlansStore } from './plans.js';
 export { useChipBarStore } from './chip-bar.js';
 export { useNavigationStore } from './navigation.js';

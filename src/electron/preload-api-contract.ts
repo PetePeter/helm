@@ -157,6 +157,14 @@ export const PRELOAD_API_DOMAINS = {
     'projectRemoveDir',
     'projectSetMainDir',
   ],
+  userTasks: [
+    'userTaskList',
+    'userTaskAdd',
+    'userTaskUpdate',
+    'userTaskDelete',
+    'userTaskReadAttachment',
+    'userTaskOpenAttachment',
+  ],
   mess: [
     'messHistory',
     'onMessAppended',
@@ -429,6 +437,7 @@ export const PRELOAD_API_DOMAINS = {
     'onArtifactReveal',
     'onDraftChanged',
     'onTodosChanged',
+    'onUserTasksChanged',
     'onAppCloseRequest',
     'onPeerDiscovered',
     'onPeerLost',

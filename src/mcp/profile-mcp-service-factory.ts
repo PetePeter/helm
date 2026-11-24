@@ -82,6 +82,7 @@ export function createProfileRuntimeMcpServiceSet(
   service.setArtifactManager(runtime.artifactManager, runtime.artifactAttachmentManager);
   service.setDraftManager(runtime.draftManager);
   service.setTodoManager(runtime.todoManager);
+  service.setUserTaskManager(runtime.userTaskManager);
   service.setMqttTriggerManager(runtime.mqttTriggerManager);
   service.setRecycleBinService(runtime.recycleBinManager, runtime.userProfileId, options.restoreRecycleBinEntry);
   service.setMemoryManager(runtime.memoryManager, runtime.memoryAttachmentManager, runtime.artifactTempRegistry);

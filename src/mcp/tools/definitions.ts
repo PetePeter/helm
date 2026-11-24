@@ -1362,7 +1362,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_todo_wait',
     title: 'Park Session Todo On User',
-    description: 'Mark a todo in YOUR OWN session checklist as waiting on the user (waiting: true), or resume it (false). A waiting todo stays listed but no longer blocks you from stopping — use it when you need an answer and the user may be away; never loop trying to finish it. session_todo_done still completes it.',
+    description: 'Mark a todo in YOUR OWN session checklist as waiting on the user (waiting: true), or resume it (false). A waiting todo stays listed but no longer blocks you from stopping — use it when you need an answer and the user may be away; never loop trying to finish it. session_todo_done still completes it. If the user must DO something (decide, test, approve) rather than just answer, also post it with user_task_add so it survives on their board.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1384,6 +1384,96 @@ export const MCP_TOOLS: McpTool[] = [
     title: 'List Session Todos',
     description: 'List YOUR OWN session todos, with open items first. The desktop Todos pane displays the same list read-only.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'user_task_add',
+    title: 'Add User Task',
+    description: 'Post a task for the USER to do later on their User Tasks board (desktop, phone, tablet) — something only they can do: decide, approve, test on a device, buy, sign in, give a secret. Not your own work steps (those are session_todo_*). Use it when you would otherwise leave the user a "you need to…" note that gets lost in the terminal. The task outlives your session: your name, CLI and folder are recorded, and every attachment is COPIED (artifact = latest version, plan = snapshot + live link, file = bytes), so attach what the user needs to act. Your project is filled in from your folder.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short imperative title, max 200 chars (e.g. "Pick palette A or B").' },
+        body: { type: 'string', description: 'Optional detail: why, what to check, what happens next. Max 4000 chars.' },
+        urgent: { type: 'boolean', description: 'true only when work is blocked on it.' },
+        projectId: { type: 'string', description: 'Override the project; "" for none (General).' },
+        attach: {
+          type: 'array',
+          maxItems: 10,
+          description: 'Copies the task will own. Each item has exactly one of artifactId (one of YOUR artifacts), planId, or filePath (absolute, max 10MB).',
+          items: {
+            type: 'object',
+            properties: { artifactId: { type: 'string' }, planId: { type: 'string' }, filePath: { type: 'string' } },
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['title'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'user_task_list',
+    title: 'List User Tasks',
+    description: 'List the user task board as compact rows (urgent first, then newest). Open tasks only unless includeDone. Check it before adding, to avoid duplicates.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        includeDone: { type: 'boolean' },
+        projectId: { type: 'string', description: 'Only this project; "" for tasks with no project.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'user_task_get',
+    title: 'Get User Task',
+    description: 'Read one user task in full, or one of its attachments (attachmentId): utf8 for text, base64 otherwise.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' }, attachmentId: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'user_task_update',
+    title: 'Update User Task',
+    description: 'Edit a user task: title, body, urgent, projectId ("" clears), or done (false reopens).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        title: { type: 'string' },
+        body: { type: 'string' },
+        urgent: { type: 'boolean' },
+        projectId: { type: 'string' },
+        done: { type: 'boolean' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'user_task_done',
+    title: 'Complete User Task',
+    description: 'Mark a user task done — e.g. when the user tells you they did it, or it no longer applies. Done tasks are kept 7 days, then purged.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'user_task_delete',
+    title: 'Delete User Task',
+    description: 'Delete a user task and its attachment copies now.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
   },
   {
     name: 'session_set_locked',

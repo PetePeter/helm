@@ -330,6 +330,23 @@ Done removes the item, finished or no longer wanted. The
 and session mission current. Helm supplies it again after session resets; see
 [todos.md](todos.md) for storage and lifecycle details.
 
+## Work only the user can do: `user_task_*`
+
+Your todos are YOUR steps. When something needs the USER — pick an option,
+approve a change, test on a device, buy, sign in, hand over a secret — post it
+to their User Tasks board instead of leaving a "you need to…" line in the
+terminal, where it scrolls away:
+
+```text
+user_task_add(title="Pick palette A or B", body="…", urgent=false,
+              attach=[{artifactId:"…"}, {planId:"…"}, {filePath:"C:/…/shot.png"}])
+user_task_list()            -> open tasks, urgent first (check before adding)
+user_task_done(id="…")      -> when the user tells you it is done
+```
+
+The task outlives your session: Helm records your name, CLI and folder, and
+copies every attachment. See [user-tasks.md](user-tasks.md).
+
 ## Setting your session ETA
 
 For multi-step work, use `session_eta_set` with positive `minutes` from now or

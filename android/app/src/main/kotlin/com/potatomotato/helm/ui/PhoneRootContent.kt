@@ -136,6 +136,11 @@ internal fun PhoneRootContent(state: PhoneScaffoldState, actions: PhoneScaffoldA
                     )
                 }
 
+                HomeTab.Tasks -> com.potatomotato.helm.ui.tasks.UserTasksScreen(
+                    client = state.userTasks,
+                    projectName = state.projectNameOf,
+                )
+
                 HomeTab.Time -> TimeScreen(
                     ask = state.timeAsk,
                     view = LoadViews.time(state.timeState, state.timeAsk),

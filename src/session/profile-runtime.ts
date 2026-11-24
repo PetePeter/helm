@@ -23,6 +23,7 @@ import type { SkillAnalyticsManager } from './skill-analytics-manager.js';
 import type { SkillManager } from './skill-manager.js';
 import type { TimeTracker } from './time-tracker.js';
 import type { TodoManager } from './todo-manager.js';
+import type { UserTaskManager } from './user-task-manager.js';
 import type { PatternMatcher } from './pattern-matcher.js';
 import type { StartupPromptWatcher } from './startup-prompt-watcher.js';
 
@@ -47,6 +48,7 @@ export interface ProfileRuntime {
   readonly artifactTempRegistry: ArtifactTempRegistry;
   readonly draftManager: DraftManager;
   readonly todoManager: TodoManager;
+  readonly userTaskManager: UserTaskManager;
   readonly memoryManager: MemoryManager;
   readonly memoryPersistence: MemoryPersistence;
   readonly memoryAttachmentManager: MemoryAttachmentManager;

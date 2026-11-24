@@ -388,6 +388,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             contextListState = contextListState,
             contextDetailState = contextDetailState,
             timeState = timeState,
+            userTasks = client.userTasks,
             timeAsk = timeAsk,
             artifactList = artifactList,
             chat = PhoneChatState(
