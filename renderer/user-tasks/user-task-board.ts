@@ -31,7 +31,7 @@ export function matchesFilter(task: UserTask, filter: UserTaskFilter): boolean {
 export function matchesSearch(task: UserTask, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [task.title, task.body, authorLabel(task), ...task.attachments.map(a => a.title)]
+  return [task.title, task.body, authorLabel(task), ...task.attachments.map(a => a.title), ...task.checklist.map(i => i.text)]
     .some(text => text.toLowerCase().includes(q));
 }
 

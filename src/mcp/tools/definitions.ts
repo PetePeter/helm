@@ -1396,6 +1396,17 @@ export const MCP_TOOLS: McpTool[] = [
         body: { type: 'string', description: 'Optional detail: why, what to check, what happens next. Max 4000 chars.' },
         urgent: { type: 'boolean', description: 'true only when work is blocked on it.' },
         projectId: { type: 'string', description: 'Override the project; "" for none (General).' },
+        checklist: {
+          type: 'array',
+          maxItems: 50,
+          description: 'Steps the user can tick, in order (max 50, 200 chars each). Each item is {text, done?}; pass a known id to keep that item and its tick.',
+          items: {
+            type: 'object',
+            properties: { id: { type: 'string' }, text: { type: 'string' }, done: { type: 'boolean' } },
+            required: ['text'],
+            additionalProperties: false,
+          },
+        },
         attach: {
           type: 'array',
           maxItems: 10,
@@ -1438,7 +1449,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'user_task_update',
     title: 'Update User Task',
-    description: 'Edit a user task: title, body, urgent, projectId ("" clears), or done (false reopens).',
+    description: 'Edit a user task: title, body, urgent, projectId ("" clears), done (false reopens), or checklist (replaces the whole list; to tick one item use user_task_check).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1448,6 +1459,17 @@ export const MCP_TOOLS: McpTool[] = [
         urgent: { type: 'boolean' },
         projectId: { type: 'string' },
         done: { type: 'boolean' },
+        checklist: {
+          type: 'array',
+          maxItems: 50,
+          description: 'Steps the user can tick, in order (max 50, 200 chars each). Each item is {text, done?}; pass a known id to keep that item and its tick. Items left out are removed.',
+          items: {
+            type: 'object',
+            properties: { id: { type: 'string' }, text: { type: 'string' }, done: { type: 'boolean' } },
+            required: ['text'],
+            additionalProperties: false,
+          },
+        },
       },
       required: ['id'],
       additionalProperties: false,
@@ -1461,6 +1483,17 @@ export const MCP_TOOLS: McpTool[] = [
       type: 'object',
       properties: { id: { type: 'string' } },
       required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'user_task_check',
+    title: 'Tick User Task Item',
+    description: 'Tick (or untick with done:false) one checklist item of a user task — e.g. when the user tells you a step is done. Ticking the last item does not complete the task; use user_task_done for that.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' }, itemId: { type: 'string' }, done: { type: 'boolean' } },
+      required: ['id', 'itemId'],
       additionalProperties: false,
     },
   },

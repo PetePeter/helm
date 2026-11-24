@@ -199,7 +199,10 @@ class HelmClient(
             // off reaches a phone that is connected right now.
             is MobileRecord.Lan -> onLanAddresses(record.addresses)
 
-            is MobileRecord.Changes -> sessions.onChanges(record)
+            is MobileRecord.Changes -> when (record.kind) {
+                USER_TASKS_CHANGE_KIND -> userTasks.onChanged()
+                else -> sessions.onChanges(record)
+            }
 
             // A `call` inbound is Helm asking the PHONE to do something, which it
             // never does — the phone has no gate of its own to answer through.
@@ -361,6 +364,9 @@ class HelmClient(
         internal const val METHOD_TIMESHEET = "__timesheet__"
         /** The `changes` record kind for the session list; `SESSIONS_CHANGE_KIND` on the desktop. */
         internal const val SESSIONS_CHANGE_KIND = "sessions"
+
+        /** The `changes` kind for the User Tasks board; `USER_TASKS_CHANGE_KIND` on the desktop. */
+        internal const val USER_TASKS_CHANGE_KIND = "userTasks"
         internal const val RING_KIND = "ring"
         internal const val TRANSFER_KIND = "transfer"
         internal const val METHOD_DIRECTORY_LIST = "directory_list"

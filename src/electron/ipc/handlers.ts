@@ -1251,6 +1251,16 @@ export function registerIPCHandlers(
   notificationManager.setMobileNotifier(mobileAlertNotifier);
   const disposeAlertObservers = mobileAlertNotifier.observeProfiles(registry.all());
 
+  // A board change nudges that profile's phones to refetch, so an open screen stays live.
+  const disposeUserTaskNotifiers = registry.all().map(runtime => {
+    const changed = () => {
+      try { mobileChatBridge.sendUserTasksChanged(runtime.userProfileId); }
+      catch (error) { logger.warn(`[MobileUserTasks] Could not notify phones: ${error}`); }
+    };
+    runtime.userTaskManager.on('userTasks:changed', changed);
+    return () => runtime.userTaskManager.off('userTasks:changed', changed);
+  });
+
   const disposeArtifactNotifiers = registry.all().map(runtime => {
     const notifier = new MobileArtifactNotifier(mobileChatBridge, runtime.artifactManager);
     const changed = (sessionId: string, artifactIds: string[]) => notifier.changed(sessionId, artifactIds);
@@ -1290,6 +1300,7 @@ export function registerIPCHandlers(
       chatBroker.unregister(mobileChatBridge.provider);
       profileMcpServiceFactory.dispose();
       disposeArtifactNotifiers.forEach(dispose => dispose());
+      disposeUserTaskNotifiers.forEach(dispose => dispose());
       profileComposition.dispose();
       stateDetector.dispose();
       notificationManager.dispose();

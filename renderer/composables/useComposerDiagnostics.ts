@@ -15,8 +15,8 @@ function describeElement(target: Element | null): string {
   return `${tag}${id}${classes}`;
 }
 
-function isWhitespace(data: string | null): boolean {
-  return data !== null && data.length > 0 && /^\s+$/u.test(data);
+function isWhitespace(data: string | null | undefined): boolean {
+  return typeof data === 'string' && data.length > 0 && /^\s+$/u.test(data);
 }
 
 /** Logs focus and whitespace-input metadata without capturing any typed text. */
@@ -80,6 +80,20 @@ export function useComposerDiagnostics(
         metaKey: event.metaKey,
       });
     };
+    // Space reached the box but nothing was typed: was it cancelled later in the
+    // bubble phase, or did the keypress (where the text is produced) never come?
+    const onKeyDownSettled = (event: KeyboardEvent): void => {
+      if (event.code !== 'Space' || event.target !== input) return;
+      log('space-keydown-settled', { defaultPrevented: event.defaultPrevented });
+    };
+    const onKeyPress = (event: KeyboardEvent): void => {
+      if (event.code !== 'Space') return;
+      log('space-keypress', { defaultPrevented: event.defaultPrevented });
+    };
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.code !== 'Space') return;
+      log('space-keyup', { valueLength: input.value.length });
+    };
     const onBeforeInput = (event: InputEvent): void => {
       if (!isWhitespace(event.data)) return;
       log('space-beforeinput', {
@@ -104,6 +118,9 @@ export function useComposerDiagnostics(
     input.addEventListener('pointerdown', onPointerDown);
     input.addEventListener('pointerup', onPointerUp);
     input.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDownSettled);
+    input.addEventListener('keypress', onKeyPress);
+    input.addEventListener('keyup', onKeyUp);
     input.addEventListener('beforeinput', onBeforeInput);
     input.addEventListener('input', onInput);
     input.addEventListener('compositionstart', onCompositionStart);
@@ -116,6 +133,9 @@ export function useComposerDiagnostics(
       input.removeEventListener('pointerdown', onPointerDown);
       input.removeEventListener('pointerup', onPointerUp);
       input.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDownSettled);
+      input.removeEventListener('keypress', onKeyPress);
+      input.removeEventListener('keyup', onKeyUp);
       input.removeEventListener('beforeinput', onBeforeInput);
       input.removeEventListener('input', onInput);
       input.removeEventListener('compositionstart', onCompositionStart);

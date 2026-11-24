@@ -36,11 +36,12 @@ export const useUserTasksStore = defineStore('userTasks', () => {
   const add = (input: { title: string; body?: string; urgent?: boolean; projectId?: string }) =>
     userTasksClient.userTaskAdd(input);
   const update = (id: string, patch: UserTaskPatch) => userTasksClient.userTaskUpdate(id, patch);
+  const check = (id: string, itemId: string, done: boolean) => userTasksClient.userTaskCheck(id, itemId, done);
   const remove = (id: string) => userTasksClient.userTaskDelete(id);
   const openAttachment = (taskId: string, attachmentId: string) =>
     userTasksClient.userTaskOpenAttachment(taskId, attachmentId);
   const readAttachment = (taskId: string, attachmentId: string) =>
     userTasksClient.userTaskReadAttachment(taskId, attachmentId);
 
-  return { tasks, loaded, error, openCount, load, add, update, remove, readAttachment, openAttachment };
+  return { tasks, loaded, error, openCount, load, add, update, check, remove, readAttachment, openAttachment };
 });

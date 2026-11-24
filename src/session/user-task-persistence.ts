@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
-import type { UserTask, UserTaskAttachment, UserTaskAuthor } from '../types/user-task.js';
+import type { UserTask, UserTaskAttachment, UserTaskAuthor, UserTaskChecklistItem } from '../types/user-task.js';
 import type { UserTaskStore } from './user-task-manager.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 
@@ -42,6 +42,11 @@ function parseAttachment(raw: unknown): UserTaskAttachment | null {
   };
 }
 
+function parseChecklistItem(raw: unknown): UserTaskChecklistItem | null {
+  if (!isRecord(raw) || !isString(raw.id) || !isString(raw.text)) return null;
+  return { id: raw.id, text: raw.text, ...(isNumber(raw.doneAt) ? { doneAt: raw.doneAt } : {}) };
+}
+
 function parseTask(raw: unknown): UserTask | null {
   if (!isRecord(raw) || !isString(raw.id) || !SAFE_ID.test(raw.id) || !isString(raw.title)) return null;
   if (!isNumber(raw.createdAt) || !isNumber(raw.updatedAt)) return null;
@@ -58,6 +63,9 @@ function parseTask(raw: unknown): UserTask | null {
     ...(isString(raw.projectId) ? { projectId: raw.projectId } : {}),
     urgent: raw.urgent === true,
     attachments,
+    checklist: Array.isArray(raw.checklist)
+      ? raw.checklist.flatMap(item => { const i = parseChecklistItem(item); return i ? [i] : []; })
+      : [],
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
     ...(isNumber(raw.doneAt) ? { doneAt: raw.doneAt } : {}),

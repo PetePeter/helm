@@ -17,6 +17,10 @@ data class UserTaskRow(
     val attachments: Int,
     val createdAt: Long,
     val doneAt: Long?,
+    /** Ticked / total; total 0 means no checklist. */
+    val checklistDone: Int = 0,
+    val checklistTotal: Int = 0,
+    val excerpt: String = "",
 ) {
     val done: Boolean get() = doneAt != null
     val byUser: Boolean get() = author == "you"
@@ -30,6 +34,9 @@ data class UserTaskAttachmentInfo(
     val sizeBytes: Long,
 )
 
+/** One tickable step; order is the author's. */
+data class UserTaskChecklistItem(val id: String, val text: String, val done: Boolean)
+
 /** The full task from `user_task_get`. An AI author is a snapshot; its session may be gone. */
 data class UserTaskDetail(
     val id: String,
@@ -41,6 +48,7 @@ data class UserTaskDetail(
     val aiCli: String?,
     val aiDir: String?,
     val attachments: List<UserTaskAttachmentInfo>,
+    val checklist: List<UserTaskChecklistItem>,
     val createdAt: Long,
     val updatedAt: Long,
     val doneAt: Long?,
@@ -124,6 +132,9 @@ class UserTaskRepository {
             attachments = o.optInt("attachments"),
             createdAt = o.optLong("createdAt"),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,
+            checklistDone = o.optJSONObject("checklist")?.optInt("done") ?: 0,
+            checklistTotal = o.optJSONObject("checklist")?.optInt("total") ?: 0,
+            excerpt = o.optString("excerpt"),
         )
     }
 
@@ -147,6 +158,13 @@ class UserTaskRepository {
             aiCli = if (ai) (author?.opt("cliType") as? String) else null,
             aiDir = if (ai) (author?.opt("dir") as? String) else null,
             attachments = atts?.let { a -> (0 until a.length()).mapNotNull { parseAttachment(a.optJSONObject(it)) } }.orEmpty(),
+            checklist = o.optJSONArray("checklist")?.let { a ->
+                (0 until a.length()).mapNotNull { i ->
+                    val item = a.optJSONObject(i) ?: return@mapNotNull null
+                    val itemId = item.opt("id") as? String ?: return@mapNotNull null
+                    UserTaskChecklistItem(itemId, item.optString("text"), item.has("doneAt"))
+                }
+            }.orEmpty(),
             createdAt = o.optLong("createdAt"),
             updatedAt = o.optLong("updatedAt"),
             doneAt = if (o.has("doneAt")) o.optLong("doneAt") else null,

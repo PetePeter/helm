@@ -7,12 +7,14 @@ import UserTaskDetail from './UserTaskDetail.vue';
 import { useAppStore } from '../../stores/app.js';
 import { useUserTasksStore } from '../../stores/user-tasks.js';
 import { useToast } from '../../composables/useToast.js';
+import type { UserTask } from '../../../src/types/user-task.js';
 import {
   GENERAL_LABEL,
   authorLabel,
   groupTasks,
   matchesFilter,
   matchesSearch,
+  tintFor,
   type UserTaskFilter,
   type UserTaskGrouping,
 } from '../../user-tasks/user-task-board.js';
@@ -43,6 +45,16 @@ const projectName = (id: string) => appStore.state.projects.find(p => p.id === i
 const visible = computed(() => store.tasks.filter(t => matchesFilter(t, filter.value) && matchesSearch(t, query.value)));
 const columns = computed(() => groupTasks(visible.value, grouping.value, projectName));
 const selected = computed(() => store.tasks.find(t => t.id === selectedId.value) ?? null);
+const selectedTint = computed(() => columns.value.find(c => c.tasks.some(t => t.id === selectedId.value))?.tint ?? tintFor(selected.value?.projectId ?? ''));
+const ticked = (task: UserTask) => task.checklist.filter(i => i.doneAt !== undefined).length;
+
+/** Back to the listing: the board stayed mounted, so scroll is kept; focus returns to the note. */
+async function closeDetail(): Promise<void> {
+  const id = selectedId.value;
+  selectedId.value = null;
+  await nextTick();
+  boardRef.value?.querySelector<HTMLElement>(`.utp__note[data-task-id="${CSS.escape(id ?? '')}"]`)?.focus();
+}
 
 async function addTask(): Promise<void> {
   const title = newTitle.value.trim();
@@ -95,6 +107,14 @@ onMounted(() => { void store.load(); });
 
 <template>
   <section ref="boardRef" class="utp" aria-label="User tasks" @keydown="onKey">
+    <UserTaskDetail
+      v-if="selected"
+      :task="selected"
+      :tint="selectedTint"
+      :project-name="selected.projectId ? projectName(selected.projectId) ?? 'Unknown project' : GENERAL_LABEL"
+      @close="closeDetail"
+    />
+    <div v-show="!selected" class="utp__list">
     <header class="utp__bar">
       <div class="utp__chips" role="group" aria-label="Filter">
         <button
@@ -153,9 +173,13 @@ onMounted(() => { void store.load(); });
               @click="selectedId = task.id"
             >
               <span class="utp__note-title">{{ task.title }}</span>
+              <span v-if="task.body" class="utp__note-excerpt">{{ task.body }}</span>
               <span class="utp__note-meta">
                 <span>{{ task.author.kind === 'ai' ? '🤖' : '🧑' }} {{ authorLabel(task) }}</span>
-                <span v-if="task.attachments.length">📎{{ task.attachments.length }}</span>
+                <span class="utp__note-badges">
+                  <span v-if="task.attachments.length">📎{{ task.attachments.length }}</span>
+                  <span v-if="task.checklist.length" class="utp__note-chip">☑ {{ ticked(task) }}/{{ task.checklist.length }}</span>
+                </span>
               </span>
             </button>
           </div>
@@ -163,21 +187,17 @@ onMounted(() => { void store.load(); });
       </div>
     </div>
 
-    <UserTaskDetail
-      v-if="selected"
-      :task="selected"
-      :project-name="selected.projectId ? projectName(selected.projectId) ?? 'Unknown project' : GENERAL_LABEL"
-      @close="selectedId = null"
-    />
+    </div>
   </section>
 </template>
 
 <style scoped>
 .utp { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; background: var(--bg-primary); }
+.utp__list { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .utp__bar, .utp__new { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center; padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--border); }
 .utp__chips { display: flex; gap: 4px; }
 .utp__chip { background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; cursor: pointer; font: inherit; font-size: 0.85rem; }
-.utp__chip--on { background: var(--accent); color: var(--text-on-accent, #fff); border-color: var(--accent); }
+.utp__chip--on { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
 .utp__count { margin-left: 6px; font-size: 0.75rem; opacity: 0.85; }
 .utp__select, .utp__new-title { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; }
 .utp__new-title { flex: 1; min-width: 200px; }
@@ -200,5 +220,8 @@ onMounted(() => { void store.load(); });
 .utp__note--done { opacity: 0.45; }
 .utp__note--done .utp__note-title { text-decoration: line-through; }
 .utp__note-title { font-size: 0.9rem; overflow-wrap: anywhere; padding-right: 14px; }
+.utp__note-excerpt { font-size: 0.75rem; opacity: 0.75; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.utp__note-badges { display: inline-flex; gap: 6px; }
+.utp__note-chip { background: rgba(0, 0, 0, 0.12); border-radius: 8px; padding: 0 6px; }
 .utp__note-meta { display: flex; justify-content: space-between; gap: 6px; font-size: 0.75rem; opacity: 0.75; }
 </style>

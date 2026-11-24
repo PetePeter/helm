@@ -93,6 +93,7 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'user_task_list', title: 'List User Tasks', description: 'List the user task board, open tasks by default.' },
     { name: 'user_task_get', title: 'Get User Task', description: 'Read a user task or one of its attachments.' },
     { name: 'user_task_update', title: 'Update User Task', description: 'Edit a user task, or mark it done / reopen it.' },
+    { name: 'user_task_check', title: 'Tick User Task Item', description: 'Tick or untick one checklist item of a user task.' },
     { name: 'user_task_done', title: 'Complete User Task', description: 'Mark a user task done.' },
     { name: 'user_task_delete', title: 'Delete User Task', description: 'Delete a user task and its attachments.' },
     { name: 'session_rename', title: 'Rename Session', description: 'Rename a Helm session by ID or name.' },

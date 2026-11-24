@@ -81,4 +81,49 @@ describe('UserTaskManager', () => {
     manager.delete(task.id);
     expect(seen).toEqual([1, 0]);
   });
+
+  describe('checklist', () => {
+    it('adds items in order, persists them, and ticks one without reordering the board', () => {
+      const manager = open();
+      const task = manager.add({ title: 'Test', checklist: [{ text: ' Install ' }, { text: 'Scan', done: true }] }, { kind: 'user' });
+      expect(task.checklist.map(i => i.text)).toEqual(['Install', 'Scan']);
+      expect(task.checklist[0].doneAt).toBeUndefined();
+      expect(task.checklist[1].doneAt).toBe(1000);
+      now = 2000;
+      const ticked = manager.check(task.id, task.checklist[0].id, true);
+      expect(ticked.checklist[0].doneAt).toBe(2000);
+      expect(ticked.updatedAt).toBe(2000);
+      expect(ticked.doneAt).toBeUndefined();
+      expect(open().get(task.id).checklist.map(i => i.doneAt)).toEqual([2000, 1000]);
+      expect(manager.check(task.id, task.checklist[1].id, false).checklist[1].doneAt).toBeUndefined();
+      expect(() => manager.check(task.id, 'nope', true)).toThrow(/not found/);
+    });
+
+    it('replaces the list on update, keeping the tick of items it names by id', () => {
+      const manager = open();
+      const task = manager.add({ title: 'T', checklist: [{ text: 'a', done: true }, { text: 'b' }] }, { kind: 'user' });
+      const [a] = task.checklist;
+      now = 3000;
+      const next = manager.update(task.id, { checklist: [{ text: 'new' }, { id: a.id, text: 'a renamed' }] });
+      expect(next.checklist.map(i => i.text)).toEqual(['new', 'a renamed']);
+      expect(next.checklist[1]).toEqual({ id: a.id, text: 'a renamed', doneAt: 1000 });
+      expect(next.checklist[0].id).not.toBe(a.id);
+      expect(manager.update(task.id, { checklist: [{ id: a.id, text: 'a', done: false }] }).checklist[0].doneAt).toBeUndefined();
+      expect(manager.update(task.id, { title: 'keep list' }).checklist).toHaveLength(1);
+    });
+
+    it('rejects empty, overlong, or too many items', () => {
+      const manager = open();
+      expect(() => manager.add({ title: 'T', checklist: [{ text: ' ' }] }, { kind: 'user' })).toThrow(/checklist/);
+      expect(() => manager.add({ title: 'T', checklist: [{ text: 'x'.repeat(201) }] }, { kind: 'user' })).toThrow(/checklist/);
+      expect(() => manager.add({ title: 'T', checklist: Array.from({ length: 51 }, () => ({ text: 'x' })) }, { kind: 'user' })).toThrow(/50/);
+    });
+
+    it('loads tasks saved before checklists existed with an empty list', () => {
+      const manager = open();
+      const task = manager.add({ title: 'Old' }, { kind: 'user' });
+      expect(task.checklist).toEqual([]);
+      expect(open().get(task.id).checklist).toEqual([]);
+    });
+  });
 });

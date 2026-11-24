@@ -161,6 +161,7 @@ export const PRELOAD_API_DOMAINS = {
     'userTaskList',
     'userTaskAdd',
     'userTaskUpdate',
+    'userTaskCheck',
     'userTaskDelete',
     'userTaskReadAttachment',
     'userTaskOpenAttachment',

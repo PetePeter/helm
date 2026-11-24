@@ -339,12 +339,15 @@ terminal, where it scrolls away:
 
 ```text
 user_task_add(title="Pick palette A or B", body="…", urgent=false,
+              checklist=[{text:"Open both mockups"}, {text:"Reply A or B"}],
               attach=[{artifactId:"…"}, {planId:"…"}, {filePath:"C:/…/shot.png"}])
 user_task_list()            -> open tasks, urgent first (check before adding)
+user_task_check(id="…", itemId="…")  -> tick one step the user says they did
 user_task_done(id="…")      -> when the user tells you it is done
 ```
 
-The task outlives your session: Helm records your name, CLI and folder, and
+Give multi-step work a `checklist` so the user can tick steps off; ticking the
+last one does not close the task. The task outlives your session: Helm records your name, CLI and folder, and
 copies every attachment. See [user-tasks.md](user-tasks.md).
 
 ## Setting your session ETA

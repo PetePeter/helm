@@ -78,4 +78,15 @@ describe('HelmUserTaskService', () => {
     expect(service.list({ includeDone: true, projectId: 'proj-1' }).map(r => r.title)).toEqual(['A']);
     expect(service.list({ projectId: '' }).map(r => r.title)).toEqual(['B']);
   });
+
+  it('adds a checklist, reports n/m on the row, and ticks one item', () => {
+    const row = service.add({ sessionId: 's1' }, { title: 'Test', checklist: [{ text: 'a' }, { text: 'b' }] });
+    expect(row.checklist).toEqual({ done: 0, total: 2 });
+    const item = manager.get(row.id).checklist[1];
+    expect(service.check(row.id, item.id).checklist[1].doneAt).toBeDefined();
+    expect(service.list()[0].checklist).toEqual({ done: 1, total: 2 });
+    const plain = service.add({ sessionId: 's1' }, { title: 'Plain', body: 'x'.repeat(300) });
+    expect(plain.checklist).toBeUndefined();
+    expect(plain.excerpt).toHaveLength(140);
+  });
 });

@@ -9,6 +9,7 @@ import {
   type UserTask,
   type UserTaskAttachmentInput,
   type UserTaskAuthor,
+  type UserTaskChecklistItemInput,
   type UserTaskPatch,
 } from '../../types/user-task.js';
 
@@ -39,7 +40,11 @@ export interface UserTaskRow {
   urgent: boolean;
   projectId?: string;
   author: string;
+  /** First line(s) of the body, enough for a 2-line preview on a note. */
+  excerpt?: string;
   attachments: number;
+  /** Present when the task has a checklist. */
+  checklist?: { done: number; total: number };
   createdAt: number;
   doneAt?: number;
 }
@@ -55,6 +60,8 @@ export function isTextContentType(contentType: string): boolean {
   return contentType.startsWith('text/') || contentType === 'application/json';
 }
 
+const USER_TASK_EXCERPT_MAX = 140;
+
 function authorLabel(author: UserTaskAuthor): string {
   return author.kind === 'user' ? 'you' : author.name;
 }
@@ -66,7 +73,9 @@ function toRow(task: UserTask): UserTaskRow {
     urgent: task.urgent,
     ...(task.projectId ? { projectId: task.projectId } : {}),
     author: authorLabel(task.author),
+    ...(task.body ? { excerpt: task.body.slice(0, USER_TASK_EXCERPT_MAX) } : {}),
     attachments: task.attachments.length,
+    ...(task.checklist.length ? { checklist: { done: task.checklist.filter(i => i.doneAt !== undefined).length, total: task.checklist.length } } : {}),
     createdAt: task.createdAt,
     ...(task.doneAt !== undefined ? { doneAt: task.doneAt } : {}),
   };
@@ -90,13 +99,20 @@ export class HelmUserTaskService {
 
   add(
     caller: UserTaskCaller,
-    input: { title: string; body?: string; urgent?: boolean; projectId?: string; attach?: UserTaskAttachRequest[] },
+    input: {
+      title: string;
+      body?: string;
+      urgent?: boolean;
+      projectId?: string;
+      checklist?: UserTaskChecklistItemInput[];
+      attach?: UserTaskAttachRequest[];
+    },
   ): UserTaskRow {
     const author = this.authorFor(caller);
     const projectId = input.projectId !== undefined ? this.requireProject(input.projectId) : this.projectFor(caller);
     const attachments = (input.attach ?? []).map(request => this.snapshot(caller, request));
     const task = this.deps.manager.add(
-      { title: input.title, body: input.body, urgent: input.urgent, projectId },
+      { title: input.title, body: input.body, urgent: input.urgent, projectId, checklist: input.checklist },
       author,
       attachments,
     );
@@ -126,6 +142,11 @@ export class HelmUserTaskService {
 
   done(id: string, done = true): UserTaskRow {
     return toRow(this.deps.manager.update(id, { done }));
+  }
+
+  /** Returns the full task so the caller sees every item's id and tick. */
+  check(id: string, itemId: string, done = true): UserTask {
+    return this.deps.manager.check(id, itemId, done);
   }
 
   delete(id: string): { deleted: true; id: string } {

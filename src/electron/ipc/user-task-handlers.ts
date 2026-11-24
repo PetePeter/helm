@@ -26,6 +26,11 @@ export function setupUserTaskHandlers(manager: UserTaskManager, tempDir: string)
     return manager.update(id, patch ?? {});
   });
 
+  ipcMain.handle('userTask:check', (_event, id: string, itemId: string, done: boolean) => {
+    if (typeof id !== 'string' || !id || typeof itemId !== 'string' || !itemId) throw new Error('id and itemId are required');
+    return manager.check(id, itemId, done === true);
+  });
+
   ipcMain.handle('userTask:delete', (_event, id: string) => {
     if (typeof id !== 'string' || !id) throw new Error('id is required');
     manager.delete(id);

@@ -4,7 +4,7 @@ import type { UserTask } from '../src/types/user-task.js';
 
 const task = (over: Partial<UserTask>): UserTask => ({
   id: over.title ?? 'id', title: 't', body: '', author: { kind: 'user' }, urgent: false,
-  attachments: [], createdAt: 1, updatedAt: 1, ...over,
+  attachments: [], checklist: [], createdAt: 1, updatedAt: 1, ...over,
 });
 
 describe('user task board', () => {
@@ -24,6 +24,7 @@ describe('user task board', () => {
   it('searches title, body, author and attachment titles', () => {
     expect(matchesSearch(ai, 'HELM-core')).toBe(true);
     expect(matchesSearch(task({ body: 'check the cable' }), 'cable')).toBe(true);
+    expect(matchesSearch(task({ checklist: [{ id: 'i1', text: 'Scan the QR' }] }), 'qr')).toBe(true);
     expect(matchesSearch(mine, 'zzz')).toBe(false);
   });
 

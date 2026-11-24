@@ -67,6 +67,8 @@ const SESSION_LIST_METHOD = 'session_list';
 
 /** The `changes` record kind for the session list. Mirrored in the phone app. */
 export const SESSIONS_CHANGE_KIND = 'sessions';
+/** The `changes` kind telling a phone its User Tasks board moved; it refetches. */
+export const USER_TASKS_CHANGE_KIND = 'userTasks';
 
 /**
  * The least time between two notices to one phone. A visible phone refetches
@@ -163,6 +165,7 @@ export class MobileChatBridge implements ChatBridge {
    * Phones owed a session-list notice, with the seq each one already holds.
    * A phone is here from its delta fetch until its one notice goes out.
    */
+  private userTaskSeq = 0;
   private readonly sessionNoticeOwed = new Map<string, { profileId: string; seq: number }>();
   /** Notices waiting out the gap, so a burst of moves schedules one send. */
   private readonly sessionNoticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -410,6 +413,15 @@ export class MobileChatBridge implements ChatBridge {
     });
 
     return machines.map(machineId => this.deps.links.send(machineId, payload)).some(Boolean);
+  }
+
+  /**
+   * The profile's User Tasks board changed. Every linked phone of that profile
+   * gets one small `changes` notice and refetches; no task data rides the push.
+   */
+  sendUserTasksChanged(profileId: string): boolean {
+    const payload = encodeChanges(USER_TASKS_CHANGE_KIND, ++this.userTaskSeq);
+    return this.linkedMachines(profileId).map(machineId => this.deps.links.send(machineId, payload)).some(Boolean);
   }
 
   /** Enabled, registered devices this hub currently holds a link to. */

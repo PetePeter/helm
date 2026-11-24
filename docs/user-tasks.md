@@ -28,8 +28,19 @@ then purged.
 
 `title` (≤ 200), `body` (≤ 4000), `author`, optional `projectId` (no project
 shows under *General*; an AI's project is resolved from its session folder),
-`urgent`, `attachments`, `createdAt`, `updatedAt`, `doneAt`. Colour is derived
-from the project, never stored.
+`urgent`, `attachments`, `checklist`, `createdAt`, `updatedAt`, `doneAt`. Colour
+is derived from the project, never stored.
+
+## Checklist
+
+A task may carry up to 50 ordered steps (≤ 200 chars each) the user ticks off —
+`{id, text, doneAt?}`. Ticking an item never reorders the board and never
+completes the task: closing it stays the user's call (the Done button pulses
+once every item is ticked). Writes replace the whole list; a row naming a known
+`id` keeps that item's tick, so an edit can rename and reorder without losing
+progress. A single tick goes through `user_task_check`, which touches one item
+only and so cannot race an AI editing the rest of the task. Tasks saved before
+checklists existed load with an empty one.
 
 ## Identity
 
@@ -40,16 +51,22 @@ the user, and the desktop IPC path always writes as the user. No AI can post as
 
 ## Surfaces
 
-- **MCP** — `user_task_add / list / get / update / done / delete`. Advertised in
+- **MCP** — `user_task_add / list / get / update / check / done / delete`.
+  List rows carry `checklist: {done, total}` and a short body `excerpt`. Advertised in
   the tool descriptions, the client guide, and from `session_todo_wait` (parking
   a todo on the user is the moment a user task is usually the better tool). It is
   not injected into every prompt.
 - **Desktop** — `UserTasksPane.vue`: filters (All / Mine / AI / Urgent / Done),
-  group by project or author, search, add. Selecting a note opens
-  `UserTaskDetail.vue` (edit, done/reopen, delete, attachments). Attachments
+  group by project or author, search, add. Notes show a two-line excerpt and a
+  ☑ n/m chip. Selecting a note swaps the pane to `UserTaskDetail.vue` (back with
+  "← Tasks" / Esc, scroll and focus kept): fixed header and action bar, a long
+  description clamped behind *Show more*, the checklist with a pinned progress
+  heading, edit (including item reorder), done/reopen, delete, attachments.
+  The project colour is a dot beside the title. Attachments
   render in the opaque-origin artifact frame (invariant 9); PNG/JPEG/GIF/WebP
   inline; other binaries open in the OS viewer from a temp copy.
-- **Android** — the same MCP tools over the phone link; see the Board screen.
+- **Android** — the same MCP tools over the phone link. Phone and tablet use the
+  same model as the desktop: the board, then a full-screen detail; Back returns.
 
 ## Files
 

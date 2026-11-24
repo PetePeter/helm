@@ -6,6 +6,7 @@ import { getMainProcessAdminGuard } from '../../electron/ipc/admin-guard.js';
 import type { Artifact } from '../../types/artifact.js';
 import type { ArtifactFileResult } from '../../session/artifact-file-import.js';
 import type { UserTaskAttachRequest } from '../services/helm-user-task-service.js';
+import type { UserTaskChecklistItemInput } from '../../types/user-task.js';
 import type { ScheduledTaskFrozenPolicy } from '../../types/scheduled-task.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
@@ -157,6 +158,20 @@ function parseUserTaskAttach(value: unknown): UserTaskAttachRequest[] {
     const key = keys[0];
     const ref = asString(item[key], `${key} must be a non-empty string`);
     return { [key]: ref } as UserTaskAttachRequest;
+  });
+}
+
+/** A string is a new item; an object may name a known item to keep its tick. */
+function parseUserTaskChecklist(value: unknown): UserTaskChecklistItemInput[] {
+  if (!Array.isArray(value)) throw new Error('checklist must be an array');
+  return value.map((raw) => {
+    if (typeof raw === 'string') return { text: raw };
+    const item = asRecord(raw);
+    return {
+      text: asStringValue(item.text, 'checklist item text must be a string'),
+      ...(item.id === undefined ? {} : { id: asString(item.id, 'checklist item id must not be empty') }),
+      ...(item.done === undefined ? {} : { done: asBoolean(item.done, 'checklist item done must be a boolean') }),
+    };
   });
 }
 
@@ -899,6 +914,7 @@ export async function callMcpTool(
           ...(args.body === undefined ? {} : { body: asStringValue(args.body, 'body must be a string') }),
           ...(args.urgent === undefined ? {} : { urgent: asBoolean(args.urgent, 'urgent must be a boolean') }),
           ...(args.projectId === undefined ? {} : { projectId: asStringValue(args.projectId, 'projectId must be a string') }),
+          ...(args.checklist === undefined ? {} : { checklist: parseUserTaskChecklist(args.checklist) }),
           ...(args.attach === undefined ? {} : { attach: parseUserTaskAttach(args.attach) }),
         });
       case 'user_task_list':
@@ -918,7 +934,14 @@ export async function callMcpTool(
           ...(args.urgent === undefined ? {} : { urgent: asBoolean(args.urgent, 'urgent must be a boolean') }),
           ...(args.projectId === undefined ? {} : { projectId: asStringValue(args.projectId, 'projectId must be a string') || null }),
           ...(args.done === undefined ? {} : { done: asBoolean(args.done, 'done must be a boolean') }),
+          ...(args.checklist === undefined ? {} : { checklist: parseUserTaskChecklist(args.checklist) }),
         });
+      case 'user_task_check':
+        return service.userTasks().check(
+          asString(args.id, 'id is required'),
+          asString(args.itemId, 'itemId is required'),
+          args.done === undefined ? true : asBoolean(args.done, 'done must be a boolean'),
+        );
       case 'user_task_done':
         return service.userTasks().done(asString(args.id, 'id is required'));
       case 'user_task_delete':

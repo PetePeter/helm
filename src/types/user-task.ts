@@ -23,6 +23,21 @@ export interface UserTaskAttachment {
   createdAt: number;
 }
 
+/** One tickable step of a task. Order is the author's; ticking never reorders. */
+export interface UserTaskChecklistItem {
+  id: string;
+  text: string;
+  /** Set while ticked. */
+  doneAt?: number;
+}
+
+/** A checklist row as written: a known id keeps that item's tick unless `done` says otherwise. */
+export interface UserTaskChecklistItemInput {
+  id?: string;
+  text: string;
+  done?: boolean;
+}
+
 export interface UserTask {
   id: string;
   title: string;
@@ -32,6 +47,7 @@ export interface UserTask {
   projectId?: string;
   urgent: boolean;
   attachments: UserTaskAttachment[];
+  checklist: UserTaskChecklistItem[];
   createdAt: number;
   updatedAt: number;
   /** Set while done; done tasks are purged after USER_TASK_DONE_RETENTION_MS. */
@@ -51,6 +67,7 @@ export interface UserTaskInput {
   body?: string;
   projectId?: string;
   urgent?: boolean;
+  checklist?: UserTaskChecklistItemInput[];
 }
 
 export interface UserTaskPatch {
@@ -60,6 +77,8 @@ export interface UserTaskPatch {
   projectId?: string | null;
   urgent?: boolean;
   done?: boolean;
+  /** Replaces the whole checklist. */
+  checklist?: UserTaskChecklistItemInput[];
 }
 
 export interface UserTasksChanged {
@@ -71,3 +90,5 @@ export const USER_TASK_TITLE_MAX = 200;
 export const USER_TASK_BODY_MAX = 4000;
 export const USER_TASK_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const USER_TASK_ATTACHMENTS_MAX = 10;
+export const USER_TASK_CHECKLIST_MAX = 50;
+export const USER_TASK_CHECKLIST_ITEM_MAX = 200;

@@ -240,6 +240,17 @@ describe('MobileChatBridge as a chat surface', () => {
     expect(links.records()[0]).not.toHaveProperty('seq');
   });
 
+  it('nudges linked phones with a userTasks change notice, carrying no task data', () => {
+    links.online.add('phone-machine');
+    expect(bridge.sendUserTasksChanged('1')).toBe(true);
+    expect(bridge.sendUserTasksChanged('1')).toBe(true);
+    expect(links.records()).toEqual([
+      { v: 1, t: 'changes', kind: 'userTasks', seq: 1 },
+      { v: 1, t: 'changes', kind: 'userTasks', seq: 2 },
+    ]);
+    expect(bridge.sendUserTasksChanged('other-profile')).toBe(false);
+  });
+
   it('marks an alert with its kind, which is what keeps it out of the phone thread', () => {
     links.online.add('phone-machine');
 

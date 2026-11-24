@@ -4,12 +4,16 @@ import {
   USER_TASK_ATTACHMENTS_MAX,
   USER_TASK_ATTACHMENT_MAX_BYTES,
   USER_TASK_BODY_MAX,
+  USER_TASK_CHECKLIST_ITEM_MAX,
+  USER_TASK_CHECKLIST_MAX,
   USER_TASK_DONE_RETENTION_MS,
   USER_TASK_TITLE_MAX,
   type UserTask,
   type UserTaskAttachment,
   type UserTaskAttachmentInput,
   type UserTaskAuthor,
+  type UserTaskChecklistItem,
+  type UserTaskChecklistItemInput,
   type UserTaskInput,
   type UserTaskPatch,
   type UserTasksChanged,
@@ -46,6 +50,7 @@ function copy(task: UserTask): UserTask {
     ...task,
     author: { ...task.author },
     attachments: task.attachments.map(a => ({ ...a })),
+    checklist: task.checklist.map(i => ({ ...i })),
   };
 }
 
@@ -81,9 +86,28 @@ export class UserTaskManager extends EventEmitter {
     return copy(this.find(id));
   }
 
+  /** Tick or untick one item. Never completes the task: closing it stays the user's call. */
+  check(taskId: string, itemId: string, done: boolean): UserTask {
+    const current = this.find(taskId);
+    if (!current.checklist.some(i => i.id === itemId)) throw new Error(`Checklist item not found: ${itemId}`);
+    const at = this.now();
+    const next: UserTask = {
+      ...current,
+      checklist: current.checklist.map(item => item.id !== itemId ? item : done
+        ? { ...item, doneAt: item.doneAt ?? at }
+        : { id: item.id, text: item.text }),
+      updatedAt: at,
+    };
+    this.tasks = this.tasks.map(task => task.id === taskId ? next : task);
+    this.persist();
+    return copy(next);
+  }
+
   add(input: UserTaskInput, author: UserTaskAuthor, attachments: UserTaskAttachmentInput[] = []): UserTask {
     const title = cleanTitle(input.title);
     const body = cleanBody(input.body);
+    const at = this.now();
+    const checklist = this.buildChecklist(input.checklist ?? [], [], at);
     if (attachments.length > USER_TASK_ATTACHMENTS_MAX) {
       throw new Error(`a task holds at most ${USER_TASK_ATTACHMENTS_MAX} attachments`);
     }
@@ -91,7 +115,6 @@ export class UserTaskManager extends EventEmitter {
       if (!Buffer.isBuffer(a.content)) throw new Error('attachment content must be bytes');
       if (a.content.byteLength > USER_TASK_ATTACHMENT_MAX_BYTES) throw new Error(`attachment "${a.title}" exceeds 10MB`);
     }
-    const at = this.now();
     const id = this.uniqueId();
     const stored: UserTaskAttachment[] = [];
     try {
@@ -121,6 +144,7 @@ export class UserTaskManager extends EventEmitter {
       ...(projectId ? { projectId } : {}),
       urgent: input.urgent === true,
       attachments: stored,
+      checklist,
       createdAt: at,
       updatedAt: at,
     };
@@ -141,6 +165,7 @@ export class UserTaskManager extends EventEmitter {
       else delete next.projectId;
     }
     const at = this.now();
+    if (patch.checklist !== undefined) next.checklist = this.buildChecklist(patch.checklist, current.checklist, at);
     if (patch.done === true && next.doneAt === undefined) next.doneAt = at;
     if (patch.done === false) delete next.doneAt;
     next.updatedAt = at;
@@ -170,6 +195,29 @@ export class UserTaskManager extends EventEmitter {
     const task = this.tasks.find(t => t.id === id);
     if (!task) throw new Error(`User task not found: ${id}`);
     return task;
+  }
+
+  /** A row naming a known id keeps that item's tick unless it says `done` itself. */
+  private buildChecklist(input: UserTaskChecklistItemInput[], previous: UserTaskChecklistItem[], at: number): UserTaskChecklistItem[] {
+    if (!Array.isArray(input)) throw new Error('checklist must be a list');
+    if (input.length > USER_TASK_CHECKLIST_MAX) throw new Error(`a checklist holds at most ${USER_TASK_CHECKLIST_MAX} items`);
+    const used = new Set<string>();
+    return input.map(row => {
+      const text = typeof row?.text === 'string' ? row.text.trim() : '';
+      if (!text) throw new Error('checklist item text is required');
+      if (text.length > USER_TASK_CHECKLIST_ITEM_MAX) throw new Error(`checklist item exceeds ${USER_TASK_CHECKLIST_ITEM_MAX} characters`);
+      const known = row.id && !used.has(row.id) ? previous.find(i => i.id === row.id) : undefined;
+      const id = known?.id ?? this.freshItemId(previous, used);
+      used.add(id);
+      const done = row.done ?? known?.doneAt !== undefined;
+      return done ? { id, text, doneAt: known?.doneAt ?? at } : { id, text };
+    });
+  }
+
+  private freshItemId(previous: UserTaskChecklistItem[], used: Set<string>): string {
+    let id = this.createId();
+    while (used.has(id) || previous.some(i => i.id === id)) id = this.createId();
+    return id;
   }
 
   private uniqueId(): string {
