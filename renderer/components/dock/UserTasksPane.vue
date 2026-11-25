@@ -7,6 +7,7 @@ import UserTaskDetail from './UserTaskDetail.vue';
 import { useAppStore } from '../../stores/app.js';
 import { useUserTasksStore } from '../../stores/user-tasks.js';
 import { useToast } from '../../composables/useToast.js';
+import { useComposerDiagnostics } from '../../composables/useComposerDiagnostics.js';
 import type { UserTask } from '../../../src/types/user-task.js';
 import {
   GENERAL_LABEL,
@@ -40,6 +41,9 @@ const newTitle = ref('');
 const newProject = ref('');
 const newUrgent = ref(false);
 const boardRef = ref<HTMLElement | null>(null);
+const newTitleRef = ref<HTMLInputElement | null>(null);
+// TEMP diagnostics: the new-task title reportedly cannot take focus on desktop.
+const logNewTitle = useComposerDiagnostics('user-task', newTitleRef, () => null);
 
 const projectName = (id: string) => appStore.state.projects.find(p => p.id === id)?.name;
 const visible = computed(() => store.tasks.filter(t => matchesFilter(t, filter.value) && matchesSearch(t, query.value)));
@@ -72,7 +76,9 @@ async function addTask(): Promise<void> {
 async function startAdd(): Promise<void> {
   adding.value = true;
   await nextTick();
-  boardRef.value?.querySelector<HTMLInputElement>('.utp__new-title')?.focus();
+  logNewTitle('start-add', { mounted: newTitleRef.value !== null });
+  newTitleRef.value?.focus();
+  logNewTitle('start-add-focused');
 }
 
 async function toggleDone(id: string, done: boolean): Promise<void> {
@@ -136,7 +142,7 @@ onMounted(() => { void store.load(); });
     </header>
 
     <form v-if="adding" class="utp__new" @submit.prevent="addTask" @keydown.esc.stop="adding = false">
-      <input v-model="newTitle" class="utp__new-title" maxlength="200" placeholder="What do you need to do?" aria-label="New task title" />
+      <input ref="newTitleRef" v-model="newTitle" class="utp__new-title" maxlength="200" placeholder="What do you need to do?" aria-label="New task title" />
       <select v-model="newProject" class="utp__select" aria-label="Project">
         <option value="">{{ GENERAL_LABEL }}</option>
         <option v-for="p in appStore.state.projects" :key="p.id" :value="p.id">{{ p.name }}</option>

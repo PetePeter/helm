@@ -1,6 +1,6 @@
 import { watch, type Ref } from 'vue';
 
-type ComposerSurface = 'chat' | 'draft';
+type ComposerSurface = 'chat' | 'draft' | 'user-task';
 
 function describeElement(target: Element | null): string {
   if (!target) return 'none';
@@ -22,7 +22,7 @@ function isWhitespace(data: string | null | undefined): boolean {
 /** Logs focus and whitespace-input metadata without capturing any typed text. */
 export function useComposerDiagnostics(
   surface: ComposerSurface,
-  inputRef: Ref<HTMLTextAreaElement | null>,
+  inputRef: Ref<HTMLTextAreaElement | HTMLInputElement | null>,
   getSessionId: () => string | null,
 ): (event: string, detail?: Record<string, unknown>) => void {
   const log = (event: string, detail: Record<string, unknown> = {}): void => {
@@ -47,7 +47,7 @@ export function useComposerDiagnostics(
 
     let pendingFrame: number | null = null;
     const onFocus = (): void => log('focus');
-    const onBlur = (): void => log('blur');
+    const onBlur = (event: FocusEvent): void => log('blur', { relatedTarget: describeElement(event.relatedTarget as Element | null) });
     const onSelectionChange = (): void => {
       if (document.activeElement === input) log('selection-change');
     };
