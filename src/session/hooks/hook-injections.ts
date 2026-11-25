@@ -183,7 +183,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Stop',
     description: 'Reminder, once per user turn, not to stop with open todos. Values: {{todos}}.',
     defaultTemplate:
-      'You are stopping with open todos:\n{{todos}}\nFinish them, mark finished or no-longer-wanted ones with session_todo_done, then stop again. If one needs a user answer, park it with session_todo_wait and stop.',
+      'You are stopping with open todos:\n{{todos}}\nMark finished or no-longer-wanted ones with session_todo_done. Waiting on the user, another LLM or a background task? That is fine — park the item with session_todo_wait and stop.',
   },
   {
     id: 'stopEtaNudge',
@@ -191,7 +191,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Stop',
     description: 'Reminder, once per user turn, not to stop with an estimate still open.',
     defaultTemplate:
-      'You are stopping with a session ETA still open. If the work is done, call session_eta_clear now — Helm scores the estimate then. If you are waiting on the user, say so and stop again; otherwise keep working or call session_eta_set with a new estimate.',
+      'You are stopping with a session ETA still open. Done? Call session_eta_clear now — Helm scores the estimate then. Waiting on the user, another LLM or a background task? That is fine — leave it open and stop. Not every task needs an ETA; if this one does not fit, clear it.',
   },
   {
     id: 'amberContextAlert',
