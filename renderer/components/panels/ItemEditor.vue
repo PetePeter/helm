@@ -397,12 +397,19 @@ function getHasUnsavedChanges(): boolean { return hasUnsavedChanges.value; }
 function onKeyDown(e: KeyboardEvent): void {
   if ((e.key === 's' || e.key === 'S') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave(); }
   else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSave(); }
-  else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onEscape(); }
 }
 
+/** Esc persists pending edits (autosave semantics), then dismisses the editor. */
+function onEscape(): void {
+  if (autoSaveTimer.value) { clearTimeout(autoSaveTimer.value); autoSaveTimer.value = null; }
+  if (hasUnsavedChanges.value) doAutoSave();
+  emit('close');
+}
+
+/** Bare Enter must not submit from the single-line title; other keys bubble to the panel. */
 function onLabelKeyDown(e: KeyboardEvent): void {
-  if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); }
-  else onKeyDown(e);
+  if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) e.preventDefault();
 }
 
 function onStateSelectChange(): void {}
@@ -485,6 +492,7 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
     v-if="visible"
     class="item-editor"
     :class="{ 'item-editor--plan': isPlan, 'item-editor--context': isContext }"
+    @keydown="onKeyDown"
   >
     <div class="item-editor-header">
       <span class="item-editor-title">{{ titleText }}</span>

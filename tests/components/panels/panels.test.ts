@@ -115,6 +115,36 @@ describe('ItemEditor', () => {
     ]]);
   });
 
+  describe('Escape', () => {
+    const mountPlan = (onSave = vi.fn()) => mount(ItemEditor, {
+      attachTo: document.body,
+      props: {
+        visible: true, mode: 'plan', sessionId: 'sess-1',
+        initialLabel: 'Plan task', initialText: 'Need details', planStatus: 'ready',
+        planCallbacks: { onSave, onDelete: vi.fn() },
+      },
+    });
+
+    it('closes from the description with no edits, without saving', async () => {
+      const onSave = vi.fn();
+      const w = mountPlan(onSave);
+      await w.find('textarea').trigger('keydown', { key: 'Escape' });
+      expect(w.emitted('close')).toHaveLength(1);
+      expect(onSave).not.toHaveBeenCalled();
+      w.unmount();
+    });
+
+    it('persists pending edits before closing', async () => {
+      const onSave = vi.fn();
+      const w = mountPlan(onSave);
+      await w.find('textarea').setValue('Edited details');
+      await w.find('textarea').trigger('keydown', { key: 'Escape' });
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ description: 'Edited details' }));
+      expect(w.emitted('close')).toHaveLength(1);
+      w.unmount();
+    });
+  });
+
   it('loads plan attachments on initial visible mount', async () => {
     const planAttachmentList = vi.fn().mockResolvedValue([]);
     (window as any).gamepadCli = { planAttachmentList };
