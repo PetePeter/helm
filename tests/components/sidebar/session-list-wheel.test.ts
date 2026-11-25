@@ -83,8 +83,6 @@ function mountList(source: 'local' | 'peer' = 'local'): VueWrapper {
 }
 
 let pinia: ReturnType<typeof createPinia>;
-let scrollIntoView: ReturnType<typeof vi.fn>;
-let originalScrollIntoView: PropertyDescriptor | undefined;
 
 beforeEach(() => {
   pinia = createPinia();
@@ -110,16 +108,10 @@ beforeEach(() => {
     plans: { planGetAllDoingForDir: async () => [], planStartableForDir: async () => [] },
     config: { configGetChipbarActions: async () => ({ actions: [], inboxDir: '' }) },
   };
-  scrollIntoView = vi.fn();
-  originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
-  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
 });
 
 afterEach(() => {
   for (const wrapper of wrappers.splice(0)) wrapper.unmount();
-  if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
-  else delete (HTMLElement.prototype as HTMLElement & { scrollIntoView?: () => void }).scrollIntoView;
-  originalScrollIntoView = undefined;
   delete (window as unknown as { helm?: unknown }).helm;
   setTerminalManager(null);
   resetActiveSessionPinForTests();
@@ -159,7 +151,10 @@ describe('SessionList wheel navigation', () => {
     navigation.init();
     mountList();
 
-    const list = document.querySelector('.sessions-list')!;
+    const list = document.querySelector<HTMLElement>('.sessions-list')!;
+    // jsdom has no layout: every row reports 40px below the list's visible box.
+    list.getBoundingClientRect = () => ({ top: 0, bottom: 200 } as DOMRect);
+    const rowRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 200, bottom: 240 } as DOMRect);
     const event = new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
     list.dispatchEvent(event);
 
@@ -169,7 +164,8 @@ describe('SessionList wheel navigation', () => {
     expect(state.activeSessionId).toBe('b');
     expect(sessionSwitches).toEqual(['b']);
     await nextTick();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(list.scrollTop).toBe(40);
+    rowRect.mockRestore();
 
     list.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
     await nextTick();

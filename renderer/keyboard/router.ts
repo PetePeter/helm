@@ -23,6 +23,7 @@
 
 import { resolveKeyContext, type KeyContext, type KeyEnvironment } from './key-context.js';
 import { PANE_TERMINAL } from '../dock-types.js';
+import { installSpaceWatchdog } from './space-watchdog.js';
 
 export type { KeyContext, KeyEnvironment };
 
@@ -160,26 +161,14 @@ export function installKeyRouter(env: KeyEnvironment, onKeydown?: (event: Keyboa
       }
       if (!handled) continue;
 
-      const activeElement = document.activeElement;
-      const composerSurface = activeElement instanceof HTMLElement
-        ? activeElement.matches('.chat-pane__input')
-          ? 'chat'
-          : activeElement.matches('.draft-pane__input')
-            ? 'draft'
-            : null
-        : null;
-      if (event.code === 'Space' && ctx.scope === 'editable' && composerSurface) {
+      if (event.code === 'Space' && ctx.scope === 'editable') {
         console.info('[ComposerInput]', JSON.stringify({
           at: Date.now(),
-          surface: composerSurface,
           event: 'space-consumed-by-keyboard-handler',
           sessionId: ctx.activeSessionId,
-          focused: true,
           activeElement: describeParkedFocus(),
           handlerId: handler.id,
           handlerScope: handler.scope,
-          eventCode: event.code,
-          inputScope: ctx.scope,
           focusedPane: ctx.focusedPane,
           defaultPrevented: event.defaultPrevented,
         }));
@@ -200,5 +189,9 @@ export function installKeyRouter(env: KeyEnvironment, onKeydown?: (event: Keyboa
   }
 
   window.addEventListener('keydown', onKeyDown, true);
-  return () => window.removeEventListener('keydown', onKeyDown, true);
+  const uninstallWatchdog = installSpaceWatchdog(describeParkedFocus);
+  return () => {
+    window.removeEventListener('keydown', onKeyDown, true);
+    uninstallWatchdog();
+  };
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { scrollWithin } from '../../scroll-within.js';
 /**
  * SessionList.vue — Owns the full sidebar session list surface.
  *
@@ -206,7 +207,7 @@ watch(() => [sessionsState.activeFocus, sessionsState.sessionsFocusIndex] as con
     if (!root) return;
     const focused = Array.from(root.querySelectorAll<HTMLElement>('[data-nav-index]'))
       .find(element => element.dataset.navIndex === String(focusIndex));
-    focused?.scrollIntoView?.({ block: 'nearest' });
+    if (focused) scrollWithin(root, focused);
   },
   { flush: 'post' },
 );

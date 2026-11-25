@@ -168,12 +168,12 @@ describe('SessionList highlight rendering', () => {
     sessionsState.sessionsFocusIndex = 0;
     const w = mountList();
     const focused = w.get('[data-nav-index="3"]').element as HTMLElement;
-    focused.scrollIntoView = vi.fn();
+    const list = stubBelowViewport(w.get('.sessions-list').element as HTMLElement, focused);
 
     sessionsState.sessionsFocusIndex = 3;
     await nextTick();
 
-    expect(focused.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(list.scrollTop).toBe(40);
   });
 
   it('scrolls group headers using their shared navigation index', async () => {
@@ -181,12 +181,12 @@ describe('SessionList highlight rendering', () => {
     sessionsState.sessionsFocusIndex = 0;
     const w = mountList();
     const header = w.get('.group-header').element as HTMLElement;
-    header.scrollIntoView = vi.fn();
+    const list = stubBelowViewport(w.get('.sessions-list').element as HTMLElement, header);
 
     sessionsState.sessionsFocusIndex = 1;
     await nextTick();
 
-    expect(header.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(list.scrollTop).toBe(40);
   });
 
   it('does not scroll the sessions list when another zone owns focus', async () => {
@@ -194,11 +194,18 @@ describe('SessionList highlight rendering', () => {
     sessionsState.sessionsFocusIndex = 0;
     const w = mountList();
     const focused = w.get('[data-nav-index="3"]').element as HTMLElement;
-    focused.scrollIntoView = vi.fn();
+    const list = stubBelowViewport(w.get('.sessions-list').element as HTMLElement, focused);
 
     sessionsState.sessionsFocusIndex = 3;
     await nextTick();
 
-    expect(focused.scrollIntoView).not.toHaveBeenCalled();
+    expect(list.scrollTop).toBe(0);
   });
 });
+
+/** jsdom has no layout: put `row` 40px below the list's visible box. */
+function stubBelowViewport(list: HTMLElement, row: HTMLElement): HTMLElement {
+  list.getBoundingClientRect = () => ({ top: 0, bottom: 200 } as DOMRect);
+  row.getBoundingClientRect = () => ({ top: 200, bottom: 240 } as DOMRect);
+  return list;
+}
