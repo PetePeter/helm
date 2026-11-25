@@ -22,7 +22,8 @@ and session artifacts are discarded with their session. So a task owns copies:
 | File | Bytes copied (≤ 10 MB, ≤ 10 attachments per task). |
 
 Deleting a task deletes its attachment copies. Done tasks are kept 7 days and
-then purged.
+then purged. "Clear done (N)" — shown on the Done filter, desktop and phone — deletes them all now
+in one write and one change event (`user_task_delete_done`, confirmed first).
 
 ## Fields
 

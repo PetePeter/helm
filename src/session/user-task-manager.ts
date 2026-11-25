@@ -181,6 +181,16 @@ export class UserTaskManager extends EventEmitter {
     this.persist();
   }
 
+  /** Clear the Done column in one write and one change event. Returns how many went. */
+  deleteDone(): number {
+    const gone = this.tasks.filter(task => task.doneAt !== undefined);
+    if (gone.length === 0) return 0;
+    this.tasks = this.tasks.filter(task => task.doneAt === undefined);
+    for (const task of gone) this.store.removeAttachments(task.id);
+    this.persist();
+    return gone.length;
+  }
+
   readAttachment(taskId: string, attachmentId: string): { attachment: UserTaskAttachment; content: Buffer } {
     const attachment = this.find(taskId).attachments.find(a => a.id === attachmentId);
     if (!attachment) throw new Error(`Attachment not found: ${attachmentId}`);

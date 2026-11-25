@@ -135,6 +135,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   userTaskCheck: (id: string, itemId: string, done: boolean): Promise<UserTask> =>
     ipcRenderer.invoke('userTask:check', id, itemId, done),
   userTaskDelete: (id: string): Promise<boolean> => ipcRenderer.invoke('userTask:delete', id),
+  userTaskDeleteDone: (): Promise<number> => ipcRenderer.invoke('userTask:deleteDone'),
   userTaskReadAttachment: (taskId: string, attachmentId: string): Promise<{
     attachment: UserTaskAttachment; encoding: 'utf8' | 'base64'; content: string;
   }> => ipcRenderer.invoke('userTask:readAttachment', taskId, attachmentId),

@@ -64,6 +64,25 @@ describe('UserTaskManager', () => {
     expect(open().list()).toEqual([]);
   });
 
+  it('deletes every done task and its attachments in one go, keeping open ones', () => {
+    const manager = open();
+    const doneA = manager.add({ title: 'A' }, ai, [
+      { kind: 'artifact', title: 'R', contentType: 'text/plain', content: Buffer.from('x') },
+    ]);
+    const doneB = manager.add({ title: 'B' }, { kind: 'user' });
+    manager.add({ title: 'Open' }, { kind: 'user' });
+    manager.update(doneA.id, { done: true });
+    manager.update(doneB.id, { done: true });
+    let emits = 0;
+    manager.on('userTasks:changed', () => emits++);
+    expect(manager.deleteDone()).toBe(2);
+    expect(emits).toBe(1);
+    expect(existsSync(join(dir, 'attachments', doneA.id))).toBe(false);
+    expect(open().list().map(t => t.title)).toEqual(['Open']);
+    expect(manager.deleteDone()).toBe(0);
+    expect(emits).toBe(1);
+  });
+
   it('purges tasks done for longer than the retention window', () => {
     const manager = open();
     const task = manager.add({ title: 'Done long ago' }, { kind: 'user' });

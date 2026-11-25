@@ -75,6 +75,15 @@ async function startAdd(): Promise<void> {
   boardRef.value?.querySelector<HTMLInputElement>('.utp__new-title')?.focus();
 }
 
+const doneCount = computed(() => store.tasks.filter(t => t.doneAt !== undefined).length);
+
+async function clearDone(): Promise<void> {
+  const n = doneCount.value;
+  if (!n || !window.confirm(`Delete ${n} done task${n === 1 ? '' : 's'} and their attachments?`)) return;
+  try { await store.removeDone(); }
+  catch (error) { toast.addToast({ message: String(error), type: 'error', duration: 6000 }); }
+}
+
 async function toggleDone(id: string, done: boolean): Promise<void> {
   try { await store.update(id, { done }); }
   catch (error) { toast.addToast({ message: String(error), type: 'error', duration: 6000 }); }
@@ -132,6 +141,7 @@ onMounted(() => { void store.load(); });
         <option value="author">By author</option>
       </select>
       <SearchField v-model="query" class="utp__search" placeholder="Search tasks" aria-label="Search tasks" />
+      <AppButton v-if="filter === 'done' && doneCount" size="sm" variant="danger" @click="clearDone">Clear done ({{ doneCount }})</AppButton>
       <AppButton size="sm" @click="startAdd">+ Task</AppButton>
     </header>
 

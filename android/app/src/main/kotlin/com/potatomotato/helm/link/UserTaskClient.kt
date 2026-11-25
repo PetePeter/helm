@@ -76,6 +76,8 @@ class UserTaskClient internal constructor(
 
     fun delete(id: String): Boolean = write(METHOD_DELETE, linkedMapOf("id" to id))
 
+    fun deleteDone(): Boolean = write(METHOD_DELETE_DONE, linkedMapOf())
+
     private fun write(method: String, params: Map<String, Any>, reopen: String? = null): Boolean =
         core.call(method, params) { outcome ->
             when (outcome) {
@@ -96,5 +98,6 @@ class UserTaskClient internal constructor(
         internal const val METHOD_UPDATE = "user_task_update"
         internal const val METHOD_CHECK = "user_task_check"
         internal const val METHOD_DELETE = "user_task_delete"
+        internal const val METHOD_DELETE_DONE = "user_task_delete_done"
     }
 }

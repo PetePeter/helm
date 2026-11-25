@@ -944,6 +944,8 @@ export async function callMcpTool(
         );
       case 'user_task_done':
         return service.userTasks().done(asString(args.id, 'id is required'));
+      case 'user_task_delete_done':
+        return service.userTasks().deleteDone();
       case 'user_task_delete':
         return service.userTasks().delete(asString(args.id, 'id is required'));
       case 'session_draft_get': {

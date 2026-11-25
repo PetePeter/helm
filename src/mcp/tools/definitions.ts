@@ -1498,6 +1498,12 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'user_task_delete_done',
+    title: 'Clear Done User Tasks',
+    description: 'Delete every done user task and its attachment copies now. Only when the user asks to clear the Done column.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
     name: 'user_task_delete',
     title: 'Delete User Task',
     description: 'Delete a user task and its attachment copies now.',

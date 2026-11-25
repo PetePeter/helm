@@ -38,6 +38,8 @@ export function setupUserTaskHandlers(manager: UserTaskManager, tempDir: string)
     return true;
   });
 
+  ipcMain.handle('userTask:deleteDone', () => manager.deleteDone());
+
   /** Text comes back as a string for the contained viewer; binaries as base64. */
   ipcMain.handle('userTask:readAttachment', (_event, taskId: string, attachmentId: string) => {
     const { attachment, content } = manager.readAttachment(taskId, attachmentId);

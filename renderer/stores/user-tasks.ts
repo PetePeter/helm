@@ -38,6 +38,7 @@ export const useUserTasksStore = defineStore('userTasks', () => {
   const update = (id: string, patch: UserTaskPatch) => userTasksClient.userTaskUpdate(id, patch);
   const check = (id: string, itemId: string, done: boolean) => userTasksClient.userTaskCheck(id, itemId, done);
   const remove = (id: string) => userTasksClient.userTaskDelete(id);
+  const removeDone = () => userTasksClient.userTaskDeleteDone();
   const openAttachment = (taskId: string, attachmentId: string) =>
     userTasksClient.userTaskOpenAttachment(taskId, attachmentId);
   const saveAttachment = (taskId: string, attachmentId: string) =>
@@ -45,5 +46,5 @@ export const useUserTasksStore = defineStore('userTasks', () => {
   const readAttachment = (taskId: string, attachmentId: string) =>
     userTasksClient.userTaskReadAttachment(taskId, attachmentId);
 
-  return { tasks, loaded, error, openCount, load, add, update, check, remove, readAttachment, openAttachment, saveAttachment };
+  return { tasks, loaded, error, openCount, load, add, update, check, remove, removeDone, readAttachment, openAttachment, saveAttachment };
 });

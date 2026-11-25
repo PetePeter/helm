@@ -149,6 +149,10 @@ export class HelmUserTaskService {
     return this.deps.manager.check(id, itemId, done);
   }
 
+  deleteDone(): { deleted: number } {
+    return { deleted: this.deps.manager.deleteDone() };
+  }
+
   delete(id: string): { deleted: true; id: string } {
     this.deps.manager.delete(id);
     return { deleted: true, id };

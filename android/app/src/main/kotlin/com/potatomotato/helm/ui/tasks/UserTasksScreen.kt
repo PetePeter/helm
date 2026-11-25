@@ -61,7 +61,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
@@ -91,10 +90,10 @@ internal fun TaskFilter.matches(row: UserTaskRow): Boolean = when (this) {
 }
 
 /** Post-it tints; index 0 is "General" (no project). Derived from the project, never stored. */
-private val TINTS = listOf(Color(0xFFFFE680), Color(0xFFFFB3C7), Color(0xFFB6F0B1), Color(0xFFA9D4FF), Color(0xFFFFC98A))
-private val AI_EDGE = Color(0xFF6E40C9)
-private val NOTE_INK = Color(0xFF1B1B1B)
-private val DONE_GREEN = Color(0xFF3FB950)
+private val TINTS = HelmColors.NoteTints
+private val AI_EDGE = HelmColors.NoteAiEdge
+private val NOTE_INK = HelmColors.NoteInk
+private val DONE_GREEN = HelmColors.NoteDone
 /** Mirrors USER_TASK_CHECKLIST_MAX on the desktop. */
 private const val CHECKLIST_MAX = 50
 
@@ -122,6 +121,7 @@ fun UserTasksScreen(
     var filter by rememberSaveable { mutableStateOf(TaskFilter.All) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
+    var confirmClearDone by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { client.refresh() }
 
@@ -144,11 +144,11 @@ fun UserTasksScreen(
         } else BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val columns = if (maxWidth >= 720.dp) 4 else 2
             Column(modifier = Modifier.fillMaxSize()) {
-                FilterRow(filter, rows.count { !it.done }) { filter = it }
+                FilterRow(filter, rows.count { !it.done }, rows.count { it.done }, onClearDone = { confirmClearDone = true }) { filter = it }
                 if (writeError != null) {
                     Text(
                         text = writeError!!,
-                        color = Color(0xFFFF6B6B),
+                        color = HelmColors.Danger,
                         modifier = Modifier.fillMaxWidth().clickable { client.state.clearWriteError() }.padding(HelmSpacing.Md),
                     )
                 }
@@ -170,6 +170,16 @@ fun UserTasksScreen(
         }
     }
 
+    if (confirmClearDone) {
+        val doneCount = rows.count { it.done }
+        AlertDialog(
+            onDismissRequest = { confirmClearDone = false },
+            title = { Text("Clear done tasks?") },
+            text = { Text("$doneCount done task${if (doneCount == 1) "" else "s"} and their attachments will be removed.") },
+            confirmButton = { TextButton(onClick = { client.deleteDone(); confirmClearDone = false }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirmClearDone = false }) { Text("Cancel") } },
+        )
+    }
     if (adding) AddTaskDialog(onDismiss = { adding = false }) { title, body, urgent ->
         client.add(title, body, urgent)
         adding = false
@@ -178,7 +188,7 @@ fun UserTasksScreen(
 }
 
 @Composable
-private fun FilterRow(filter: TaskFilter, openCount: Int, onPick: (TaskFilter) -> Unit) {
+private fun FilterRow(filter: TaskFilter, openCount: Int, doneCount: Int, onClearDone: () -> Unit, onPick: (TaskFilter) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
             .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
@@ -192,6 +202,16 @@ private fun FilterRow(filter: TaskFilter, openCount: Int, onPick: (TaskFilter) -
                 modifier = Modifier
                     .background(if (on) HelmColors.Accent else HelmColors.Surface2, RoundedCornerShape(50))
                     .clickable { onPick(f) }
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
+            )
+        }
+        if (filter == TaskFilter.Done && doneCount > 0) {
+            Text(
+                text = "Clear done ($doneCount)",
+                color = HelmColors.Danger,
+                modifier = Modifier
+                    .border(1.dp, HelmColors.Danger, RoundedCornerShape(50))
+                    .clickable(onClick = onClearDone)
                     .padding(horizontal = 12.dp, vertical = 5.dp),
             )
         }
@@ -238,7 +258,6 @@ private fun Note(row: UserTaskRow, onClick: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth().heightIn(min = 92.dp)
             .background(tint.copy(alpha = if (row.done) 0.45f else 1f), RoundedCornerShape(4.dp))
-            .then(if (!row.byUser) Modifier.border(width = 0.dp, color = Color.Transparent) else Modifier)
             .clickable(onClick = onClick),
     ) {
         if (!row.byUser) Box(Modifier.fillMaxWidth().heightIn(min = 3.dp).background(AI_EDGE))
@@ -406,7 +425,7 @@ private fun TaskDetailBody(
             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = { confirmDelete = true }) { Text("Delete", color = Color(0xFFFF6B6B)) }
+            TextButton(onClick = { confirmDelete = true }) { Text("Delete", color = HelmColors.Danger) }
             Spacer(Modifier.weight(1f))
             TextButton(onClick = { editing = true }) { Text("Edit", color = HelmColors.Txt) }
             val ready = !done && total > 0 && ticked == total

@@ -72,6 +72,12 @@ object HelmColors {
     /** Destructive actions — "Close session", "Reject". */
     val Danger = Color(0xFFF87171)
 
+    /** User Tasks post-its: project tints, AI-author edge, ink on a note, and checklist progress. */
+    val NoteTints = listOf(Color(0xFFFFE680), Color(0xFFFFB3C7), Color(0xFFB6F0B1), Color(0xFFA9D4FF), Color(0xFFFFC98A))
+    val NoteAiEdge = Color(0xFF6E40C9)
+    val NoteInk = Color(0xFF1B1B1B)
+    val NoteDone = Color(0xFF3FB950)
+
     /** Prompt-cache warnings — mirror the desktop's PromptCacheBanner. */
     val CacheWarn = Color(0xFFFF9F43)
     val CacheExpired = Color(0xFFFF5C5C)
