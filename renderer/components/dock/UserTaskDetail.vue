@@ -72,7 +72,8 @@ const save = () => run(() => store.update(props.task.id, {
   title: title.value,
   body: body.value,
   urgent: urgent.value,
-  checklist: items.value.filter(i => i.text.trim()),
+  // Plain copies: reactive proxies can't cross IPC ("could not be cloned").
+  checklist: items.value.filter(i => i.text.trim()).map(i => ({ id: i.id, text: i.text })),
 }), () => { editing.value = false; });
 const check = (itemId: string, done: boolean) => run(() => store.check(props.task.id, itemId, done));
 const keep = (except?: string) => props.task.checklist.filter(i => i.id !== except).map(i => ({ id: i.id, text: i.text }));

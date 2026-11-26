@@ -49,6 +49,18 @@ describe('UserTaskDetail', () => {
     expect(store.update).toHaveBeenCalledWith('t1', { checklist: [{ id: 'a', text: 'Install' }, { id: 'b', text: 'Scan the QR' }] });
   });
 
+  it('saves an edited description with a plain, IPC-cloneable patch', async () => {
+    const w = mountDetail();
+    await w.findAll('button').find(b => b.text() === 'Edit')!.trigger('click');
+    await w.find('.utd__textarea').setValue('new details');
+    await w.findAll('button').find(b => b.text() === 'Save')!.trigger('click');
+    await flushPromises();
+    const [, patch] = store.update.mock.calls[0] as unknown as [string, object];
+    expect(patch).toMatchObject({ body: 'new details', checklist: [{ id: 'a', text: 'Install' }, { id: 'b', text: 'Scan' }] });
+    // Electron IPC structured-clones the patch; a Vue reactive proxy throws "could not be cloned".
+    expect(() => structuredClone(patch)).not.toThrow();
+  });
+
   it('pulses Done only when every item is ticked, and the back link closes', async () => {
     expect(mountDetail().find('.utd__done--ready').exists()).toBe(false);
     const w = mountDetail(task({ checklist: [{ id: 'a', text: 'x', doneAt: 1 }] }));
