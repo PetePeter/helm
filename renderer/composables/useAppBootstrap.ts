@@ -462,6 +462,11 @@ export async function doCloseSession(sessionId: string): Promise<boolean> {
       console.error(`[Bootstrap] Failed to close session ${sessionId}:`, result?.error ?? 'unknown error');
       return false;
     }
+    // Saving its memories first (SessionRetirer): the row stays, marked, until it closes itself.
+    if (result?.closing) {
+      await refreshSessions();
+      return true;
+    }
   } catch (error) {
     console.error(`[Bootstrap] Failed to close session ${sessionId}:`, error);
     return false;

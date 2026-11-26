@@ -27,6 +27,9 @@ import { resolveSessionContextSize, type ApiSessionContextSize, type SessionCont
 import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
 import { isFreshQuotaUsageSnapshot, SESSION_QUOTA_USAGE_MAX_AGE_MS } from '../../session/quota-usage.js';
 import { buildHelmMsgEnvelope } from '../../session/intersession-directive.js';
+import { SessionRetirer } from '../../session/session-retirer.js';
+import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
+import { renderHookInjection } from '../../session/hooks/hook-injections.js';
 
 /**
  * Session lifecycle: list, get, spawn, close, read terminal.
@@ -37,6 +40,7 @@ export class HelmSessionService {
   private readonly gitBranchResolver = new GitBranchResolver();
   /** Runtime session groups (optional overlay on top of project grouping). */
   private runtimeGroupManager: RuntimeGroupManager | null = null;
+  private readonly retirer: SessionRetirer;
   private etaTracker: EtaTracker | null = null;
   private apiContextSizeLookup?: (sessionId: string) => ApiSessionContextSize;
   private sessionTodosLookup?: (sessionId: string) => SessionTodo[];
@@ -49,6 +53,17 @@ export class HelmSessionService {
     private readonly projectStore?: ProjectStore,
   ) {
     this.planService = new HelmSessionPlanService(sessionManager, planManager, configLoader);
+    this.retirer = new SessionRetirer({
+      sessionManager,
+      send: (sessionId, text) => deliverPromptSequenceToSession({ sessionId, text, ptyManager, sessionManager, configLoader }).then(() => undefined),
+      cliConfig: cliType => configLoader.getCliTypeEntry(cliType),
+      hardClose: session => this.killAndRemove(session),
+      prompt: () => renderHookInjection('closeSaveMemories', {}, configLoader.getHookInjectionOverrides()),
+    });
+  }
+
+  dispose(): void {
+    this.retirer.dispose();
   }
 
   /** Late-bound: the RuntimeGroupManager lives in the main process orchestrator. */
@@ -99,6 +114,8 @@ export class HelmSessionService {
     return this.sessionManager
       .getAllSessions()
       .filter((session) => {
+        // Closing (saving its memories): gone for the phone and other LLMs; only the desktop row shows the X.
+        if (session.retiringAt !== undefined) return false;
         if (!dirPath && !projectId) return true;
         if (projectId) return session.projectId === projectId;
         if (!dirPath) return false;
@@ -316,7 +333,7 @@ export class HelmSessionService {
     // The notes follow the work: a replacement takes them over, while a clone
     // (or a source that stays open) starts empty so two live pads never fork.
     if (closeSource) this.copySessionDraft?.(source.id, created.id);
-    if (closeSource) this.closeSession(source.id);
+    if (closeSource) this.hardCloseSession(source.id);
     logger.info(`[HelmControlService] session_switch_cli "${source.name}" ${source.cliType} → ${cliType} (${created.id})`);
     return { ok: true, oldSessionId: source.id, newSessionId: created.id, transcriptFile, sourceClosed: closeSource };
   }
@@ -332,14 +349,24 @@ export class HelmSessionService {
     return this.switchCli(source.id, cliType, { ...switchOptions, closeSource: false, name: `${source.name} (clone)` });
   }
 
-  closeSession(sessionRef: string): { ok: true } {
-    const session = this.findSession(sessionRef);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionRef}`);
-    }
-    if (session.locked) {
-      throw new Error(`Session "${session.name}" is locked and cannot be closed`);
-    }
+  /**
+   * The user's (and session_close's) close: a CLI session first saves its
+   * memories and closes itself — `closing: true` while it does. A second close,
+   * or `force`, closes at once (docs/session-close-memories.md).
+   */
+  async closeSession(sessionRef: string, options: { force?: boolean } = {}): Promise<{ ok: true; closing: boolean }> {
+    const session = this.requireClosable(sessionRef);
+    const outcome = await this.retirer.close(session, options);
+    return { ok: true, closing: outcome === 'retiring' };
+  }
+
+  /** Kill and remove now — Helm's own closes (switch CLI, force restart) and the retirer's last step. */
+  hardCloseSession(sessionRef: string): { ok: true } {
+    this.killAndRemove(this.requireClosable(sessionRef));
+    return { ok: true };
+  }
+
+  private killAndRemove(session: SessionInfo): void {
     try {
       this.ptyManager.kill(session.id);
     } catch (killError) {
@@ -348,7 +375,13 @@ export class HelmSessionService {
     if (this.sessionManager.hasSession(session.id)) {
       this.sessionManager.removeSession(session.id);
     }
-    return { ok: true };
+  }
+
+  private requireClosable(sessionRef: string): SessionInfo {
+    const session = this.findSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    if (session.locked) throw new Error(`Session "${session.name}" is locked and cannot be closed`);
+    return session;
   }
 
   setSessionLocked(sessionRef: string, locked: boolean): { ok: true; locked: boolean } {

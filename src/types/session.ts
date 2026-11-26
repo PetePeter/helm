@@ -140,6 +140,9 @@ export interface SessionInfo {
   /** Refuse ALL stdin — desktop keys, other sessions, schedules, chat, Mess
    *  pokes — until the user unfreezes it. Persists. */
   frozen?: boolean;
+  /** Closing: asked to save its memories and close itself (SessionRetirer).
+   *  Epoch ms the close started. Runtime only: after a restart the session is back as a normal row. */
+  retiringAt?: number;
   /** Prevent deliberate user or MCP closure until explicitly cleared. */
   locked?: boolean;
   /** Hide from the local Session List while keeping the session alive. */

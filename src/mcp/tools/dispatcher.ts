@@ -987,7 +987,7 @@ export async function callMcpTool(
           asString(args.newName, 'newName is required'),
         );
       case 'session_close':
-        return service.closeSession(asString(args.sessionId ?? args.name, 'sessionId or name is required'));
+        return service.closeSession(asString(args.sessionId ?? args.name, 'sessionId or name is required'), { force: args.force === true });
       case 'helm_restart': {
         // Server-derived identity: the handover gate keys on the session that
         // is actually asking for the restart, never a client-supplied ref.

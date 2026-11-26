@@ -211,6 +211,15 @@ export const HOOK_INJECTION_DEFINITIONS = [
     defaultTemplate:
       'RED: context usage is {{tokens}} tokens (red limit {{red}}). Request a Helm quick compact ASAP with session_quick_compact. Options: session_compact for normal compact; session_compact with handover to carry a note across; session_quick_compact to preserve a transcript and reload with a pointer. Native CLI compaction remains available. Before compacting, update your manifesto with artifact_update — it is what survives.',
   },
+  {
+    id: 'closeSaveMemories',
+    label: 'Close: save memories',
+    group: 'Session close',
+    description:
+      'Pasted into a CLI session the user closed, when its CLI type has "Save memories on close" on. The session closes itself afterwards, or after 5 minutes.',
+    defaultTemplate:
+      '[HELM_CLOSING] The user closed this session. Before it goes, save any key, lasting knowledge from this conversation as Helm memories: memory_search first, then memory_create or memory_update. Skip what is already recorded or only mattered here. Then call session_close on your own session. Nothing worth keeping? Call session_close now.',
+  },
 ] as const;
 
 export type HookInjectionId = (typeof HOOK_INJECTION_DEFINITIONS)[number]['id'];

@@ -1649,8 +1649,8 @@ export class HelmControlService extends EventEmitter {
     return this.sessionService.renameSession(sessionRef, name);
   }
 
-  closeSession(sessionRef: string) {
-    return this.sessionService.closeSession(sessionRef);
+  closeSession(sessionRef: string, options: { force?: boolean } = {}) {
+    return this.sessionService.closeSession(sessionRef, options);
   }
 
   setSessionLocked(sessionRef: string, locked: boolean) {
@@ -1866,7 +1866,7 @@ export class HelmControlService extends EventEmitter {
       }
       for (const session of sessions) {
         try {
-          this.sessionService.closeSession(session.id);
+          this.sessionService.hardCloseSession(session.id);
           sessionsClosed++;
         } catch (error) {
           logger.warn(`[HelmControl] Failed to close session ${session.id} during restart: ${error}`);

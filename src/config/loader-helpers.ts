@@ -111,6 +111,7 @@ export type CliTypeOptions = {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;
+  saveMemoriesOnClose?: boolean;
   cacheWarnMinutes?: number;
   /** ETA overrun watchdog threshold in percent; 0 clears it (off). */
   overrunStopPercent?: number;

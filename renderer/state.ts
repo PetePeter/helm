@@ -44,6 +44,8 @@ export interface Session {
   /** Hide from the local Session List while keeping the session alive. */
   hidden?: boolean;
   frozen?: boolean;
+  /** Saving its memories before it closes itself (SessionRetirer): struck through. */
+  retiringAt?: number;
   /** G8: consecutive Stop-hook auto-continues in flight. >0 means an active
    *  loop — an in-progress loop must never be invisible on the session row. */
   loopContinues?: number;

@@ -122,6 +122,7 @@ describe('buildToolEditorOptions', () => {
       // Absent from the input and still present here: the default is on, and the
       // options builder always states it so a CLI type cannot inherit silence.
       messReminders: true,
+      saveMemoriesOnClose: true,
       overrunStopPercent: 0,
       mouseTracking: true,
       noPromptCache: false,

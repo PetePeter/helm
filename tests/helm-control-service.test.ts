@@ -1363,12 +1363,12 @@ describe('HelmControlService LLM notifications', () => {
   });
 });
 
-describe('HelmControlService.closeSession', () => {
+describe('HelmControlService.closeSession', async () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('removes the session from SessionManager when given a valid sessionId', () => {
+  it('removes the session from SessionManager when given a valid sessionId', async () => {
     const { service, ptyManager, sessionManager } = makeService();
     (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
       id: 's1',
@@ -1376,36 +1376,36 @@ describe('HelmControlService.closeSession', () => {
       cliType: 'claude-code',
     });
 
-    const result = service.closeSession('s1');
+    const result = await service.closeSession('s1');
 
     expect(ptyManager.kill).toHaveBeenCalledWith('s1');
     expect(sessionManager.removeSession).toHaveBeenCalledWith('s1');
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, closing: false });
   });
 
-  it('accepts both sessionId and session name', () => {
+  it('accepts both sessionId and session name', async () => {
     const { service, ptyManager, sessionManager } = makeService();
     (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue(null);
     (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([
       { id: 's1', name: 'Claude', cliType: 'claude-code' },
     ]);
 
-    const result = service.closeSession('Claude');
+    const result = await service.closeSession('Claude');
 
     expect(ptyManager.kill).toHaveBeenCalledWith('s1');
     expect(sessionManager.removeSession).toHaveBeenCalledWith('s1');
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, closing: false });
   });
 
-  it('throws when session not found', () => {
+  it('throws when session not found', async () => {
     const { service, sessionManager } = makeService();
     (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue(null);
     (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
 
-    expect(() => service.closeSession('nonexistent')).toThrow('Session not found: nonexistent');
+    await expect(service.closeSession('nonexistent')).rejects.toThrow('Session not found: nonexistent');
   });
 
-  it('continues if ptyManager.kill() throws an error', () => {
+  it('continues if ptyManager.kill() throws an error', async () => {
     const { service, ptyManager, sessionManager } = makeService();
     const killError = new Error('PTY kill failed');
     (ptyManager.kill as ReturnType<typeof vi.fn>).mockImplementation(() => {
@@ -1417,13 +1417,13 @@ describe('HelmControlService.closeSession', () => {
       cliType: 'claude-code',
     });
 
-    const result = service.closeSession('s1');
+    const result = await service.closeSession('s1');
 
     expect(sessionManager.removeSession).toHaveBeenCalledWith('s1');
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Failed to kill PTY for session s1:'),
     );
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, closing: false });
   });
 });
 

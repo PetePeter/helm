@@ -62,6 +62,7 @@ export interface ToolEditorData {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
+  saveMemoriesOnClose?: boolean;
   cacheWarnMinutes?: number;
   overrunStopPercent?: number;
   cacheExpireMinutes?: number;
@@ -88,6 +89,7 @@ export interface ToolEditorValues {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
+  saveMemoriesOnClose?: boolean;
   cacheWarnMinutes?: number;
   overrunStopPercent?: number;
   cacheExpireMinutes?: number;
@@ -131,6 +133,7 @@ const largeTextAsTempFile = ref(false);
 /** Suggested ETA overrun threshold when the watchdog is first ticked. */
 const DEFAULT_OVERRUN_PERCENT = 50;
 const messReminders = ref(true);
+const saveMemoriesOnClose = ref(true);
 const overrunWatchdog = ref(false);
 const overrunPercent = ref(DEFAULT_OVERRUN_PERCENT);
 const cacheWarnMinutes = ref(DEFAULT_CACHE_WARN_MINUTES);
@@ -315,6 +318,7 @@ function initForm(): void {
   helmPreambleForInterSession.value = d.helmPreambleForInterSession !== false;
   largeTextAsTempFile.value = Boolean(d.largeTextAsTempFile);
   messReminders.value = d.messReminders !== false;
+  saveMemoriesOnClose.value = d.saveMemoriesOnClose !== false;
   overrunWatchdog.value = (d.overrunStopPercent ?? 0) > 0;
   overrunPercent.value = d.overrunStopPercent || DEFAULT_OVERRUN_PERCENT;
   cacheWarnMinutes.value = d.cacheWarnMinutes || DEFAULT_CACHE_WARN_MINUTES;
@@ -415,6 +419,7 @@ function collectValues(): ToolEditorValues {
     ...(helmPreambleForInterSession.value !== true ? { helmPreambleForInterSession: helmPreambleForInterSession.value } : {}),
     largeTextAsTempFile: largeTextAsTempFile.value,
     ...(messReminders.value !== true ? { messReminders: messReminders.value } : {}),
+    saveMemoriesOnClose: saveMemoriesOnClose.value,
     overrunStopPercent: overrunWatchdog.value && overrunPercent.value > 0 ? overrunPercent.value : 0,
     cacheWarnMinutes: cacheWarnMinutes.value,
     cacheExpireMinutes: cacheExpireMinutes.value,
@@ -677,6 +682,9 @@ onMounted(async () => {
         </ToggleRow>
         <ToggleRow v-model="messReminders" label="Allow Mess reminders">
           <template #hint>When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</template>
+        </ToggleRow>
+        <ToggleRow v-model="saveMemoriesOnClose" label="Save memories on close">
+          <template #hint>When enabled (default), closing a session of this type first asks its LLM to save key memories, then it closes itself (or after 5 minutes). Close it again to close at once.</template>
         </ToggleRow>
         <ToggleRow v-model="overrunWatchdog" label="Stop on ETA overrun">
           <template #hint>Breaks death spirals. Once a session runs this much past its own finish estimate, Helm sends the stop action (Helm actions) and asks whether it is stuck: if so, it asks its orchestrator, else the session that created it, else you. Once per estimate.</template>

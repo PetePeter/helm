@@ -780,6 +780,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
+      saveMemoriesOnClose?: boolean;
       cacheWarnMinutes?: number;
       overrunStopPercent?: number;
       cacheExpireMinutes?: number;
@@ -804,6 +805,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
+      saveMemoriesOnClose?: boolean;
       cacheWarnMinutes?: number;
       overrunStopPercent?: number;
       cacheExpireMinutes?: number;

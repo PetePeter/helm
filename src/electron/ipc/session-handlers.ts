@@ -17,7 +17,9 @@ import { logger } from '../../utils/logger.js';
 import { keepWarmFor } from '../../session/keep-warmer.js';
 
 /** Helm's strip-and-reload actions, owned by the MCP control service (one implementation for MCP and UI). */
-export interface TranscriptActions {
+export interface SessionActions {
+  /** The user's close: may first let the session save its memories (`closing: true`). */
+  close(sessionId: string): Promise<{ closing: boolean }>;
   quickCompact(sessionId: string): Promise<unknown>;
   switchCli(sessionId: string, cliType: string): unknown;
   clone(sessionId: string, cliType?: string): unknown;
@@ -32,7 +34,7 @@ export function setupSessionHandlers(
   ptyManager: PtyManager,
   windowManager: WindowManager,
   configLoader?: ConfigLoader,
-  transcriptActions?: TranscriptActions,
+  sessionActions?: SessionActions,
 ): () => void {
   const getFolderLabel = (workingDir?: string): string => {
     if (!workingDir) return 'No Folder';
@@ -234,11 +236,10 @@ export function setupSessionHandlers(
         return { success: false, error: `Session "${session.name}" is locked and cannot be closed` };
       }
 
-      try {
-        ptyManager.kill(id);
-      } catch (killError) {
-        logger.warn(`[Session] Failed to kill PTY for session ${id}: ${killError}`);
-      }
+      if (!sessionActions) return { success: false, error: 'Session close is not available' };
+      // The one close path (HelmSessionService): it may first let the session save its memories.
+      const { closing } = await sessionActions.close(id);
+      if (closing) return { success: true, closing: true };
 
       const windowId = windowManager.getWindowIdForSession(id);
       if (windowId !== undefined) {
@@ -250,9 +251,9 @@ export function setupSessionHandlers(
         }
       }
 
-      sessionManager.removeSession(id);
+      if (sessionManager.hasSession(id)) sessionManager.removeSession(id);
 
-      return { success: true };
+      return { success: true, closing: false };
     } catch (error) {
       logger.error(`[Session] Close failed: ${error}`);
       return { success: false, error: String(error) };
@@ -396,8 +397,8 @@ export function setupSessionHandlers(
   /** Context menu "Quick Compact": strip transcript → clear → read it back. */
   ipcMain.handle('session:quickCompact', async (_event, id: string) => {
     try {
-      if (!transcriptActions) throw new Error('Quick compact is not available');
-      await transcriptActions.quickCompact(id);
+      if (!sessionActions) throw new Error('Quick compact is not available');
+      await sessionActions.quickCompact(id);
       return { success: true };
     } catch (error) {
       logger.error(`[Session] Quick compact failed: ${error}`);
@@ -408,8 +409,8 @@ export function setupSessionHandlers(
   /** Context menu "Clone": fork the session from its stripped transcript; the source keeps running. */
   ipcMain.handle('session:clone', (_event, id: string, cliType?: string) => {
     try {
-      if (!transcriptActions) throw new Error('Clone is not available');
-      transcriptActions.clone(id, cliType);
+      if (!sessionActions) throw new Error('Clone is not available');
+      sessionActions.clone(id, cliType);
       return { success: true };
     } catch (error) {
       logger.error(`[Session] Clone failed: ${error}`);
@@ -420,8 +421,8 @@ export function setupSessionHandlers(
   /** Context menu "Switch CLI": continue the session under the picked CLI type. */
   ipcMain.handle('session:switchCli', (_event, id: string, cliType: string) => {
     try {
-      if (!transcriptActions) throw new Error('Switch CLI is not available');
-      transcriptActions.switchCli(id, cliType);
+      if (!sessionActions) throw new Error('Switch CLI is not available');
+      sessionActions.switchCli(id, cliType);
       return { success: true };
     } catch (error) {
       logger.error(`[Session] Switch CLI failed: ${error}`);

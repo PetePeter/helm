@@ -39,7 +39,7 @@ vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { setupSessionHandlers, type TranscriptActions } from '../src/electron/ipc/session-handlers.js';
+import { setupSessionHandlers, type SessionActions } from '../src/electron/ipc/session-handlers.js';
 import type { SessionManager } from '../src/session/manager.js';
 import type { PtyManager } from '../src/session/pty-manager.js';
 import type { WindowManager } from '../src/electron/window-manager.js';
@@ -113,13 +113,13 @@ describe('session IPC handlers', () => {
     electronMockState.BrowserWindowMock.mockClear();
   });
 
-  function setup(sessions: Record<string, any> = {}, transcriptActions?: TranscriptActions) {
+  function setup(sessions: Record<string, any> = {}, sessionActions?: SessionActions) {
     sessionManager = createMockSessionManager(sessions);
     ptyManager = createMockPtyManager();
     windowManager = createMockWindowManager();
     mainWindowSend = (windowManager.getMainWindow as any)().webContents.send;
     configLoader = createMockConfigLoader();
-    setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, transcriptActions);
+    setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, sessionActions);
   }
 
   it('forwards the selected CLI type through session:clone', async () => {
@@ -133,16 +133,26 @@ describe('session IPC handlers', () => {
     expect(result).toEqual({ success: true });
   });
 
-  it('calls ptyManager.kill() with session id', async () => {
-    setup({
-      'sess-1': { id: 'sess-1', name: 'Test', cliType: 'claude-code', processId: 9999 },
-    });
+  it('closes through the session service and drops the row', async () => {
+    const close = vi.fn(async () => ({ closing: false }));
+    setup({ 'sess-1': { id: 'sess-1', name: 'Test', cliType: 'claude-code', processId: 9999 } },
+      { close, quickCompact: async () => undefined, switchCli: vi.fn(), clone: vi.fn() });
 
-    const handler = electronMockState.handlers.get('session:close')!;
-    const result = await handler({}, 'sess-1');
+    const result = await electronMockState.handlers.get('session:close')!({}, 'sess-1');
 
-    expect(ptyManager.kill).toHaveBeenCalledWith('sess-1');
-    expect(result).toEqual({ success: true });
+    expect(close).toHaveBeenCalledWith('sess-1');
+    expect(result).toEqual({ success: true, closing: false });
+  });
+
+  it('keeps the row while the session saves its memories', async () => {
+    const close = vi.fn(async () => ({ closing: true }));
+    setup({ 'sess-1': { id: 'sess-1', name: 'Test', cliType: 'claude-code', processId: 9999 } },
+      { close, quickCompact: async () => undefined, switchCli: vi.fn(), clone: vi.fn() });
+
+    const result = await electronMockState.handlers.get('session:close')!({}, 'sess-1');
+
+    expect(result).toEqual({ success: true, closing: true });
+    expect(sessionManager.removeSession).not.toHaveBeenCalled();
   });
 
   it('sets hidden state through session:setHidden', async () => {
@@ -154,23 +164,6 @@ describe('session IPC handlers', () => {
 
     expect(sessionManager.setSessionHidden).toHaveBeenCalledWith('sess-1', true);
     expect(result).toEqual({ success: true, hidden: true });
-  });
-
-  it('still removes session via sessionManager even if ptyManager.kill throws', async () => {
-    setup({
-      'sess-1': { id: 'sess-1', name: 'Test', cliType: 'claude-code', processId: 9999 },
-    });
-
-    (ptyManager.kill as any).mockImplementation(() => {
-      throw new Error('PTY already dead');
-    });
-
-    const handler = electronMockState.handlers.get('session:close')!;
-    const result = await handler({}, 'sess-1');
-
-    expect(ptyManager.kill).toHaveBeenCalledWith('sess-1');
-    expect(sessionManager.removeSession).toHaveBeenCalledWith('sess-1');
-    expect(result).toEqual({ success: true });
   });
 
   it('returns error when session not found', async () => {

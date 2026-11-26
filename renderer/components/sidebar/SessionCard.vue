@@ -57,6 +57,8 @@ export interface SessionCardSession {
   locked?: boolean;
   /** No input reaches it; drives the ❄ toggle's on state and the hatched row. */
   frozen?: boolean;
+  /** Closing: saving its memories first. Hatched like frozen, with a big X. */
+  retiringAt?: number;
   /** Epoch ms of the last prompt (timer tooltip, cache fade). */
   lastPromptAt?: number;
   lastUserPromptAt?: number;
@@ -369,7 +371,7 @@ function onCardClick(e: MouseEvent): void {
 <template>
   <div
     class="session-card"
-    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, 'user-noted': hasUserNote, frozen: session.frozen, 'peer-stale': stale, 'interaction-disabled': interactionDisabled }, flashClass]"
+    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, 'user-noted': hasUserNote, frozen: session.frozen, retiring: session.retiringAt !== undefined, 'peer-stale': stale, 'interaction-disabled': interactionDisabled }, flashClass]"
     :title="peerTitle"
     :data-session-id="session.id"
     :data-nav-index="navIndex"
@@ -957,8 +959,21 @@ function onCardClick(e: MouseEvent): void {
 }
 .session-status-icons > span { pointer-events: auto; }
 /* Frozen — cross-hatched: no input reaches this session. */
-.session-card.frozen {
+.session-card.frozen,
+.session-card.retiring {
   background-image: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.18) 0 6px, transparent 6px 12px);
+}
+/* Closing — saving its memories first: a big X across the row until it goes. */
+.session-card.retiring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    linear-gradient(to top right, transparent calc(50% - 2px), var(--danger) calc(50% - 2px), var(--danger) calc(50% + 2px), transparent calc(50% + 2px)),
+    linear-gradient(to bottom right, transparent calc(50% - 2px), var(--danger) calc(50% - 2px), var(--danger) calc(50% + 2px), transparent calc(50% + 2px));
+  opacity: 0.7;
 }
 
 .session-loop-indicator.badge--accent {

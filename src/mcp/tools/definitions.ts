@@ -1561,12 +1561,13 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_close',
     title: 'Close Session',
-    description: 'Kill the PTY process and remove a session from Helm. Use this when a task is complete and the session is no longer needed, or to recover from a stuck session. Accepts sessionId or session name.',
+    description: 'Close a session (it lands in the recycle bin). Accepts sessionId or session name. A CLI session whose type has "save memories on close" on is first asked to save key memories and close itself — the reply then says closing: true; closing it again, or force: true, closes it at once. Asked to save memories ([HELM_CLOSING])? Call this on your own session when done.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
         name: { type: 'string' },
+        force: { type: 'boolean', description: 'Close now, skipping the save-memories step.' },
       },
       required: [],
       additionalProperties: false,

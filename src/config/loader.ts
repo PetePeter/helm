@@ -267,6 +267,9 @@ export interface CliTypeConfig {
    *  manifesto, and checking any in-flight
    *  worker sessions. */
   keepWarmPrompt?: string;
+  /** Closing a session first asks its LLM to save key memories, then it closes
+   *  itself (SessionRetirer, docs/session-close-memories.md). Default: true. */
+  saveMemoriesOnClose?: boolean;
   /**
    * Let the CLI enable xterm mouse tracking (DECSET 1000-1016). Default: false —
    * mouse modes are swallowed so plain click-drag selects text for copying.
@@ -1577,6 +1580,7 @@ export class ConfigLoader {
     if (options?.helmPreambleForInterSession !== undefined) tool.helmPreambleForInterSession = options.helmPreambleForInterSession;
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
     if (options?.messReminders === false) tool.messReminders = false;
+    if (options?.saveMemoriesOnClose === false) tool.saveMemoriesOnClose = false;
     if (options?.overrunStopPercent && options.overrunStopPercent > 0) tool.overrunStopPercent = options.overrunStopPercent;
     if (options?.cacheWarnMinutes && options.cacheWarnMinutes !== DEFAULT_CACHE_WARN_MINUTES) tool.cacheWarnMinutes = options.cacheWarnMinutes;
     if (options?.cacheExpireMinutes && options.cacheExpireMinutes !== DEFAULT_CACHE_EXPIRE_MINUTES) tool.cacheExpireMinutes = options.cacheExpireMinutes;
@@ -1668,6 +1672,10 @@ export class ConfigLoader {
         } else {
           existing.messReminders = false;
         }
+      }
+      if (options.saveMemoriesOnClose !== undefined) {
+        if (options.saveMemoriesOnClose === true) delete existing.saveMemoriesOnClose;  // omit default from YAML
+        else existing.saveMemoriesOnClose = false;
       }
       if (options.overrunStopPercent !== undefined) {
         if (options.overrunStopPercent > 0) existing.overrunStopPercent = options.overrunStopPercent;

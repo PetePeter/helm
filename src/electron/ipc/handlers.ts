@@ -436,6 +436,7 @@ export function registerIPCHandlers(
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
   const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, {
     // The user asked for it outright: never second-guessed as redundant.
+    close: (sessionId) => activeHelmControlService.closeSession(sessionId),
     quickCompact: (sessionId) => activeHelmControlService.quickCompactSession(sessionId, {}),
     switchCli: (sessionId, cliType) => activeHelmControlService.switchSessionCli(sessionId, cliType),
     clone: (sessionId, cliType) => activeHelmControlService.cloneSession(sessionId, cliType === undefined ? {} : { cliType }),
