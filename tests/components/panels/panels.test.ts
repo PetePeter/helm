@@ -1069,7 +1069,8 @@ describe('PlanScreen', () => {
   it('selects a context on press without moving it', async () => {
     const w = mount(PlanScreen, { props: contextProps });
     await w.find('.plan-context-card').trigger('mousedown', { clientX: 40, clientY: 720 });
-    await w.find('.plan-canvas').trigger('mouseup', { clientX: 40, clientY: 720 });
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 40, clientY: 720 }));
+    await w.vm.$nextTick();
     expect(w.emitted('contextClick')).toEqual([['ctx-1']]);
     expect(w.emitted('contextMove')).toBeUndefined();
   });
@@ -1097,8 +1098,10 @@ describe('PlanScreen', () => {
       value: () => ({ left: 0, top: 0, width: 800, height: 600, right: 800, bottom: 600 }),
     });
     await w.find('.plan-context-card__connector').trigger('mousedown', { clientX: 270, clientY: 785 });
-    await w.find('.plan-canvas').trigger('mousemove', { clientX: 340, clientY: 140 });
-    await w.find('.plan-canvas').trigger('mouseup', { clientX: 340, clientY: 140 });
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 340, clientY: 140 }));
+    await w.vm.$nextTick();
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 340, clientY: 140 }));
+    await w.vm.$nextTick();
     expect(w.emitted('contextBindTarget')).toEqual([['ctx-1', 'plan', 'plan-1']]);
     expect(w.emitted('contextMove')).toBeUndefined();
   });

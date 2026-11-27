@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { beginDragGesture } from '../../drag-gesture.js';
 import { computed, reactive, ref, watch, onUnmounted } from 'vue';
 import { getDisplayTitle } from '../../types.js';
 import { formatDate } from '../../utils/date-format.js';
@@ -434,6 +435,7 @@ function findSnapTarget(clientX: number, clientY: number, fromId: string): strin
 function onCanvasMouseDown(e: MouseEvent): void {
   const target = e.target as Element;
   if (target.closest('.plan-node') || target.closest('.plan-arrow')) return;
+  if (!trackGesture(e)) return;
   isPanning.value = true;
   panStart.value = {
     x: e.clientX,
@@ -543,8 +545,14 @@ function onCanvasWheel(e: WheelEvent): void {
   };
 }
 
+/** Route the rest of a canvas drag through the window so it can't stall on a text selection. */
+function trackGesture(e: MouseEvent): boolean {
+  return beginDragGesture(e, { onMove: onCanvasMouseMove, onEnd: onCanvasMouseUp });
+}
+
 function startDragConnection(id: string, e: MouseEvent): void {
   e.stopPropagation();
+  if (!trackGesture(e)) return;
   dragState.value = {
     fromId: id,
     ...svgPoint(e.clientX, e.clientY),
@@ -555,6 +563,7 @@ function onNodeBodyMouseDown(id: string, e: MouseEvent): void {
   if ((e.target as Element).closest('.plan-node__connector')) return;
   e.stopPropagation();
   focusPlanScreen();
+  if (!trackGesture(e)) return;
   const ids = props.selectedIds.has(id) ? [...props.selectedIds] : [id];
   const pt = svgPoint(e.clientX, e.clientY);
   seqDragState.value = { ids, x: pt.x, y: pt.y, hoveredSeqId: null };
@@ -567,7 +576,7 @@ function onContextMouseDown(id: string, e: MouseEvent): void {
   emit('contextClick', id);
   const pt = svgPoint(e.clientX, e.clientY);
   const context = positionedContexts.value.find((entry) => entry.id === id);
-  if (!context) return;
+  if (!context || !trackGesture(e)) return;
   contextDragState.value = {
     id,
     x: context.x,
@@ -586,6 +595,7 @@ function startContextLink(id: string, e: MouseEvent): void {
   e.stopPropagation();
   focusPlanScreen();
   emit('contextClick', id);
+  if (!trackGesture(e)) return;
   contextLinkState.value = {
     id,
     ...svgPoint(e.clientX, e.clientY),
@@ -773,9 +783,6 @@ function taskCardOf(item: PlanItem) {
       class="plan-canvas"
       tabindex="0"
       @mousedown="onCanvasMouseDown"
-      @mousemove="onCanvasMouseMove"
-      @mouseup="onCanvasMouseUp"
-      @mouseleave="onCanvasMouseUp"
       @keydown="onPlanKeydown"
       @wheel="onCanvasWheel"
     >
@@ -824,7 +831,6 @@ function taskCardOf(item: PlanItem) {
             class="plan-seq-edit-btn"
             :transform="`translate(${box.width - 30}, 6)`"
             @mousedown.stop
-            @mouseup.stop
             @click.stop="seqPanelRef?.openEdit(box.sequence)"
           >
             <title>Edit sequence</title>
@@ -964,7 +970,6 @@ function taskCardOf(item: PlanItem) {
             v-if="item.sequenceId"
             class="plan-node__unlink"
             @mousedown.stop
-            @mouseup.stop
             @click.stop="unlinkFromSequence(item.id, $event)"
           >
             <title>Unlink from sequence</title>

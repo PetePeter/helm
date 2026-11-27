@@ -96,6 +96,8 @@ button {
   border: none;
   background: none;
   color: inherit;
+  /* A label is never content: selecting it only hijacks the next drag. */
+  user-select: none;
 }
 
 /* Base form controls.
