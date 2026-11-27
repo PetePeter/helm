@@ -92,6 +92,8 @@ export const planScreenState = reactive({
   relatedFocusIds: new Set<string>(),
   relatedTransientIds: new Set<string>(),
   filters: persistedPlanFilters.value,
+  /** Free-text title / plan-number filter; session-only, not persisted. */
+  textFilter: '',
   attachmentHasAny: {} as Record<string, boolean>,
   /** Operator task plan id -> epoch ms of its next check timer run. */
   taskNextChecks: {} as Record<string, number>,
@@ -195,7 +197,14 @@ function matchesFilters(item: PlanItem): boolean {
   if (filters.auto === 'yes' && !item.autoImplement) return false;
   if (filters.auto === 'no' && item.autoImplement) return false;
 
-  return true;
+  return matchesTextFilter(item);
+}
+
+function matchesTextFilter(item: PlanItem): boolean {
+  const needle = planScreenState.textFilter.trim().toLowerCase();
+  if (!needle) return true;
+  return item.title.toLowerCase().includes(needle)
+    || (item.humanId?.toLowerCase().includes(needle) ?? false);
 }
 
 function getFilteredItems(): PlanItem[] {
@@ -501,6 +510,7 @@ function closePlannerOverlay(): void {
   planScreenState.visible = dockPaneMounted;
   if (dockPaneMounted) return;
   planScreenState.currentDir = '';
+  planScreenState.textFilter = '';
   planScreenState.items = [];
   planScreenState.deps = [];
   planScreenState.sequences = [];
@@ -1206,7 +1216,13 @@ export function toggleStatusGroup(group: 'active' | 'terminal' | 'planning'): vo
   void persistedPlanFilters.persist();
 }
 
+export function setTextFilter(text: string): void {
+  planScreenState.textFilter = text;
+  refreshLayout();
+}
+
 export function resetFilters(): void {
+  planScreenState.textFilter = '';
   planScreenState.filters = makeDefaultFilters();
   persistedPlanFilters.value = planScreenState.filters;
   refreshLayout();

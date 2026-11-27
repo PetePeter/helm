@@ -928,6 +928,77 @@ describe('plan screen bridge', () => {
     expect(mod.planScreenState.layout.nodes.map((node) => node.id)).toEqual(['auto', 'manual']);
   });
 
+  describe('text filter', () => {
+    async function showWith(items: Array<ReturnType<typeof planItem> & { humanId?: string; type?: string; autoImplement?: boolean }>, deps: Array<{ fromId: string; toId: string }> = []) {
+      const mod = await getModule();
+      mockPlanList.mockResolvedValue(items);
+      mockPlanDeps.mockResolvedValue(deps);
+      mockComputeLayout.mockImplementation((layoutItems: Array<{ id: string }>, layoutDeps: unknown[] = []) => ({
+        ...fakeLayout(layoutItems.map((item) => item.id)),
+        deps: layoutDeps,
+      }));
+      await mod.showPlanScreen('/test/dir');
+      return mod;
+    }
+    const shownIds = (mod: Awaited<ReturnType<typeof getModule>>) => mod.planScreenState.layout.nodes.map((n) => n.id);
+
+    afterEach(async () => { (await getModule()).setTextFilter(''); });
+
+    it('matches titles case-insensitively by substring', async () => {
+      const mod = await showWith([planItem('a', 'Fix Auth refresh'), planItem('b', 'authorise phone'), planItem('c', 'Dock drag')]);
+      mod.setTextFilter('AUTH');
+      expect(shownIds(mod)).toEqual(['a', 'b']);
+    });
+
+    it('matches plan number as well as title', async () => {
+      const mod = await showWith([
+        { ...planItem('a', 'Dock drag'), humanId: 'P-42' },
+        { ...planItem('b', 'Bump to 420ms'), humanId: 'P-7' },
+        { ...planItem('c', 'Other'), humanId: 'P-8' },
+      ]);
+      mod.setTextFilter('42');
+      expect(shownIds(mod)).toEqual(['a', 'b']);
+      mod.setTextFilter('p-8');
+      expect(shownIds(mod)).toEqual(['c']);
+    });
+
+    it('combines with chip filters', async () => {
+      const mod = await showWith([
+        { ...planItem('a', 'auth one'), autoImplement: true },
+        planItem('b', 'auth two'),
+        { ...planItem('c', 'other'), autoImplement: true },
+      ]);
+      mod.setTextFilter('auth');
+      mod.toggleAutoFilter();
+      expect(shownIds(mod)).toEqual(['a']);
+      mod.resetFilters();
+    });
+
+    it('blank or whitespace text shows everything', async () => {
+      const mod = await showWith([planItem('a'), planItem('b')]);
+      mod.setTextFilter('   ');
+      expect(shownIds(mod)).toEqual(['a', 'b']);
+    });
+
+    it('reset filters clears the text', async () => {
+      const mod = await showWith([planItem('a', 'x'), planItem('b', 'y')]);
+      mod.setTextFilter('x');
+      mod.resetFilters();
+      expect(mod.planScreenState.textFilter).toBe('');
+      expect(shownIds(mod)).toEqual(['a', 'b']);
+    });
+
+    it('drops dependencies touching hidden plans', async () => {
+      const mod = await showWith(
+        [planItem('a', 'auth'), planItem('b', 'auth too'), planItem('c', 'other')],
+        [{ fromId: 'a', toId: 'b' }, { fromId: 'b', toId: 'c' }],
+      );
+      mod.setTextFilter('auth');
+      const lastDeps = mockComputeLayout.mock.calls.at(-1)?.[1];
+      expect(lastDeps).toEqual([{ fromId: 'a', toId: 'b' }]);
+    });
+  });
+
   it('reloads persisted done filter state after planner remount', async () => {
     const configGetPlanFilters = vi.fn()
       .mockResolvedValueOnce({

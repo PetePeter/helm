@@ -57,6 +57,8 @@ const props = withDefaults(defineProps<{
     auto: TriState;
   };
   attachmentHasAny?: Record<string, boolean>;
+  /** Free-text title / plan-number filter. */
+  textFilter?: string;
   /** Operator task plan id -> next check (epoch ms). */
   taskNextChecks?: Record<string, number>;
   /** Session id -> display name, for a task's builder. */
@@ -124,6 +126,7 @@ const emit = defineEmits<{
   toggleHasAttachmentFilter: [value: 'yes' | 'no'];
   toggleAutoFilter: [];
   resetFilters: [];
+  setTextFilter: [text: string];
 }>();
 
 const wrapperRef = ref<HTMLElement | null>(null);
@@ -733,6 +736,16 @@ function taskCardOf(item: PlanItem) {
 
       <template #toolbar>
         <div class="plan-header__filters">
+          <input
+            class="plan-header__text-filter"
+            type="search"
+            placeholder="Filter title or #…"
+            aria-label="Filter plans by title or number"
+            :value="textFilter ?? ''"
+            @input="emit('setTextFilter', ($event.target as HTMLInputElement).value)"
+            @keydown.esc.stop.prevent="emit('setTextFilter', '')"
+          />
+          <span class="plan-header__filter-sep">|</span>
           <FilterChip class="plan-header__chip" :class="filterState(filters.types.bug)" :state="filterState(filters.types.bug)" label="Bug" @update:state="emit('toggleTypeFilter', 'bug')" />
           <FilterChip class="plan-header__chip" :class="filterState(filters.types.feature)" :state="filterState(filters.types.feature)" label="Feature" @update:state="emit('toggleTypeFilter', 'feature')" />
           <FilterChip class="plan-header__chip" :class="filterState(filters.types.research)" :state="filterState(filters.types.research)" label="Research" @update:state="emit('toggleTypeFilter', 'research')" />
@@ -1131,6 +1144,19 @@ function taskCardOf(item: PlanItem) {
 }
 .plan-header__filters :deep(.filter-chip) {
   font-size: var(--font-size-xs);
+}
+.plan-header__text-filter {
+  width: 160px;
+  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.plan-header__text-filter:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 .plan-header__filter-sep {
   color: var(--text-dim);

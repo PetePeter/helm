@@ -2,6 +2,7 @@ import { plansClient } from '../ipc/clients.js';
 import {
   planScreenState,
   resetFilters,
+  setTextFilter,
   toggleAutoFilter,
   toggleHasAttachmentFilter,
   toggleRelatedFocus,
@@ -30,6 +31,10 @@ export function usePlanWorkspaceController() {
     resetFilters();
   }
 
+  function onSetTextFilter(text: string): void {
+    setTextFilter(text);
+  }
+
   function onToggleHasAttachmentFilter(value: 'yes' | 'no'): void {
     toggleHasAttachmentFilter(value);
   }
@@ -47,6 +52,7 @@ export function usePlanWorkspaceController() {
     onToggleTypeFilter,
     onToggleStatusFilter,
     onResetFilters,
+    onSetTextFilter,
     onToggleHasAttachmentFilter,
     onToggleAutoFilter,
     onToggleRelatedFocus,

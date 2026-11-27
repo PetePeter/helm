@@ -98,6 +98,7 @@ const timeActivity = useTimeActivity(() => (planScreenState.currentDir ? { dirPa
     :related-focus-ids="planScreenState.relatedFocusIds"
     :related-transient-ids="planScreenState.relatedTransientIds"
     :filters="planScreenState.filters"
+    :text-filter="planScreenState.textFilter"
     :attachment-has-any="planScreenState.attachmentHasAny"
     :task-next-checks="planScreenState.taskNextChecks"
     :session-names="planSessionNames()"
@@ -136,6 +137,7 @@ const timeActivity = useTimeActivity(() => (planScreenState.currentDir ? { dirPa
     @toggle-type-filter="planWorkspace.onToggleTypeFilter"
     @toggle-status-filter="planWorkspace.onToggleStatusFilter"
     @reset-filters="planWorkspace.onResetFilters"
+    @set-text-filter="planWorkspace.onSetTextFilter"
     @toggle-has-attachment-filter="planWorkspace.onToggleHasAttachmentFilter"
     @toggle-auto-filter="planWorkspace.onToggleAutoFilter"
   />

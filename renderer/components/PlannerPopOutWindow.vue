@@ -43,6 +43,7 @@ import {
   toggleStatusFilter,
   toggleTypeFilter,
   resetFilters,
+  setTextFilter,
   setPlanEditorOpener,
   setItemEditorCloser,
   setItemEditorVisibilityChecker,
@@ -198,6 +199,7 @@ onUnmounted(() => {
       :related-focus-ids="planScreenState.relatedFocusIds"
       :related-transient-ids="planScreenState.relatedTransientIds"
       :filters="planScreenState.filters"
+      :text-filter="planScreenState.textFilter"
       :attachment-has-any="planScreenState.attachmentHasAny"
       :task-next-checks="planScreenState.taskNextChecks"
       :session-names="planSessionNames()"
@@ -236,6 +238,7 @@ onUnmounted(() => {
       @toggle-has-attachment-filter="toggleHasAttachmentFilter"
       @toggle-auto-filter="toggleAutoFilter"
       @reset-filters="resetFilters()"
+      @set-text-filter="setTextFilter"
     />
   </div>
 </template>

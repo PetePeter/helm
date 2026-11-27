@@ -258,6 +258,7 @@ flowchart LR
 - **Nodes:** SVG `<g>` elements with rounded rect (8px radius), status dot, title text, description text, right-edge connector circle
 - **Arrows:** Quadratic bezier `<path>` elements with `#arrowhead` marker. Click to remove dependency.
 - **Selection:** Click a node to select it (blue highlight border) and open the bottom editor panel
+- **Text filter:** Header input matching title or plan number (case-insensitive contains), ANDed with the filter chips. Session-only: Esc, ↺ reset, or leaving the planner clears it — a typed search is transient intent, unlike chip preferences which persist.
 
 ### Node Rendering
 
