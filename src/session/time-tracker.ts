@@ -1,5 +1,5 @@
 /**
- * TimeTracker — how long the user worked on each project, in 5-minute slots.
+ * TimeTracker — how long the user worked on each project, in 2-minute slots.
  *
  * A slot is "user" time for exactly one project: the one that got the most
  * user input in it (ties go to the latest). AI activity is tracked as a
@@ -15,7 +15,7 @@
 import type { TimePersistence } from './time-persistence.js';
 import type { ChartModel } from './chart-model.js';
 
-export const SLOT_MS = 5 * 60_000;
+export const SLOT_MS = 2 * 60_000;
 /**
  * Noise floor: a project needs this much input in a slot to earn it. One
  * keystroke weighs 1; a submit (Enter, a phone message, a phone
@@ -30,6 +30,8 @@ export const SUBMIT_WEIGHT = 20;
  */
 export const AI_SILENCE_MS = 15 * 60_000;
 const SLOT_MINUTES = SLOT_MS / 60_000;
+/** Slots persisted before `minutes` was recorded were 5 minutes long. */
+const LEGACY_SLOT_MINUTES = 5;
 
 export type SlotKind = 'user' | 'ai' | 'tokens' | 'keys';
 export type TokenUsageSource = 'transcript' | 'api' | 'statusline' | 'unknown';
@@ -40,6 +42,8 @@ export interface TimeSlot {
   projectKey: string;
   projectName: string;
   dir: string;
+  /** Kinds 'user' and 'ai': the slot's length; absent on legacy 5-minute slots. */
+  minutes?: number;
   /** Kind 'tokens' only. */
   tokens?: number;
   /** Kind 'tokens' only; absent on slots written before it was recorded. */
@@ -139,7 +143,7 @@ export class TimeTracker {
     if (!where) return;
     const start = slotStart(this.now());
     const ai = this.slotFor().ai;
-    if (!ai.has(where.projectKey)) ai.set(where.projectKey, { start, kind: 'ai', projectKey: where.projectKey, projectName: where.projectName, dir: where.dir });
+    if (!ai.has(where.projectKey)) ai.set(where.projectKey, { start, kind: 'ai', projectKey: where.projectKey, projectName: where.projectName, dir: where.dir, minutes: SLOT_MINUTES });
   }
 
   /**
@@ -280,6 +284,10 @@ function tokenKey(projectKey: string, cliType: string | undefined, dir: string):
   return `${projectKey}|${cliType ?? ''}|${dir}`;
 }
 
+function slotMinutes(slot: TimeSlot): number {
+  return slot.minutes ?? LEGACY_SLOT_MINUTES;
+}
+
 function slotStart(ms: number): number {
   return ms - (ms % SLOT_MS);
 }
@@ -300,7 +308,7 @@ function resolveSlot(start: number, slot: OpenSlot): TimeSlot[] {
   if (projectKey) {
     const tally = slot.user.get(projectKey)!;
     const dir = maxKey(tally.dirs, n => [n, 0])!;
-    result.push({ start, kind: 'user', projectKey, projectName: tally.name, dir });
+    result.push({ start, kind: 'user', projectKey, projectName: tally.name, dir, minutes: SLOT_MINUTES });
   }
   return result;
 }
@@ -372,8 +380,9 @@ export function buildTimesheet(slots: TimeSlot[], projectKey: string | null, edg
       totals.tokens[col] += slot.tokens ?? 0;
       continue;
     }
-    row[slot.kind][col] += SLOT_MINUTES;
-    totals[slot.kind][col] += SLOT_MINUTES;
+    const minutes = slotMinutes(slot);
+    row[slot.kind][col] += minutes;
+    totals[slot.kind][col] += minutes;
   }
   return {
     columns: edges.slice(0, n),
@@ -465,7 +474,7 @@ export function summarizeProjects(slots: TimeSlot[]): ProjectTotal[] {
     let total = totals.get(slot.projectKey);
     if (!total) { total = { projectKey: slot.projectKey, projectName: slot.projectName, user: 0, ai: 0, tokens: 0 }; totals.set(slot.projectKey, total); }
     if (slot.kind === 'tokens') total.tokens += slot.tokens ?? 0;
-    else total[slot.kind] += SLOT_MINUTES;
+    else total[slot.kind] += slotMinutes(slot);
   }
   return [...totals.values()].sort((a, b) => b.user - a.user || b.ai - a.ai || a.projectName.localeCompare(b.projectName));
 }

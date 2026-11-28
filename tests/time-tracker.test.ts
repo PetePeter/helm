@@ -1,4 +1,4 @@
-/** TimeTracker: 5-minute slots credited to the project the user worked in. */
+/** TimeTracker: 2-minute slots credited to the project the user worked in. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
@@ -86,17 +86,17 @@ describe('TimeTracker', () => {
 
   it('counts many inputs inside one slot once, and separate slots each', () => {
     const t = tracker();
-    for (const m of [0, 1, 4]) { clock = at(9, m); t.recordUser(SUBMIT, 'a1'); }
+    for (const m of [0, 1]) { clock = at(9, m); t.recordUser(SUBMIT, 'a1'); }
     clock = at(9, 12); t.recordUser(SUBMIT, 'a1');
-    expect(userSlots(t).map(s => s.start)).toEqual([at(9, 0), at(9, 10)]);
+    expect(userSlots(t).map(s => s.start)).toEqual([at(9, 0), at(9, 12)]);
   });
 
   it('ignores a slot with only a few stray keystrokes, counts one with enough', () => {
     const t = tracker();
     for (let i = 0; i < SUBMIT - 1; i++) t.recordUser(1, 'a1');
-    clock = at(9, 5);
+    clock = at(9, 2);
     for (let i = 0; i < SUBMIT; i++) t.recordUser(1, 'a1');
-    expect(userSlots(t).map(s => s.start)).toEqual([at(9, 5)]);
+    expect(userSlots(t).map(s => s.start)).toEqual([at(9, 2)]);
   });
 
   it('gives the slot only to a project that passed the noise floor', () => {
@@ -106,20 +106,21 @@ describe('TimeTracker', () => {
     expect(userSlots(t).map(s => s.projectKey)).toEqual(['pA']);
   });
 
-  it('puts 12:04:59 and 12:05:00 in different slots', () => {
+  it('puts 12:01:59 and 12:02:00 in different slots', () => {
     const t = tracker();
-    clock = at(12, 4, 59); t.recordUser(SUBMIT, 'a1');
-    clock = at(12, 5, 0); t.recordUser(SUBMIT, 'a1');
+    clock = at(12, 1, 59); t.recordUser(SUBMIT, 'a1');
+    clock = at(12, 2, 0); t.recordUser(SUBMIT, 'a1');
     expect(userSlots(t)).toHaveLength(2);
-    expect(SLOT_MS).toBe(5 * MIN);
+    expect(SLOT_MS).toBe(2 * MIN);
+    expect(userSlots(t).map(s => s.minutes)).toEqual([2, 2]);
   });
 
   it('gives a contested slot to the project with the most input, ties to the latest', () => {
     const t = tracker();
     clock = at(9, 0); t.recordUser(SUBMIT, 'a1'); t.recordUser(SUBMIT, 'a1');
     clock = at(9, 1); t.recordUser(SUBMIT, 'b1');
-    clock = at(9, 5); t.recordUser(SUBMIT, 'a1');
-    clock = at(9, 6); t.recordUser(SUBMIT, 'b1');
+    clock = at(9, 2); t.recordUser(SUBMIT, 'a1');
+    clock = at(9, 3); t.recordUser(SUBMIT, 'b1');
     expect(userSlots(t).map(s => s.projectKey)).toEqual(['pA', 'pB']);
   });
 
@@ -138,7 +139,7 @@ describe('TimeTracker', () => {
     t.disarmAi('a1');
     clock = at(18, 0); t.tick();
     expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).filter(s => s.kind === 'ai').map(s => s.start))
-      .toEqual([at(9, 5), at(9, 10)]);
+      .toEqual([at(9, 6), at(9, 10)]);
   });
 
   it('arms AI time for a user-originated prompt, but not a system prompt', () => {
@@ -180,7 +181,7 @@ describe('TimeTracker', () => {
     t.recordPrompt('a1', 'user');
     clock = at(9, 16); t.tick();
     expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).filter(s => s.kind === 'ai').map(s => s.start))
-      .toEqual([at(9, 0), at(9, 5), at(9, 10), at(9, 15)]);
+      .toEqual([at(9, 0), at(9, 6), at(9, 10), at(9, 16)]);
   });
 
   it('forgets an active session once it can no longer be placed (closed)', () => {
@@ -238,10 +239,22 @@ describe('buildTimesheet', () => {
     const sheet = buildTimesheet(t.query(edges[0], edges[7]), 'pA', edges);
     expect(sheet.columns).toHaveLength(7);
     expect(sheet.rows).toEqual([
-      { dir: 'C:/alpha', user: [5, 5, 0, 0, 0, 0, 0], ai: [5, 5, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
-      { dir: 'C:/alpha/sub', user: [5, 0, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
+      { dir: 'C:/alpha', user: [2, 2, 0, 0, 0, 0, 0], ai: [2, 2, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
+      { dir: 'C:/alpha/sub', user: [2, 0, 0, 0, 0, 0, 0], ai: [2, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
     ]);
-    expect(sheet.totals).toEqual({ user: [10, 5, 0, 0, 0, 0, 0], ai: [10, 5, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] });
+    expect(sheet.totals).toEqual({ user: [4, 2, 0, 0, 0, 0, 0], ai: [4, 2, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] });
+  });
+
+  it('counts legacy slots without minutes as 5 minutes beside new 2-minute slots', () => {
+    const base = { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha' };
+    const slots = [
+      { ...base, start: at(8, 0), kind: 'user' as const },
+      { ...base, start: at(8, 0), kind: 'ai' as const },
+      { ...base, start: at(9, 0), kind: 'user' as const, minutes: 2 },
+      { ...base, start: at(9, 0), kind: 'ai' as const, minutes: 2 },
+    ];
+    expect(buildTimesheet(slots, null, periodEdges('day', DAY0)).totals.user[0]).toBe(7);
+    expect(summarizeProjects(slots)).toEqual([{ projectKey: 'pA', projectName: 'Alpha', user: 7, ai: 7, tokens: 0 }]);
   });
 
   it('cuts day, week and month views on local calendar edges', () => {
@@ -266,8 +279,8 @@ describe('buildTimesheet', () => {
     clock = at(9, 5); t.recordUser(SUBMIT, 'a1'); t.armAi('a1');
     clock = at(9, 10); t.recordUser(SUBMIT, 'a2'); t.armAi('a2');
     expect(summarizeProjects(t.query(DAY0, DAY0 + 24 * 60 * MIN))).toEqual([
-      { projectKey: 'pA', projectName: 'Alpha', user: 10, ai: 10, tokens: 0 },
-      { projectKey: 'pB', projectName: 'Beta', user: 5, ai: 5, tokens: 0 },
+      { projectKey: 'pA', projectName: 'Alpha', user: 4, ai: 4, tokens: 0 },
+      { projectKey: 'pB', projectName: 'Beta', user: 2, ai: 2, tokens: 0 },
     ]);
   });
 
@@ -345,7 +358,7 @@ describe('TimeTracker tokens', () => {
     t.recordTokens('a1', 1_000);
     clock = at(9, 7); t.recordTokens('a2', 5); t.recordTokens('a2', 505); t.recordTokens('b1', 300);
     expect(tokens(t).map(s => [s.start, s.projectKey, s.tokens])).toEqual([
-      [at(9, 0), 'pA', 1_000], [at(9, 5), 'pA', 500], [at(9, 5), 'pB', 300],
+      [at(9, 0), 'pA', 1_000], [at(9, 6), 'pA', 500], [at(9, 6), 'pB', 300],
     ]);
   });
 
@@ -407,7 +420,7 @@ describe('TimeTracker tokens', () => {
     expect(buildTimesheet(slots, 'pA', edges).totals.tokens).toEqual([2_000, 0, 0, 0, 0, 0, 0]);
     const all = buildTimesheet(slots, null, edges);
     expect(all.totals.tokens[0]).toBe(5_000);
-    expect(all.totals.user[0]).toBe(5);
+    expect(all.totals.user[0]).toBe(2);
     expect(summarizeProjects(slots).map(p => [p.projectKey, p.tokens])).toEqual([['pA', 2_000], ['pB', 3_000]]);
   });
 });

@@ -34,7 +34,7 @@ describe('statisticsQuery', () => {
     };
 
     expect(result.projects).toEqual([
-      { projectKey: 'p1', projectName: 'Helm', user: 5, ai: 5, tokens: 1_500 },
+      { projectKey: 'p1', projectName: 'Helm', user: 2, ai: 2, tokens: 1_500 },
       { projectKey: 'p2', projectName: 'Other', user: 0, ai: 0, tokens: 400 },
     ]);
     expect(result.sheet.rows).toEqual([

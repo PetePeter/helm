@@ -4,7 +4,7 @@ How long the user worked on each project, shown as a timesheet per folder.
 
 ## Why slots
 
-Measuring the user's own time means guessing at the gaps between inputs. A fixed 5-minute grid makes the guess explicit and cheap. A slot counts if the user did anything in it, and idle slots count nothing. Several inputs inside one slot are still one slot.
+Measuring the user's own time means guessing at the gaps between inputs. A fixed 2-minute grid makes the guess explicit and cheap. A slot counts if the user did anything in it, and idle slots count nothing. Several inputs inside one slot are still one slot.
 
 ## What counts
 
@@ -72,7 +72,7 @@ The main process builds a transport-neutral `ChartModel` from the same sheet use
 
 ### Keys tab
 
-Desktop keydowns are batched by session and five-minute slot, then stored as project counts. The Keys tab shows project rows with counts and totals across the selected hours, days, weeks, or months. It records no key names or text. The tab is desktop-only; the phone statistics route can query the same counts but phone typing does not contribute.
+Desktop keydowns are batched by session and two-minute slot, then stored as project counts. The Keys tab shows project rows with counts and totals across the selected hours, days, weeks, or months. It records no key names or text. The tab is desktop-only; the phone statistics route can query the same counts but phone typing does not contribute.
 
 ### Tokens tab
 
